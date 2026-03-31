@@ -600,6 +600,16 @@ function formatDuration(minutes) {
     return hours + 'h ' + remainMins + 'm';
 }
 
+function formatPower(watts) {
+    // Format power: use kW for values >= 1000W
+    const w = Math.abs(Math.floor(watts));
+    const sign = watts < 0 ? '-' : '';
+    if (w >= 1000) {
+        return sign + (w / 1000).toFixed(1) + 'kW';
+    }
+    return sign + w + 'W';
+}
+
 function initChart() {
     const ctx = document.getElementById('powerChart').getContext('2d');
     chart = new Chart(ctx, {
@@ -767,11 +777,11 @@ async function updateData() {
         pulseIndicator();
         
         // Update stats
-        document.getElementById('grid-power').textContent = state.gt + 'W';
-        document.getElementById('grid-detail').textContent = `${state.g1}W | ${state.g2}W`;
-        document.getElementById('consumption').textContent = state.tt + 'W';
-        document.getElementById('consumption-detail').textContent = `${state.t1}W | ${state.t2}W`;
-        document.getElementById('solar-total').textContent = Math.floor(state.solar_total || 0) + 'W';
+        document.getElementById('grid-power').textContent = formatPower(state.gt);
+        document.getElementById('grid-detail').textContent = `${formatPower(state.g1)} | ${formatPower(state.g2)}`;
+        document.getElementById('consumption').textContent = formatPower(state.tt);
+        document.getElementById('consumption-detail').textContent = `${formatPower(state.t1)} | ${formatPower(state.t2)}`;
+        document.getElementById('solar-total').textContent = formatPower(state.solar_total || 0);
         
         // Solar detail with individual MPPT and Tasmota values
         const mpptVals = state.mppt_individual || [];
@@ -785,8 +795,8 @@ async function updateData() {
         const batSocs = state.battery_socs || [];
         const batSocStr = batSocs.length ? batSocs.map(s => Math.floor(s) + '%').join('|') : '';
         const batDetailExtra = batSocStr ? ` [${batSocStr}]` : '';
-        document.getElementById('battery-detail').textContent = `${state.battery_power || 0}W | ${(state.battery_voltage || 0).toFixed(2)}V${batDetailExtra}`;
-        document.getElementById('setpoint').textContent = state.setpoint + 'W';
+        document.getElementById('battery-detail').textContent = `${formatPower(state.battery_power || 0)} | ${(state.battery_voltage || 0).toFixed(2)}V${batDetailExtra}`;
+        document.getElementById('setpoint').textContent = formatPower(state.setpoint);
         document.getElementById('inverter-state').textContent = state.inverter_state || '--';
         
         // Daily stats
