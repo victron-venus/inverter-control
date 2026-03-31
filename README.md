@@ -57,7 +57,6 @@ inverter_control/
 ├── deploy.sh           # Deploy to Venus OS
 ├── install.sh          # Install on Venus OS
 ├── LOGIC.md            # Control logic documentation (EN)
-├── LOGIC_RUS.md        # Control logic documentation (RU)
 └── README.md
 ```
 
