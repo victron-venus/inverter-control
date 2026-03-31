@@ -123,6 +123,28 @@ class HomeAssistantClient:
         except:
             return default
     
+    def _parse_duration(self, value: str) -> int:
+        """Parse duration in HH:MM:SS or MM:SS format to minutes"""
+        if value in (None, 'unavailable', 'unknown', 'None', ''):
+            return 0
+        try:
+            # Try numeric first
+            return int(float(value))
+        except:
+            pass
+        try:
+            # Try HH:MM:SS or MM:SS format
+            parts = str(value).split(':')
+            if len(parts) == 3:
+                hours, mins, secs = int(parts[0]), int(parts[1]), int(parts[2])
+                return hours * 60 + mins + (1 if secs >= 30 else 0)
+            elif len(parts) == 2:
+                mins, secs = int(parts[0]), int(parts[1])
+                return mins + (1 if secs >= 30 else 0)
+        except:
+            pass
+        return 0
+    
     def _poll_loop(self):
         """Background polling loop with circuit breaker"""
         while self._running:
@@ -186,10 +208,16 @@ class HomeAssistantClient:
             raise Exception("Invalid response format")
         
         with self._lock:
+            # Sensors that should be stored as raw strings (duration format HH:MM:SS)
+            duration_sensors = {'dishwasher_duration', 'washer_time', 'dryer_time'}
+            
             # Parse sensors
             for key in HA_SENSORS:
                 if key in data:
-                    self._sensors[key] = self._parse_numeric(data[key])
+                    if key in duration_sensors:
+                        self._sensors[key] = data[key]  # Store raw for duration parsing
+                    else:
+                        self._sensors[key] = self._parse_numeric(data[key])
             
             # Parse VUE sensors
             for key in VUE_SENSORS:
@@ -278,6 +306,12 @@ class HomeAssistantClient:
         """Get cached sensor value"""
         with self._lock:
             return self._sensors.get(key, default)
+    
+    def get_duration_sensor(self, key: str) -> int:
+        """Get cached sensor value and parse as duration (HH:MM:SS) to minutes"""
+        with self._lock:
+            raw = self._sensors.get(key)
+        return self._parse_duration(raw)
     
     def get_vue_sensor(self, key: str, default: Any = 0) -> Any:
         """Get cached VUE sensor value"""
