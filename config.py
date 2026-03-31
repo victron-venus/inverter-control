@@ -11,8 +11,7 @@ try:
     from secrets import (
         HA_URL, HA_TOKEN, PORTAL_ID, TASMOTA_IPS,
         HA_SENSORS, VUE_SENSORS, HA_BOOLEANS,
-        HA_DUMP_LOADS, HA_WATER_VALVE, HA_PUMP_SWITCH, HA_BINARY_SENSORS,
-        HA_WASHER_POWER, HA_DRYER_POWER
+        HA_DUMP_LOADS, HA_WATER_VALVE, HA_PUMP_SWITCH, HA_BINARY_SENSORS
     )
 except ImportError:
     # Fallback for development or if secrets.py doesn't exist
@@ -28,6 +27,11 @@ except ImportError:
     HA_WATER_VALVE = ""
     HA_PUMP_SWITCH = ""
     HA_BINARY_SENSORS = {}
+
+# Optional laundry controls (may not exist in older secrets.py)
+try:
+    from secrets import HA_WASHER_POWER, HA_DRYER_POWER
+except ImportError:
     HA_WASHER_POWER = ""
     HA_DRYER_POWER = ""
 

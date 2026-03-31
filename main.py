@@ -229,6 +229,7 @@ class InverterController:
             house_support = self.ha.get_boolean('house_support')
             charge_battery = self.ha.get_boolean('charge_battery')
             do_not_supply_charger = self.ha.get_boolean('do_not_supply_charger')
+            limit_to_ev = self.ha.get_boolean('set_limit_to_ev_charger')
         except Exception:
             # Fallback: all switches off if HA unavailable
             only_charging = False
@@ -236,6 +237,10 @@ class InverterController:
             house_support = False
             charge_battery = False
             do_not_supply_charger = False
+            limit_to_ev = False
+        
+        # Get garage power for EV L1 charging detection
+        garage_power = self.ha.get_vue_sensor('garage', 0)
         
         flags = ""
         
@@ -295,6 +300,32 @@ class InverterController:
             if vanew < min_setpoint:
                 vanew = min_setpoint
                 flags += "[NoEV] "
+        
+        # -----------------------------------------------------------------
+        # MODE: LIMIT_TO_EV
+        # Goal: When EV is charging, export most solar to grid, keep 500W for battery
+        # Trigger: garage (L1 charger) > 1kW OR ev_power (L2 charger) > 1kW
+        # Action: setpoint = -(mppt_total - 500) = export all solar minus 500W
+        # -----------------------------------------------------------------
+        BATTERY_RESERVE = 500  # Watts to keep for battery charging
+        ev_charging_detected = garage_power > 1000 or ev_power > 1000
+        if limit_to_ev and ev_charging_detected:
+            export_power = max(0, mppt_total - BATTERY_RESERVE)
+            vanew = -export_power  # Negative = export to grid
+            flags += f"[LimEV:{mppt_total}-{BATTERY_RESERVE}] "
+        
+        # -----------------------------------------------------------------
+        # MODE: LIMIT_TO_EV
+        # Goal: When EV is charging, export most solar to grid, keep 500W for battery
+        # Trigger: garage (L1 charger) > 1kW OR ev_power (L2 charger) > 1kW
+        # Action: setpoint = -(mppt_total - 500) = export all solar minus 500W
+        # -----------------------------------------------------------------
+        BATTERY_RESERVE = 500  # Watts to keep for battery charging
+        ev_charging_detected = garage_power > 1000 or ev_power > 1000
+        if limit_to_ev and ev_charging_detected:
+            export_power = max(0, mppt_total - BATTERY_RESERVE)
+            vanew = -export_power  # Negative = export to grid
+            flags += f"[LimEV:{mppt_total}-{BATTERY_RESERVE}] "
         
         # -----------------------------------------------------------------
         # MODE: NO_FEED
