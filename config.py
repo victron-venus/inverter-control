@@ -30,10 +30,17 @@ except ImportError:
 
 # Optional laundry controls (may not exist in older secrets.py)
 try:
-    from secrets import HA_WASHER_POWER, HA_DRYER_POWER
+    from secrets import HA_WASHER_POWER, HA_DRYER_POWER, HA_LAUNDRY_OUTLET
 except ImportError:
     HA_WASHER_POWER = ""
     HA_DRYER_POWER = ""
+    HA_LAUNDRY_OUTLET = ""
+
+# Handle partial imports (some variables exist, some don't)
+try:
+    HA_LAUNDRY_OUTLET
+except NameError:
+    HA_LAUNDRY_OUTLET = ""
 
 # =============================================================================
 # OPTIONAL FEATURES

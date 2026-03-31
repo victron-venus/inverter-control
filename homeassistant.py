@@ -14,7 +14,7 @@ from config import (
     HA_SENSORS, HA_BOOLEANS, HA_BINARY_SENSORS,
     HA_DUMP_LOADS, HA_WATER_VALVE, HA_PUMP_SWITCH, VUE_SENSORS,
     ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER, ENABLE_WATER,
-    HA_WASHER_POWER, HA_DRYER_POWER
+    HA_WASHER_POWER, HA_DRYER_POWER, HA_LAUNDRY_OUTLET
 )
 
 logger = logging.getLogger('inverter-control')
@@ -56,6 +56,7 @@ class HomeAssistantClient:
         self._pump_switch: bool = False
         self._washer_power: bool = False
         self._dryer_power: bool = False
+        self._laundry_outlet: bool = False
         
         # Connection status
         self._connected = False
@@ -250,6 +251,8 @@ class HomeAssistantClient:
                 self._washer_power = data['washer_power'] == 'on'
             if 'dryer_power' in data:
                 self._dryer_power = data['dryer_power'] == 'on'
+            if 'laundry_outlet' in data:
+                self._laundry_outlet = data['laundry_outlet'] == 'on'
     
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
@@ -298,6 +301,10 @@ class HomeAssistantClient:
             items.append(f'  "washer_power": "{{{{ states("{HA_WASHER_POWER}") }}}}"')
         if ENABLE_DRYER and HA_DRYER_POWER:
             items.append(f'  "dryer_power": "{{{{ states("{HA_DRYER_POWER}") }}}}"')
+        
+        # Laundry outlet (shown when washer/dryer not running)
+        if (ENABLE_WASHER or ENABLE_DRYER) and HA_LAUNDRY_OUTLET:
+            items.append(f'  "laundry_outlet": "{{{{ states("{HA_LAUNDRY_OUTLET}") }}}}"')
         
         parts.append(',\n'.join(items))
         parts.append('}')
@@ -367,6 +374,11 @@ class HomeAssistantClient:
     def dryer_power_on(self) -> bool:
         with self._lock:
             return self._dryer_power
+    
+    @property
+    def laundry_outlet_on(self) -> bool:
+        with self._lock:
+            return self._laundry_outlet
     
     def get_all_sensors(self) -> Dict[str, Any]:
         """Get copy of all sensor values"""

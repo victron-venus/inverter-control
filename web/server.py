@@ -520,6 +520,15 @@ def get_dashboard_html() -> str:
                         </div>
                     </div>
                 </div>
+                <div class="card" id="laundry-section" style="display:none;">
+                    <div class="card-header"><i class="fas fa-plug me-2"></i>Laundry</div>
+                    <div class="card-body py-1">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-muted">Smart outlet</span>
+                            <div id="laundry-outlet" class="toggle-btn" onclick="toggle('switch.laundry_zigbee_switch')">OUTLET</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -921,6 +930,16 @@ async function updateData() {
             document.getElementById('dryer-power').className = 'toggle-btn ' + (state.dryer_power ? 'on' : 'off');
         } else {
             document.getElementById('dryer-section').style.display = 'none';
+        }
+        
+        // Laundry outlet - show when washer and dryer are not running
+        const laundryEnabled = features.washer !== false || features.dryer !== false;
+        const laundryActive = washerTime > 0 || dryerTime > 0;
+        if (laundryEnabled && !laundryActive) {
+            document.getElementById('laundry-section').style.display = '';
+            document.getElementById('laundry-outlet').className = 'toggle-btn ' + (state.laundry_outlet ? 'on' : 'off');
+        } else {
+            document.getElementById('laundry-section').style.display = 'none';
         }
         
         // Toggles with friendly names

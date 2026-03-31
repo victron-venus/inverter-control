@@ -94,6 +94,7 @@ HA_WASHER_POWER = 'switch.washer_power'
 HA_WASHER_PAUSE = 'button.washer_pause'
 HA_DRYER_POWER = 'switch.dryer_power'
 HA_DRYER_PAUSE = 'button.dryer_pause'
+HA_LAUNDRY_OUTLET = 'switch.laundry_zigbee_switch'  # Smart outlet for washer/dryer standby power
 
 HA_BINARY_SENSORS = {
     'dishwasher_running': 'binary_sensor.your_dishwasher',
