@@ -89,6 +89,12 @@ HA_DUMP_LOADS = [
 HA_WATER_VALVE = 'switch.your_water_valve'
 HA_PUMP_SWITCH = 'switch.your_pump_switch'
 
+# Laundry appliance controls
+HA_WASHER_POWER = 'switch.washer_power'
+HA_WASHER_PAUSE = 'button.washer_pause'
+HA_DRYER_POWER = 'switch.dryer_power'
+HA_DRYER_PAUSE = 'button.dryer_pause'
+
 HA_BINARY_SENSORS = {
     'dishwasher_running': 'binary_sensor.your_dishwasher',
 }

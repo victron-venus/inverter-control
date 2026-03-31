@@ -13,7 +13,8 @@ from config import (
     HA_URL, HA_TOKEN, HA_TIMEOUT, HA_POLL_INTERVAL,
     HA_SENSORS, HA_BOOLEANS, HA_BINARY_SENSORS,
     HA_DUMP_LOADS, HA_WATER_VALVE, HA_PUMP_SWITCH, VUE_SENSORS,
-    ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER, ENABLE_WATER
+    ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER, ENABLE_WATER,
+    HA_WASHER_POWER, HA_DRYER_POWER
 )
 
 logger = logging.getLogger('inverter-control')
@@ -53,6 +54,8 @@ class HomeAssistantClient:
         self._binary_sensors: Dict[str, bool] = {k: False for k in HA_BINARY_SENSORS}
         self._water_valve: bool = False
         self._pump_switch: bool = False
+        self._washer_power: bool = False
+        self._dryer_power: bool = False
         
         # Connection status
         self._connected = False
@@ -241,6 +244,12 @@ class HomeAssistantClient:
             # Pump switch
             if 'pump_switch' in data:
                 self._pump_switch = data['pump_switch'] == 'on'
+            
+            # Washer/Dryer power switches
+            if 'washer_power' in data:
+                self._washer_power = data['washer_power'] == 'on'
+            if 'dryer_power' in data:
+                self._dryer_power = data['dryer_power'] == 'on'
     
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
@@ -283,6 +292,12 @@ class HomeAssistantClient:
         if ENABLE_WATER:
             items.append(f'  "water_valve": "{{{{ states("{HA_WATER_VALVE}") }}}}"')
             items.append(f'  "pump_switch": "{{{{ states("{HA_PUMP_SWITCH}") }}}}"')
+        
+        # Washer/Dryer power switches
+        if ENABLE_WASHER and HA_WASHER_POWER:
+            items.append(f'  "washer_power": "{{{{ states("{HA_WASHER_POWER}") }}}}"')
+        if ENABLE_DRYER and HA_DRYER_POWER:
+            items.append(f'  "dryer_power": "{{{{ states("{HA_DRYER_POWER}") }}}}"')
         
         parts.append(',\n'.join(items))
         parts.append('}')
@@ -343,6 +358,16 @@ class HomeAssistantClient:
         with self._lock:
             return self._pump_switch
     
+    @property
+    def washer_power_on(self) -> bool:
+        with self._lock:
+            return self._washer_power
+    
+    @property
+    def dryer_power_on(self) -> bool:
+        with self._lock:
+            return self._dryer_power
+    
     def get_all_sensors(self) -> Dict[str, Any]:
         """Get copy of all sensor values"""
         with self._lock:
@@ -367,6 +392,19 @@ class HomeAssistantClient:
             return response.status_code == 200
         except Exception as e:
             logger.warning(f"Toggle {entity_id} failed: {e}")
+            return False
+    
+    def press_button(self, entity_id: str) -> bool:
+        """Press a button entity"""
+        try:
+            response = self._session.post(
+                f"{HA_URL}/api/services/button/press",
+                json={"entity_id": entity_id},
+                timeout=(3, HA_TIMEOUT)
+            )
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Press {entity_id} failed: {e}")
             return False
     
     def turn_on(self, entity_id: str) -> bool:

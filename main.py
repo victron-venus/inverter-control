@@ -578,7 +578,9 @@ class InverterController:
             'dishwasher_running': self.ha.get_binary_sensor('dishwasher_running') if ENABLE_DISHWASHER else False,
             'dishwasher_duration': self.ha.get_duration_sensor('dishwasher_duration') if ENABLE_DISHWASHER else 0,
             'washer_time': self.ha.get_duration_sensor('washer_time') if ENABLE_WASHER else 0,
+            'washer_power': self.ha.washer_power_on if ENABLE_WASHER else False,
             'dryer_time': self.ha.get_duration_sensor('dryer_time') if ENABLE_DRYER else 0,
+            'dryer_power': self.ha.dryer_power_on if ENABLE_DRYER else False,
             # HA data (conditional)
             'booleans': self.ha.get_all_booleans() if ENABLE_HA else {},
             'daily_stats': daily_stats if ENABLE_HA else {},

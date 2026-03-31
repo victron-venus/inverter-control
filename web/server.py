@@ -131,6 +131,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             else:
                 self.send_json({'success': False}, 400)
         
+        elif path == '/api/press':
+            entity = data.get('entity')
+            if entity and ha_client:
+                success = ha_client.press_button(entity)
+                self.send_json({'success': success})
+            else:
+                self.send_json({'success': False}, 400)
+        
         elif path == '/api/setpoint':
             value = data.get('value')
             if value is not None:
@@ -492,8 +500,11 @@ def get_dashboard_html() -> str:
                     <div class="card-header"><i class="fas fa-soap me-2"></i>Washer</div>
                     <div class="card-body py-1">
                         <div class="d-flex justify-content-between align-items-center">
-                            <span>Time left</span>
-                            <span id="washer-time" class="fw-bold">--</span>
+                            <div><span>Time left:</span> <span id="washer-time" class="fw-bold">--</span></div>
+                            <div class="d-flex gap-1">
+                                <div id="washer-pause" class="toggle-btn" onclick="press('button.washer_pause')">PAUSE</div>
+                                <div id="washer-power" class="toggle-btn" onclick="toggle('switch.washer_power')">POWER</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -501,8 +512,11 @@ def get_dashboard_html() -> str:
                     <div class="card-header"><i class="fas fa-wind me-2"></i>Dryer</div>
                     <div class="card-body py-1">
                         <div class="d-flex justify-content-between align-items-center">
-                            <span>Time left</span>
-                            <span id="dryer-time" class="fw-bold">--</span>
+                            <div><span>Time left:</span> <span id="dryer-time" class="fw-bold">--</span></div>
+                            <div class="d-flex gap-1">
+                                <div id="dryer-pause" class="toggle-btn" onclick="press('button.dryer_pause')">PAUSE</div>
+                                <div id="dryer-power" class="toggle-btn" onclick="toggle('switch.dryer_power')">POWER</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -652,6 +666,22 @@ async function toggle(entity) {
         }
     } catch (e) {
         console.error('Toggle error:', e);
+    }
+}
+
+async function press(entity) {
+    try {
+        const res = await fetch('/api/press', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({entity}) 
+        });
+        const data = await res.json();
+        if (!data.success) {
+            console.error('Press failed for', entity);
+        }
+    } catch (e) {
+        console.error('Press error:', e);
     }
 }
 
@@ -878,6 +908,7 @@ async function updateData() {
         if (features.washer !== false && washerTime > 0) {
             document.getElementById('washer-section').style.display = '';
             document.getElementById('washer-time').textContent = formatDuration(washerTime);
+            document.getElementById('washer-power').className = 'toggle-btn ' + (state.washer_power ? 'on' : 'off');
         } else {
             document.getElementById('washer-section').style.display = 'none';
         }
@@ -887,6 +918,7 @@ async function updateData() {
         if (features.dryer !== false && dryerTime > 0) {
             document.getElementById('dryer-section').style.display = '';
             document.getElementById('dryer-time').textContent = formatDuration(dryerTime);
+            document.getElementById('dryer-power').className = 'toggle-btn ' + (state.dryer_power ? 'on' : 'off');
         } else {
             document.getElementById('dryer-section').style.display = 'none';
         }
