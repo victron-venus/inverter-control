@@ -284,10 +284,11 @@ class InverterController:
         # -----------------------------------------------------------------
         # MODE: DO_NOT_SUPPLY_CHARGER (EV exclusion)
         # Goal: Don't let battery power the EV charger
-        # Limit: Output cannot exceed MPPT solar generation
+        # Limit: Output cannot exceed MPPT solar generation (only when EV is charging)
         # Note: Grid adjustment in Step 4 makes algorithm ignore EV load
+        # When EV is not charging (ev_power=0), this mode has NO effect
         # -----------------------------------------------------------------
-        if do_not_supply_charger:
+        if do_not_supply_charger and ev_power > 100:
             max_output = max(0, mppt_total - SOLAR_OUTPUT_OFFSET)
             min_setpoint = -max_output  # Most negative allowed (max output)
             if vanew < min_setpoint:
