@@ -1,8 +1,8 @@
 # Inverter Control
 
-[![CI](https://github.com/4alvit/inverter-control/actions/workflows/ci.yml/badge.svg)](https://github.com/4alvit/inverter-control/actions/workflows/ci.yml)
+[![CI](https://github.com/victron-venus/inverter-control/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/inverter-control/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/4alvit/inverter-control)](https://github.com/4alvit/inverter-control/releases)
+[![Release](https://img.shields.io/github/v/release/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/releases)
 
 Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
