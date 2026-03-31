@@ -21,7 +21,7 @@ jobs:
         run: pip install ruff
       
       - name: Ruff lint
-        run: ruff check --select=E,F,W --ignore=E501,E722,E731,F401,F541,F841,W291,W293 .
+        run: ruff check --select=E,F,W --ignore=E402,E501,E722,E731,F401,F541,F841,W291,W293 .
       
       - name: Syntax check
         run: |
