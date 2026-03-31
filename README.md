@@ -236,6 +236,52 @@ Flags:
 - `[CHG]` - Charge battery mode
 - `[MC+/-]` - Minimize charging load changes
 
+## Grid Metering Options
+
+For accurate grid-zero control, you need real-time power measurement at the grid entry point. Here are the options:
+
+### Recommended: Shelly with CT Clamp
+
+Any Shelly device with external CT (current transformer) clamp input works well:
+- **Shelly Pro 3EM** - 3-phase, Ethernet + WiFi, local MQTT
+- **Shelly EM** - Single phase, WiFi, local MQTT
+- Low latency (~100ms), fully local, no cloud dependency
+
+### Emporia Vue
+
+Vue energy monitors can work but have significant limitations:
+
+| Version | Pros | Cons |
+|---------|------|------|
+| **Vue 2** | Affordable, easy setup | Cloud-only by default (us-east-2 = high latency), 2.4GHz WiFi only |
+| **Vue 3** | Has Ethernet port | ESPHome reflash may not work with Ethernet, falls back to WiFi |
+
+**Vue with ESPHome**: You can reflash Vue 2/3 with ESPHome for local MQTT, eliminating cloud latency. However:
+- Vue 2: No Ethernet, 2.4GHz WiFi can introduce jitter
+- Vue 3: Ethernet support in ESPHome is experimental, may not work
+
+### Victron Energy Meters
+
+Official Victron solutions like **VM-3P75CT** (3-phase CT meter):
+- **Pros**: Native D-Bus integration, no additional software needed
+- **Cons**: 
+  - Expensive (~$300+)
+  - Requires Ethernet cable to electrical panel (often in garage)
+  - Reports instantaneous values which can make control loop less stable than averaged readings
+
+### Practical Recommendation
+
+For most setups, **Shelly with CT clamp** offers the best balance:
+1. Local MQTT with sub-100ms latency
+2. Ethernet option (Pro models) for reliability
+3. Affordable (~$50-80)
+4. Easy integration with this controller
+
+If already using Vue with cloud, it still works but expect:
+- 500-2000ms latency from us-east-2 cloud
+- Occasional missed readings
+- Less responsive grid-zero tracking
+
 ## Troubleshooting
 
 ### Service not starting
