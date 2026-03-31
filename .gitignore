@@ -41,3 +41,6 @@ secrets.py
 # Old scripts (contain hardcoded tokens)
 inverter.sh
 inverter.py
+
+# Russian documentation (local only)
+LOGIC_RUS.md

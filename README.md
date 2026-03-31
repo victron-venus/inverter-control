@@ -142,11 +142,25 @@ svstat /service/inverter-control
 # Restart
 svc -t /service/inverter-control
 
-# Stop
+# Stop / Start
 svc -d /service/inverter-control
+svc -u /service/inverter-control
 
 # View logs
 tail -f /var/log/inverter-control/current | tai64nlocal
+```
+
+### API Endpoints
+
+```bash
+# System state (JSON)
+curl -sk https://localhost:8080/api/state | python3 -m json.tool
+
+# Console output (last lines)
+curl -sk https://localhost:8080/api/console
+
+# History for graphs
+curl -sk https://localhost:8080/api/history
 ```
 
 ### Console Access
