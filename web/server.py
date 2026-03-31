@@ -72,6 +72,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """Send HTML response"""
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
         self.end_headers()
         self.wfile.write(content.encode())
     
@@ -590,21 +593,26 @@ async function toggle(entity) {
 }
 
 async function toggleDryRun() {
-    const res = await fetch('/api/dry-run', { method: 'POST' });
-    const data = await res.json();
-    updateDryRunBtn(data.dry_run);
+    try {
+        const res = await fetch('/api/dry-run', { method: 'POST' });
+        const data = await res.json();
+        updateDryRunBtn(data.dry_run);
+    } catch (e) {
+        console.error('toggleDryRun error:', e);
+        alert('Failed to toggle DRY mode: ' + e.message);
+    }
 }
 
 function updateDryRunBtn(isDryRun) {
     const btn = document.getElementById('dry-run-btn');
-    // Clear any inline styles
-    btn.style.cssText = '';
+    // Remove old state classes
+    btn.classList.remove('on', 'off');
     if (isDryRun) {
-        // DRY mode ON - orange warning color
-        btn.className = 'toggle-btn dry-on';
+        // DRY mode ON - green like other active buttons
+        btn.classList.add('on');
     } else {
-        // DRY mode OFF - same as other inactive buttons
-        btn.className = 'toggle-btn off';
+        // DRY mode OFF - grey like other inactive buttons
+        btn.classList.add('off');
     }
 }
 
@@ -618,24 +626,24 @@ function updateEssModeBtn(essMode) {
     const btn = document.getElementById('ess-mode-btn');
     if (!essMode) return;
     
-    // Clear any inline styles
-    btn.style.cssText = '';
-    
     const modeName = essMode.mode_name || '';
+    
+    // Remove old state classes
+    btn.classList.remove('on', 'off', 'dry-on');
     
     if (modeName === 'Off' || modeName === 'Charger only') {
         // Victron is off or not inverting - grey inactive
-        btn.className = 'toggle-btn off';
+        btn.classList.add('off');
         btn.innerHTML = '<i class="fas fa-power-off me-1"></i>' + modeName;
         btn.title = 'Victron is ' + modeName;
     } else if (essMode.is_external) {
         // External control mode - active green
-        btn.className = 'toggle-btn on';
+        btn.classList.add('on');
         btn.innerHTML = '<i class="fas fa-plug me-1"></i>External';
         btn.title = 'External control mode - click for Optimized without BatteryLife';
     } else {
         // Optimized mode - also active green (it's a working mode)
-        btn.className = 'toggle-btn on';
+        btn.classList.add('on');
         btn.innerHTML = '<i class="fas fa-bolt me-1"></i>Optimized';
         btn.title = 'Optimized without BatteryLife - click for External control';
     }
