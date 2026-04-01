@@ -950,19 +950,10 @@ async function updateData() {
         // Home section - always visible if HA connected
         if (features.ha !== false) {
             document.getElementById('home-section').style.display = '';
-            // Only update if not pending (waiting for HA response)
-            const recliner = document.getElementById('home-recliner');
-            const garage = document.getElementById('home-garage');
-            const laundry = document.getElementById('home-laundry');
-            if (!recliner.classList.contains('pending')) {
-                recliner.className = 'toggle-btn ' + (state.home_recliner ? 'on' : 'off');
-            }
-            if (!garage.classList.contains('pending')) {
-                garage.className = 'toggle-btn ' + (state.home_garage ? 'on' : 'off');
-            }
-            if (!laundry.classList.contains('pending')) {
-                laundry.className = 'toggle-btn ' + (state.laundry_outlet ? 'on' : 'off');
-            }
+            // Always update state from HA (removes pending)
+            document.getElementById('home-recliner').className = 'toggle-btn ' + (state.home_recliner ? 'on' : 'off');
+            document.getElementById('home-garage').className = 'toggle-btn ' + (state.home_garage ? 'on' : 'off');
+            document.getElementById('home-laundry').className = 'toggle-btn ' + (state.laundry_outlet ? 'on' : 'off');
         } else {
             document.getElementById('home-section').style.display = 'none';
         }

@@ -44,3 +44,6 @@ inverter.py
 
 # Russian documentation (local only)
 LOGIC_RUS.md
+
+commit.txt
+release.txt
