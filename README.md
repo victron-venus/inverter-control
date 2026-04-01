@@ -6,7 +6,13 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Venus OS](https://img.shields.io/badge/Venus%20OS-3.x-blue)](https://github.com/victronenergy/venus)
 [![GitHub stars](https://img.shields.io/github/stars/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/issues)
 [![GitHub last commit](https://img.shields.io/github/last-commit/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/commits/main)
+[![Code size](https://img.shields.io/github/languages/code-size/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/victron-venus/inverter-control/graphs/commit-activity)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/victron-venus/inverter-control/pulls)
+[![Victron Community](https://img.shields.io/badge/Victron-Community-blue)](https://community.victronenergy.com/)
 
 Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
