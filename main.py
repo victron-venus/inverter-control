@@ -73,7 +73,7 @@ except ImportError:
     SSL_KEY = None
 from victron import get_victron
 from homeassistant import get_ha
-from web.server import start_web_server, stop_web_server, add_history_point, add_console_line, start_tcp_console, stop_tcp_console
+from web.server import start_web_server, stop_web_server, add_history_point, add_console_line, broadcast_console_tcp, start_tcp_console, stop_tcp_console
 
 
 class InverterController:
@@ -674,9 +674,10 @@ class InverterController:
             line = self.format_console_output(sys_data, setpoint, flags)
             print(line)
             
-            # Strip ANSI codes for web console
+            # Strip ANSI codes for web console, keep colors for TCP
             clean_line = re.sub(r'\033\[[0-9;]*m', '', line)
             add_console_line(clean_line)
+            broadcast_console_tcp(line)
             
             # Update state for web
             self.update_state(sys_data, setpoint)

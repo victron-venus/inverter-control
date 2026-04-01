@@ -135,8 +135,12 @@ def add_history_point(data: Dict[str, Any]):
 
 
 def add_console_line(line: str):
-    """Add line to console log and broadcast to TCP clients"""
+    """Add line to console log (for web, no ANSI codes)"""
     console_log.append(line)
+
+
+def broadcast_console_tcp(line: str):
+    """Broadcast line to TCP clients (with ANSI colors)"""
     _broadcast_to_tcp(line)
 
 
