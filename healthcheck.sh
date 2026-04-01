@@ -5,7 +5,7 @@
 #
 
 SERVICE="inverter-control"
-CHECK_URL="http://127.0.0.1:8080/api/state"
+CHECK_URL="https://127.0.0.1:8080/api/state"
 CHECK_INTERVAL=30
 FAIL_THRESHOLD=3
 LOG_FILE="/var/log/inverter-control.log"

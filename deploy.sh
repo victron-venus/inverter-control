@@ -51,6 +51,7 @@ else
     # Note: keepalive removed - it was causing issues and the restart is fast enough
     echo ">>> Restarting service..."
     ssh "$SSH_HOST" "svc -t /service/inverter-control 2>/dev/null || true"
+    ssh "$SSH_HOST" "svc -t /service/inverter-healthcheck 2>/dev/null || true"
 fi
 
 # Wait for service to come up

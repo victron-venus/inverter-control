@@ -1,2 +1,3 @@
 #!/bin/sh
-ssh r 'svc -t /service/inverter-control'
+ssh Cerbo 'svc -t /service/inverter-control'
+ssh Cerbo 'svc -t /service/inverter-healthcheck'

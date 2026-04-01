@@ -134,9 +134,9 @@ echo "  Status:      svstat /service/$SERVICE_NAME"
 echo "  Restart:     svc -t /service/$SERVICE_NAME"
 echo "  Stop:        svc -d /service/$SERVICE_NAME"
 echo "  Error log:   tail -f /var/log/$SERVICE_NAME.log"
-echo "  Live view:   /data/inverter_control/live.sh"
+echo "  Live view: nc <cerbo-ip> 9999"
 echo ""
-echo "Web interface: http://<cerbo-ip>:8080"
+echo "Web interface: https://<cerbo-ip>:8080"
 echo ""
 
 # Show service status
