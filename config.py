@@ -116,6 +116,11 @@ EMA_ALPHA = 0.3                # Exponential Moving Average smoothing (0.1=smoot
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
 SOLAR_OUTPUT_OFFSET = 60    # Watts
 
+# Inverter efficiency - DC to AC conversion losses
+# MPPT produces DC 48V, inverter converts to AC 110V with ~92-95% efficiency
+# Example: 2000W DC from MPPT → ~1850W AC output (at 92.5%)
+INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
+
 # =============================================================================
 # HOME ASSISTANT
 # =============================================================================

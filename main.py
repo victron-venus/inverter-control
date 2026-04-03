@@ -57,7 +57,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (
     POWER_LIMIT_MAX, POWER_LIMIT_MIN, LOOP_INTERVAL,
     GRID_ZERO_DEADBAND_LOW, GRID_ZERO_DEADBAND_HIGH, DAMPING_FACTOR, EMA_ALPHA,
-    SOLAR_OUTPUT_OFFSET,
+    SOLAR_OUTPUT_OFFSET, INVERTER_EFFICIENCY,
     WEB_PORT, WEB_HOST, INVERTER_STATES, Colors as C,
     HA_BOOLEANS, HISTORY_INTERVAL, DRY_RUN, TIMEZONE,
     ENABLE_EV, ENABLE_WATER, ENABLE_HA_LOADS, ENABLE_HA,
@@ -306,38 +306,55 @@ class InverterController:
         # MODE: ONLY_CHARGING
         # Goal: Don't discharge battery - output only what MPPT produces
         # Use case: Preserve battery, use only direct solar
+        # Note: Apply inverter efficiency (DC→AC losses ~5-8%)
         # -----------------------------------------------------------------
         if only_charging:
-            output = mppt_total - SOLAR_OUTPUT_OFFSET
-            vanew = -max(0, int(output))  # Negative = output to house
-            flags += f"[OC:{int(mppt_total)}-{SOLAR_OUTPUT_OFFSET}] "
+            # MPPT DC power * efficiency = actual AC output
+            ac_output = int(mppt_total * INVERTER_EFFICIENCY) - SOLAR_OUTPUT_OFFSET
+            vanew = -max(0, ac_output)  # Negative = output to house
+            flags += f"[OC:{int(mppt_total)}*{INVERTER_EFFICIENCY}-{SOLAR_OUTPUT_OFFSET}={ac_output}] "
         
         # -----------------------------------------------------------------
         # MODE: DO_NOT_SUPPLY_CHARGER (EV exclusion)
         # Goal: Don't let battery power the EV charger
         # Limit: Output cannot exceed MPPT solar generation (only when EV is charging)
         # Note: Grid adjustment in Step 4 makes algorithm ignore EV load
-        # When EV is not charging (ev_power=0), this mode has NO effect
+        # SAFETY: If HA disconnected, assume EV might be charging - don't export to grid
         # -----------------------------------------------------------------
-        if do_not_supply_charger and ev_power > 100:
-            max_output = max(0, mppt_total - SOLAR_OUTPUT_OFFSET)
-            min_setpoint = -max_output  # Most negative allowed (max output)
-            if vanew < min_setpoint:
-                vanew = min_setpoint
-                flags += "[NoEV] "
+        if do_not_supply_charger:
+            if not self.ha.connected:
+                # HA disconnected: safety mode - no grid export (setpoint >= 0)
+                if vanew < 0:
+                    vanew = 0
+                    flags += "[NoEV:HA?] "
+            elif ev_power > 100:
+                # HA connected, EV is charging: limit output to MPPT * efficiency
+                max_ac_output = max(0, int(mppt_total * INVERTER_EFFICIENCY) - SOLAR_OUTPUT_OFFSET)
+                min_setpoint = -max_ac_output  # Most negative allowed
+                if vanew < min_setpoint:
+                    vanew = min_setpoint
+                    flags += f"[NoEV:{max_ac_output}] "
         
         # -----------------------------------------------------------------
         # MODE: LIMIT_TO_EV
         # Goal: When EV is charging, export most solar to grid, keep 500W for battery
         # Trigger: garage (L1 charger) > 1kW OR ev_power (L2 charger) > 1kW
-        # Action: setpoint = -(mppt_total - 500) = export all solar minus 500W
+        # Action: setpoint = -(mppt * efficiency - 500)
+        # SAFETY: If HA disconnected, don't export to grid
         # -----------------------------------------------------------------
         BATTERY_RESERVE = 500  # Watts to keep for battery charging
         ev_charging_detected = garage_power > 1000 or ev_power > 1000
-        if limit_to_ev and ev_charging_detected:
-            export_power = max(0, int(mppt_total - BATTERY_RESERVE))
-            vanew = -export_power  # Negative = export to grid
-            flags += f"[LimEV:{int(mppt_total)}-{BATTERY_RESERVE}] "
+        if limit_to_ev:
+            if not self.ha.connected:
+                # HA disconnected: safety mode - no grid export
+                if vanew < 0:
+                    vanew = 0
+                    flags += "[LimEV:HA?] "
+            elif ev_charging_detected:
+                ac_output = int(mppt_total * INVERTER_EFFICIENCY)
+                export_power = max(0, ac_output - BATTERY_RESERVE)
+                vanew = -export_power  # Negative = export to grid
+                flags += f"[LimEV:{ac_output}-{BATTERY_RESERVE}] "
         
         # -----------------------------------------------------------------
         # MODE: NO_FEED
