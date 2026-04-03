@@ -39,14 +39,49 @@ MQTT_TOPIC_PREFIX = "inverter"
 
 ### 2. Start Remote Dashboard
 
+#### Option A: Docker (Recommended)
+
 ```bash
-# On Linux server
+# Using pre-built image
+docker run -d \
+  --name inverter-dashboard \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -e MQTT_HOST=192.168.160.150 \
+  ghcr.io/victron-venus/inverter-dashboard:latest
+
+# Or build locally
+cd remote
+docker build -t inverter-dashboard .
+docker run -d -p 8080:8080 -e MQTT_HOST=192.168.160.150 inverter-dashboard
+```
+
+#### Option B: Portainer Stack
+
+1. Go to **Stacks** → **Add stack**
+2. Name: `inverter-dashboard`
+3. Build method: **Web editor**
+4. Paste content from `portainer-stack.yml`
+5. Add environment variables:
+   - `MQTT_HOST`: `192.168.160.150` (your Cerbo IP)
+6. Click **Deploy**
+
+#### Option C: Docker Compose
+
+```bash
+cd remote
+MQTT_HOST=192.168.160.150 docker-compose up -d
+```
+
+#### Option D: Manual (without Docker)
+
+```bash
 cd remote
 pip3 install -r requirements.txt
-python3 server.py --mqtt-host <BROKER_IP>
+python3 server.py --mqtt-host 192.168.160.150
 
 # With SSL
-python3 server.py --mqtt-host <BROKER_IP> --ssl-cert cert.pem --ssl-key key.pem
+python3 server.py --mqtt-host 192.168.160.150 --ssl-cert cert.pem --ssl-key key.pem
 ```
 
 ## Configuration
