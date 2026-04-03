@@ -307,12 +307,22 @@ class InverterController:
         # Goal: Don't discharge battery - output only what MPPT produces
         # Use case: Preserve battery, use only direct solar
         # Note: Apply inverter efficiency (DC→AC losses ~5-8%)
+        # 
+        # IMPORTANT: We LIMIT the base calculation, not override it.
+        # This prevents grid export when house consumption < MPPT output.
         # -----------------------------------------------------------------
         if only_charging:
-            # MPPT DC power * efficiency = actual AC output
-            ac_output = int(mppt_total * INVERTER_EFFICIENCY) - SOLAR_OUTPUT_OFFSET
-            vanew = -max(0, ac_output)  # Negative = output to house
-            flags += f"[OC:{int(mppt_total)}*{INVERTER_EFFICIENCY}-{SOLAR_OUTPUT_OFFSET}={ac_output}] "
+            # Max AC output without draining battery
+            max_ac_output = int(mppt_total * INVERTER_EFFICIENCY) - SOLAR_OUTPUT_OFFSET
+            min_setpoint = -max(0, max_ac_output)  # Most negative allowed
+            
+            # Limit: don't output more than MPPT allows
+            if vanew < min_setpoint:
+                vanew = min_setpoint
+                flags += f"[OC:{max_ac_output}] "
+            else:
+                # Base calculation is already within MPPT limits
+                flags += f"[OC~] "
         
         # -----------------------------------------------------------------
         # MODE: DO_NOT_SUPPLY_CHARGER (EV exclusion)
