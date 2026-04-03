@@ -56,7 +56,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import (
     POWER_LIMIT_MAX, POWER_LIMIT_MIN, LOOP_INTERVAL,
-    GRID_ZERO_DEADBAND, GRID_CORRECTION_SMALL, DAMPING_FACTOR,
+    GRID_ZERO_DEADBAND_LOW, GRID_ZERO_DEADBAND_HIGH, DAMPING_FACTOR, EMA_ALPHA,
     SOLAR_OUTPUT_OFFSET,
     WEB_PORT, WEB_HOST, INVERTER_STATES, Colors as C,
     HA_BOOLEANS, HISTORY_INTERVAL, DRY_RUN, TIMEZONE,
@@ -106,6 +106,7 @@ class InverterController:
         self.previous_setpoint = 0
         self.manual_setpoint: Optional[int] = None
         self.delay = 0  # Delay counter for load switching
+        self.filtered_gt: Optional[float] = None  # EMA-filtered grid power
         
         # Loop counters (for periodic tasks)
         self.loop_count = 0
@@ -268,18 +269,32 @@ class InverterController:
         # =====================================================================
         # STEP 5: BASE CALCULATION - TARGET GRID ZERO
         # Goal: Adjust inverter output to make grid power close to zero
-        # Formula: new_setpoint = current_output - grid_import
-        #          If importing 500W, increase output by 500W
-        #          If exporting 200W, decrease output by 200W
+        # 
+        # Stability improvements for fast CT meters (VM-3P75CT, Shelly, etc.):
+        # 1. EMA filtering - smooth out instantaneous spikes
+        # 2. Deadband - ignore small fluctuations
+        # 3. Damping - apply only partial correction to prevent overshoot
         # =====================================================================
         
-        vanew = inv_power - effective_gt
+        # Apply Exponential Moving Average (EMA) to smooth grid readings
+        # filtered = α * current + (1-α) * previous
+        if self.filtered_gt is None:
+            self.filtered_gt = effective_gt  # Initialize on first reading
+        else:
+            self.filtered_gt = (EMA_ALPHA * effective_gt) + ((1 - EMA_ALPHA) * self.filtered_gt)
         
-        # Stability: if grid is already near zero, keep current setpoint
-        # Prevents oscillation around the target
-        if -30 < effective_gt < 50:
+        smoothed_gt = self.filtered_gt
+        
+        # Deadband: if grid is within acceptable range, keep current setpoint
+        # This prevents hunting when grid is already near zero
+        if GRID_ZERO_DEADBAND_LOW < smoothed_gt < GRID_ZERO_DEADBAND_HIGH:
             vanew = self.previous_setpoint
             flags += "[~] "
+        else:
+            # Calculate correction with damping factor
+            # Only apply DAMPING_FACTOR (e.g., 70%) of the correction to prevent overshoot
+            correction = -smoothed_gt * DAMPING_FACTOR
+            vanew = inv_power + correction
         
         # =====================================================================
         # STEP 6: APPLY SPECIAL OPERATING MODES
@@ -294,8 +309,8 @@ class InverterController:
         # -----------------------------------------------------------------
         if only_charging:
             output = mppt_total - SOLAR_OUTPUT_OFFSET
-            vanew = -max(0, output)  # Negative = output to house
-            flags += f"[OC:{mppt_total}-{SOLAR_OUTPUT_OFFSET}] "
+            vanew = -max(0, int(output))  # Negative = output to house
+            flags += f"[OC:{int(mppt_total)}-{SOLAR_OUTPUT_OFFSET}] "
         
         # -----------------------------------------------------------------
         # MODE: DO_NOT_SUPPLY_CHARGER (EV exclusion)
@@ -320,22 +335,9 @@ class InverterController:
         BATTERY_RESERVE = 500  # Watts to keep for battery charging
         ev_charging_detected = garage_power > 1000 or ev_power > 1000
         if limit_to_ev and ev_charging_detected:
-            export_power = max(0, mppt_total - BATTERY_RESERVE)
+            export_power = max(0, int(mppt_total - BATTERY_RESERVE))
             vanew = -export_power  # Negative = export to grid
-            flags += f"[LimEV:{mppt_total}-{BATTERY_RESERVE}] "
-        
-        # -----------------------------------------------------------------
-        # MODE: LIMIT_TO_EV
-        # Goal: When EV is charging, export most solar to grid, keep 500W for battery
-        # Trigger: garage (L1 charger) > 1kW OR ev_power (L2 charger) > 1kW
-        # Action: setpoint = -(mppt_total - 500) = export all solar minus 500W
-        # -----------------------------------------------------------------
-        BATTERY_RESERVE = 500  # Watts to keep for battery charging
-        ev_charging_detected = garage_power > 1000 or ev_power > 1000
-        if limit_to_ev and ev_charging_detected:
-            export_power = max(0, mppt_total - BATTERY_RESERVE)
-            vanew = -export_power  # Negative = export to grid
-            flags += f"[LimEV:{mppt_total}-{BATTERY_RESERVE}] "
+            flags += f"[LimEV:{int(mppt_total)}-{BATTERY_RESERVE}] "
         
         # -----------------------------------------------------------------
         # MODE: NO_FEED
@@ -514,10 +516,14 @@ class InverterController:
         net_usage = int(self.ha.get_sensor('net_usage', gt))
         home_total = int(self.ha.get_sensor('home_total', tt))
         
-        # Format: time[flags]>setpoint(prev) g:total(L1+L2)net tt(L1+L2) tt:home [State]bpW,soc%,b1%,b2% solar loads water car voltage
+        # Format: time[flags]>setpoint(prev) g:total[smooth](L1+L2)net tt(L1+L2) tt:home [State]bpW,soc%,b1%,b2% solar loads water car voltage
+        # Show smoothed grid value in brackets if different from raw by >10W
+        filtered_gt = int(self.filtered_gt) if self.filtered_gt is not None else gt
+        smooth_str = f"[{filtered_gt}]" if abs(gt - filtered_gt) > 10 else ""
+        
         line = (
             f"{now}{flags}>{C.CYAN}{setpoint}{C.RESET}({self.previous_setpoint}) "
-            f"{C.GREEN}g:{gt}({g1}+{g2}){net_usage}{C.RESET}\t"
+            f"{C.GREEN}g:{gt}{smooth_str}({g1}+{g2}){net_usage}{C.RESET}\t"
             f"{tt}({t1}+{t2}) tt:{home_total} "
             f"{C.YELLOW}[{inv_state_name}]{bp}W,{comp_v}%,{soc1}%,{soc2}%{C.RESET} "
             f"{solar_str} {loads_str} "
@@ -594,6 +600,7 @@ class InverterController:
         self.state = {
             **sys_data,
             'setpoint': setpoint,
+            'filtered_gt': self.filtered_gt,  # EMA-smoothed grid power
             'dry_run': self.dry_run,
             'mppt_total': mppt_total,
             'tasmota_total': tasmota_total,

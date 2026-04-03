@@ -30,6 +30,7 @@ current_state: Dict[str, Any] = {}
 console_lines: list = []
 ws_clients: Set[WebSocket] = set()
 mqtt_client: mqtt.Client = None
+main_loop: asyncio.AbstractEventLoop = None
 
 
 def on_mqtt_connect(client, userdata, flags, rc, properties=None):
@@ -47,7 +48,8 @@ def on_mqtt_message(client, userdata, msg):
         if msg.topic == "inverter/state":
             current_state = json.loads(msg.payload.decode())
             # Broadcast to WebSocket clients
-            asyncio.run_coroutine_threadsafe(broadcast_state(), asyncio.get_event_loop())
+            if main_loop and main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(broadcast_state(), main_loop)
         
         elif msg.topic == "inverter/console":
             line = msg.payload.decode()
@@ -87,7 +89,10 @@ def send_command(cmd: str, payload: dict = None):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown"""
-    global mqtt_client
+    global mqtt_client, main_loop
+    
+    # Store reference to the main event loop for use in MQTT callbacks
+    main_loop = asyncio.get_running_loop()
     
     # Start MQTT client
     mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -177,12 +182,12 @@ def get_dashboard_html() -> str:
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
     <style>
         :root {
-            --bg-dark: #0a0a0a; --bg-card: #151515; --border: #2a2a2a;
-            --text: #e0e0e0; --text-dim: #666; --accent: #00d4aa;
-            --solar: #f5a623; --grid: #4a90d9; --battery: #7ed321; --consumption: #e74c3c;
+            --bg-light: #f5f5f5; --bg-card: #ffffff; --border: #e0e0e0;
+            --text: #333333; --text-dim: #666666; --accent: #00a080;
+            --solar: #e67e00; --grid: #3a7abd; --battery: #5cb318; --consumption: #d9534f;
         }
-        body { background: var(--bg-dark); color: var(--text); font-family: 'Segoe UI', sans-serif; }
-        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; }
+        body { background: var(--bg-light); color: var(--text); font-family: 'Segoe UI', sans-serif; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
         .card-header { background: transparent; border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; color: var(--text-dim); padding: 6px 12px; }
         .card-body { padding: 8px 12px; }
         .stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
@@ -190,11 +195,10 @@ def get_dashboard_html() -> str:
         .stat-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
         .toggle-btn { cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 0.45rem; font-weight: 600; border: 1px solid var(--border); transition: all 0.15s; display: inline-block; margin: 1px; }
         .toggle-btn.on { background: #2e7d32; border-color: #4caf50; color: #fff; }
-        .toggle-btn.off { background: #1a1a1a; color: #555; }
-        .toggle-btn:hover { transform: scale(1.02); filter: brightness(1.1); }
-        #console { font-family: 'JetBrains Mono', monospace; font-size: 0.45rem; background: #000; color: #0f0; padding: 6px; height: 180px; overflow-y: auto; border-radius: 6px; }
+        .toggle-btn.off { background: #f0f0f0; color: #999; border-color: #ddd; }
+        .toggle-btn:hover { transform: scale(1.02); filter: brightness(0.95); }
         .text-solar { color: var(--solar); } .text-grid { color: var(--grid); } .text-battery { color: var(--battery); } .text-consumption { color: var(--consumption); } .text-accent { color: var(--accent); }
-        .daily-stats { font-size: 0.75rem; color: var(--text-dim); padding: 8px 12px; background: #0d0d0d; border-radius: 6px; font-family: monospace; }
+        .daily-stats { font-size: 0.75rem; color: var(--text-dim); padding: 8px 12px; background: #fff; border: 1px solid var(--border); border-radius: 6px; font-family: monospace; }
         .chart-wrap { height: 200px; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
         .status-dot.online { background: #4caf50; } .status-dot.offline { background: #f44336; }
@@ -220,7 +224,7 @@ def get_dashboard_html() -> str:
                 <div class="toggle-btn" :class="essClass" @click="send('ess_mode')">
                     <i class="fas fa-bolt me-1"></i>{{ essText }}
                 </div>
-                <div class="vr mx-1" style="border-left:1px solid #333;height:16px;"></div>
+                <div class="vr mx-1" style="border-left:1px solid #ccc;height:16px;"></div>
                 <div v-for="(val, key) in state.booleans" :key="key" 
                      class="toggle-btn" :class="val ? 'on' : 'off'"
                      @click="send('toggle', {entity: 'input_boolean.' + key})">
@@ -260,7 +264,7 @@ def get_dashboard_html() -> str:
             <div class="card h-100"><div class="card-body text-center">
                 <div class="stat-label">Battery</div>
                 <div class="stat-value text-battery">{{ Math.floor(state.battery_soc || 0) }}%</div>
-                <div class="stat-sub">{{ formatPower(state.battery_power) }} | {{ (state.battery_voltage || 0).toFixed(2) }}V</div>
+                <div class="stat-sub">{{ formatPower(state.battery_power) }} | {{ (state.battery_voltage || 0).toFixed(2) }}V {{ batteryIndividual }}</div>
             </div></div>
         </div>
         <div class="col-md-2">
@@ -318,30 +322,24 @@ def get_dashboard_html() -> str:
         </div>
     </div>
     
-    <!-- Console -->
-    <div class="row g-2 mb-2">
-        <div class="col-md-8">
-            <div class="card"><div class="card-body p-1">
-                <div id="console" ref="consoleEl">
-                    <div v-for="(line, i) in state.console" :key="i">{{ line }}</div>
-                </div>
-            </div></div>
-        </div>
-        <div class="col-md-4" v-if="state.features?.ha_loads !== false">
+    <!-- Loads -->
+    <div class="row g-2 mb-2" v-if="state.features?.ha_loads !== false && sortedLoads.length">
+        <div class="col-12">
             <div class="card">
                 <div class="card-header">Loads</div>
-                <div class="card-body py-1" style="font-size:0.65rem;color:#888">
-                    <div v-for="[name, val] in sortedLoads" :key="name" class="d-flex justify-content-between">
-                        <span>{{ name }}</span><span>{{ Math.floor(val) }}W</span>
+                <div class="card-body py-1" style="font-size:0.65rem;color:#666">
+                    <div class="d-flex flex-wrap gap-3">
+                        <div v-for="[name, val] in sortedLoads" :key="name">
+                            <span>{{ name }}:</span> <span class="fw-bold">{{ Math.floor(val) }}W</span>
+                        </div>
                     </div>
-                    <div v-if="!sortedLoads.length" class="text-muted">No active loads</div>
                 </div>
             </div>
         </div>
     </div>
     
     <!-- Status -->
-    <div class="mt-2 text-center small" style="color:#888">
+    <div class="mt-2 text-center small" style="color:#666">
         <span class="status-dot" :class="state.ha_connected ? 'online' : 'offline'"></span>
         HA: {{ state.ha_connected ? 'Connected' : 'Disconnected' }}
         &nbsp;|&nbsp; Uptime: {{ formatUptime(state.uptime || 0) }}
@@ -358,7 +356,6 @@ createApp({
         const wsConnected = ref(false);
         const mqttConnected = ref(false);
         const chartEl = ref(null);
-        const consoleEl = ref(null);
         let ws = null;
         let chart = null;
         let reconnectTimer = null;
@@ -397,10 +394,6 @@ createApp({
                     }
                     updateChart();
                 }
-                
-                nextTick(() => {
-                    if (consoleEl.value) consoleEl.value.scrollTop = 99999;
-                });
             };
         }
         
@@ -454,12 +447,53 @@ createApp({
             return Object.entries(loads).filter(([_, v]) => v > 10).sort((a, b) => b[1] - a[1]);
         });
         
+        const batteryIndividual = computed(() => {
+            const b1 = state.value.battery1_soc;
+            const b2 = state.value.battery2_soc;
+            if (b1 !== undefined && b2 !== undefined) {
+                return `[${Math.floor(b1)}%|${Math.floor(b2)}%]`;
+            }
+            return '';
+        });
+        
         const dailyStatsHtml = computed(() => {
             const ds = state.value.daily_stats || {};
+            const s = state.value;
+            
             const prod = (ds.produced_today || 0).toFixed(2);
             const dollars = (ds.produced_dollars || 0).toFixed(2);
             const grid = (ds.grid_kwh || 0).toFixed(2);
-            return `<span style="color:#f5a623">☀️ ${prod}kWh</span> <span style="color:#4caf50">($${dollars})</span> | Grid: ${grid}kWh`;
+            const gridDollars = (ds.grid_dollars || 0).toFixed(2);
+            
+            // Solar breakdown: mppt + tasmota with individual values
+            const mpptKwh = (ds.mppt_kwh || []).map(v => v.toFixed(2) + 'kW');
+            const tasmotaKwh = (ds.tasmota_kwh || []).map(v => v.toFixed(2) + 'kW');
+            const mpptDollars = (ds.mppt_dollars || []).map(v => v.toFixed(2));
+            const tasmotaDollars = (ds.tasmota_dollars || []).map(v => v.toFixed(2));
+            
+            let solarBreakdown = '';
+            if (mpptKwh.length || tasmotaKwh.length) {
+                const allKwh = [...mpptKwh, ...tasmotaKwh].join('+');
+                const allDollars = [...mpptDollars, ...tasmotaDollars].join('+');
+                solarBreakdown = ` ${allKwh}(${allDollars})`;
+            }
+            
+            // Battery stats
+            const battIn = (ds.battery_in_kwh || 0).toFixed(2);
+            const battInDollars = (ds.battery_in_dollars || 0).toFixed(2);
+            const battOut = (ds.battery_out_kwh || 0).toFixed(2);
+            const battOutDollars = (ds.battery_out_dollars || 0).toFixed(2);
+            const battDelta = (ds.battery_delta_kwh || 0).toFixed(2);
+            const battDeltaDollars = (ds.battery_delta_dollars || 0).toFixed(2);
+            
+            let result = `<span style="color:#e67e00">☀️ ${prod}kWh${solarBreakdown}</span> <span style="color:#5cb318">($${dollars})</span>`;
+            result += ` | Grid: ${grid}kWh <span style="color:#d9534f">($${gridDollars})</span>`;
+            
+            if (ds.battery_in_kwh !== undefined) {
+                result += ` | 🔋 In: ${battIn}kWh (${battInDollars}), Out: ${battOut}kWh (${battOutDollars}); Δ: ${battDelta}kWh (${battDeltaDollars})`;
+            }
+            
+            return result;
         });
         
         function initChart() {
@@ -474,7 +508,7 @@ createApp({
                     {stroke: '#7ed321', fill: 'rgba(126,211,33,0.05)', label: 'Battery'},
                     {stroke: '#00d4aa', dash: [5,5], label: 'Setpoint'},
                 ],
-                axes: [{show: false}, {grid: {stroke: '#222'}, ticks: {stroke: '#222'}}],
+                axes: [{show: false}, {grid: {stroke: '#e0e0e0'}, ticks: {stroke: '#ccc'}}],
                 legend: {show: true},
                 cursor: {show: false},
             };
@@ -506,8 +540,8 @@ createApp({
         });
         
         return {
-            state, wsConnected, mqttConnected, chartEl, consoleEl,
-            essClass, essText, solarDetail, evCharging, evPower, sortedLoads, dailyStatsHtml,
+            state, wsConnected, mqttConnected, chartEl,
+            essClass, essText, solarDetail, evCharging, evPower, sortedLoads, dailyStatsHtml, batteryIndividual,
             send, formatPower, formatKey, formatUptime
         };
     }

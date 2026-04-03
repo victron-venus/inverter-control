@@ -106,10 +106,11 @@ POWER_LIMIT_MIN = -2300     # Maximum export (negative = discharging to grid)
 LOOP_INTERVAL = 0.33        # seconds (3 times per second)
 HA_POLL_INTERVAL = 1.5      # seconds for Home Assistant polling
 
-# Grid zero targeting
-GRID_ZERO_DEADBAND = 20     # Watts - don't adjust if grid within this range
-GRID_CORRECTION_SMALL = 5   # Watts - small correction step
-DAMPING_FACTOR = 3          # Damping for large corrections
+# Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
+GRID_ZERO_DEADBAND_LOW = -50   # Watts - lower bound (slight export OK)
+GRID_ZERO_DEADBAND_HIGH = 80   # Watts - upper bound (slight import OK)
+DAMPING_FACTOR = 0.7           # Apply only 70% of calculated correction (0.0-1.0)
+EMA_ALPHA = 0.3                # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
 
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
