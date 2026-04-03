@@ -80,7 +80,7 @@ if HA_TOKEN in ("", "your_token_here", None):
 # =============================================================================
 # MQTT broker address (for remote dashboard connection)
 # Set to empty string to disable MQTT bridge
-MQTT_BROKER = ""  # e.g. "192.168.160.15" or "localhost"
+MQTT_BROKER = "localhost"  # Venus OS has built-in MQTT broker
 MQTT_PORT = 1883
 MQTT_TOPIC_PREFIX = "inverter"
 
