@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# inverter-control SetupHelper compatible setup script
+# Grid-zero feed-in control for Victron inverters with Home Assistant integration
+
+#### following line incorporates SetupHelper resources into this script
+source "/data/SetupHelper/HelperResources/IncludeHelpers"
+#### end of lines to include helper resources
+
+packageName="inverter-control"
+installDir="/data/inverter-control"
+
+#### running manually - prompt for input
+if [ "$scriptAction" == 'NONE' ]; then
+    standardActionPrompt
+fi
+
+#### install
+if [ "$scriptAction" == 'INSTALL' ]; then
+    logMessage "Installing $packageName"
+    
+    # Create directories
+    mkdir -p "$installDir"
+    mkdir -p "$installDir/web"
+    mkdir -p /var/log/inverter-control
+    
+    # Install Python scripts
+    cp "$scriptDir/main.py" "$installDir/"
+    cp "$scriptDir/config.py" "$installDir/"
+    cp "$scriptDir/homeassistant.py" "$installDir/"
+    cp "$scriptDir/victron.py" "$installDir/"
+    cp "$scriptDir/keepalive.py" "$installDir/"
+    cp "$scriptDir/mqtt_bridge.py" "$installDir/"
+    chmod +x "$installDir/main.py"
+    
+    # Install web files
+    cp -r "$scriptDir/web/"* "$installDir/web/" 2>/dev/null || true
+    
+    # Install secrets from setupOptions or use example
+    if [ -f "/data/setupOptions/$packageName/secrets.py" ]; then
+        cp "/data/setupOptions/$packageName/secrets.py" "$installDir/"
+        logMessage "Using secrets.py from setupOptions"
+    elif [ -f "$scriptDir/secrets.py" ]; then
+        cp "$scriptDir/secrets.py" "$installDir/"
+        logMessage "Using secrets.py from package (configure in /data/setupOptions/$packageName/secrets.py)"
+    else
+        cp "$scriptDir/secrets.example.py" "$installDir/secrets.py"
+        logMessage "WARNING: Using secrets.example.py - configure /data/setupOptions/$packageName/secrets.py"
+    fi
+fi
+
+#### uninstall
+if [ "$scriptAction" == 'UNINSTALL' ]; then
+    logMessage "Uninstalling $packageName"
+    
+    # Remove installation directory
+    rm -rf "$installDir"
+fi
+
+# Install/uninstall services and finish
+endScript INSTALL_SERVICE
