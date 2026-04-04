@@ -129,7 +129,37 @@ This allows running the inverter control standalone without Home Assistant.
 
 ## Installation
 
-### From local machine
+### Option 1: SetupHelper (Recommended)
+
+The easiest way to install is via [SetupHelper](https://github.com/kwindrem/SetupHelper) PackageManager:
+
+1. **Install SetupHelper** (if not already installed):
+   ```bash
+   wget -qO - https://github.com/kwindrem/SetupHelper/archive/latest.tar.gz | tar -xzf - -C /data
+   mv /data/SetupHelper-latest /data/SetupHelper
+   /data/SetupHelper/setup
+   ```
+
+2. **Add package via GUI**:
+   - Settings → PackageManager → Inactive packages → **new**
+   - Package name: `inverter-control`
+   - GitHub user: `victron-venus`
+   - Branch/tag: `latest`
+   - Proceed → Download → Install
+
+3. **Copy secrets.py** (run from your local machine):
+   ```bash
+   # Create secrets.py from example
+   cp secrets.example.py secrets.py
+   # Edit secrets.py with your HA token, sensor names, etc.
+   
+   # Copy to Cerbo
+   ./postinstall.sh
+   ```
+
+4. **Done!** The package will automatically reinstall after Venus OS updates.
+
+### Option 2: Manual Install
 
 ```bash
 cd inverter_control

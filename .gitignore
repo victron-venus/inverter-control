@@ -45,3 +45,4 @@ commit.sh
 commit.txt
 release.sh
 release.txt
+postinstall.sh
