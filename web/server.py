@@ -649,6 +649,26 @@ def get_dashboard_html() -> str:
             </div>
         </div>
         
+        <!-- Batteries and MPPT -->
+        <div class="row g-2 mb-2">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-battery-three-quarters me-2"></i>Batteries</div>
+                    <div class="card-body py-1" id="batteries" style="font-size:0.75rem;">
+                        <div class="text-muted">Loading...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header"><i class="fas fa-solar-panel me-2"></i>MPPT Chargers</div>
+                    <div class="card-body py-1" id="mppt-chargers" style="font-size:0.75rem;">
+                        <div class="text-muted">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <!-- Manual setpoint, limits, and loop interval -->
         <div class="row g-2 compact-controls">
             <div class="col-md-4">
@@ -700,6 +720,8 @@ def get_dashboard_html() -> str:
             <span id="last-update">Updated: --</span>
             &nbsp;|&nbsp;
             <span id="uptime">Uptime: --</span>
+            &nbsp;|&nbsp;
+            <span id="version">v--</span>
         </div>
     </div>
 
@@ -1113,6 +1135,44 @@ async function updateData() {
         // Loop interval
         if (!document.activeElement || document.activeElement.id !== 'loop-interval')
             document.getElementById('loop-interval').value = (state.loop_interval || 0.33).toFixed(2);
+        
+        // Version
+        document.getElementById('version').textContent = 'v' + (state.version || '?');
+        
+        // Batteries section
+        const batteries = state.batteries || [];
+        if (batteries.length > 0) {
+            let batHtml = '<div class="d-flex flex-wrap gap-2">';
+            batteries.forEach(bat => {
+                const socColor = bat.soc > 50 ? '#7ed321' : (bat.soc > 20 ? '#f5a623' : '#e74c3c');
+                let details = bat.voltage.toFixed(2) + 'V';
+                if (bat.current !== undefined) details += ' ' + bat.current.toFixed(1) + 'A';
+                if (bat.power !== undefined) details += ' ' + Math.floor(bat.power) + 'W';
+                batHtml += `<div style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:6px;padding:6px;background:rgba(0,0,0,0.2)">
+                    <div style="font-size:0.65rem;color:var(--text-dim);font-weight:600">${bat.name}</div>
+                    <div>${details}</div>
+                    <div style="color:${socColor};font-weight:bold">${bat.soc.toFixed(1)}% <span style="color:var(--text-dim);font-weight:normal">${bat.state}</span></div>
+                </div>`;
+            });
+            batHtml += '</div>';
+            document.getElementById('batteries').innerHTML = batHtml;
+        }
+        
+        // MPPT Chargers section
+        const mpptChargers = state.mppt_chargers || [];
+        if (mpptChargers.length > 0) {
+            let mpptHtml = '<div class="d-flex flex-wrap gap-2">';
+            mpptChargers.forEach(m => {
+                mpptHtml += `<div style="flex:1;min-width:100px;border:1px solid var(--border);border-radius:6px;padding:6px;background:rgba(0,0,0,0.2)">
+                    <div style="font-size:0.65rem;color:var(--text-dim);font-weight:600">${m.name}</div>
+                    <div style="color:var(--solar)">${m.pv_voltage.toFixed(2)}V</div>
+                    <div>${m.current.toFixed(1)}A</div>
+                    <div style="color:var(--solar);font-weight:bold">${Math.floor(m.power)}W</div>
+                </div>`;
+            });
+            mpptHtml += '</div>';
+            document.getElementById('mppt-chargers').innerHTML = mpptHtml;
+        }
         
         // Console
         document.getElementById('console').innerHTML = console_lines.map(l => `<div>${l}</div>`).join('');

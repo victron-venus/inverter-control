@@ -47,6 +47,19 @@ def log_exception(msg: str):
     """Log exception with full traceback"""
     logger.error(f"{msg}\n{traceback.format_exc()}")
 
+# Version
+def get_version() -> str:
+    """Read version from version file"""
+    try:
+        version_file = os.path.join(os.path.dirname(__file__), 'version')
+        with open(version_file, 'r') as f:
+            return f.read().strip()
+    except:
+        return 'unknown'
+
+VERSION = get_version()
+
+
 class TimeoutError(Exception):
     """Raised when a watchdog timeout occurs"""
     pass
@@ -682,6 +695,7 @@ class InverterController:
             'loop_interval': self.loop_interval,
             'ess_mode': self.victron.get_ess_mode(),
             'uptime': int(time.time() - self.start_time),
+            'version': VERSION,
         }
     
     def run_cycle(self) -> bool:
