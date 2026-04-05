@@ -278,11 +278,13 @@ def get_dashboard_html() -> str:
             --border: #2a2a2a;
             --text: #e0e0e0;
             --text-dim: #666;
+            --text-value: #ccc;
             --accent: #00d4aa;
             --solar: #f5a623;
             --grid: #4a90d9;
             --battery: #7ed321;
             --consumption: #e74c3c;
+            --subsection-bg: rgba(0,0,0,0.2);
         }
         body.light {
             --bg-dark: #f5f5f5;
@@ -290,7 +292,10 @@ def get_dashboard_html() -> str:
             --border: #ddd;
             --text: #222;
             --text-dim: #555;
+            --text-value: #333;
+            --subsection-bg: #ffffff;
         }
+        body.light .subsection { border-color: #ccc; }
         body.light #console { background: #f0f0f0; color: #000; }
         body.light .daily-stats { background: #e8e8e8; }
         body.light .toggle-btn { background: #e0e0e0; color: #333; border-color: #ccc; }
@@ -515,16 +520,16 @@ def get_dashboard_html() -> str:
                     <div class="card-body text-center">
                         <div class="stat-label">Solar</div>
                         <div class="stat-value text-solar" id="solar-total">--</div>
-                        <div class="stat-sub" id="solar-detail">MPPT: -- | Tasmota: --</div>
+                        <div class="stat-sub" id="solar-detail">MPPT: -- | PV: --</div>
                     </div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="card h-100">
                     <div class="card-body text-center">
-                        <div class="stat-label">Battery</div>
+                        <div class="stat-label">Battery (Shunt)</div>
                         <div class="stat-value text-battery" id="battery-soc">--%</div>
-                        <div class="stat-sub" id="battery-detail">-- W | -- V</div>
+                        <div class="stat-sub" id="battery-detail">-- W | -- V | -- A</div>
                     </div>
                 </div>
             </div>
@@ -661,7 +666,7 @@ def get_dashboard_html() -> str:
             </div>
             <div class="col-md-6">
                 <div class="card">
-                    <div class="card-header"><i class="fas fa-solar-panel me-2"></i>MPPT Chargers</div>
+                    <div class="card-header"><i class="fas fa-solar-panel me-2"></i>Solar Production</div>
                     <div class="card-body py-1" id="mppt-chargers" style="font-size:0.75rem;">
                         <div class="text-muted">Loading...</div>
                     </div>
@@ -949,19 +954,17 @@ async function updateData() {
         document.getElementById('consumption-detail').textContent = `${formatPower(state.t1)} | ${formatPower(state.t2)}`;
         document.getElementById('solar-total').textContent = formatPower(state.solar_total || 0);
         
-        // Solar detail with individual MPPT and Tasmota values
+        // Solar detail - sum MPPT and sum PV
         const mpptVals = state.mppt_individual || [];
         const tasVals = state.tasmota_individual || [];
-        const mpptStr = mpptVals.length ? mpptVals.map(v => Math.floor(v) + 'W').join('|') : '--';
-        const tasStr = tasVals.length ? tasVals.map(v => Math.floor(v) + 'W').join('|') : '--';
-        document.getElementById('solar-detail').textContent = `${mpptStr} | ${tasStr}`;
+        const mpptSum = mpptVals.reduce((a, b) => a + b, 0);
+        const pvSum = tasVals.reduce((a, b) => a + b, 0);
+        document.getElementById('solar-detail').textContent = `MPPT: ${formatPower(mpptSum)} | PV: ${formatPower(pvSum)}`;
         
         document.getElementById('battery-soc').textContent = (state.battery_soc || 0).toFixed(0) + '%';
-        // Battery detail with individual SoC values
-        const batSocs = state.battery_socs || [];
-        const batSocStr = batSocs.length ? batSocs.map(s => Math.floor(s) + '%').join('|') : '';
-        const batDetailExtra = batSocStr ? ` [${batSocStr}]` : '';
-        document.getElementById('battery-detail').textContent = `${formatPower(state.battery_power || 0)} | ${(state.battery_voltage || 0).toFixed(2)}V${batDetailExtra}`;
+        // Battery detail with current
+        const batCurrent = state.battery_current || 0;
+        document.getElementById('battery-detail').textContent = `${formatPower(state.battery_power || 0)} | ${(state.battery_voltage || 0).toFixed(2)}V | ${batCurrent.toFixed(1)}A`;
         document.getElementById('setpoint').textContent = formatPower(state.setpoint);
         document.getElementById('inverter-state').textContent = state.inverter_state || '--';
         
@@ -1148,9 +1151,9 @@ async function updateData() {
                 let details = bat.voltage.toFixed(2) + 'V';
                 if (bat.current !== undefined) details += ' ' + bat.current.toFixed(1) + 'A';
                 if (bat.power !== undefined) details += ' ' + Math.floor(bat.power) + 'W';
-                batHtml += `<div style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:6px;padding:6px;background:rgba(0,0,0,0.2)">
+                batHtml += `<div class="subsection" style="flex:1;min-width:120px;border:1px solid var(--border);border-radius:6px;padding:6px;background:var(--subsection-bg)">
                     <div style="font-size:0.65rem;color:var(--text-dim);font-weight:600">${bat.name}</div>
-                    <div>${details}</div>
+                    <div style="color:var(--text-value)">${details}</div>
                     <div style="color:${socColor};font-weight:bold">${bat.soc.toFixed(1)}% <span style="color:var(--text-dim);font-weight:normal">${bat.state}</span></div>
                 </div>`;
             });
@@ -1158,21 +1161,26 @@ async function updateData() {
             document.getElementById('batteries').innerHTML = batHtml;
         }
         
-        // MPPT Chargers section
+        // Solar Production section (MPPT + PV Inverters)
         const mpptChargers = state.mppt_chargers || [];
-        if (mpptChargers.length > 0) {
-            let mpptHtml = '<div class="d-flex flex-wrap gap-2">';
-            mpptChargers.forEach(m => {
-                mpptHtml += `<div style="flex:1;min-width:100px;border:1px solid var(--border);border-radius:6px;padding:6px;background:rgba(0,0,0,0.2)">
-                    <div style="font-size:0.65rem;color:var(--text-dim);font-weight:600">${m.name}</div>
-                    <div style="color:var(--solar)">${m.pv_voltage.toFixed(2)}V</div>
-                    <div>${m.current.toFixed(1)}A</div>
-                    <div style="color:var(--solar);font-weight:bold">${Math.floor(m.power)}W</div>
-                </div>`;
-            });
-            mpptHtml += '</div>';
-            document.getElementById('mppt-chargers').innerHTML = mpptHtml;
-        }
+        const pvInverters = state.tasmota_individual || [];
+        let solarHtml = '<div class="d-flex flex-wrap gap-2">';
+        mpptChargers.forEach(m => {
+            solarHtml += `<div class="subsection" style="flex:1;min-width:100px;border:1px solid var(--border);border-radius:6px;padding:6px;background:var(--subsection-bg)">
+                <div style="font-size:0.65rem;color:var(--text-dim);font-weight:600">${m.name}</div>
+                <div style="color:var(--solar)">${m.pv_voltage.toFixed(2)}V</div>
+                <div style="color:var(--text-value)">${m.current.toFixed(1)}A</div>
+                <div style="color:var(--solar);font-weight:bold">${Math.floor(m.power)}W</div>
+            </div>`;
+        });
+        pvInverters.forEach((power, i) => {
+            solarHtml += `<div class="subsection" style="flex:1;min-width:100px;border:1px solid var(--border);border-radius:6px;padding:6px;background:var(--subsection-bg)">
+                <div style="font-size:0.65rem;color:var(--text-dim);font-weight:600">PV Inverter ${i + 1}</div>
+                <div style="color:var(--solar);font-weight:bold">${Math.floor(power)}W</div>
+            </div>`;
+        });
+        solarHtml += '</div>';
+        document.getElementById('mppt-chargers').innerHTML = solarHtml;
         
         // Console
         document.getElementById('console').innerHTML = console_lines.map(l => `<div>${l}</div>`).join('');
