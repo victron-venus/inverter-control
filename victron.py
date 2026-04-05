@@ -173,6 +173,7 @@ class VictronDBus:
             'g1': 0, 'g2': 0, 'gt': 0,      # Grid L1, L2, Total
             't1': 0, 't2': 0, 'tt': 0,      # Consumption L1, L2, Total
             'bv': 0.0,                       # Battery voltage
+            'bc': 0.0,                       # Battery current
             'bp': 0,                         # Battery power
             'pv_total': 0,                   # Total PV power
         }
@@ -194,6 +195,7 @@ class VictronDBus:
             't1': r'Ac/Consumption/L1/Power.*?\n.*?(\-?[\d.]+)',
             't2': r'Ac/Consumption/L2/Power.*?\n.*?(\-?[\d.]+)',
             'bv': r'Dc/Battery/Voltage".*?\n.*?([\d.]+)',
+            'bc': r'Dc/Battery/Current".*?\n.*?(\-?[\d.]+)',
             'bp': r'Dc/Battery/Power.*?\n.*?(\-?[\d.]+)',
             'pv_total': r'Dc/Pv/Power.*?\n.*?([\d.]+)',
         }
@@ -203,7 +205,7 @@ class VictronDBus:
             if match:
                 try:
                     val = float(match.group(1))
-                    data[key] = int(val) if key not in ('bv',) else val
+                    data[key] = int(val) if key not in ('bv', 'bc') else val
                 except:
                     pass
         
@@ -427,6 +429,112 @@ class VictronDBus:
                 'int32'
             )
             return success1 and success2
+    
+    def get_all_batteries(self) -> list:
+        """Get detailed data for all battery chains including SmartShunt
+        
+        Returns list of dicts with: name, voltage, current, power, soc, state
+        """
+        battery_services = [
+            ('com.victronenergy.battery.virtual_chain', 'Virtual Battery Chain 3'),
+            ('com.victronenergy.battery.dbus-mqtt-chain1', 'JBD Battery Chain 1'),
+            ('com.victronenergy.battery.dbus-mqtt-chain2', 'JBD Battery Chain 2'),
+        ]
+        
+        batteries = []
+        for service, name in battery_services:
+            battery = {'name': name, 'voltage': 0.0, 'soc': 0.0, 'state': 'Unknown'}
+            
+            # Voltage
+            val = self._dbus_get(service, '/Dc/0/Voltage')
+            if val:
+                try:
+                    battery['voltage'] = float(val)
+                except:
+                    pass
+            
+            # Current (only for virtual/shunt)
+            if 'virtual' in service.lower():
+                val = self._dbus_get(service, '/Dc/0/Current')
+                if val:
+                    try:
+                        battery['current'] = float(val)
+                    except:
+                        pass
+                
+                # Power
+                val = self._dbus_get(service, '/Dc/0/Power')
+                if val:
+                    try:
+                        battery['power'] = float(val)
+                    except:
+                        pass
+            
+            # SoC
+            val = self._dbus_get(service, '/Soc')
+            if val:
+                try:
+                    battery['soc'] = float(val)
+                except:
+                    pass
+            
+            # State (from /Info/State or derive from current)
+            current = battery.get('current', 0)
+            if current is not None:
+                if current > 0.5:
+                    battery['state'] = 'Charging'
+                elif current < -0.5:
+                    battery['state'] = 'Discharging'
+                else:
+                    battery['state'] = 'Idle'
+            else:
+                battery['state'] = 'Idle'
+            
+            batteries.append(battery)
+        
+        return batteries
+    
+    def get_mppt_chargers(self) -> list:
+        """Get detailed data for all MPPT chargers
+        
+        Returns list of dicts with: name, pv_voltage, current, power
+        """
+        chargers = []
+        
+        for i, service in enumerate(self._mppt_services):
+            # Extract MPPT number from service name (e.g. "ttyUSB0:290" -> "290")
+            parts = service.split(':')
+            name = f"MPPT-{parts[1]}" if len(parts) > 1 else f"MPPT-{i}"
+            
+            charger = {'name': name, 'pv_voltage': 0.0, 'current': 0.0, 'power': 0.0}
+            
+            # PV Voltage
+            val = self._dbus_get(service, '/Pv/V')
+            if val:
+                try:
+                    charger['pv_voltage'] = float(val)
+                except:
+                    pass
+            
+            # Current
+            val = self._dbus_get(service, '/Dc/0/Current')
+            if val:
+                try:
+                    charger['current'] = float(val)
+                except:
+                    pass
+            
+            # Power
+            val = self._dbus_get(service, '/Yield/Power')
+            if val:
+                try:
+                    charger['power'] = float(val)
+                except:
+                    pass
+            
+            chargers.append(charger)
+        
+        return chargers
 
 
 # Singleton instance

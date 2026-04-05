@@ -639,8 +639,11 @@ class InverterController:
             'inverter_state': self._cached_inv_state,
             'battery_power': sys_data.get('bp', 0),
             'battery_voltage': sys_data.get('bv', 0),
+            'battery_current': sys_data.get('bc', 0),
             'battery_soc': sys_data.get('soc', 0) or self.ha.get_sensor('corrected_soc', 0),
             'battery_socs': self._cached_battery_socs,
+            'batteries': self.victron.get_all_batteries(),
+            'mppt_chargers': self.victron.get_mppt_chargers(),
             # EV data (conditional)
             'ev_power': self.ha.get_vue_sensor('ev_charger', 0) if ENABLE_EV else 0,
             'ev_charging_kw': self.ha.get_sensor('ev_charging_power', 0) if ENABLE_EV else 0,
