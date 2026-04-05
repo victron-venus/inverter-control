@@ -436,9 +436,9 @@ class VictronDBus:
         Returns list of dicts with: name, voltage, current, power, soc, state
         """
         battery_services = [
-            ('com.victronenergy.battery.virtual_chain', 'Virtual Battery Chain 3'),
-            ('com.victronenergy.battery.dbus-mqtt-chain1', 'JBD Battery Chain 1'),
-            ('com.victronenergy.battery.dbus-mqtt-chain2', 'JBD Battery Chain 2'),
+            ('com.victronenergy.battery.virtual_chain', 'Virtual Battery'),
+            ('com.victronenergy.battery.dbus-mqtt-chain1', 'JBD Chain 1'),
+            ('com.victronenergy.battery.dbus-mqtt-chain2', 'JBD Chain 2'),
         ]
         
         batteries = []
@@ -453,22 +453,21 @@ class VictronDBus:
                 except:
                     pass
             
-            # Current (only for virtual/shunt)
-            if 'virtual' in service.lower():
-                val = self._dbus_get(service, '/Dc/0/Current')
-                if val:
-                    try:
-                        battery['current'] = float(val)
-                    except:
-                        pass
-                
-                # Power
-                val = self._dbus_get(service, '/Dc/0/Power')
-                if val:
-                    try:
-                        battery['power'] = float(val)
-                    except:
-                        pass
+            # Current
+            val = self._dbus_get(service, '/Dc/0/Current')
+            if val:
+                try:
+                    battery['current'] = float(val)
+                except:
+                    pass
+            
+            # Power
+            val = self._dbus_get(service, '/Dc/0/Power')
+            if val:
+                try:
+                    battery['power'] = float(val)
+                except:
+                    pass
             
             # SoC
             val = self._dbus_get(service, '/Soc')
