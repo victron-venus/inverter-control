@@ -624,10 +624,7 @@ def get_dashboard_html() -> str:
                     <div class="card-header"><i class="fas fa-home me-2"></i>Home</div>
                     <div class="card-body py-1">
                         <div class="d-flex justify-content-between align-items-center">
-                            <div class="d-flex gap-1 flex-wrap">
-                                <div id="home-recliner" class="toggle-btn off" onclick="togglePending(this, 'switch.recliner_recliner')">RECLINER</div>
-                                <div id="home-garage" class="toggle-btn off" onclick="togglePending(this, 'switch.garage_opener_l')">GARAGE</div>
-                                <div id="home-laundry" class="toggle-btn off" onclick="togglePending(this, 'switch.laundry_zigbee_switch')">LAUNDRY</div>
+                            <div id="home-buttons" class="d-flex gap-1 flex-wrap">
                             </div>
                         </div>
                     </div>
@@ -1062,41 +1059,41 @@ async function updateData() {
             document.getElementById('dryer-section').style.display = 'none';
         }
         
-        // Home section - always visible if HA connected
-        if (features.ha !== false) {
+        // Home section - dynamic from ui_config
+        const homeButtons = uiConfig.home_buttons || [];
+        if (features.ha !== false && homeButtons.length > 0) {
             document.getElementById('home-section').style.display = '';
-            // Always update state from HA (removes pending)
-            document.getElementById('home-recliner').className = 'toggle-btn ' + (state.home_recliner ? 'on' : 'off');
-            document.getElementById('home-garage').className = 'toggle-btn ' + (state.home_garage ? 'on' : 'off');
-            document.getElementById('home-laundry').className = 'toggle-btn ' + (state.laundry_outlet ? 'on' : 'off');
+            let homeHtml = '';
+            homeButtons.forEach(btn => {
+                const stateKey = btn.state_key || 'home_' + btn.id;
+                const val = state[stateKey] || false;
+                homeHtml += `<div id="home-${btn.id}" class="toggle-btn ${val ? 'on' : 'off'}" onclick="togglePending(this, '${btn.entity}')">${btn.label}</div>`;
+            });
+            document.getElementById('home-buttons').innerHTML = homeHtml;
         } else {
             document.getElementById('home-section').style.display = 'none';
         }
         
-        // Toggles with friendly names
-        const toggleNames = {
-            'set_limit_to_ev_charger': 'LIMIT TO EV',
-            'do_not_supply_charger': 'DO NOT SUPPLY EV',
-            'only_charging': 'ONLY CHARGING',
-            'no_feed': 'NO FEED',
-            'house_support': 'HOUSE SUPPORT',
-            'charge_battery': 'CHARGE BATTERY',
-            'minimize_charging': 'MINIMIZE CHARGING'
-        };
-        let togglesHtml = '';
+        // Toggles from ui_config
+        const uiConfig = state.ui_config || {};
+        const headerToggles = uiConfig.header_toggles || [];
         const bools = state.booleans || {};
-        for (const [key, val] of Object.entries(bools)) {
-            const displayName = toggleNames[key] || key.replace(/_/g, ' ').toUpperCase();
-            togglesHtml += `<div class="toggle-btn ${val ? 'on' : 'off'}" onclick="toggle('input_boolean.${key}')">${displayName}</div>`;
-        }
+        let togglesHtml = '';
+        headerToggles.forEach(toggle => {
+            const key = toggle.id;
+            const val = bools[key] || false;
+            togglesHtml += `<div class="toggle-btn ${val ? 'on' : 'off'}" onclick="toggle('${toggle.entity}')">${toggle.label}</div>`;
+        });
         document.getElementById('toggles').innerHTML = togglesHtml;
         
-        // Loads (sorted by value, exclude solar_shed)
+        // Loads (sorted by value, configurable)
         if (features.ha_loads !== false) {
         const loads = state.loads || {};
-        const hiddenLoads = ['solar_shed'];
+        const loadsConfig = (uiConfig.loads || {});
+        const hiddenLoads = loadsConfig.hidden || ['solar_shed'];
+        const minWatts = loadsConfig.min_watts || 10;
         const sortedLoads = Object.entries(loads)
-            .filter(([name, val]) => val > 10 && !hiddenLoads.includes(name))
+            .filter(([name, val]) => val > minWatts && !hiddenLoads.includes(name))
             .sort((a, b) => b[1] - a[1]);
         let loadsHtml = '<div class="loads-table">' + sortedLoads.map(([name, val]) => 
             `<div class="loads-row"><span class="loads-name">${name}</span><span class="loads-value">${Math.floor(val)}W</span></div>`

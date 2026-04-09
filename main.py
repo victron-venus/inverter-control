@@ -111,6 +111,10 @@ class InverterController:
         self.victron = get_victron()
         self.ha = get_ha()
         
+        # Load UI configuration
+        from ui_config import get_ui_config
+        self.ui_config = get_ui_config()
+        
         # Process start time
         self.start_time = time.time()
         
@@ -696,6 +700,7 @@ class InverterController:
             'ess_mode': self.victron.get_ess_mode(),
             'uptime': int(time.time() - self.start_time),
             'version': VERSION,
+            'ui_config': self.ui_config,
         }
     
     def run_cycle(self) -> bool:
