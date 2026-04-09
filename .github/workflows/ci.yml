@@ -24,6 +24,4 @@ jobs:
         run: ruff check --select=E,F,W --ignore=E402,E501,E722,E731,F401,F541,F841,W291,W293 .
       
       - name: Syntax check
-        run: |
-          python -m py_compile main.py config.py victron.py homeassistant.py
-          python -m py_compile web/server.py
+        run: python -m py_compile main.py config.py victron.py homeassistant.py mqtt_bridge.py ui_config.py
