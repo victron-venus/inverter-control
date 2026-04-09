@@ -8,7 +8,6 @@ import sys
 import os
 import time
 import argparse
-import re
 import signal
 import logging
 import traceback
@@ -72,7 +71,7 @@ from config import (
     GRID_ZERO_DEADBAND_LOW, GRID_ZERO_DEADBAND_HIGH, DAMPING_FACTOR, EMA_ALPHA,
     SOLAR_OUTPUT_OFFSET, INVERTER_EFFICIENCY,
     INVERTER_STATES, Colors as C,
-    HA_BOOLEANS, HISTORY_INTERVAL, DRY_RUN, TIMEZONE,
+    HA_BOOLEANS, DRY_RUN, TIMEZONE,
     ENABLE_EV, ENABLE_WATER, ENABLE_HA_LOADS, ENABLE_HA,
     ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER
 )
@@ -113,10 +112,8 @@ class InverterController:
         self.delay = 0  # Delay counter for load switching
         self.filtered_gt: Optional[float] = None  # EMA-filtered grid power
         
-        # Loop counters (for periodic tasks)
+        # Loop counter
         self.loop_count = 0
-        self.last_history_time = 0
-        self.web_update_counter = 0  # Update web state every N cycles
         
         # Terminal title update counter
         self.title_update_counter = 0
@@ -589,14 +586,11 @@ class InverterController:
             setpoint: Current setpoint
             full_update: If True, refresh all D-Bus cached data (slower)
         """
-        # Full D-Bus update every 3rd call or on demand
-        if full_update or self.web_update_counter % 3 == 0:
-            self._cached_mppt_data = self.victron.get_mppt_data()
-            self._cached_tasmota_powers = self.victron.get_tasmota_pv_power()
-            self._cached_battery_socs = self.victron.get_battery_chain_socs()
-            _, self._cached_inv_state = self.victron.get_inverter_state()
-        
-        self.web_update_counter += 1
+        # Update cached data
+        self._cached_mppt_data = self.victron.get_mppt_data()
+        self._cached_tasmota_powers = self.victron.get_tasmota_pv_power()
+        self._cached_battery_socs = self.victron.get_battery_chain_socs()
+        _, self._cached_inv_state = self.victron.get_inverter_state()
         
         mppt_data = self._cached_mppt_data
         tasmota_powers = self._cached_tasmota_powers
@@ -728,19 +722,8 @@ class InverterController:
             line = self.format_console_output(sys_data, setpoint, flags)
             print(line)
             
-            # Strip ANSI codes for web console, keep colors for TCP
-            clean_line = re.sub(r'\033\[[0-9;]*m', '', line)
-            add_console_line(clean_line)
-            broadcast_console_tcp(line)
-            
-            # Update state for web
+            # Update state for MQTT bridge
             self.update_state(sys_data, setpoint)
-            
-            # Add history point (at configured interval)
-            now = time.time()
-            if now - self.last_history_time >= HISTORY_INTERVAL:
-                add_history_point(self.state)
-                self.last_history_time = now
             
             # Update terminal title
             self.update_terminal_title()
