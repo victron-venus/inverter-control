@@ -48,16 +48,18 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         logMessage "WARNING: Using secrets.example.py - configure /data/setupOptions/$packageName/secrets.py"
     fi
     
-    # Install ui_config from setupOptions or use sample
-    if [ -f "/data/setupOptions/$packageName/ui_config.yaml" ]; then
-        cp "/data/setupOptions/$packageName/ui_config.yaml" "$installDir/"
-        logMessage "Using ui_config.yaml from setupOptions"
-    elif [ -f "$scriptDir/ui_config.yaml" ]; then
-        cp "$scriptDir/ui_config.yaml" "$installDir/"
-        logMessage "Using ui_config.yaml from package"
+    # Install ui_config module (always needed)
+    cp "$scriptDir/ui_config.py" "$installDir/"
+    
+    # Install ui_config_local from setupOptions if available
+    if [ -f "/data/setupOptions/$packageName/ui_config_local.py" ]; then
+        cp "/data/setupOptions/$packageName/ui_config_local.py" "$installDir/"
+        logMessage "Using ui_config_local.py from setupOptions"
+    elif [ -f "$scriptDir/ui_config_local.py" ]; then
+        cp "$scriptDir/ui_config_local.py" "$installDir/"
+        logMessage "Using ui_config_local.py from package"
     else
-        cp "$scriptDir/ui_config.yaml.sample" "$installDir/ui_config.yaml"
-        logMessage "WARNING: Using ui_config.yaml.sample - configure /data/setupOptions/$packageName/ui_config.yaml"
+        logMessage "Using default UI config (customize via /data/setupOptions/$packageName/ui_config_local.py)"
     fi
 fi
 

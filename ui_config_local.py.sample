@@ -1,0 +1,65 @@
+"""
+Local UI Configuration for Inverter Control
+Copy this file to ui_config_local.py and customize for your setup
+
+Changes require service restart: svc -t /service/inverter-control
+"""
+
+UI_CONFIG = {
+    # Header toggle buttons (input_boolean entities from Home Assistant)
+    'header_toggles': [
+        {'id': 'only_charging', 'label': 'ONLY CHARGING', 'entity': 'input_boolean.only_charging'},
+        {'id': 'no_feed', 'label': 'NO FEED', 'entity': 'input_boolean.no_feed'},
+        {'id': 'house_support', 'label': 'HOUSE SUPPORT', 'entity': 'input_boolean.house_support'},
+        {'id': 'charge_battery', 'label': 'CHARGE BATTERY', 'entity': 'input_boolean.charge_battery'},
+        {'id': 'do_not_supply_charger', 'label': 'DO NOT SUPPLY EV', 'entity': 'input_boolean.do_not_supply_charger'},
+        {'id': 'set_limit_to_ev_charger', 'label': 'LIMIT TO EV', 'entity': 'input_boolean.set_limit_to_ev_charger'},
+        {'id': 'minimize_charging', 'label': 'MINIMIZE CHARGING', 'entity': 'input_boolean.minimize_charging'},
+    ],
+    
+    # Home section buttons
+    # state_key: key in state dict that holds the current button state
+    'home_buttons': [
+        {'id': 'recliner', 'label': 'RECLINER', 'entity': 'switch.your_recliner_switch', 'type': 'toggle', 'state_key': 'home_recliner'},
+        {'id': 'garage', 'label': 'GARAGE', 'entity': 'switch.your_garage_switch', 'type': 'toggle', 'state_key': 'home_garage'},
+        {'id': 'laundry', 'label': 'LAUNDRY', 'entity': 'switch.your_laundry_switch', 'type': 'toggle', 'state_key': 'laundry_outlet'},
+    ],
+    
+    # Battery chains to display (auto-discovered from D-Bus, this is for naming)
+    'batteries': [
+        {'id': 'virtual', 'name': 'Virtual Battery', 'dbus_service': 'com.victronenergy.battery.virtual_chain', 'show_current': True, 'show_power': True},
+        {'id': 'chain1', 'name': 'JBD Chain 1', 'dbus_service': 'com.victronenergy.battery.dbus-mqtt-chain1', 'show_current': True, 'show_power': True},
+        {'id': 'chain2', 'name': 'JBD Chain 2', 'dbus_service': 'com.victronenergy.battery.dbus-mqtt-chain2', 'show_current': True, 'show_power': True},
+    ],
+    
+    # Solar sources configuration
+    'solar_sources': {
+        # MPPT chargers (auto-discovered from D-Bus, override names here)
+        'mppt_names': {0: 'MPPT-1', 1: 'MPPT-2', 2: 'MPPT-3'},
+        # PV inverters (Tasmota, indexed from tasmota_individual array)
+        'pv_inverters': [
+            {'id': 'pv1', 'name': 'PV Inverter 1', 'index': 0},
+            {'id': 'pv2', 'name': 'PV Inverter 2', 'index': 1},
+        ]
+    },
+    
+    # Loads section configuration
+    'loads': {
+        'hidden': ['solar_shed'],  # Loads to hide from display
+        'min_watts': 10,           # Minimum watts to display
+    },
+    
+    # Water section
+    'water': {
+        'valve_entity': 'switch.your_shutoff_valve',
+        'pump_entity': 'switch.your_pump_switch',
+        'level_sensor': 'water_level',
+    },
+    
+    # EV section
+    'ev': {
+        'charging_sensor': 'ev_charging_power',
+        'power_sensor': 'ev_charger',
+        'soc_sensor': 'car_soc',
+    },
+}

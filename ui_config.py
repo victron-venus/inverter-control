@@ -1,40 +1,12 @@
 """
-UI Configuration loader for Inverter Control
-Loads ui_config.yaml and provides it to the web interface
+UI Configuration for Inverter Control
+Edit ui_config_local.py (not tracked in git) to customize
 """
 
 import os
 import logging
 
 logger = logging.getLogger('inverter-control')
-
-# Try to import PyYAML
-try:
-    import yaml
-    YAML_AVAILABLE = True
-except ImportError:
-    YAML_AVAILABLE = False
-    logger.warning("PyYAML not available, using default UI config")
-
-
-def load_ui_config() -> dict:
-    """Load UI configuration from yaml file"""
-    config_path = os.path.join(os.path.dirname(__file__), 'ui_config.yaml')
-    
-    if not YAML_AVAILABLE:
-        return get_default_config()
-    
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-            logger.info(f"Loaded UI config from {config_path}")
-            return config
-    except FileNotFoundError:
-        logger.warning(f"UI config not found at {config_path}, using defaults")
-        return get_default_config()
-    except Exception as e:
-        logger.error(f"Failed to load UI config: {e}")
-        return get_default_config()
 
 
 def get_default_config() -> dict:
@@ -81,6 +53,33 @@ def get_default_config() -> dict:
             'soc_sensor': 'car_soc',
         },
     }
+
+
+def load_ui_config() -> dict:
+    """Load UI configuration from local config file or use defaults"""
+    # Try to import local config
+    try:
+        from ui_config_local import UI_CONFIG
+        logger.info("Loaded UI config from ui_config_local.py")
+        return UI_CONFIG
+    except ImportError:
+        pass
+    
+    # Try setupOptions location
+    setup_options_path = '/data/setupOptions/inverter-control'
+    if os.path.exists(setup_options_path):
+        import sys
+        if setup_options_path not in sys.path:
+            sys.path.insert(0, setup_options_path)
+        try:
+            from ui_config_local import UI_CONFIG
+            logger.info(f"Loaded UI config from {setup_options_path}/ui_config_local.py")
+            return UI_CONFIG
+        except ImportError:
+            pass
+    
+    logger.info("Using default UI config")
+    return get_default_config()
 
 
 # Global config instance

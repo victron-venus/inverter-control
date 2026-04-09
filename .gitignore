@@ -37,7 +37,7 @@ config.local.py
 
 # Secrets (contains API keys, tokens, IPs, entity IDs)
 secrets.py
-ui_config.yaml
+ui_config_local.py
 
 # Russian documentation (local only)
 LOGIC_RUS.md
