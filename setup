@@ -21,7 +21,6 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     
     # Create directories
     mkdir -p "$installDir"
-    mkdir -p "$installDir/web"
     mkdir -p /var/log/inverter-control
     
     # Install Python scripts
@@ -32,9 +31,6 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     cp "$scriptDir/keepalive.py" "$installDir/"
     cp "$scriptDir/mqtt_bridge.py" "$installDir/"
     chmod +x "$installDir/main.py"
-    
-    # Install web files
-    cp -r "$scriptDir/web/"* "$installDir/web/" 2>/dev/null || true
     
     # Install secrets from setupOptions or use example
     if [ -f "/data/setupOptions/$packageName/secrets.py" ]; then

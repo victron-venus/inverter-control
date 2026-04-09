@@ -71,25 +71,13 @@ from config import (
     POWER_LIMIT_MAX, POWER_LIMIT_MIN, LOOP_INTERVAL,
     GRID_ZERO_DEADBAND_LOW, GRID_ZERO_DEADBAND_HIGH, DAMPING_FACTOR, EMA_ALPHA,
     SOLAR_OUTPUT_OFFSET, INVERTER_EFFICIENCY,
-    WEB_PORT, WEB_HOST, INVERTER_STATES, Colors as C,
+    INVERTER_STATES, Colors as C,
     HA_BOOLEANS, HISTORY_INTERVAL, DRY_RUN, TIMEZONE,
     ENABLE_EV, ENABLE_WATER, ENABLE_HA_LOADS, ENABLE_HA,
     ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER
 )
-
-# Optional SSL config
-try:
-    from config import SSL_ENABLED, SSL_CERT, SSL_KEY
-except ImportError:
-    SSL_ENABLED = False
-    SSL_CERT = None
-    SSL_KEY = None
 from victron import get_victron
 from homeassistant import get_ha
-try:
-    from web.app import start_web_server, stop_web_server, add_history_point, add_console_line, broadcast_console_tcp, start_tcp_console, stop_tcp_console
-except ImportError:
-    from web.server import start_web_server, stop_web_server, add_history_point, add_console_line, broadcast_console_tcp, start_tcp_console, stop_tcp_console
 
 # MQTT bridge for remote dashboard (optional)
 try:
@@ -676,7 +664,7 @@ class InverterController:
             'washer_power': self.ha.washer_power_on if ENABLE_WASHER else False,
             'dryer_time': self.ha.get_duration_sensor('dryer_time') if ENABLE_DRYER else 0,
             'dryer_power': self.ha.dryer_power_on if ENABLE_DRYER else False,
-            'laundry_outlet': self.ha.laundry_outlet_on if (ENABLE_WASHER or ENABLE_DRYER) else False,
+            'laundry_outlet': self.ha.laundry_outlet_on if ENABLE_HA else False,
             'home_recliner': self.ha.home_recliner_on if ENABLE_HA else False,
             'home_garage': self.ha.home_garage_on if ENABLE_HA else False,
             # HA data (conditional)
@@ -806,13 +794,9 @@ def _main_inner():
                        help='Manual setpoint (one-shot mode)')
     parser.add_argument('--dry-run', action='store_true',
                        help='Don\'t actually send commands')
-    parser.add_argument('--no-web', action='store_true',
-                       help='Disable web server')
-    parser.add_argument('--port', type=int, default=WEB_PORT,
-                       help=f'Web server port (default: {WEB_PORT})')
     args = parser.parse_args()
     
-    print(f"=== Inverter Control v2.0 ===")
+    print(f"=== Inverter Control {VERSION} ===")
     
     # Determine dry-run mode: CLI overrides config
     dry_run_mode = args.dry_run if args.dry_run else None
@@ -820,31 +804,8 @@ def _main_inner():
     
     mode = "DRY-RUN (safe mode)" if controller.dry_run else "LIVE (sending commands)"
     print(f"Mode: {mode}")
-    print(f"(Toggle via web interface or restart with --dry-run flag)")
     
-    # Start web server
-    if not args.no_web:
-        ssl_cert = SSL_CERT if SSL_ENABLED else None
-        ssl_key = SSL_KEY if SSL_ENABLED else None
-        start_web_server(
-            controller.get_state,
-            controller.set_manual_setpoint,
-            controller.toggle_dry_run,
-            controller.set_power_limits,
-            controller.toggle_ess_mode,
-            controller.set_loop_interval,
-            controller.ha,
-            WEB_HOST,
-            args.port,
-            ssl_cert,
-            ssl_key
-        )
-        proto = "https" if SSL_ENABLED else "http"
-        print(f"Web server started on {proto}://{WEB_HOST}:{args.port}")
-        # Start TCP console streaming
-        start_tcp_console()
-    
-    # Start MQTT bridge for remote dashboard (optional)
+    # Start MQTT bridge for remote dashboard
     mqtt_bridge = None
     from config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_PREFIX
     if MQTT_AVAILABLE and MQTT_BROKER:
@@ -871,27 +832,9 @@ def _main_inner():
     print("Starting control loop...")
     print("-" * 80)
     
-    # Internal web server health check
-    web_check_interval = 60  # Check every 60 seconds
-    web_fail_count = 0
-    web_fail_threshold = 3
-    last_web_check = time.time()
-    
     # Memory management: run gc periodically
     gc_interval = 300  # Every 5 minutes
     last_gc_time = time.time()
-    
-    def check_web_server():
-        """Check if web server is responding"""
-        try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex(('127.0.0.1', args.port))
-            sock.close()
-            return result == 0
-        except:
-            return False
     
     try:
         while True:
@@ -904,22 +847,8 @@ def _main_inner():
             if mqtt_bridge and mqtt_bridge.connected:
                 mqtt_bridge.publish_state(controller.get_state())
             
-            # Periodic web server health check
-            now = time.time()
-            if not args.no_web and now - last_web_check > web_check_interval:
-                last_web_check = now
-                if check_web_server():
-                    web_fail_count = 0
-                else:
-                    web_fail_count += 1
-                    logger.warning(f"Web server not responding ({web_fail_count}/{web_fail_threshold})")
-                    print(f"{C.RED}[HEALTH] Web server not responding ({web_fail_count}/{web_fail_threshold}){C.RESET}")
-                    if web_fail_count >= web_fail_threshold:
-                        logger.error("Web server dead, exiting for restart")
-                        print(f"{C.RED}[HEALTH] Web server dead, exiting for restart...{C.RESET}")
-                        break  # Exit, daemontools will restart us
-            
             # Periodic garbage collection (free memory on resource-constrained Venus OS)
+            now = time.time()
             if now - last_gc_time > gc_interval:
                 last_gc_time = now
                 gc.collect()
@@ -932,8 +861,6 @@ def _main_inner():
         logger.info("Inverter Control shutting down")
         if mqtt_bridge:
             mqtt_bridge.disconnect()
-        stop_tcp_console()
-        stop_web_server()
         controller.ha.stop()
 
 
