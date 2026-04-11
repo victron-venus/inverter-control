@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+cd /data/inverter_control
+exec python3 log-forwarder.py
