@@ -26,6 +26,49 @@ Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
 > **Disclaimer**: Most grid-zero goals can be achieved using Victron's built-in **ESS Optimized (without BatteryLife)** mode. This project exists for specific edge cases requiring custom logic (split-phase compensation, EV charger exclusion, multiple solar sources, etc.). This code was developed for a particular setup and is unlikely to work as a drop-in solution — treat it as a learning resource or starting point for your own implementation.
 
+### Where this project came from
+
+This repository did not start as a polished Python package. Roughly **three years ago** it began as the smallest thing that could work: a **single shell pipeline** glued together with `mosquitto_sub`, a few arithmetic hacks, and a helper script. No repository structure, no D-Bus abstraction, no Home Assistant — just “read a number from MQTT, clamp it, hand it to the inverter.”
+
+The original one-liner looked conceptually like this (host, topic, and credentials are redacted; `***` stands in for a password or token):
+
+```bash
+# Proof-of-concept from ~2023 — do not run as-is; values and paths were local.
+mosquitto_sub -L "mqtt://mqtt:***@10.10.10.10/home/power_main" | while read -r line; do
+  # va = “current” setpoint, s = “main” sensor, b = computed next setpoint
+  b=$(( va - s/3 + 2 ))
+  [ "$b" -gt 2000 ]  && b=2000
+  [ "$b" -le -2000 ] && b=-2000
+  [ "$b" -le 0 ]     && b=0
+  [ "$s" -eq 0 ]     && b="${va}"
+  echo -n "$(date) => current:${va} main:${s} new:${b} "
+  va="${b}"
+  ~/inverter.py "${va}"
+done
+```
+
+What it was trying to do, in plain language:
+
+- **Subscribe** to a Home Assistant (or broker) topic that published something like “main” grid or power telemetry (`power_main`).
+- **Derive** a new inverter setpoint `b` from the difference between a remembered value `va` and the live reading `s` (the `s/3+2` term was a crude proportional tweak).
+- **Clamp** the result into a safe band (±2000 W in this sketch) and avoid sending meaningless negatives in some cases.
+- **Delegate** the actual Victron write to a tiny `~/inverter.py` helper — the predecessor of today’s D-Bus layer.
+
+For the curious, the same idea in **one dense line** (again: redacted broker URL; line breaks only for readability — the spirit was “pipe MQTT into a tiny state machine, then `inverter.py`”):
+
+```bash
+mosquitto_sub -L "mqtt://mqtt:***@10.10.10.10/home/power_main" \
+| while read -r _; do
+    b=$((va-s/3+2)); [ $b -gt 2000 ]&&b=2000; [ $b -le -2000 ]&&b=-2000
+    [ $b -le 0 ]&&b=0; [ $s -eq 0 ]&&b="${va}"
+    echo -n "$(date) => current:$va main:$s new:$b "; va="${b}"; ~/inverter.py ${va}
+  done
+```
+
+That pipeline was enough to prove the idea on a bench or a single meter. It was also fragile: no persistence across reboots, no split-phase awareness, no EV or laundry logic, and no story for MPPT + Tasmota + multiple battery chains. Everything you see now — structured config, `victron.py`, MQTT bridge, optional dashboard, monitoring hooks — grew out of replacing that one-liner piece by piece while keeping the same core goal: **keep the grid where we want it without sacrificing the weird parts of a real house.**
+
+If you are browsing this repo for inspiration, that history is intentional: **start simple, measure, then automate.** The current code is the same instinct with years of production bruises folded in.
+
 ## Overview
 
 This Python application controls a Victron inverter to maintain zero grid feed-in/consumption while supporting various operating modes. It's designed for split-phase (120/240V) systems where L2 loads need to be compensated by L1 export.
