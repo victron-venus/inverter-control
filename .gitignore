@@ -42,7 +42,6 @@ LOGIC_RUS.md
 
 commit.sh
 commit.txt
-release.sh
 release.txt
 postinstall.sh
 restart.sh

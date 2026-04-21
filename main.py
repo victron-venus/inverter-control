@@ -73,7 +73,8 @@ from config import (
     INVERTER_STATES, Colors as C,
     HA_BOOLEANS, DRY_RUN, TIMEZONE,
     ENABLE_EV, ENABLE_WATER, ENABLE_HA_LOADS, ENABLE_HA,
-    ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER
+    ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER,
+    MQTT_SLIM_STATE, MQTT_SLIM_EXCLUDE_KEYS,
 )
 from victron import get_victron
 from homeassistant import get_ha
@@ -251,21 +252,12 @@ class InverterController:
         # STEP 3: GET CONTROL SWITCHES FROM HOME ASSISTANT
         # =====================================================================
         
-        try:
-            only_charging = self.ha.get_boolean('only_charging')
-            no_feed = self.ha.get_boolean('no_feed')
-            house_support = self.ha.get_boolean('house_support')
-            charge_battery = self.ha.get_boolean('charge_battery')
-            do_not_supply_charger = self.ha.get_boolean('do_not_supply_charger')
-            limit_to_ev = self.ha.get_boolean('set_limit_to_ev_charger')
-        except Exception:
-            # Fallback: all switches off if HA unavailable
-            only_charging = False
-            no_feed = False
-            house_support = False
-            charge_battery = False
-            do_not_supply_charger = False
-            limit_to_ev = False
+        only_charging = self.ha.get_boolean('only_charging')
+        no_feed = self.ha.get_boolean('no_feed')
+        house_support = self.ha.get_boolean('house_support')
+        charge_battery = self.ha.get_boolean('charge_battery')
+        do_not_supply_charger = self.ha.get_boolean('do_not_supply_charger')
+        limit_to_ev = self.ha.get_boolean('set_limit_to_ev_charger')
         
         # Get garage power for EV L1 charging detection
         garage_power = self.ha.get_vue_sensor('garage', 0)
@@ -346,15 +338,9 @@ class InverterController:
         # Goal: Don't let battery power the EV charger
         # Limit: Output cannot exceed MPPT solar generation (only when EV is charging)
         # Note: Grid adjustment in Step 4 makes algorithm ignore EV load
-        # SAFETY: If HA disconnected, assume EV might be charging - don't export to grid
         # -----------------------------------------------------------------
         if do_not_supply_charger:
-            if not self.ha.connected:
-                # HA disconnected: safety mode - no grid export (setpoint >= 0)
-                if vanew < 0:
-                    vanew = 0
-                    flags += "[NoEV:HA?] "
-            elif ev_power > 100:
+            if ev_power > 100:
                 # HA connected, EV is charging: limit output to MPPT * efficiency
                 max_ac_output = max(0, int(mppt_total * INVERTER_EFFICIENCY) - SOLAR_OUTPUT_OFFSET)
                 min_setpoint = -max_ac_output  # Most negative allowed
@@ -367,17 +353,11 @@ class InverterController:
         # Goal: When EV is charging, export most solar to grid, keep 500W for battery
         # Trigger: garage (L1 charger) > 1kW OR ev_power (L2 charger) > 1kW
         # Action: setpoint = -(mppt * efficiency - 500)
-        # SAFETY: If HA disconnected, don't export to grid
         # -----------------------------------------------------------------
         BATTERY_RESERVE = 500  # Watts to keep for battery charging
         ev_charging_detected = garage_power > 1000 or ev_power > 1000
         if limit_to_ev:
-            if not self.ha.connected:
-                # HA disconnected: safety mode - no grid export
-                if vanew < 0:
-                    vanew = 0
-                    flags += "[LimEV:HA?] "
-            elif ev_charging_detected:
+            if ev_charging_detected:
                 ac_output = int(mppt_total * INVERTER_EFFICIENCY)
                 export_power = max(0, ac_output - BATTERY_RESERVE)
                 vanew = -export_power  # Negative = export to grid
@@ -708,6 +688,15 @@ class InverterController:
             'ui_config': self.ui_config,
         }
     
+    def get_state_for_mqtt(self) -> Dict[str, Any]:
+        """Full state for local use; slimmed copy for MQTT when MQTT_SLIM_STATE is True."""
+        if not MQTT_SLIM_STATE:
+            return self.state
+        out = dict(self.state)
+        for k in MQTT_SLIM_EXCLUDE_KEYS:
+            out.pop(k, None)
+        return out
+    
     # -------------------------------------------------------------------------
     # CONTROL LOOP
     # -------------------------------------------------------------------------
@@ -863,7 +852,7 @@ def _main_inner():
             
             # Publish state to MQTT for remote dashboard
             if mqtt_bridge and mqtt_bridge.connected:
-                mqtt_bridge.publish_state(controller.get_state())
+                mqtt_bridge.publish_state(controller.get_state_for_mqtt())
             
             # Periodic garbage collection (free memory on resource-constrained Venus OS)
             now = time.time()

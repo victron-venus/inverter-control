@@ -433,12 +433,13 @@ class VictronDBus:
     def get_all_batteries(self) -> list:
         """Get detailed data for all battery chains including SmartShunt
         
-        Returns list of dicts with: name, voltage, current, power, soc, state
+        Returns list of dicts with: name, voltage, current, power, soc, state,
+        time_to_go (formatted), time_to_go_sec (optional).
         """
         battery_services = [
-            ('com.victronenergy.battery.virtual_chain', 'Virtual Battery'),
             ('com.victronenergy.battery.dbus-mqtt-chain1', 'JBD Chain 1'),
             ('com.victronenergy.battery.dbus-mqtt-chain2', 'JBD Chain 2'),
+            ('com.victronenergy.battery.virtual_chain', 'Virtual Battery'),
         ]
         
         batteries = []
@@ -488,6 +489,28 @@ class VictronDBus:
                     battery['state'] = 'Idle'
             else:
                 battery['state'] = 'Idle'
+
+            # Time remaining (seconds) — Victron /TimeToGo (same basis as VRM)
+            battery['time_to_go'] = ''
+            battery['time_to_go_sec'] = None
+            ttg_raw = self._dbus_get(service, '/TimeToGo')
+            if ttg_raw is not None:
+                try:
+                    ttg_sec = max(0, int(float(ttg_raw)))
+                    battery['time_to_go_sec'] = ttg_sec
+                    max_reasonable = 86400 * 14  # ignore stale / idle huge values
+                    if (
+                        battery['state'] in ('Charging', 'Discharging')
+                        and 0 < ttg_sec < max_reasonable
+                    ):
+                        h = ttg_sec // 3600
+                        m = (ttg_sec % 3600) // 60
+                        if h > 0:
+                            battery['time_to_go'] = f'{h}h {m:02d}m'
+                        else:
+                            battery['time_to_go'] = f'{m}m'
+                except (TypeError, ValueError):
+                    pass
             
             batteries.append(battery)
         

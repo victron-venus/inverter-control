@@ -84,6 +84,26 @@ MQTT_BROKER = "localhost"  # Venus OS has built-in MQTT broker
 MQTT_PORT = 1883
 MQTT_TOPIC_PREFIX = "inverter"
 
+# When True, inverter/state MQTT payload omits Home Assistant mirror fields (booleans,
+# switch shadows, appliance flags). Use this with inverter-dashboard ha_secrets.py + HA_DIRECT_CONTROLS
+# so switch state is read from HA in the dashboard instead of duplicated over MQTT.
+MQTT_SLIM_STATE = True
+
+MQTT_SLIM_EXCLUDE_KEYS = (
+    "booleans",
+    "laundry_outlet",
+    "home_recliner",
+    "home_garage",
+    "water_valve",
+    "pump_switch",
+    "dishwasher_running",
+    "dishwasher_duration",
+    "washer_time",
+    "dryer_time",
+    "washer_power",
+    "dryer_power",
+)
+
 # =============================================================================
 # RUNTIME MODE
 # =============================================================================
