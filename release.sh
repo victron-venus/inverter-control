@@ -33,6 +33,7 @@ if [[ "$BRANCH" != "main" ]]; then
     [[ ${REPLY:-} =~ ^[Yy]$ ]] || exit 1
 fi
 
+# Highest semver tag (git describe can miss a newer tag not on the direct ancestry path)
 LATEST_TAG=$(git tag -l 'v*' | sort -V | tail -n1)
 if [ -z "$LATEST_TAG" ]; then
     LATEST_TAG="v0.0.0"
@@ -49,6 +50,28 @@ else
 fi
 
 NEW_VER="${NEW_TAG#v}"
+
+VERSION_FILE=""
+if [ -f VERSION ]; then
+    VERSION_FILE=VERSION
+elif [ -f version ]; then
+    VERSION_FILE=version
+fi
+
+# Do not release below committed VERSION (e.g. tags lagging behind a bumped VERSION file)
+if [ -n "$VERSION_FILE" ]; then
+    OLD=$(tr -d '\r\n' < "$VERSION_FILE")
+    OLD_NUM="${OLD#v}"
+    if [[ "$OLD_NUM" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ "$NEW_VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        HIGHER=$(printf '%s\n' "$NEW_VER" "$OLD_NUM" | sort -V | tail -n1)
+        if [ "$HIGHER" != "$NEW_VER" ]; then
+            echo ">>> $VERSION_FILE ($OLD_NUM) is ahead of tag-based bump ($NEW_VER); releasing $HIGHER instead (no downgrade)."
+            NEW_VER="$HIGHER"
+            NEW_TAG="v$NEW_VER"
+        fi
+    fi
+fi
+
 echo "Planned release: $NEW_TAG (semver digits: $NEW_VER)"
 
 read -p "Proceed with release $NEW_TAG? [y/N] " -n 1 -r
@@ -56,13 +79,6 @@ echo
 if [[ ! ${REPLY:-} =~ ^[Yy]$ ]]; then
     echo "Cancelled"
     exit 0
-fi
-
-VERSION_FILE=""
-if [ -f VERSION ]; then
-    VERSION_FILE=VERSION
-elif [ -f version ]; then
-    VERSION_FILE=version
 fi
 
 if [ -n "$VERSION_FILE" ]; then
