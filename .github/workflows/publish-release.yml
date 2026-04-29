@@ -22,7 +22,7 @@ jobs:
           const tag = context.ref.replace('refs/tags/', '');
           console.log('Release published: ' + tag);
 
-          # This mimics @portainer-bot behavior
+          // This mimics @portainer-bot behavior
           github.rest.repos.createOrUpdateFileContents({
             owner: context.repo.owner,
             repo: context.repo.repo,
