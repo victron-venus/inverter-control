@@ -32,6 +32,7 @@ jobs:
     - name: Run Bandit security linter
       run: |
         bandit -r . -f sarif -o bandit-results.sarif || true
+ working-directory: inverter_control
 
     - name: Upload Bandit results
       uses: github/codeql-action/upload-sarif@v4
