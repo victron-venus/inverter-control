@@ -437,3 +437,22 @@ Created by [@4alvit](https://github.com/4alvit)
 ## License
 
 MIT License
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature-name`)
+3. Commit your changes
+4. Push to the branch (`git push origin feature-name`)
+5. Create a Pull Request
+
+## Support
+
+For issues specific to:
+- **D-Bus errors**: Verify VE.Bus service and Venus OS version
+- **Home Assistant**: Test token and sensor availability
+- **Grid metering**: Check Shelly/Vue connection and MQTT latency
+- **Operating modes**: Review mode-specific logic implementation
+- **This project**: Open an issue in this repository
+
+**Note:** This is a community project and is not affiliated with Victron Energy.
