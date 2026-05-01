@@ -386,6 +386,37 @@ This project is part of a Victron Venus OS integration suite:
 | [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) | ESP32 Bluetooth monitor for JBD BMS |
 | [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) | Telegraf + InfluxDB + Grafana monitoring stack |
 
+## Development Workflow
+
+### Auto-Commit Script
+
+Use `commit.sh` for automated commit and PR creation:
+
+```bash
+# Create commit message in commit.txt
+echo "Add new feature X" > commit.txt
+echo "" >> commit.txt
+echo "Detailed description of changes" >> commit.txt
+
+# Run commit script
+./commit.sh
+```
+
+The script will:
+- Create feature branch if on main
+- Commit changes
+- Push branch
+- Create PR with auto-merge label
+- Enable auto-merge after CI checks pass
+
+### Auto-Merge
+
+For maintainers, PRs created with `auto-merge` label automatically merge after:
+- All GitHub Actions checks pass
+- Status checks: CI, Python Security Scan
+
+Configure branch protection rules in GitHub settings to require these checks.
+
 ## Author
 
 Created by [@4alvit](https://github.com/4alvit)

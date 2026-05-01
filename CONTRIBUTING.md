@@ -28,8 +28,17 @@ Thank you for your interest in contributing!
 3. Make your changes
 4. Test on actual Venus OS hardware if possible
 5. Run linter: `ruff check .`
-6. Commit with clear messages
-7. Push and create a Pull Request
+6. Use commit.sh script to create PR:
+   ```bash
+   echo "Add feature: your description" > commit.txt
+   echo "" >> commit.txt
+   echo "Detailed changelog here" >> commit.txt
+   ./commit.sh
+   ```
+7. The script creates PR with auto-merge label
+8. After CI checks pass and approval, PR auto-merges
+
+**Note:** Direct push to main is prevented. Always use feature branch + PR.
 
 ### Code Style
 
