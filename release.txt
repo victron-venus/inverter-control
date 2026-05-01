@@ -1,0 +1,6 @@
+## v1.15.1
+
+- MQTT slim state (`MQTT_SLIM_STATE`); fewer duplicated HA fields over MQTT when using inverter-dashboard HA direct mode.
+- Grid / EV: remove unsafe `vanew >= 0` clamps when HA is disconnected (DO NOT SUPPLY EV / LIMIT TO EV).
+- Victron: battery order JBD Chain 1 → 2 → Virtual; TimeToGo on battery services for dashboard.
+- `get_state_for_mqtt()` strips slim-excluded keys; `release.sh` uses highest semver `v*` tag for next version.

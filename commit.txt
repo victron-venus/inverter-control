@@ -1,0 +1,10 @@
+fix: remove development scripts from .gitignore
+
+commit.sh, commit.txt, release.txt, postinstall.sh, restart.sh must be tracked in git:
+- commit.sh: Automated commit and PR creation script
+- commit.txt: Template for commit messages
+- release.txt: Release notes template
+- postinstall.sh: Post installation script for Venus OS
+- restart.sh: Service restart utility
+
+These are essential for development workflow, not user-specific files.
