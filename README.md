@@ -82,9 +82,6 @@ This Python application controls a Victron inverter to maintain zero grid feed-i
                     [Loads L2] ←------ Grid L2 (no inverter)
 ```
 
-## Screenshot
-
-![Web Dashboard](images/Screenshot.png)
 
 ## Features
 
@@ -98,7 +95,6 @@ This Python application controls a Victron inverter to maintain zero grid feed-i
   - Charge Battery: Force battery charging
   - Do Not Supply Charger: EV charges from grid only
 - **Minimize Charging**: Auto-control dump loads to consume excess solar
-- **Web Dashboard**: Real-time monitoring and control
 - **Home Assistant Integration**: Sensor data and switch control
 - **Fast Control Loop**: 3 updates per second via D-Bus
 
@@ -112,9 +108,6 @@ inverter_control/
 ├── main.py             # Main control loop and console output
 ├── victron.py          # D-Bus interface for Victron devices
 ├── homeassistant.py    # HA API with caching and fallback
-├── web/
-│   ├── server.py       # HTTP server and dashboard
-│   └── __init__.py
 ├── deploy.sh           # Deploy to Venus OS
 ├── install.sh          # Install on Venus OS
 ├── LOGIC.md            # Control logic documentation (EN)
@@ -165,7 +158,6 @@ ENABLE_HA = True           # Home Assistant integration entirely
 
 When disabled:
 - Console output omits the corresponding sections
-- Web UI hides the corresponding cards
 - No HA API calls are made for disabled features
 
 This allows running the inverter control standalone without Home Assistant.
@@ -242,41 +234,6 @@ svc -u /service/inverter-control
 tail -f /var/log/inverter-control/current | tai64nlocal
 ```
 
-### API Endpoints
-
-```bash
-# System state (JSON)
-curl -sk https://localhost:8080/api/state | python3 -m json.tool
-
-# Console output (last lines)
-curl -sk https://localhost:8080/api/console
-
-# History for graphs
-curl -sk https://localhost:8080/api/history
-```
-
-### Console Access
-
-```bash
-# Attach to screen session
-screen -r inverter
-
-# Detach from screen
-Ctrl+A, D
-```
-
-### Web Dashboard
-
-Open `http://<cerbo-ip>:8080` in browser.
-
-Features:
-- Real-time power flow display
-- Toggle switches (synced with Home Assistant)
-- Manual setpoint control
-- Power limits override
-- Loop interval control
-- Power history graph
-- Console output
 
 ### One-shot Mode
 
@@ -423,8 +380,7 @@ This project is part of a Victron Venus OS integration suite:
 
 | Project | Description |
 |---------|-------------|
-| **inverter-control** (this) | ESS external control with web dashboard |
-| [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) | Remote web dashboard via MQTT (Docker) |
+| **inverter-control** (this) | ESS external control |
 | [dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) | MQTT to D-Bus bridge for BMS integration |
 | [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Tasmota smart plug as PV inverter on D-Bus |
 | [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) | ESP32 Bluetooth monitor for JBD BMS |
