@@ -39,7 +39,6 @@ config.local.py
 secrets.py
 
 LOGIC_RUS.md
-<<<<<<< HEAD
 
 commit.sh
 commit.txt
@@ -47,5 +46,4 @@ release.sh
 release.txt
 postinstall.sh
 restart.sh
-=======
->>>>>>> 3c3046e (fix: remove development scripts from .gitignore)
+PLAN.md
