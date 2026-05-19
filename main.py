@@ -255,9 +255,6 @@ class InverterController:
         sys_data['battery_socs'] = self._cached_battery_socs
         
         # Full state for web UI
-        tasmota_daily = [self.ha.get_sensor('tasmota_1_daily', 0), self.ha.get_sensor('tasmota_2_daily', 0)]
-        mppt_daily = [self.ha.get_sensor('mppt_1_daily', 0), self.ha.get_sensor('mppt_2_daily', 0), self.ha.get_sensor('mppt_3_daily', 0)]
-        
         self.state = {
             **sys_data,
             'setpoint': setpoint,
@@ -282,6 +279,8 @@ class InverterController:
                 'grid_kwh': self.ha.get_sensor('grid_kwh_today', 0),
                 'battery_in': self.ha.get_sensor('battery_in_today', 0),
                 'battery_out': self.ha.get_sensor('battery_out_today', 0),
+                'tasmota_daily': [self.ha.get_sensor('tasmota_1_daily', 0), self.ha.get_sensor('tasmota_2_daily', 0)],
+                'mppt_daily': [self.ha.get_sensor('mppt_1_daily', 0), self.ha.get_sensor('mppt_2_daily', 0), self.ha.get_sensor('mppt_3_daily', 0)],
             } if ENABLE_HA else {},
             'limits': {'min': self.power_limit_min, 'max': self.power_limit_max},
             'loop_interval': self.loop_interval,
