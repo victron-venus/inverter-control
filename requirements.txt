@@ -1,5 +1,5 @@
 # Core
-requests>=2.34.0
+requests>=2.34.2
 
 # FastAPI + WebSocket
 fastapi>=0.136.1
