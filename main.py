@@ -290,13 +290,16 @@ class InverterController:
         }
 
     def get_state_for_mqtt(self) -> Dict[str, Any]:
-        if not MQTT_SLIM_STATE: return self.state
+        if not MQTT_SLIM_STATE:
+            return self.state
         out = dict(self.state)
-        for k in MQTT_SLIM_EXCLUDE_KEYS: out.pop(k, None)
+        for k in MQTT_SLIM_EXCLUDE_KEYS:
+            out.pop(k, None)
         return out
 
     def run_cycle(self) -> bool:
-        def watchdog_handler(signum, frame): raise TimeoutError("Control cycle watchdog timeout")
+        def watchdog_handler(signum, frame):
+            raise TimeoutError("Control cycle watchdog timeout")
         old_handler = signal.signal(signal.SIGALRM, watchdog_handler)
         signal.alarm(5)
         try:
@@ -330,10 +333,13 @@ class InverterController:
             self.previous_setpoint = setpoint
             
             try:
-                if self.ha.get_boolean('no_feed'): time.sleep(2)
-            except Exception: pass
+                if self.ha.get_boolean('no_feed'):
+                    time.sleep(2)
+            except Exception:
+                pass
             return True
-        except KeyboardInterrupt: return False
+        except KeyboardInterrupt:
+            return False
         except TimeoutError:
             logger.error("WATCHDOG: Cycle timeout")
             return True
