@@ -131,6 +131,7 @@ GRID_ZERO_DEADBAND_LOW = -50   # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 80   # Watts - upper bound (slight import OK)
 DAMPING_FACTOR = 0.7           # Apply only 70% of calculated correction (0.0-1.0)
 EMA_ALPHA = 0.3                # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
+SETPOINT_DELTA_LIMIT = 2000    # Maximum change in setpoint per cycle (Watts)
 
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
