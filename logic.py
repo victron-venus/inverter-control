@@ -4,7 +4,7 @@ Separated from I/O for stability and testability.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
 import logging
 

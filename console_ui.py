@@ -4,7 +4,7 @@ Handles formatting and terminal updates
 """
 
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -13,7 +13,7 @@ except ImportError:
 from config import (
     TIMEZONE, Colors as C,
     ENABLE_EV, ENABLE_WATER, ENABLE_HA_LOADS,
-    ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER, ENABLE_HA
+    ENABLE_DISHWASHER
 )
 
 class ConsoleUI:
