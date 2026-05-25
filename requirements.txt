@@ -2,7 +2,7 @@
 requests>=2.34.2
 
 # FastAPI + WebSocket
-fastapi>=0.136.1
+fastapi>=0.136.3
 uvicorn>=0.47.0
 websockets>=16.0
 
