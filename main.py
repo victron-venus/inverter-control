@@ -6,6 +6,9 @@ Grid-zero feed-in control for Victron system with split-phase compensation
 
 import sys
 import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import time
 import argparse
 import signal
@@ -13,27 +16,42 @@ import logging
 import traceback
 import atexit
 import gc
-from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
+from config import (
+    POWER_LIMIT_MAX, POWER_LIMIT_MIN, LOOP_INTERVAL,
+    GRID_ZERO_DEADBAND_LOW, GRID_ZERO_DEADBAND_HIGH, DAMPING_FACTOR, EMA_ALPHA,
+    SOLAR_OUTPUT_OFFSET, INVERTER_EFFICIENCY, SETPOINT_DELTA_LIMIT,
+    Colors as C,
+    DRY_RUN,
+    ENABLE_EV, ENABLE_WATER, ENABLE_HA,
+    MQTT_SLIM_STATE, MQTT_SLIM_EXCLUDE_KEYS,
+    CREEP_RATE, CREEP_MAX,
+)
+from victron import get_victron
+from homeassistant import get_ha
+from console_server import start_server as start_console_server, stop_server as stop_console_server, broadcast_line
+from logic import SetpointCalculator, SystemState
+from console_ui import ConsoleUI
+
 try:
-    from zoneinfo import ZoneInfo
+    from mqtt_bridge import get_mqtt_bridge, MQTT_AVAILABLE
 except ImportError:
-    from backports.zoneinfo import ZoneInfo
+    MQTT_AVAILABLE = False
+    def get_mqtt_bridge(*a, **kw):
+        return None
 
 # =============================================================================
 # LOGGING SETUP - All errors go to file
 # =============================================================================
 LOG_FILE = "/var/log/inverter-control.log"
 
-# Create logger
 logger = logging.getLogger('inverter-control')
 logger.setLevel(logging.DEBUG)
 
-# File handler - INFO level for startup/shutdown, WARNING for issues
 try:
     fh = logging.FileHandler(LOG_FILE)
-    fh.setLevel(logging.INFO)  # Log INFO+ to file (startup, shutdown, errors)
+    fh.setLevel(logging.INFO)
     fh.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -42,19 +60,21 @@ try:
 except Exception as e:
     print(f"Warning: Could not create log file: {e}", file=sys.stderr)
 
+
 def log_exception(msg: str):
     """Log exception with full traceback"""
     logger.error(f"{msg}\n{traceback.format_exc()}")
 
-# Version
+
 def get_version() -> str:
     """Read version from version file"""
     try:
         version_file = os.path.join(os.path.dirname(__file__), 'version')
         with open(version_file, 'r') as f:
             return f.read().strip()
-    except:
+    except Exception:
         return 'unknown'
+
 
 VERSION = get_version()
 
@@ -62,32 +82,6 @@ VERSION = get_version()
 class TimeoutError(Exception):
     """Raised when a watchdog timeout occurs"""
     pass
-
-# Add current directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from config import (
-    POWER_LIMIT_MAX, POWER_LIMIT_MIN, LOOP_INTERVAL,
-    GRID_ZERO_DEADBAND_LOW, GRID_ZERO_DEADBAND_HIGH, DAMPING_FACTOR, EMA_ALPHA,
-    SOLAR_OUTPUT_OFFSET, INVERTER_EFFICIENCY, SETPOINT_DELTA_LIMIT,
-    INVERTER_STATES, Colors as C,
-    HA_BOOLEANS, DRY_RUN, TIMEZONE,
-    ENABLE_EV, ENABLE_WATER, ENABLE_HA_LOADS, ENABLE_HA,
-    ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER,
-    MQTT_SLIM_STATE, MQTT_SLIM_EXCLUDE_KEYS,
-)
-from victron import get_victron
-from homeassistant import get_ha
-from console_server import start_server as start_console_server, stop_server as stop_console_server, broadcast_line
-from logic import SetpointCalculator, SystemState
-from console_ui import ConsoleUI
-
-# MQTT bridge for remote dashboard (optional)
-try:
-    from mqtt_bridge import get_mqtt_bridge, MQTT_AVAILABLE
-except ImportError:
-    MQTT_AVAILABLE = False
-    get_mqtt_bridge = lambda *a, **kw: None
 
 
 # =============================================================================
@@ -119,7 +113,9 @@ class InverterController:
             'GRID_ZERO_DEADBAND_LOW': GRID_ZERO_DEADBAND_LOW,
             'GRID_ZERO_DEADBAND_HIGH': GRID_ZERO_DEADBAND_HIGH,
             'INVERTER_EFFICIENCY': INVERTER_EFFICIENCY,
-            'SOLAR_OUTPUT_OFFSET': SOLAR_OUTPUT_OFFSET
+            'SOLAR_OUTPUT_OFFSET': SOLAR_OUTPUT_OFFSET,
+            'CREEP_RATE': CREEP_RATE,
+            'CREEP_MAX': CREEP_MAX,
         }
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron)
@@ -323,7 +319,8 @@ class InverterController:
             sys_data['mppt_data'] = self._cached_mppt_data
             sys_data['tasmota_powers'] = self._cached_tasmota_powers
             
-            line = self.console.format_line(sys_data, setpoint, self.previous_setpoint, flags, self.filtered_gt or sys_data['gt'])
+            filtered_display = self.filtered_gt if self.filtered_gt is not None else sys_data['gt']
+            line = self.console.format_line(sys_data, setpoint, self.previous_setpoint, flags, filtered_display)
             print(line)
             broadcast_line(line)
             

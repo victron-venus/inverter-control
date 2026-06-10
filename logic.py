@@ -66,33 +66,51 @@ class BaseStrategy(ABC):
         pass
 
 class NormalStrategy(BaseStrategy):
-    """Base strategy: Target grid zero"""
-    
-    def __init__(self, damping_factor: float, deadband_low: int, deadband_high: int):
+    """Base strategy: Target grid zero with creep correction in deadband"""
+
+    def __init__(self, damping_factor: float, deadband_low: int, deadband_high: int,
+                 creep_rate: float = 0.5, creep_max: float = 100.0):
         self.damping_factor = damping_factor
         self.deadband_low = deadband_low
         self.deadband_high = deadband_high
+        self.creep_rate = creep_rate
+        self.creep_max = creep_max
+        self.creep_accumulator = 0.0
+        self.stable_count = 0
 
     def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
         effective_gt = state.gt
         flags = ""
-        
+
         # Step 4: Adjust Grid for EV Exclusion Mode
         if state.do_not_supply_charger and state.ev_power > 100:
             effective_gt = state.gt - state.ev_power
             flags += f"[EV:{int(state.ev_power)}] "
-            
+
         # Step 5: Base Calculation - Target Grid Zero
         # Use filtered_gt passed from the calculator
-        smoothed_gt = state.filtered_gt if state.filtered_gt is not None else effective_gt
-        
+        smoothed_gt = state.filtered_gt if state.filtered_gt is not None else float(effective_gt)
+
         if self.deadband_low < smoothed_gt < self.deadband_high:
-            vanew = state.previous_setpoint
-            flags += "[~] "
+            self.stable_count += 1
+            # Creep: slowly accumulate error to push toward zero
+            if smoothed_gt > 0:
+                # Importing — need more discharge (more negative setpoint)
+                self.creep_accumulator = min(self.creep_max,
+                                             self.creep_accumulator + self.creep_rate)
+            else:
+                # Exporting — need less discharge
+                self.creep_accumulator = max(-self.creep_max,
+                                             self.creep_accumulator - self.creep_rate)
+            creep_correction = int(self.creep_accumulator * self.damping_factor)
+            vanew = state.previous_setpoint - creep_correction
+            flags += f"[~{int(self.creep_accumulator)}] "
         else:
+            self.stable_count = 0
+            self.creep_accumulator = 0.0
             correction = -smoothed_gt * self.damping_factor
             vanew = state.inv_power + correction
-            
+
         return int(vanew), flags
 
 class OnlyChargingStrategy(BaseStrategy):
@@ -186,7 +204,9 @@ class SetpointCalculator:
             NormalStrategy(
                 config.get('DAMPING_FACTOR', 0.7),
                 config.get('GRID_ZERO_DEADBAND_LOW', -50),
-                config.get('GRID_ZERO_DEADBAND_HIGH', 80)
+                config.get('GRID_ZERO_DEADBAND_HIGH', 80),
+                config.get('CREEP_RATE', 0.5),
+                config.get('CREEP_MAX', 100.0)
             ),
             OnlyChargingStrategy(
                 config.get('INVERTER_EFFICIENCY', 0.94),

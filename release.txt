@@ -1,6 +1,26 @@
-## v1.15.1
+## v1.17.0
 
-- MQTT slim state (`MQTT_SLIM_STATE`); fewer duplicated HA fields over MQTT when using inverter-dashboard HA direct mode.
-- Grid / EV: remove unsafe `vanew >= 0` clamps when HA is disconnected (DO NOT SUPPLY EV / LIMIT TO EV).
-- Victron: battery order JBD Chain 1 → 2 → Virtual; TimeToGo on battery services for dashboard.
-- `get_state_for_mqtt()` strips slim-excluded keys; `release.sh` uses highest semver `v*` tag for next version.
+### Creep Correction for Grid-Zero Deadband
+
+When system sits in deadband zone (grid power between -50W and 80W) but consistently imports/exports 30-100W, setpoint was frozen — caused chronic grid offset.
+
+New creep integrator slowly accumulates error and nudges setpoint toward zero:
+
+- `CREEP_RATE = 0.5` — watts accumulated per cycle while in deadband
+- `CREEP_MAX = 100.0` — maximum creep correction cap
+- Creep resets automatically when grid leaves deadband
+- Console flag shows creep accumulator: `[~45]` = 45W accumulated
+
+### Bug Fixes
+
+- **falsy `filtered_gt` bug** — `filtered_gt or sys_data['gt']` failed when `filtered_gt=0.0` (falsy). Now uses proper `is not None` check.
+- **bare `except:`** in `get_version()` → `except Exception:`
+- **unused imports** removed from `main.py` (datetime, timezone, ZoneInfo, INVERTER_STATES, HA_BOOLEANS, TIMEZONE, ENABLE_HA_LOADS, ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER)
+- **lambda → def** for `get_mqtt_bridge` fallback
+- **import order** fixed (E402) — `sys.path.insert` at top before project imports
+
+### Tests
+
+- 3 new tests: `test_creep_import`, `test_creep_export`, `test_creep_reset_outside_deadband`
+- Updated `test_deadband` for new `[~{accumulator}]` flag format
+- All 10 tests passing
