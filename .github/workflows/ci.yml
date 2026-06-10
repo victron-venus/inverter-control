@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: ['**']
 
 permissions:
   contents: read
@@ -13,36 +13,65 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (Audit all outbound calls)
+      - name: Harden the runner
         uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: audit
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      
+
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
-      
+
       - name: Install linters
         run: pip install ruff
-      
+
       - name: Ruff lint
-        run: ruff check --select=E,F,W --ignore=E402,E501,E722,E731,F401,F541,F841,W291,W293 .
-      
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
       - name: Syntax check
         run: python -m py_compile main.py config.py victron.py homeassistant.py mqtt_bridge.py ui_config.py logic.py console_ui.py
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run tests with coverage
+        run: |
+          pip install pytest pytest-cov
+          pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=80
+
+  validate-secrets-template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
-      - name: Run logic tests
+
+      - name: Validate secrets.example.py syntax
+        run: python -m py_compile secrets.example.py
+
+      - name: Check secrets.example.py has no real values
         run: |
-          export PYTHONPATH=$PYTHONPATH:.
-          python3 -m unittest discover tests
+          if grep -E '(token|password|secret|key)\s*=\s*["\x27][^"\x27]{8,}' secrets.example.py | grep -v 'your_'; then
+            echo "ERROR: secrets.example.py may contain real values"
+            exit 1
+          fi
+          echo "OK: secrets.example.py looks like a template"
