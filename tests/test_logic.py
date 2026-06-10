@@ -69,10 +69,73 @@ class TestLogic(unittest.TestCase):
         state = self.get_base_state()
         state.gt = 5  # Within deadband (-10, 10)
         state.previous_setpoint = -500
-        
+
         result = self.calculator.calculate(state)
         self.assertEqual(result.setpoint, -500)
-        self.assertIn("[~]", result.flags)
+        self.assertIn("[~", result.flags)
+
+    def test_creep_import(self):
+        """Creep should increase discharge when consistently importing in deadband"""
+        state = self.get_base_state()
+        state.gt = 50  # Importing 50W, within deadband (-10, 10)? No — 50 > 10
+        # Widen deadband for this test
+        self.calculator.strategies[0].deadband_low = -100
+        self.calculator.strategies[0].deadband_high = 100
+        state.previous_setpoint = -500
+
+        # Run multiple cycles to accumulate creep
+        for _ in range(10):
+            state.filtered_gt = None  # Reset EMA each time for consistent effective_gt
+            result = self.calculator.calculate(state)
+            state.filtered_gt = result.filtered_gt
+            state.previous_setpoint = result.setpoint
+
+        # Creep should have moved setpoint more negative (more discharge)
+        self.assertLess(result.setpoint, -500)
+
+    def test_creep_export(self):
+        """Creep should decrease discharge when consistently exporting in deadband"""
+        state = self.get_base_state()
+        state.gt = -30  # Exporting 30W
+        self.calculator.strategies[0].deadband_low = -100
+        self.calculator.strategies[0].deadband_high = 100
+        state.previous_setpoint = -500
+
+        for _ in range(10):
+            state.filtered_gt = None
+            result = self.calculator.calculate(state)
+            state.filtered_gt = result.filtered_gt
+            state.previous_setpoint = result.setpoint
+
+        # Creep should have moved setpoint less negative (less discharge)
+        self.assertGreater(result.setpoint, -500)
+
+    def test_creep_reset_outside_deadband(self):
+        """Creep accumulator should reset when grid leaves deadband"""
+        normal = self.calculator.strategies[0]
+        normal.deadband_low = -100
+        normal.deadband_high = 100
+
+        state = self.get_base_state()
+        state.gt = 50
+        state.previous_setpoint = -500
+
+        # Accumulate creep
+        for _ in range(10):
+            state.filtered_gt = None
+            result = self.calculator.calculate(state)
+            state.filtered_gt = result.filtered_gt
+            state.previous_setpoint = result.setpoint
+
+        self.assertNotEqual(normal.creep_accumulator, 0.0)
+
+        # Now push outside deadband
+        state.gt = 500
+        state.filtered_gt = None
+        result = self.calculator.calculate(state)
+
+        self.assertEqual(normal.creep_accumulator, 0.0)
+        self.assertEqual(normal.stable_count, 0)
 
     def test_only_charging_mode(self):
         """Verify only_charging limits output to MPPT production"""

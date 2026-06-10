@@ -133,6 +133,10 @@ DAMPING_FACTOR = 0.7           # Apply only 70% of calculated correction (0.0-1.
 EMA_ALPHA = 0.3                # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
 SETPOINT_DELTA_LIMIT = 2000    # Maximum change in setpoint per cycle (Watts)
 
+# Creep correction — slow drift fix when grid stays in deadband but offset from zero
+CREEP_RATE = 0.5               # Watts accumulated per cycle while in deadband
+CREEP_MAX = 100.0              # Maximum creep correction (Watts)
+
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
 SOLAR_OUTPUT_OFFSET = 60    # Watts
