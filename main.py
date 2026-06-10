@@ -27,6 +27,7 @@ from config import (
     ENABLE_EV, ENABLE_WATER, ENABLE_HA,
     MQTT_SLIM_STATE, MQTT_SLIM_EXCLUDE_KEYS,
     CREEP_RATE, CREEP_MAX,
+    EXPORT_DAMPING,
 )
 from victron import get_victron
 from homeassistant import get_ha
@@ -116,6 +117,7 @@ class InverterController:
             'SOLAR_OUTPUT_OFFSET': SOLAR_OUTPUT_OFFSET,
             'CREEP_RATE': CREEP_RATE,
             'CREEP_MAX': CREEP_MAX,
+            'EXPORT_DAMPING': EXPORT_DAMPING,
         }
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron)

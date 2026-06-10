@@ -129,9 +129,12 @@ HA_POLL_INTERVAL = 1.5      # seconds for Home Assistant polling
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50   # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 80   # Watts - upper bound (slight import OK)
-DAMPING_FACTOR = 0.7           # Apply only 70% of calculated correction (0.0-1.0)
+DAMPING_FACTOR = 0.7           # Damping for import correction (0.0-1.0)
 EMA_ALPHA = 0.3                # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
 SETPOINT_DELTA_LIMIT = 2000    # Maximum change in setpoint per cycle (Watts)
+
+# Export asymmetry — export to grid is undesirable, correct more aggressively
+EXPORT_DAMPING = 1.0           # Full correction for export (no damping)
 
 # Creep correction — slow drift fix when grid stays in deadband but offset from zero
 CREEP_RATE = 0.5               # Watts accumulated per cycle while in deadband

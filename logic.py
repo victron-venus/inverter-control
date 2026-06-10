@@ -66,15 +66,18 @@ class BaseStrategy(ABC):
         pass
 
 class NormalStrategy(BaseStrategy):
-    """Base strategy: Target grid zero with creep correction in deadband"""
+    """Base strategy: Target grid zero with creep correction in deadband.
+    Asymmetric response: export (gt < 0) corrected more aggressively than import."""
 
     def __init__(self, damping_factor: float, deadband_low: int, deadband_high: int,
-                 creep_rate: float = 0.5, creep_max: float = 100.0):
+                 creep_rate: float = 0.5, creep_max: float = 100.0,
+                 export_damping: float = 1.0):
         self.damping_factor = damping_factor
         self.deadband_low = deadband_low
         self.deadband_high = deadband_high
         self.creep_rate = creep_rate
         self.creep_max = creep_max
+        self.export_damping = export_damping  # stronger damping for export
         self.creep_accumulator = 0.0
         self.stable_count = 0
 
@@ -88,27 +91,30 @@ class NormalStrategy(BaseStrategy):
             flags += f"[EV:{int(state.ev_power)}] "
 
         # Step 5: Base Calculation - Target Grid Zero
-        # Use filtered_gt passed from the calculator
         smoothed_gt = state.filtered_gt if state.filtered_gt is not None else float(effective_gt)
 
         if self.deadband_low < smoothed_gt < self.deadband_high:
             self.stable_count += 1
-            # Creep: slowly accumulate error to push toward zero
+            # Creep: accumulate error to push toward zero
+            # Faster creep for export (we never want to export)
             if smoothed_gt > 0:
-                # Importing — need more discharge (more negative setpoint)
                 self.creep_accumulator = min(self.creep_max,
                                              self.creep_accumulator + self.creep_rate)
             else:
-                # Exporting — need less discharge
+                # Export creep: 2x faster accumulation
                 self.creep_accumulator = max(-self.creep_max,
-                                             self.creep_accumulator - self.creep_rate)
-            creep_correction = int(self.creep_accumulator * self.damping_factor)
+                                             self.creep_accumulator - self.creep_rate * 2)
+            # Use stronger damping for export direction
+            damping = self.export_damping if smoothed_gt < 0 else self.damping_factor
+            creep_correction = int(self.creep_accumulator * damping)
             vanew = state.previous_setpoint - creep_correction
             flags += f"[~{int(self.creep_accumulator)}] "
         else:
             self.stable_count = 0
             self.creep_accumulator = 0.0
-            correction = -smoothed_gt * self.damping_factor
+            # Asymmetric damping: export corrected more aggressively
+            damping = self.export_damping if smoothed_gt < 0 else self.damping_factor
+            correction = -smoothed_gt * damping
             vanew = state.inv_power + correction
 
         return int(vanew), flags
@@ -206,7 +212,8 @@ class SetpointCalculator:
                 config.get('GRID_ZERO_DEADBAND_LOW', -50),
                 config.get('GRID_ZERO_DEADBAND_HIGH', 80),
                 config.get('CREEP_RATE', 0.5),
-                config.get('CREEP_MAX', 100.0)
+                config.get('CREEP_MAX', 100.0),
+                config.get('EXPORT_DAMPING', 1.0)
             ),
             OnlyChargingStrategy(
                 config.get('INVERTER_EFFICIENCY', 0.94),
