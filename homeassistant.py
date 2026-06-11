@@ -32,6 +32,12 @@ from config import (
 
 logger = logging.getLogger("inverter-control")
 
+# Disable insecure request warnings for local HA instance (http:// is intentional)
+# nosec B310
+import urllib3  # noqa: E402
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 class HomeAssistantClient:
     """
