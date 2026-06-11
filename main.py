@@ -262,6 +262,8 @@ class InverterController:
             'tasmota_total': sum(self._cached_tasmota_powers),
             'solar_total': sum(m['w'] for m in self._cached_mppt_data.values()) + sum(self._cached_tasmota_powers),
             'mppt_data': self._cached_mppt_data,
+            'mppt_individual': [m['w'] for m in self._cached_mppt_data.values()],
+            'tasmota_individual': self._cached_tasmota_powers,
             'inverter_state': self._cached_inv_state,
             'battery_socs': self._cached_battery_socs,
             'batteries': self.victron.get_all_batteries(),
