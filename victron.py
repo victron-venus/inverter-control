@@ -12,6 +12,11 @@ from config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
 logger = logging.getLogger("inverter-control")
 
+# D-Bus path constants (duplicated across methods)
+DC_CURRENT_PATH = "/Dc/0/Current"
+SETTINGS_SERVICE = "com.victronenergy.settings"
+HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
+
 
 # Timeout handler for stuck subprocesses
 class TimeoutError(Exception):
@@ -305,7 +310,7 @@ class VictronDBus:
                     pass
 
             # Get current
-            val = self._dbus_get(service, "/Dc/0/Current")
+            val = self._dbus_get(service, DC_CURRENT_PATH)
             if val:
                 try:
                     mppt_data["a"] = float(val)
@@ -379,7 +384,7 @@ class VictronDBus:
         hub4_mode = 0
         bl_state = 0
 
-        val = self._dbus_get("com.victronenergy.settings", "/Settings/CGwacs/Hub4Mode")
+        val = self._dbus_get(SETTINGS_SERVICE, HUB4_MODE_PATH)
         if val:
             try:
                 hub4_mode = int(val)
@@ -387,7 +392,7 @@ class VictronDBus:
                 pass
 
         val = self._dbus_get(
-            "com.victronenergy.settings", "/Settings/CGwacs/BatteryLife/State"
+            SETTINGS_SERVICE, "/Settings/CGwacs/BatteryLife/State"
         )
         if val:
             try:
@@ -433,15 +438,15 @@ class VictronDBus:
         if external:
             # External control: Hub4Mode = 3
             return self._dbus_set(
-                "com.victronenergy.settings", "/Settings/CGwacs/Hub4Mode", 3, "int32"
+                SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32"
             )
         else:
             # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
             success1 = self._dbus_set(
-                "com.victronenergy.settings", "/Settings/CGwacs/Hub4Mode", 1, "int32"
+                SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32"
             )
             success2 = self._dbus_set(
-                "com.victronenergy.settings",
+                SETTINGS_SERVICE,
                 "/Settings/CGwacs/BatteryLife/State",
                 0,
                 "int32",
@@ -473,7 +478,7 @@ class VictronDBus:
                     pass
 
             # Current
-            val = self._dbus_get(service, "/Dc/0/Current")
+            val = self._dbus_get(service, DC_CURRENT_PATH)
             if val:
                 try:
                     battery["current"] = float(val)
@@ -557,7 +562,7 @@ class VictronDBus:
                     pass
 
             # Current
-            val = self._dbus_get(service, "/Dc/0/Current")
+            val = self._dbus_get(service, DC_CURRENT_PATH)
             if val:
                 try:
                     charger["current"] = float(val)

@@ -140,10 +140,10 @@ class TestLogic(unittest.TestCase):
 
         self.assertNotEqual(normal.creep_accumulator, 0.0)
 
-        # Now push outside deadband
+        # Now push outside deadband — creep should reset
         state.gt = 500
         state.filtered_gt = None
-        result = self.calculator.calculate(state)
+        self.calculator.calculate(state)
 
         self.assertEqual(normal.creep_accumulator, 0.0)
         self.assertEqual(normal.stable_count, 0)
