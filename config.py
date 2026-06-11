@@ -24,7 +24,7 @@ try:
 except ImportError:
     # Fallback for development or if secrets.py doesn't exist
     print("WARNING: secrets.py not found! Copy secrets.example.py to secrets.py")
-    HA_URL = "http://localhost:8123"
+    HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     HA_TOKEN = "your_token_here"
     PORTAL_ID = "your_portal_id"
     TASMOTA_IPS = []

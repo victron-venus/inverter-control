@@ -22,7 +22,7 @@ except ImportError:
     USE_REQUESTS = False
 
 # Configuration
-LOKI_URL = "http://192.168.167.25:3100/loki/api/v1/push"
+LOKI_URL = "http://192.168.167.25:3100/loki/api/v1/push"  # nosec B310 — local Loki
 STATE_FILE = "/tmp/log-forwarder-state.json"
 POLL_INTERVAL = 5  # seconds
 BATCH_SIZE = 100  # max lines per push

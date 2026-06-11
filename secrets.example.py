@@ -10,7 +10,7 @@ secrets.py is NOT tracked by git.
 # HOME ASSISTANT CONNECTION
 # =============================================================================
 
-HA_URL = "http://YOUR_HA_IP:8123"
+HA_URL = "http://YOUR_HA_IP:8123"  # nosec B310 — local HA instance
 HA_TOKEN = "your_long_lived_access_token_here"
 
 # =============================================================================
