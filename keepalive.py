@@ -118,7 +118,7 @@ def main():
                     "/dev/null",
                     "-w",
                     "%{http_code}",
-                    "http://localhost:8080/api/state",
+                    "http://localhost:8080/api/state",  # nosec B310 — local API
                 ],
                 capture_output=True,
                 text=True,
