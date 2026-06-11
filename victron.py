@@ -6,9 +6,7 @@ Fast D-Bus access for grid control and monitoring
 
 import subprocess
 import re
-import signal
 import logging
-import traceback
 from typing import Optional, Dict, Any, Tuple
 from config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
@@ -206,7 +204,7 @@ class VictronDBus:
                 try:
                     val = float(match.group(1))
                     data[key] = int(val) if key not in ('bv', 'bc') else val
-                except:
+                except Exception:
                     pass
         
         data['gt'] = data['g1'] + data['g2']
@@ -224,7 +222,7 @@ class VictronDBus:
             try:
                 code = int(val)
                 return code, INVERTER_STATES.get(code, f"? ({code})")
-            except:
+            except Exception:
                 pass
         return 0, "Unknown"
     
@@ -238,7 +236,7 @@ class VictronDBus:
         if val:
             try:
                 return int(float(val))
-            except:
+            except Exception:
                 pass
         return 0
     
@@ -251,7 +249,7 @@ class VictronDBus:
         if val:
             try:
                 return int(float(val))
-            except:
+            except Exception:
                 pass
         return 0
     
@@ -279,7 +277,7 @@ class VictronDBus:
             if val:
                 try:
                     mppt_data['w'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # Get current
@@ -287,7 +285,7 @@ class VictronDBus:
             if val:
                 try:
                     mppt_data['a'] = float(val)
-                except:
+                except Exception:
                     pass
             
             data[f'mppt{i}'] = mppt_data
@@ -303,7 +301,7 @@ class VictronDBus:
             if val:
                 try:
                     powers.append(float(val))
-                except:
+                except Exception:
                     powers.append(0.0)
             else:
                 powers.append(0.0)
@@ -316,7 +314,7 @@ class VictronDBus:
         if val:
             try:
                 return float(val)
-            except:
+            except Exception:
                 pass
         return None
     
@@ -338,7 +336,7 @@ class VictronDBus:
             if val:
                 try:
                     socs.append(float(val))
-                except:
+                except Exception:
                     socs.append(0.0)
             else:
                 socs.append(0.0)
@@ -361,14 +359,14 @@ class VictronDBus:
         if val:
             try:
                 hub4_mode = int(val)
-            except:
+            except Exception:
                 pass
         
         val = self._dbus_get('com.victronenergy.settings', '/Settings/CGwacs/BatteryLife/State')
         if val:
             try:
                 bl_state = int(val)
-            except:
+            except Exception:
                 pass
         
         # Determine mode name
@@ -451,7 +449,7 @@ class VictronDBus:
             if val:
                 try:
                     battery['voltage'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # Current
@@ -459,7 +457,7 @@ class VictronDBus:
             if val:
                 try:
                     battery['current'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # Power
@@ -467,7 +465,7 @@ class VictronDBus:
             if val:
                 try:
                     battery['power'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # SoC
@@ -475,7 +473,7 @@ class VictronDBus:
             if val:
                 try:
                     battery['soc'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # State (from /Info/State or derive from current)
@@ -535,7 +533,7 @@ class VictronDBus:
             if val:
                 try:
                     charger['pv_voltage'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # Current
@@ -543,7 +541,7 @@ class VictronDBus:
             if val:
                 try:
                     charger['current'] = float(val)
-                except:
+                except Exception:
                     pass
             
             # Power
@@ -551,7 +549,7 @@ class VictronDBus:
             if val:
                 try:
                     charger['power'] = float(val)
-                except:
+                except Exception:
                     pass
             
             chargers.append(charger)

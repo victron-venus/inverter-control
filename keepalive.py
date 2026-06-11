@@ -26,7 +26,7 @@ def dbus_get(service, path):
                 if 'int32' in line or 'double' in line:
                     return int(line.split()[-1])
         return None
-    except:
+    except Exception:
         return None
 
 def dbus_set(service, path, value):
@@ -38,7 +38,7 @@ def dbus_set(service, path, value):
             capture_output=True, timeout=2
         )
         return True
-    except:
+    except Exception:
         return False
 
 def find_vebus_service():
@@ -56,7 +56,7 @@ def find_vebus_service():
                 match = re.search(r'(com\.victronenergy\.vebus\.\w+)', line)
                 if match:
                     return match.group(1)
-    except:
+    except Exception:
         pass
     # Fallback to common name
     return "com.victronenergy.vebus.ttyUSB2"
@@ -71,7 +71,7 @@ def main():
     setpoint = dbus_get(vebus, "/Hub4/L1/AcPowerSetpoint")
     if setpoint is None:
         setpoint = 0
-        print(f"[Keepalive] Could not read setpoint, using 0")
+        print("[Keepalive] Could not read setpoint, using 0")
     else:
         print(f"[Keepalive] Current setpoint: {setpoint}W")
     
@@ -87,9 +87,9 @@ def main():
                 capture_output=True, text=True, timeout=2
             )
             if result.stdout.strip() == '200':
-                print(f"[Keepalive] Main process is back, exiting")
+                print("[Keepalive] Main process is back, exiting")
                 return 0
-        except:
+        except Exception:
             pass
         
         # Send setpoint

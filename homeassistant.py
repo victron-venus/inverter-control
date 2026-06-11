@@ -5,9 +5,9 @@ API access with caching and fallback for unreliable connections
 """
 
 import requests
-import threading
 import time
 import logging
+import threading
 from typing import Dict, Any, Optional
 from config import (
     HA_URL, HA_TOKEN, HA_TIMEOUT, HA_POLL_INTERVAL,
@@ -126,7 +126,7 @@ class HomeAssistantClient:
             if '.' not in str(value):
                 return int(value)
             return float(value)
-        except:
+        except Exception:
             return default
     
     def _parse_duration(self, value: str) -> int:
@@ -136,7 +136,7 @@ class HomeAssistantClient:
         try:
             # Try numeric first
             return int(float(value))
-        except:
+        except Exception:
             pass
         try:
             # Try HH:MM:SS or MM:SS format
@@ -147,7 +147,7 @@ class HomeAssistantClient:
             elif len(parts) == 2:
                 mins, secs = int(parts[0]), int(parts[1])
                 return mins + (1 if secs >= 30 else 0)
-        except:
+        except Exception:
             pass
         return 0
     
