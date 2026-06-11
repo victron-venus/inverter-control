@@ -5,28 +5,33 @@ Unit tests for Inverter Control logic
 import unittest
 from logic import SetpointCalculator, SystemState
 
+
 class TestLogic(unittest.TestCase):
     def setUp(self):
         self.config = {
-            'EMA_ALPHA': 1.0,  # No smoothing for tests
-            'POWER_LIMIT_MIN': -2300,
-            'POWER_LIMIT_MAX': 2250,
-            'SETPOINT_DELTA_LIMIT': 2000,
-            'DAMPING_FACTOR': 0.7,  # Import damping
-            'GRID_ZERO_DEADBAND_LOW': -10,
-            'GRID_ZERO_DEADBAND_HIGH': 10,
-            'INVERTER_EFFICIENCY': 1.0,  # 100% efficiency for simple math
-            'SOLAR_OUTPUT_OFFSET': 0,
-            'EXPORT_DAMPING': 1.0,  # Full correction for export
-            'CREEP_RATE': 0.5,
-            'CREEP_MAX': 100.0,
+            "EMA_ALPHA": 1.0,  # No smoothing for tests
+            "POWER_LIMIT_MIN": -2300,
+            "POWER_LIMIT_MAX": 2250,
+            "SETPOINT_DELTA_LIMIT": 2000,
+            "DAMPING_FACTOR": 0.7,  # Import damping
+            "GRID_ZERO_DEADBAND_LOW": -10,
+            "GRID_ZERO_DEADBAND_HIGH": 10,
+            "INVERTER_EFFICIENCY": 1.0,  # 100% efficiency for simple math
+            "SOLAR_OUTPUT_OFFSET": 0,
+            "EXPORT_DAMPING": 1.0,  # Full correction for export
+            "CREEP_RATE": 0.5,
+            "CREEP_MAX": 100.0,
         }
         self.calculator = SetpointCalculator(self.config)
 
     def get_base_state(self):
         return SystemState(
-            g1=0, g2=0, gt=0,
-            t1=0, t2=0, tt=0,
+            g1=0,
+            g2=0,
+            gt=0,
+            t1=0,
+            t2=0,
+            tt=0,
             inv_power=0,
             mppt_total=0,
             tasmota_total=0,
@@ -40,7 +45,7 @@ class TestLogic(unittest.TestCase):
             do_not_supply_charger=False,
             limit_to_ev=False,
             previous_setpoint=0,
-            filtered_gt=None
+            filtered_gt=None,
         )
 
     def test_grid_zero_import(self):
@@ -220,7 +225,7 @@ class TestLogic(unittest.TestCase):
         state.gt = 1000
         state.inv_power = 0
         state.previous_setpoint = 0
-        
+
         result = self.calculator.calculate(state)
         # only_charging limits output to MPPT production
         # Should be negative (discharge) but capped
@@ -229,12 +234,12 @@ class TestLogic(unittest.TestCase):
 
     def test_charge_battery_priority(self):
         """Verify charge_battery overrides other modes"""
-        self.calculator.delta_limit = 3000 # Allow large jump for test
+        self.calculator.delta_limit = 3000  # Allow large jump for test
         state = self.get_base_state()
         state.charge_battery = True
-        state.only_charging = True # Lower priority
+        state.only_charging = True  # Lower priority
         state.gt = 1000
-        
+
         result = self.calculator.calculate(state)
         # charge_battery forces positive setpoint (charging)
         self.assertGreater(result.setpoint, 0)
@@ -267,5 +272,6 @@ class TestLogic(unittest.TestCase):
         self.assertLess(result.setpoint, 0)
         self.assertIn("[EV:1500]", result.flags)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

@@ -9,9 +9,17 @@ All configurable parameters in one place
 # =============================================================================
 try:
     from secrets import (
-        HA_URL, HA_TOKEN, PORTAL_ID, TASMOTA_IPS,
-        HA_SENSORS, VUE_SENSORS, HA_BOOLEANS,
-        HA_DUMP_LOADS, HA_WATER_VALVE, HA_PUMP_SWITCH, HA_BINARY_SENSORS
+        HA_URL,
+        HA_TOKEN,
+        PORTAL_ID,
+        TASMOTA_IPS,
+        HA_SENSORS,
+        VUE_SENSORS,
+        HA_BOOLEANS,
+        HA_DUMP_LOADS,
+        HA_WATER_VALVE,
+        HA_PUMP_SWITCH,
+        HA_BINARY_SENSORS,
     )
 except ImportError:
     # Fallback for development or if secrets.py doesn't exist
@@ -50,19 +58,19 @@ except ImportError:
 # =============================================================================
 # Set to False to disable features manually, or leave True for auto-detection.
 # Features auto-disable if HA_TOKEN is not configured.
-# 
+#
 # When disabled:
 #   - Console output omits the corresponding sections
 #   - Web UI hides the corresponding cards
 #   - No HA API calls are made for disabled features
 
-ENABLE_EV = True           # EV charging monitoring (car SoC, VUE charger power)
-ENABLE_WATER = True        # Water level, pump and valve control
-ENABLE_HA_LOADS = True     # Home Assistant loads monitoring (Vue sensors)
-ENABLE_DISHWASHER = True   # Dishwasher duration monitoring
-ENABLE_WASHER = True       # Washer remaining time monitoring
-ENABLE_DRYER = True        # Dryer remaining time monitoring
-ENABLE_HA = True           # Home Assistant integration entirely
+ENABLE_EV = True  # EV charging monitoring (car SoC, VUE charger power)
+ENABLE_WATER = True  # Water level, pump and valve control
+ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
+ENABLE_DISHWASHER = True  # Dishwasher duration monitoring
+ENABLE_WASHER = True  # Washer remaining time monitoring
+ENABLE_DRYER = True  # Dryer remaining time monitoring
+ENABLE_HA = True  # Home Assistant integration entirely
 
 # Auto-disable all HA features if no valid token configured
 if HA_TOKEN in ("", "your_token_here", None):
@@ -118,30 +126,30 @@ DRY_RUN = False  # Live mode - sending commands to Victron
 # PORTAL_ID imported from secrets.py
 
 # Power limits for outlet protection (Watts)
-POWER_LIMIT_MAX = 2250      # Maximum feed-in (positive = charging battery)
-POWER_LIMIT_MIN = -2300     # Maximum export (negative = discharging to grid)
+POWER_LIMIT_MAX = 2250  # Maximum feed-in (positive = charging battery)
+POWER_LIMIT_MIN = -2300  # Maximum export (negative = discharging to grid)
 
 # Control loop timing
-LOOP_INTERVAL = 0.33        # seconds (3 times per second)
-HA_POLL_INTERVAL = 1.5      # seconds for Home Assistant polling
+LOOP_INTERVAL = 0.33  # seconds (3 times per second)
+HA_POLL_INTERVAL = 1.5  # seconds for Home Assistant polling
 
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
-GRID_ZERO_DEADBAND_LOW = -50   # Watts - lower bound (slight export OK)
-GRID_ZERO_DEADBAND_HIGH = 80   # Watts - upper bound (slight import OK)
-DAMPING_FACTOR = 0.7           # Damping for import correction (0.0-1.0)
-EMA_ALPHA = 0.3                # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
-SETPOINT_DELTA_LIMIT = 2000    # Maximum change in setpoint per cycle (Watts)
+GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
+GRID_ZERO_DEADBAND_HIGH = 80  # Watts - upper bound (slight import OK)
+DAMPING_FACTOR = 0.7  # Damping for import correction (0.0-1.0)
+EMA_ALPHA = 0.3  # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
+SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
 # Export asymmetry — export to grid is undesirable, correct more aggressively
-EXPORT_DAMPING = 1.0           # Full correction for export (no damping)
+EXPORT_DAMPING = 1.0  # Full correction for export (no damping)
 
 # Creep correction — slow drift fix when grid stays in deadband but offset from zero
-CREEP_RATE = 0.5               # Watts accumulated per cycle while in deadband
-CREEP_MAX = 100.0              # Maximum creep correction (Watts)
+CREEP_RATE = 0.5  # Watts accumulated per cycle while in deadband
+CREEP_MAX = 100.0  # Maximum creep correction (Watts)
 
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
-SOLAR_OUTPUT_OFFSET = 60    # Watts
+SOLAR_OUTPUT_OFFSET = 60  # Watts
 
 # Inverter efficiency - DC to AC conversion losses
 # MPPT produces DC 48V, inverter converts to AC 110V with ~92-95% efficiency
@@ -156,10 +164,10 @@ INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
 # HA_DUMP_LOADS, HA_WATER_VALVE, HA_BINARY_SENSORS
 # are all imported from secrets.py
 
-HA_TIMEOUT = 2.0            # seconds
+HA_TIMEOUT = 2.0  # seconds
 
 # Timezone for console output
-TIMEZONE = 'America/Los_Angeles'
+TIMEZONE = "America/Los_Angeles"
 
 # =============================================================================
 # TASMOTA PV INVERTERS (now via D-Bus)
@@ -167,8 +175,8 @@ TIMEZONE = 'America/Los_Angeles'
 
 # D-Bus service names for Tasmota PV inverters
 TASMOTA_DBUS_SERVICES = [
-    'com.victronenergy.pvinverter.tasmota_120',
-    'com.victronenergy.pvinverter.tasmota_121',
+    "com.victronenergy.pvinverter.tasmota_120",
+    "com.victronenergy.pvinverter.tasmota_121",
 ]
 
 # Fallback HTTP polling if D-Bus not available
@@ -179,11 +187,11 @@ TASMOTA_DBUS_SERVICES = [
 # =============================================================================
 
 WEB_PORT = 8080
-WEB_HOST = '0.0.0.0'
+WEB_HOST = "0.0.0.0"
 
 # History for graphs (seconds)
-HISTORY_DURATION = 3600     # 1 hour of history
-HISTORY_INTERVAL = 2        # Store point every 2 seconds
+HISTORY_DURATION = 3600  # 1 hour of history
+HISTORY_INTERVAL = 2  # Store point every 2 seconds
 
 # =============================================================================
 # INVERTER STATES (VE.Bus)
@@ -216,12 +224,12 @@ SSL_KEY = "/data/inverter_control/inverter-control.key"
 
 
 class Colors:
-    RED = '\033[31m'
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    BLUE = '\033[34m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    WHITE = '\033[37m'
-    RESET = '\033[0m'
-    BOLD = '\033[1m'
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    RESET = "\033[0m"
+    BOLD = "\033[1m"

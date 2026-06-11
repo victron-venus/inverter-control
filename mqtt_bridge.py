@@ -8,11 +8,12 @@ import json
 import logging
 from typing import Callable, Dict, Any, Optional
 
-logger = logging.getLogger('inverter-control')
+logger = logging.getLogger("inverter-control")
 
 # Try to import paho-mqtt (may not be available on Venus OS)
 try:
     import paho.mqtt.client as mqtt
+
     MQTT_AVAILABLE = True
 except ImportError:
     MQTT_AVAILABLE = False
@@ -21,12 +22,9 @@ except ImportError:
 
 class MQTTBridge:
     """Publishes state to MQTT, receives commands"""
-    
+
     def __init__(
-        self,
-        broker: str = "localhost",
-        port: int = 1883,
-        prefix: str = "inverter"
+        self, broker: str = "localhost", port: int = 1883, prefix: str = "inverter"
     ):
         self.broker = broker
         self.port = port
@@ -34,20 +32,20 @@ class MQTTBridge:
         self._client: Optional[mqtt.Client] = None
         self._connected = False
         self._callbacks: Dict[str, Callable] = {}
-        
+
         if not MQTT_AVAILABLE:
             return
-        
+
         self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self._client.on_connect = self._on_connect
         self._client.on_message = self._on_message
         self._client.on_disconnect = self._on_disconnect
-    
+
     def connect(self):
         """Connect to MQTT broker"""
         if not self._client:
             return False
-        
+
         try:
             self._client.connect_async(self.broker, self.port, 60)
             self._client.loop_start()
@@ -56,82 +54,75 @@ class MQTTBridge:
         except Exception as e:
             logger.warning(f"MQTT connection failed: {e}")
             return False
-    
+
     def disconnect(self):
         """Disconnect from MQTT broker"""
         if self._client:
             self._client.loop_stop()
             self._client.disconnect()
-    
+
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         """Connected to broker"""
         self._connected = True
         logger.info("MQTT connected")
-        
+
         # Subscribe to command topics
         client.subscribe(f"{self.prefix}/cmd/#")
-    
+
     def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):
         """Disconnected from broker"""
         self._connected = False
         if rc != 0:
             logger.warning(f"MQTT disconnected unexpectedly (rc={rc})")
-    
+
     def _on_message(self, client, userdata, msg):
         """Received message"""
         try:
             topic = msg.topic
-            cmd = topic.split('/')[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
-            
+            cmd = topic.split("/")[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
+
             payload = {}
             if msg.payload:
                 try:
                     payload = json.loads(msg.payload.decode())
                 except json.JSONDecodeError:
-                    payload = {'value': msg.payload.decode()}
-            
+                    payload = {"value": msg.payload.decode()}
+
             # Call registered callback
             if cmd in self._callbacks:
                 self._callbacks[cmd](payload)
             else:
                 logger.debug(f"Unknown command: {cmd}")
-        
+
         except Exception as e:
             logger.error(f"MQTT message error: {e}")
-    
+
     def register_callback(self, command: str, callback: Callable[[dict], None]):
         """Register callback for command"""
         self._callbacks[command] = callback
-    
+
     def publish_state(self, state: Dict[str, Any]):
         """Publish current state"""
         if not self._client or not self._connected:
             return
-        
+
         try:
             self._client.publish(
-                f"{self.prefix}/state",
-                json.dumps(state),
-                qos=0,
-                retain=True
+                f"{self.prefix}/state", json.dumps(state), qos=0, retain=True
             )
         except Exception as e:
             logger.debug(f"MQTT publish error: {e}")
-    
+
     def publish_console(self, line: str):
         """Publish console line"""
         if not self._client or not self._connected:
             return
-        
+
         try:
-            self._client.publish(
-                f"{self.prefix}/console",
-                line,
-                qos=0
-            )
+            self._client.publish(f"{self.prefix}/console", line, qos=0)
         except Exception as e:
             logger.debug(f"MQTT console publish error: {e}")
-    
+
     @property
     def connected(self) -> bool:
         return self._connected
@@ -142,17 +133,15 @@ _mqtt_bridge: Optional[MQTTBridge] = None
 
 
 def get_mqtt_bridge(
-    broker: str = "localhost",
-    port: int = 1883,
-    prefix: str = "inverter"
+    broker: str = "localhost", port: int = 1883, prefix: str = "inverter"
 ) -> Optional[MQTTBridge]:
     """Get or create MQTT bridge"""
     global _mqtt_bridge
-    
+
     if not MQTT_AVAILABLE:
         return None
-    
+
     if _mqtt_bridge is None:
         _mqtt_bridge = MQTTBridge(broker, port, prefix)
-    
+
     return _mqtt_bridge
