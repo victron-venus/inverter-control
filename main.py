@@ -312,6 +312,10 @@ class InverterController:
             "ha_connected": self.ha.connected if ENABLE_HA else False,
             "ha_uptime": self.ha.uptime if ENABLE_HA else 0,
             "ess_mode": self.victron.get_ess_mode(),
+            "battery_power": sys_data.get("bp", 0),
+            "battery_voltage": sys_data.get("bv", 0),
+            "battery_current": sys_data.get("bc", 0),
+            "battery_soc": sys_data.get("soc", 0) or self.ha.get_sensor("corrected_soc", 0),
             "daily_stats": {
                 "produced_today": self.ha.get_sensor("produced_today", 0),
                 "grid_kwh": self.ha.get_sensor("grid_kwh_today", 0),
