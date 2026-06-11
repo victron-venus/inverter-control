@@ -248,10 +248,17 @@ class SetpointCalculator:
         total_flags = ""
         
         # Run strategies
+        raw_vanew = state.previous_setpoint
+        total_flags = ""
         for strategy in self.strategies:
-            vanew, flags = strategy.calculate(state, vanew)
+            raw_vanew, flags = strategy.calculate(state, raw_vanew)
             total_flags += flags
-            
+
+        # Rate limit: apply 9/10 of the change (fast convergence)
+        # Each cycle closes 90% of the gap — tight grid control
+        diff = raw_vanew - state.previous_setpoint
+        vanew = state.previous_setpoint + int(diff * 9 / 10)
+
         # Apply safety limits
         vanew = max(self.power_limit_min, min(self.power_limit_max, vanew))
         
