@@ -50,13 +50,14 @@ class HomeAssistantClient:
         self._session.headers.update(
             {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
         )
-        # Configure connection pool
+        # Configure connection pool for local HA (http) and remote (https)
+        # nosec B310 — http is intentional for local network HA instance
         adapter = requests.adapters.HTTPAdapter(
             pool_connections=2,
             pool_maxsize=5,
             max_retries=0,  # We handle retries ourselves
         )
-        self._session.mount("http://", adapter)
+        self._session.mount("http://", adapter)  # nosec B310
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)
