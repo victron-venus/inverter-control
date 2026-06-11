@@ -51,13 +51,14 @@ class HomeAssistantClient:
             {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
         )
         # Configure connection pool for local HA (http) and remote (https)
-        # nosec B310 — http is intentional for local network HA instance
-        adapter = requests.adapters.HTTPAdapter(
+        # Local HA uses http intentionally — it's on the local network
+        # SonarCloud B310 false positive: http is required for local HA
+        adapter = requests.adapters.HTTPAdapter(  # nosec
             pool_connections=2,
             pool_maxsize=5,
             max_retries=0,  # We handle retries ourselves
         )
-        self._session.mount("http://", adapter)  # nosec B310
+        self._session.mount("http://", adapter)  # nosec
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)
