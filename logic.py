@@ -271,9 +271,6 @@ class SetpointCalculator:
 
         state.filtered_gt = new_filtered_gt
 
-        vanew = state.previous_setpoint
-        total_flags = ""
-
         # Run strategies
         raw_vanew = state.previous_setpoint
         total_flags = ""

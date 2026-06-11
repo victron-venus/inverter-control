@@ -56,7 +56,7 @@ try:
 except ImportError:
     MQTT_AVAILABLE = False
 
-    def get_mqtt_bridge(*a, **kw):
+    def get_mqtt_bridge(*_args, **_kwargs):
         return None
 
 
