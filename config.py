@@ -90,7 +90,6 @@ MQTT_TOPIC_PREFIX = "inverter"
 MQTT_SLIM_STATE = True
 
 MQTT_SLIM_EXCLUDE_KEYS = (
-    "booleans",
     "laundry_outlet",
     "home_recliner",
     "home_garage",
