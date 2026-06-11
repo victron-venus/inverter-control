@@ -6,7 +6,6 @@ Publishes state and subscribes to commands from remote dashboard
 
 import json
 import logging
-import threading
 from typing import Callable, Dict, Any, Optional
 
 logger = logging.getLogger('inverter-control')

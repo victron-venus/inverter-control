@@ -218,7 +218,7 @@ def process_logs():
 
 def main():
     """Main entry point."""
-    print(f"Log forwarder starting...")
+    print("Log forwarder starting...")
     print(f"Loki URL: {LOKI_URL}")
     print(f"State file: {STATE_FILE}")
     print(f"Poll interval: {POLL_INTERVAL}s")

@@ -6,9 +6,9 @@ Uses threading for compatibility with synchronous main loop
 """
 
 import socket
-import threading
 import logging
-from typing import Set, List
+import threading
+from typing import Set
 from collections import deque
 
 logger = logging.getLogger('inverter-control')

@@ -190,7 +190,7 @@ HISTORY_INTERVAL = 2        # Store point every 2 seconds
 # =============================================================================
 
 INVERTER_STATES = {
-    0: "Off",
+    0: "Of",
     1: "Low Power",
     2: "Fault",
     3: "Bulk",
