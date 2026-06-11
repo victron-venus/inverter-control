@@ -391,9 +391,7 @@ class VictronDBus:
             except Exception:
                 pass
 
-        val = self._dbus_get(
-            SETTINGS_SERVICE, "/Settings/CGwacs/BatteryLife/State"
-        )
+        val = self._dbus_get(SETTINGS_SERVICE, "/Settings/CGwacs/BatteryLife/State")
         if val:
             try:
                 bl_state = int(val)
@@ -437,14 +435,10 @@ class VictronDBus:
         """
         if external:
             # External control: Hub4Mode = 3
-            return self._dbus_set(
-                SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32"
-            )
+            return self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32")
         else:
             # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
-            success1 = self._dbus_set(
-                SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32"
-            )
+            success1 = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32")
             success2 = self._dbus_set(
                 SETTINGS_SERVICE,
                 "/Settings/CGwacs/BatteryLife/State",
