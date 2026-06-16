@@ -117,6 +117,7 @@ class InverterController:
     """
 
     def __init__(self, dry_run: Optional[bool] = None):
+        self._start_time = time.time()
         self.dry_run = dry_run if dry_run is not None else DRY_RUN
         self.victron = get_victron()
         self.ha = get_ha()
@@ -301,6 +302,7 @@ class InverterController:
             "mppt_chargers": self.victron.get_mppt_chargers(),
             "ev_power": self.ha.get_vue_sensor("ev_charger", 0) if ENABLE_EV else 0,
             "car_soc": self.ha.get_sensor("car_soc", 0) if ENABLE_EV else 0,
+            "ev_charging_kw": self.ha.get_sensor("ev_charging_power", 0) if ENABLE_EV else 0,
             "water_level": self.ha.get_sensor("water_level", 0) if ENABLE_WATER else 0,
             "water_valve": self.ha.water_valve_on if ENABLE_WATER else False,
             "pump_switch": self.ha.pump_switch_on if ENABLE_WATER else False,
@@ -336,6 +338,7 @@ class InverterController:
             "limits": {"min": self.power_limit_min, "max": self.power_limit_max},
             "loop_interval": self.loop_interval,
             "version": VERSION,
+            "uptime": int(time.time() - self._start_time),
             "ui_config": self.ui_config,
         }
 
