@@ -144,10 +144,16 @@ class HomeAssistantClient:
         if value in (None, "unavailable", "unknown", "None", ""):
             return default
         try:
-            # Try int first
-            if "." not in str(value):
-                return int(value)
-            return float(value)
+            import re
+            s = str(value).strip()
+            m = re.match(r"^([+-]?\d+\.?\d*)", s)
+            if m:
+                num = float(m.group(1))
+                return int(num) if num == int(num) else num
+            # Fallback: try direct conversion
+            if "." in s:
+                return float(s)
+            return int(s)
         except Exception:
             return default
 
