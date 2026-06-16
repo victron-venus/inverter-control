@@ -24,7 +24,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
@@ -34,7 +34,7 @@ jobs:
         persist-credentials: false
 
     - name: Run Scorecard analysis
-      uses: ossf/scorecard-action@0864cf19026789058feabb7e87baa5f140aac736 # v2.3.1
+      uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
       with:
         results_file: results.sarif
         results_format: sarif
@@ -44,6 +44,6 @@ jobs:
         publish_results: true
 
     - name: Upload Scorecard results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@7fd177fa680c9881b53cdab4d346d32574c9f7f4 # v3.35.4
+      uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
       with:
         sarif_file: results.sarif
