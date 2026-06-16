@@ -145,6 +145,7 @@ class HomeAssistantClient:
             return default
         try:
             import re
+
             s = str(value).strip()
             m = re.match(r"^([+-]?\d+\.?\d*)", s)
             if m:
