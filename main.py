@@ -302,7 +302,9 @@ class InverterController:
             "mppt_chargers": self.victron.get_mppt_chargers(),
             "ev_power": self.ha.get_vue_sensor("ev_charger", 0) if ENABLE_EV else 0,
             "car_soc": self.ha.get_sensor("car_soc", 0) if ENABLE_EV else 0,
-            "ev_charging_kw": self.ha.get_sensor("ev_charging_power", 0) if ENABLE_EV else 0,
+            "ev_charging_kw": self.ha.get_sensor("ev_charging_power", 0)
+            if ENABLE_EV
+            else 0,
             "water_level": self.ha.get_sensor("water_level", 0) if ENABLE_WATER else 0,
             "water_valve": self.ha.water_valve_on if ENABLE_WATER else False,
             "pump_switch": self.ha.pump_switch_on if ENABLE_WATER else False,
@@ -317,7 +319,8 @@ class InverterController:
             "battery_power": sys_data.get("bp", 0),
             "battery_voltage": sys_data.get("bv", 0),
             "battery_current": sys_data.get("bc", 0),
-            "battery_soc": sys_data.get("soc", 0) or self.ha.get_sensor("corrected_soc", 0),
+            "battery_soc": sys_data.get("soc", 0)
+            or self.ha.get_sensor("corrected_soc", 0),
             "daily_stats": {
                 "produced_today": self.ha.get_sensor("produced_today", 0),
                 "grid_kwh": self.ha.get_sensor("grid_kwh_today", 0),
