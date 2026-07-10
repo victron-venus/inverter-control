@@ -499,16 +499,18 @@ class VictronDBus:
                 except (TypeError, ValueError):
                     pass
 
-            batteries.append({
-                "name": name,
-                "voltage": self._get_float(service, "/Dc/0/Voltage"),
-                "current": current,
-                "power": self._get_float(service, "/Dc/0/Power"),
-                "soc": self._get_float(service, "/Soc"),
-                "state": state,
-                "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
-                "time_to_go_sec": ttg_sec,
-            })
+            batteries.append(
+                {
+                    "name": name,
+                    "voltage": self._get_float(service, "/Dc/0/Voltage"),
+                    "current": current,
+                    "power": self._get_float(service, "/Dc/0/Power"),
+                    "soc": self._get_float(service, "/Soc"),
+                    "state": state,
+                    "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
+                    "time_to_go_sec": ttg_sec,
+                }
+            )
 
         return batteries
 
@@ -521,12 +523,14 @@ class VictronDBus:
         for i, service in enumerate(self._mppt_services):
             parts = service.split(":")
             name = f"MPPT-{parts[1]}" if len(parts) > 1 else f"MPPT-{i}"
-            chargers.append({
-                "name": name,
-                "pv_voltage": self._get_float(service, "/Pv/V"),
-                "current": self._get_float(service, DC_CURRENT_PATH),
-                "power": self._get_float(service, "/Yield/Power"),
-            })
+            chargers.append(
+                {
+                    "name": name,
+                    "pv_voltage": self._get_float(service, "/Pv/V"),
+                    "current": self._get_float(service, DC_CURRENT_PATH),
+                    "power": self._get_float(service, "/Yield/Power"),
+                }
+            )
         return chargers
 
 
