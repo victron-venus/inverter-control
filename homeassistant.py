@@ -222,7 +222,15 @@ class HomeAssistantClient:
 
     def _poll_all(self):
         """Poll all entities from HA"""
-        # Use template API for batch fetch (much faster)
+        data = self._fetch_template_data()
+
+        with self._lock:
+            self._parse_sensors(data)
+            self._parse_boolean_sensors(data)
+            self._parse_switches(data)
+
+    def _fetch_template_data(self) -> dict:
+        """Fetch all entity data via template API"""
         template = self._build_template()
 
         try:
@@ -243,52 +251,48 @@ class HomeAssistantClient:
         if not isinstance(data, dict):
             raise Exception("Invalid response format")
 
-        with self._lock:
-            # Sensors that should be stored as raw strings (duration format HH:MM:SS)
-            duration_sensors = {"dishwasher_duration", "washer_time", "dryer_time"}
+        return data
 
-            # Parse sensors
-            for key in HA_SENSORS:
-                if key in data:
-                    if key in duration_sensors:
-                        self._sensors[key] = data[key]  # Store raw for duration parsing
-                    else:
-                        self._sensors[key] = self._parse_numeric(data[key])
+    def _parse_sensors(self, data: dict):
+        """Parse numeric and duration sensors"""
+        duration_sensors = {"dishwasher_duration", "washer_time", "dryer_time"}
 
-            # Parse VUE sensors
-            for key in VUE_SENSORS:
-                if key in data:
-                    self._vue_sensors[key] = self._parse_numeric(data[key])
+        for key in HA_SENSORS:
+            if key in data:
+                self._sensors[key] = (
+                    data[key] if key in duration_sensors
+                    else self._parse_numeric(data[key])
+                )
 
-            # Parse booleans
-            for key in HA_BOOLEANS:
-                if key in data:
-                    self._booleans[key] = data[key] == "on"
+        for key in VUE_SENSORS:
+            if key in data:
+                self._vue_sensors[key] = self._parse_numeric(data[key])
 
-            # Parse binary sensors
-            for key in HA_BINARY_SENSORS:
-                if key in data:
-                    self._binary_sensors[key] = data[key] == "on"
+    def _parse_boolean_sensors(self, data: dict):
+        """Parse boolean and binary sensor states"""
+        for key in HA_BOOLEANS:
+            if key in data:
+                self._booleans[key] = data[key] == "on"
 
-            # Water valve
-            if "water_valve" in data:
-                self._water_valve = data["water_valve"] == "on"
+        for key in HA_BINARY_SENSORS:
+            if key in data:
+                self._binary_sensors[key] = data[key] == "on"
 
-            # Pump switch
-            if "pump_switch" in data:
-                self._pump_switch = data["pump_switch"] == "on"
+    def _parse_switches(self, data: dict):
+        """Parse switch states into attributes"""
+        switch_map = {
+            "water_valve": "_water_valve",
+            "pump_switch": "_pump_switch",
+            "washer_power": "_washer_power",
+            "dryer_power": "_dryer_power",
+            "laundry_outlet": "_laundry_outlet",
+            "home_recliner": "_home_recliner",
+            "home_garage": "_home_garage",
+        }
 
-            # Washer/Dryer power switches
-            if "washer_power" in data:
-                self._washer_power = data["washer_power"] == "on"
-            if "dryer_power" in data:
-                self._dryer_power = data["dryer_power"] == "on"
-            if "laundry_outlet" in data:
-                self._laundry_outlet = data["laundry_outlet"] == "on"
-            if "home_recliner" in data:
-                self._home_recliner = data["home_recliner"] == "on"
-            if "home_garage" in data:
-                self._home_garage = data["home_garage"] == "on"
+        for key, attr in switch_map.items():
+            if key in data:
+                setattr(self, attr, data[key] == "on")
 
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
