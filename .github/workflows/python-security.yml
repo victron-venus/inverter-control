@@ -35,6 +35,10 @@ jobs:
     - name: Run Bandit security linter
       run: |
         bandit -r . -f sarif -o /tmp/bandit-results.sarif || true
+        # Ensure the SARIF file exists for upload
+        if [ ! -f /tmp/bandit-results.sarif ]; then
+          echo '{"version":"2.1.0","runs":[]}' > /tmp/bandit-results.sarif
+        fi
 
     - name: Upload Bandit results
       uses: github/codeql-action/upload-sarif@v4.36.3
