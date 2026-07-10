@@ -428,6 +428,78 @@ def main():
         raise
 
 
+def _setup_mqtt_bridge(controller):
+    """Set up MQTT bridge and register command callbacks. Returns bridge or None."""
+    from config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_PREFIX
+
+    if not MQTT_AVAILABLE or not MQTT_BROKER:
+        return None
+
+    bridge = get_mqtt_bridge(
+        broker=MQTT_BROKER, port=MQTT_PORT, prefix=MQTT_TOPIC_PREFIX
+    )
+    if not bridge:
+        return None
+
+    bridge.connect()
+    bridge.register_callback(
+        "toggle", lambda p: controller.ha.toggle_entity(p.get("entity", ""))
+    )
+    bridge.register_callback(
+        "press", lambda p: controller.ha.press_button(p.get("entity", ""))
+    )
+    bridge.register_callback(
+        "setpoint",
+        lambda p: controller.set_manual_setpoint(int(p.get("value", 0))),
+    )
+    bridge.register_callback(
+        "dry_run", lambda p: controller.toggle_dry_run()
+    )
+    bridge.register_callback(
+        "limits",
+        lambda p: controller.set_power_limits(
+            p.get("min", -2300), p.get("max", 2250)
+        ),
+    )
+    bridge.register_callback(
+        "ess_mode", lambda p: controller.toggle_ess_mode()
+    )
+    bridge.register_callback(
+        "loop_interval",
+        lambda p: controller.set_loop_interval(float(p.get("interval", 0.33))),
+    )
+    print(f"  MQTT bridge: {MQTT_BROKER}:{MQTT_PORT} (topic: {MQTT_TOPIC_PREFIX}/)")
+    return bridge
+
+
+def _run_main_loop(controller, mqtt_bridge):
+    """Run the main control loop until exit or error."""
+    gc_interval = 300
+    last_gc_time = time.time()
+
+    try:
+        while True:
+            if not controller.run_cycle():
+                logger.info("run_cycle returned False - exiting main loop")
+                break
+            if mqtt_bridge and mqtt_bridge.connected:
+                mqtt_bridge.publish_state(controller.get_state_for_mqtt())
+            now = time.time()
+            if now - last_gc_time > gc_interval:
+                last_gc_time = now
+                gc.collect()
+            time.sleep(controller.loop_interval)
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested (KeyboardInterrupt)")
+        print("\nShutting down...")
+    finally:
+        logger.info("Inverter Control shutting down")
+        stop_console_server()
+        if mqtt_bridge:
+            mqtt_bridge.disconnect()
+        controller.ha.stop()
+
+
 def _main_inner():
     parser = argparse.ArgumentParser(description="Inverter Control for Victron System")
     parser.add_argument(
@@ -444,98 +516,24 @@ def _main_inner():
 
     print(f"=== Inverter Control {VERSION} ===")
 
-    # Determine dry-run mode: CLI overrides config
     dry_run_mode = args.dry_run if args.dry_run else None
     controller = InverterController(dry_run=dry_run_mode)
 
     mode = "DRY-RUN (safe mode)" if controller.dry_run else "LIVE (sending commands)"
     print(f"Mode: {mode}")
 
-    # Start MQTT bridge for remote dashboard
-    mqtt_bridge = None
-    from config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_PREFIX
+    mqtt_bridge = _setup_mqtt_bridge(controller)
 
-    if MQTT_AVAILABLE and MQTT_BROKER:
-        mqtt_bridge = get_mqtt_bridge(
-            broker=MQTT_BROKER, port=MQTT_PORT, prefix=MQTT_TOPIC_PREFIX
-        )
-        if mqtt_bridge:
-            mqtt_bridge.connect()
-            # Register command callbacks
-            mqtt_bridge.register_callback(
-                "toggle", lambda p: controller.ha.toggle_entity(p.get("entity", ""))
-            )
-            mqtt_bridge.register_callback(
-                "press", lambda p: controller.ha.press_button(p.get("entity", ""))
-            )
-            mqtt_bridge.register_callback(
-                "setpoint",
-                lambda p: controller.set_manual_setpoint(int(p.get("value", 0))),
-            )
-            mqtt_bridge.register_callback(
-                "dry_run", lambda p: controller.toggle_dry_run()
-            )
-            mqtt_bridge.register_callback(
-                "limits",
-                lambda p: controller.set_power_limits(
-                    p.get("min", -2300), p.get("max", 2250)
-                ),
-            )
-            mqtt_bridge.register_callback(
-                "ess_mode", lambda p: controller.toggle_ess_mode()
-            )
-            mqtt_bridge.register_callback(
-                "loop_interval",
-                lambda p: controller.set_loop_interval(float(p.get("interval", 0.33))),
-            )
-            print(
-                f"  MQTT bridge: {MQTT_BROKER}:{MQTT_PORT} (topic: {MQTT_TOPIC_PREFIX}/)"
-            )
-
-    # If manual setpoint provided, run once and exit
     if args.setpoint is not None:
         controller.manual_setpoint = args.setpoint
         controller.run_cycle()
         return
 
-    # Start TCP console server for remote monitoring
     start_console_server()
-
-    # Main loop
     print("Starting control loop...")
     print("-" * 80)
 
-    # Memory management: run gc periodically
-    gc_interval = 300  # Every 5 minutes
-    last_gc_time = time.time()
-
-    try:
-        while True:
-            result = controller.run_cycle()
-            if not result:
-                logger.info("run_cycle returned False - exiting main loop")
-                break
-
-            # Publish state to MQTT for remote dashboard
-            if mqtt_bridge and mqtt_bridge.connected:
-                mqtt_bridge.publish_state(controller.get_state_for_mqtt())
-
-            # Periodic garbage collection (free memory on resource-constrained Venus OS)
-            now = time.time()
-            if now - last_gc_time > gc_interval:
-                last_gc_time = now
-                gc.collect()
-
-            time.sleep(controller.loop_interval)
-    except KeyboardInterrupt:
-        logger.info("Shutdown requested (KeyboardInterrupt)")
-        print("\nShutting down...")
-    finally:
-        logger.info("Inverter Control shutting down")
-        stop_console_server()
-        if mqtt_bridge:
-            mqtt_bridge.disconnect()
-        controller.ha.stop()
+    _run_main_loop(controller, mqtt_bridge)
 
 
 def signal_handler(signum, frame):

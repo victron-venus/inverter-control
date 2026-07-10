@@ -447,6 +447,33 @@ class VictronDBus:
             )
             return success1 and success2
 
+    def _get_float(self, service: str, path: str) -> float:
+        """Read a D-Bus path and return its float value, or 0.0 on failure."""
+        val = self._dbus_get(service, path)
+        if val:
+            try:
+                return float(val)
+            except Exception:
+                pass
+        return 0.0
+
+    @staticmethod
+    def _battery_state(current: float) -> str:
+        if current > 0.5:
+            return "Charging"
+        if current < -0.5:
+            return "Discharging"
+        return "Idle"
+
+    @staticmethod
+    def _format_time_to_go(ttg_sec: int, state: str) -> str:
+        max_reasonable = 86400 * 14
+        if state not in ("Charging", "Discharging") or not 0 < ttg_sec < max_reasonable:
+            return ""
+        h, m = divmod(ttg_sec, 3600)
+        m = m // 60
+        return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
+
     def get_all_batteries(self) -> list:
         """Get detailed data for all battery chains including SmartShunt
 
@@ -461,75 +488,27 @@ class VictronDBus:
 
         batteries = []
         for service, name in battery_services:
-            battery = {"name": name, "voltage": 0.0, "soc": 0.0, "state": "Unknown"}
+            current = self._get_float(service, DC_CURRENT_PATH)
+            state = self._battery_state(current)
 
-            # Voltage
-            val = self._dbus_get(service, "/Dc/0/Voltage")
-            if val:
-                try:
-                    battery["voltage"] = float(val)
-                except Exception:
-                    pass
-
-            # Current
-            val = self._dbus_get(service, DC_CURRENT_PATH)
-            if val:
-                try:
-                    battery["current"] = float(val)
-                except Exception:
-                    pass
-
-            # Power
-            val = self._dbus_get(service, "/Dc/0/Power")
-            if val:
-                try:
-                    battery["power"] = float(val)
-                except Exception:
-                    pass
-
-            # SoC
-            val = self._dbus_get(service, "/Soc")
-            if val:
-                try:
-                    battery["soc"] = float(val)
-                except Exception:
-                    pass
-
-            # State (from /Info/State or derive from current)
-            current = battery.get("current", 0)
-            if current is not None:
-                if current > 0.5:
-                    battery["state"] = "Charging"
-                elif current < -0.5:
-                    battery["state"] = "Discharging"
-                else:
-                    battery["state"] = "Idle"
-            else:
-                battery["state"] = "Idle"
-
-            # Time remaining (seconds) — Victron /TimeToGo (same basis as VRM)
-            battery["time_to_go"] = ""
-            battery["time_to_go_sec"] = None
+            ttg_sec = None
             ttg_raw = self._dbus_get(service, "/TimeToGo")
             if ttg_raw is not None:
                 try:
                     ttg_sec = max(0, int(float(ttg_raw)))
-                    battery["time_to_go_sec"] = ttg_sec
-                    max_reasonable = 86400 * 14  # ignore stale / idle huge values
-                    if (
-                        battery["state"] in ("Charging", "Discharging")
-                        and 0 < ttg_sec < max_reasonable
-                    ):
-                        h = ttg_sec // 3600
-                        m = (ttg_sec % 3600) // 60
-                        if h > 0:
-                            battery["time_to_go"] = f"{h}h {m:02d}m"
-                        else:
-                            battery["time_to_go"] = f"{m}m"
                 except (TypeError, ValueError):
                     pass
 
-            batteries.append(battery)
+            batteries.append({
+                "name": name,
+                "voltage": self._get_float(service, "/Dc/0/Voltage"),
+                "current": current,
+                "power": self._get_float(service, "/Dc/0/Power"),
+                "soc": self._get_float(service, "/Soc"),
+                "state": state,
+                "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
+                "time_to_go_sec": ttg_sec,
+            })
 
         return batteries
 
@@ -539,40 +518,15 @@ class VictronDBus:
         Returns list of dicts with: name, pv_voltage, current, power
         """
         chargers = []
-
         for i, service in enumerate(self._mppt_services):
-            # Extract MPPT number from service name (e.g. "ttyUSB0:290" -> "290")
             parts = service.split(":")
             name = f"MPPT-{parts[1]}" if len(parts) > 1 else f"MPPT-{i}"
-
-            charger = {"name": name, "pv_voltage": 0.0, "current": 0.0, "power": 0.0}
-
-            # PV Voltage
-            val = self._dbus_get(service, "/Pv/V")
-            if val:
-                try:
-                    charger["pv_voltage"] = float(val)
-                except Exception:
-                    pass
-
-            # Current
-            val = self._dbus_get(service, DC_CURRENT_PATH)
-            if val:
-                try:
-                    charger["current"] = float(val)
-                except Exception:
-                    pass
-
-            # Power
-            val = self._dbus_get(service, "/Yield/Power")
-            if val:
-                try:
-                    charger["power"] = float(val)
-                except Exception:
-                    pass
-
-            chargers.append(charger)
-
+            chargers.append({
+                "name": name,
+                "pv_voltage": self._get_float(service, "/Pv/V"),
+                "current": self._get_float(service, DC_CURRENT_PATH),
+                "power": self._get_float(service, "/Yield/Power"),
+            })
         return chargers
 
 
