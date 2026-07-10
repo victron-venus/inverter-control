@@ -260,7 +260,8 @@ class HomeAssistantClient:
         for key in HA_SENSORS:
             if key in data:
                 self._sensors[key] = (
-                    data[key] if key in duration_sensors
+                    data[key]
+                    if key in duration_sensors
                     else self._parse_numeric(data[key])
                 )
 
