@@ -6,12 +6,6 @@ on:
   schedule:
     - cron: '30 2 * * 3'  # Weekly on Wednesdays at 2:30 AM UTC
 
-# Declare default permissions as read only.
-permissions: read-all
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   analysis:
     name: Scorecard analysis
@@ -21,6 +15,10 @@ jobs:
       security-events: write
       # Needed for GitHub OIDC token
       id-token: write
+      # Needed for checkout and scorecard action
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
