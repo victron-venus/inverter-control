@@ -317,65 +317,59 @@ class HomeAssistantClient:
 
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
-        # Keys to skip based on disabled features
-        skip_sensors = set()
-        skip_binary = set()
+        skip_sensors = {
+            k
+            for enabled, k in [
+                (ENABLE_DISHWASHER, "dishwasher_duration"),
+                (ENABLE_WASHER, "washer_time"),
+                (ENABLE_DRYER, "dryer_time"),
+                (ENABLE_WATER, "water_level"),
+            ]
+            if not enabled
+        }
+        skip_binary = {
+            k
+            for enabled, k in [
+                (ENABLE_DISHWASHER, "dishwasher_running"),
+            ]
+            if not enabled
+        }
 
-        if not ENABLE_DISHWASHER:
-            skip_sensors.add("dishwasher_duration")
-            skip_binary.add("dishwasher_running")
-        if not ENABLE_WASHER:
-            skip_sensors.add("washer_time")
-        if not ENABLE_DRYER:
-            skip_sensors.add("dryer_time")
-        if not ENABLE_WATER:
-            skip_sensors.add("water_level")
-
-        parts = ["{"]
         items = []
 
-        # Sensors (skip disabled)
         for key, entity in HA_SENSORS.items():
             if key not in skip_sensors:
                 items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
-        # VUE sensors
         for key, entity in VUE_SENSORS.items():
             items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
-        # Booleans
         for key, entity in HA_BOOLEANS.items():
             items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
-        # Binary sensors (skip disabled)
         for key, entity in HA_BINARY_SENSORS.items():
             if key not in skip_binary:
                 items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
-        # Water valve and pump (only if water enabled)
-        if ENABLE_WATER:
-            items.append(f'  "water_valve": "{{{{ states("{HA_WATER_VALVE}") }}}}"')
-            items.append(f'  "pump_switch": "{{{{ states("{HA_PUMP_SWITCH}") }}}}"')
+        conditional_switches = [
+            (ENABLE_WATER, HA_WATER_VALVE, "water_valve"),
+            (ENABLE_WATER, HA_PUMP_SWITCH, "pump_switch"),
+            (ENABLE_WASHER and HA_WASHER_POWER, HA_WASHER_POWER, "washer_power"),
+            (ENABLE_DRYER and HA_DRYER_POWER, HA_DRYER_POWER, "dryer_power"),
+            (
+                (ENABLE_WASHER or ENABLE_DRYER) and HA_LAUNDRY_OUTLET,
+                HA_LAUNDRY_OUTLET,
+                "laundry_outlet",
+            ),
+        ]
+        for condition, entity, key in conditional_switches:
+            if condition:
+                items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
-        # Washer/Dryer power switches
-        if ENABLE_WASHER and HA_WASHER_POWER:
-            items.append(f'  "washer_power": "{{{{ states("{HA_WASHER_POWER}") }}}}"')
-        if ENABLE_DRYER and HA_DRYER_POWER:
-            items.append(f'  "dryer_power": "{{{{ states("{HA_DRYER_POWER}") }}}}"')
-
-        # Laundry outlet (shown when washer/dryer not running)
-        if (ENABLE_WASHER or ENABLE_DRYER) and HA_LAUNDRY_OUTLET:
-            items.append(
-                f'  "laundry_outlet": "{{{{ states("{HA_LAUNDRY_OUTLET}") }}}}"'
-            )
-
-        # Home switches (always poll if HA enabled)
         items.append('  "home_recliner": "{{ states(\'switch.recliner_recliner\') }}"')
         items.append('  "home_garage": "{{ states(\'switch.garage_opener_l\') }}"')
 
-        parts.append(",\n".join(items))
-        parts.append("}")
-        return "\n".join(parts)
+        return "{\n" + ",\n".join(items) + "\n}"
 
     # === Public API ===
 

@@ -11,10 +11,11 @@ set -e
 INSTALL_DIR="/data/inverter_control"
 SERVICE_NAME="inverter-control"
 SCREEN_NAME="inverter"
+SEPARATOR="=============================================="
 
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Inverter Control Installer for Venus OS"
-echo "=============================================="
+echo "$SEPARATOR"
 echo ""
 
 # Create install directory
@@ -23,7 +24,7 @@ mkdir -p "$INSTALL_DIR/web"
 
 # Copy files if running from source
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
+if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
     echo ">>> Copying files to $INSTALL_DIR..."
     cp "$SCRIPT_DIR/config.py" "$INSTALL_DIR/" 2>/dev/null || true
     cp "$SCRIPT_DIR/main.py" "$INSTALL_DIR/" 2>/dev/null || true
@@ -105,9 +106,9 @@ echo ">>> Setting up healthcheck watchdog..."
 #chmod +x /service/inverter-healthcheck/run
 
 echo ""
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Installation Complete!"
-echo "=============================================="
+echo "$SEPARATOR"
 echo ""
 echo "Service is starting automatically."
 echo ""
