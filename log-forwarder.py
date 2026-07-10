@@ -171,7 +171,9 @@ def push_to_loki(payload):
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 if resp.status >= 400:
-                    raise Exception(f"HTTP {resp.status}")
+                    raise urllib.error.HTTPError(
+                        LOKI_URL, resp.status, f"HTTP {resp.status}", {}, None
+                    )
         return True
     except Exception as e:
         print(f"Error pushing to Loki: {e}", file=sys.stderr)
