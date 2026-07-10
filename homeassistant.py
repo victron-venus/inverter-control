@@ -83,7 +83,7 @@ class HomeAssistantClient:
             max_retries=0,  # We handle retries ourselves
         )
         # http:// mount required for local HA instances (no SSL on local network)
-        self._session.mount("http://", adapter)  # nosonar
+        self._session.mount("http://", adapter)  # NOSONAR python:S5332
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)
