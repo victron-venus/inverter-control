@@ -65,9 +65,7 @@ class HomeAssistantClient:
         # http:// mount required for local HA instances (no SSL on local network)
         # suppress SonarCloud security-hotspot for intentional http usage
         # sonar:ignore
-        self._session.mount(
-            "http://", adapter
-        )
+        self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)
