@@ -38,26 +38,10 @@ jobs:
         # Validate SARIF has runs array with content
         if [ -f /tmp/bandit-results.sarif ]; then
           if ! grep -q '"results":\[' /tmp/bandit-results.sarif; then
-            cat > /tmp/bandit-results.sarif << SARIF
-{
-  "version": "2.1.0",
-  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/sarif-2.1.0-obj.json",
-  "runs": [
-    {
-      "tool": {
-        "driver": {
-          "name": "Bandit",
-          "version": "1.0.0",
-          "informationUri": "https://bandit.readthedocs.io/",
-          "rules": []
-        }
-      },
-      "results": []
-    }
-  ]
-}
-SARIF
-          fi
+              printf '%s\n' \
+                '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Bandit","version":"1.0.0","informationUri":"https://bandit.readthedocs.io/","rules":[]}},"results":[]}]}' \
+                > /tmp/bandit-results.sarif
+            fi
         fi
 
         # Exit with bandit status if it found issues
