@@ -36,7 +36,7 @@ def _accept_clients():
 
             # Send buffered lines
             try:
-                for line in list(_console_buffer):
+                for line in _console_buffer:
                     client.sendall((line + "\n").encode("utf-8"))
             except Exception:
                 pass
@@ -96,7 +96,7 @@ def start_server():
 
         logger.info(f"TCP console server started on port {TCP_CONSOLE_PORT}")
         print(f"  TCP console: port {TCP_CONSOLE_PORT} (nc Cerbo {TCP_CONSOLE_PORT})")
-    except Exception as e:
+    except Exception:
         logging.exception("Failed to start TCP console server")
 
 
