@@ -15,10 +15,11 @@ SSH_HOST="${1:-Cerbo}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="/data/inverter-control"
 SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
+SEPARATOR="=============================================="
 
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Deploying Inverter Control to Venus OS"
-echo "=============================================="
+echo "$SEPARATOR"
 echo "SSH Host: $SSH_HOST"
 echo ""
 
@@ -61,14 +62,14 @@ ssh "$SSH_HOST" "chmod +x $INSTALL_DIR/service/log-forwarder/run"
 ssh "$SSH_HOST" "ln -sf $INSTALL_DIR/service/log-forwarder /service/ 2>/dev/null || true"
 
 # Copy secrets.py if exists
-if [ -f "$SCRIPT_DIR/secrets.py" ]; then
+if [[ -f "$SCRIPT_DIR/secrets.py" ]]; then
     echo ">>> Copying secrets.py..."
     scp -q "$SCRIPT_DIR/secrets.py" "$SSH_HOST:$INSTALL_DIR/"
     scp -q "$SCRIPT_DIR/secrets.py" "$SSH_HOST:$SETUP_OPTIONS_DIR/"
 fi
 
 # Copy version file
-if [ -f "$SCRIPT_DIR/version" ]; then
+if [[ -f "$SCRIPT_DIR/version" ]]; then
     scp -q "$SCRIPT_DIR/version" "$SSH_HOST:$INSTALL_DIR/"
 fi
 
@@ -82,6 +83,6 @@ echo ">>> Service status:"
 ssh "$SSH_HOST" "svstat /service/inverter-control"
 
 echo ""
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Deployment Complete!"
-echo "=============================================="
+echo "$SEPARATOR"
