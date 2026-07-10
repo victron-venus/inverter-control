@@ -31,20 +31,15 @@ jobs:
 
     - name: Run Bandit security linter
       run: |
-        # Run bandit, store exit code
-        bandit -r . -f sarif -o /tmp/bandit-results.sarif
-        EXIT_CODE=$?
+        bandit -r . -f sarif -o /tmp/bandit-results.sarif; EXIT_CODE=$?
 
-        # Validate SARIF has runs array with content
-        if [ -f /tmp/bandit-results.sarif ]; then
-          if ! grep -q '"results":\[' /tmp/bandit-results.sarif; then
-              printf '%s\n' \
-                '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Bandit","version":"1.0.0","informationUri":"https://bandit.readthedocs.io/","rules":[]}},"results":[]}]}' \
-                > /tmp/bandit-results.sarif
-            fi
+        # Bandit may not create file on no findings — write empty SARIF
+        if [ ! -f /tmp/bandit-results.sarif ]; then
+          printf '%s\n' \
+            '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Bandit","version":"1.0.0","informationUri":"https://bandit.readthedocs.io/","rules":[]}},"results":[]}]}' \
+            > /tmp/bandit-results.sarif
         fi
 
-        # Exit with bandit status if it found issues
         exit $EXIT_CODE
 
     - name: Upload Bandit results
