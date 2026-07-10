@@ -116,7 +116,7 @@ echo "Commands:"
 echo "  Status:      svstat /service/$SERVICE_NAME"
 echo "  Restart:     svc -t /service/$SERVICE_NAME"
 echo "  Stop:        svc -d /service/$SERVICE_NAME"
-echo "  Error log:   tail -f /var/log/$SERVICE_NAME.log"
+echo "  Error log:   tail -f /var/log/$SERVICE_NAME.log" >&2
 echo "  Live view: nc <cerbo-ip> 9999"
 echo ""
 echo "Web interface: https://<cerbo-ip>:8080"
