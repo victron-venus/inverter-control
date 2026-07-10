@@ -59,7 +59,6 @@ jobs:
 SARIF
           fi
         fi
-        fi
 
         # Exit with bandit status if it found issues
         exit $EXIT_CODE
