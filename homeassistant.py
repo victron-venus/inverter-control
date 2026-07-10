@@ -39,6 +39,26 @@ import urllib3  # noqa: E402
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+class HomeAssistantError(Exception):
+    """Base exception for Home Assistant errors"""
+
+
+class HomeAssistantTimeoutError(HomeAssistantError):
+    """Raised when HA request times out"""
+
+
+class HomeAssistantConnectionError(HomeAssistantError):
+    """Raised when HA connection fails"""
+
+
+class HomeAssistantAPIError(HomeAssistantError):
+    """Raised when HA returns non-200 status"""
+
+
+class HomeAssistantResponseError(HomeAssistantError):
+    """Raised when HA returns invalid response format"""
+
+
 class HomeAssistantClient:
     """
     Home Assistant API client with caching and fallback.
@@ -240,16 +260,16 @@ class HomeAssistantClient:
                 timeout=(3, HA_TIMEOUT),  # (connect_timeout, read_timeout)
             )
         except requests.exceptions.Timeout:
-            raise Exception("HA timeout")
+            raise HomeAssistantTimeoutError("HA timeout")
         except requests.exceptions.ConnectionError:
-            raise Exception("HA connection failed")
+            raise HomeAssistantConnectionError("HA connection failed")
 
         if response.status_code != 200:
-            raise Exception(f"HA API error: {response.status_code}")
+            raise HomeAssistantAPIError(f"HA API error: {response.status_code}")
 
         data = response.json()
         if not isinstance(data, dict):
-            raise Exception("Invalid response format")
+            raise HomeAssistantResponseError("Invalid response format")
 
         return data
 
