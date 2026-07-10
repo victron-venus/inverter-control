@@ -95,7 +95,7 @@ class MQTTBridge:
                 logger.debug(f"Unknown command: {cmd}")
 
         except Exception as e:
-            logger.error(f"MQTT message error: {e}")
+            logger.exception(f"MQTT message error: {e}")
 
     def register_callback(self, command: str, callback: Callable[[dict], None]):
         """Register callback for command"""
