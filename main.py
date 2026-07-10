@@ -452,18 +452,12 @@ def _setup_mqtt_bridge(controller):
         "setpoint",
         lambda p: controller.set_manual_setpoint(int(p.get("value", 0))),
     )
-    bridge.register_callback(
-        "dry_run", lambda p: controller.toggle_dry_run()
-    )
+    bridge.register_callback("dry_run", lambda p: controller.toggle_dry_run())
     bridge.register_callback(
         "limits",
-        lambda p: controller.set_power_limits(
-            p.get("min", -2300), p.get("max", 2250)
-        ),
+        lambda p: controller.set_power_limits(p.get("min", -2300), p.get("max", 2250)),
     )
-    bridge.register_callback(
-        "ess_mode", lambda p: controller.toggle_ess_mode()
-    )
+    bridge.register_callback("ess_mode", lambda p: controller.toggle_ess_mode())
     bridge.register_callback(
         "loop_interval",
         lambda p: controller.set_loop_interval(float(p.get("interval", 0.33))),
