@@ -67,10 +67,10 @@ class HomeAssistantClient:
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)
-        self._sensors: Dict[str, Any] = {k: 0 for k in HA_SENSORS}
-        self._vue_sensors: Dict[str, Any] = {k: 0 for k in VUE_SENSORS}
-        self._booleans: Dict[str, bool] = {k: False for k in HA_BOOLEANS}
-        self._binary_sensors: Dict[str, bool] = {k: False for k in HA_BINARY_SENSORS}
+        self._sensors: Dict[str, Any] = dict.fromkeys(HA_SENSORS, 0)
+        self._vue_sensors: Dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
+        self._booleans: Dict[str, bool] = dict.fromkeys(HA_BOOLEANS, False)
+        self._binary_sensors: Dict[str, bool] = dict.fromkeys(HA_BINARY_SENSORS, False)
         self._water_valve: bool = False
         self._pump_switch: bool = False
         self._washer_power: bool = False

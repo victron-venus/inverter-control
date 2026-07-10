@@ -97,7 +97,7 @@ def start_server():
         logger.info(f"TCP console server started on port {TCP_CONSOLE_PORT}")
         print(f"  TCP console: port {TCP_CONSOLE_PORT} (nc Cerbo {TCP_CONSOLE_PORT})")
     except Exception as e:
-        logger.error(f"Failed to start TCP console server: {e}")
+        logging.exception("Failed to start TCP console server")
 
 
 def stop_server():

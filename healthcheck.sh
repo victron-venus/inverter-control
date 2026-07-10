@@ -15,6 +15,7 @@ log() {
     msg="$(date '+%Y-%m-%d %H:%M:%S') [HEALTHCHECK] $1"
     echo "$msg"
     echo "$msg" >> "$LOG_FILE"
+    return 0
 }
 
 while true; do
