@@ -4,7 +4,7 @@ requests>=2.34.2
 # FastAPI + WebSocket
 fastapi>=0.139.0
 uvicorn>=0.51.0
-websockets>=16.0
+websockets>=16.1
 
 # MsgPack for efficient binary serialization
 msgpack>=1.2.1
