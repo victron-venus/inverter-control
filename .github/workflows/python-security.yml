@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: '0 5 * * 2'  # Weekly on Tuesdays
 
+permissions:
+  contents: read
+
 jobs:
   python-security:
     name: Python Security
@@ -17,11 +20,16 @@ jobs:
       contents: read
 
     steps:
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      with:
+        egress-policy: audit
+
     - name: Checkout repository
-      uses: actions/checkout@v7
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
       with:
         python-version: '3.12'
 
@@ -43,7 +51,7 @@ jobs:
 
     - name: Upload Bandit results
       if: always()
-      uses: github/codeql-action/upload-sarif@v4
+      uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
       with:
         sarif_file: /tmp/bandit-results.sarif
         category: python-bandit
@@ -55,7 +63,7 @@ jobs:
 
     - name: Comment PR on Safety issues
       if: failure() && github.event_name == 'pull_request'
-      uses: actions/github-script@v9
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
