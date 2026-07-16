@@ -1,26 +1,15 @@
-## v1.17.0
+## v1.17.1
 
-### Creep Correction for Grid-Zero Deadband
+### Fix: Restore missing daily_stats fields in MQTT state
 
-When system sits in deadband zone (grid power between -50W and 80W) but consistently imports/exports 30-100W, setpoint was frozen — caused chronic grid offset.
+Dashboard showed zeros for several daily energy metrics because `daily_stats` was missing fields the frontend expects.
 
-New creep integrator slowly accumulates error and nudges setpoint toward zero:
+Added to MQTT `inverter/state` payload:
+- `produced_dollars` — daily revenue from solar production
+- `battery_in_yesterday` — kWh charged to battery yesterday
+- `battery_out_yesterday` — kWh discharged from battery yesterday
+- `pv_total_daily` — total kWh from all MPPT chargers
 
-- `CREEP_RATE = 0.5` — watts accumulated per cycle while in deadband
-- `CREEP_MAX = 100.0` — maximum creep correction cap
-- Creep resets automatically when grid leaves deadband
-- Console flag shows creep accumulator: `[~45]` = 45W accumulated
+### Fix: publish-release workflow on protected branches
 
-### Bug Fixes
-
-- **falsy `filtered_gt` bug** — `filtered_gt or sys_data['gt']` failed when `filtered_gt=0.0` (falsy). Now uses proper `is not None` check.
-- **bare `except:`** in `get_version()` → `except Exception:`
-- **unused imports** removed from `main.py` (datetime, timezone, ZoneInfo, INVERTER_STATES, HA_BOOLEANS, TIMEZONE, ENABLE_HA_LOADS, ENABLE_DISHWASHER, ENABLE_WASHER, ENABLE_DRYER)
-- **lambda → def** for `get_mqtt_bridge` fallback
-- **import order** fixed (E402) — `sys.path.insert` at top before project imports
-
-### Tests
-
-- 3 new tests: `test_creep_import`, `test_creep_export`, `test_creep_reset_outside_deadband`
-- Updated `test_deadband` for new `[~{accumulator}]` flag format
-- All 10 tests passing
+GitHub Contents API rejects direct writes to protected `main` branch. Workflow now creates a temporary branch, opens a PR, merges, and cleans up.
