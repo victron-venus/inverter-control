@@ -40,6 +40,8 @@ from config import (
     CREEP_RATE,
     CREEP_MAX,
     EXPORT_DAMPING,
+    BURST_THRESHOLD,
+    BURST_GAIN,
 )
 from victron import get_victron
 from homeassistant import get_ha
@@ -141,6 +143,8 @@ class InverterController:
             "CREEP_RATE": CREEP_RATE,
             "CREEP_MAX": CREEP_MAX,
             "EXPORT_DAMPING": EXPORT_DAMPING,
+            "BURST_THRESHOLD": BURST_THRESHOLD,
+            "BURST_GAIN": BURST_GAIN,
         }
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron)

@@ -272,6 +272,105 @@ class TestLogic(unittest.TestCase):
         self.assertLess(result.setpoint, 0)
         self.assertIn("[EV:1500]", result.flags)
 
+    def test_burst_correction_pump_startup(self):
+        """Pump turns on: gt jumps to -400 while filtered_gt is ~0.
+        Burst correction should fire and apply immediate correction."""
+        self.config["EMA_ALPHA"] = 0.3  # Realistic EMA
+        self.config["BURST_THRESHOLD"] = 150
+        self.config["BURST_GAIN"] = 0.8
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+        state.filtered_gt = 0.0  # EMA hasn't caught up yet
+
+        # Cycle 1: pump turns on, grid jumps to -400
+        state.gt = -400
+        result = calculator.calculate(state)
+
+        # Spike = -400 - 0 = -400, abs(400) > 150 → burst fires
+        # burst_correction = -(-400) * 0.8 = +320
+        self.assertIn("[B:", result.flags)
+        self.assertGreater(result.setpoint, 0)  # Should increase setpoint
+
+    def test_burst_correction_no_spike(self):
+        """Normal operation: gt matches filtered_gt. No burst correction."""
+        self.config["BURST_THRESHOLD"] = 150
+        self.config["BURST_GAIN"] = 0.8
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+        state.filtered_gt = 10.0  # EMA is close to gt
+
+        state.gt = 15  # Small change, within threshold
+        result = calculator.calculate(state)
+
+        # Spike = 15 - 10 = 5, abs(5) < 150 → no burst
+        self.assertNotIn("[B:", result.flags)
+
+    def test_burst_correction_import_spike(self):
+        """Sudden load increase: gt jumps positive (importing more).
+        Burst correction should fire and increase discharge."""
+        self.config["EMA_ALPHA"] = 0.3
+        self.config["BURST_THRESHOLD"] = 150
+        self.config["BURST_GAIN"] = 0.8
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = -500
+        state.filtered_gt = 0.0
+
+        # Spike: importing 500W suddenly
+        state.gt = 500
+        result = calculator.calculate(state)
+
+        # Spike = 500 - 0 = 500, abs(500) > 150 → burst fires
+        # burst_correction = -(500) * 0.8 = -400
+        self.assertIn("[B:", result.flags)
+        self.assertLess(result.setpoint, -500)  # Should increase discharge
+
+    def test_burst_below_threshold(self):
+        """Spike below threshold should not trigger burst correction."""
+        self.config["BURST_THRESHOLD"] = 150
+        self.config["BURST_GAIN"] = 0.8
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+        state.filtered_gt = 0.0
+
+        # Spike of 100W — below threshold of 150
+        state.gt = 100
+        result = calculator.calculate(state)
+
+        self.assertNotIn("[B:", result.flags)
+
+    def test_burst_correction_magnitude(self):
+        """Burst correction should apply gain fraction of the spike."""
+        self.config["EMA_ALPHA"] = 0.3  # Realistic EMA
+        self.config["BURST_THRESHOLD"] = 100
+        self.config["BURST_GAIN"] = 0.8
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+        state.filtered_gt = 0.0
+
+        # Spike of -400W (export), gain 0.8 → correction = +320
+        state.gt = -400
+        result = calculator.calculate(state)
+
+        # old_filtered_gt=0.0, effective_gt=-400, new_filtered_gt=0.3*-400+0.7*0=-120
+        # Strategies: smoothed_gt=-120, outside deadband, damping=1.0
+        #   correction = -(-120)*1.0 = 120, raw_vanew = 0+120 = 120
+        # Burst: spike = -400-0 = -400, burst_correction = 320
+        #   raw_vanew = 120+320 = 440
+        # Rate limit: 0+(440)*9/10 = 396
+        self.assertGreater(result.setpoint, 300)
+        self.assertLess(result.setpoint, 450)
+        self.assertIn("[B:", result.flags)
+
 
 if __name__ == "__main__":
     unittest.main()

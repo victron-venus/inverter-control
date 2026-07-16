@@ -229,6 +229,8 @@ class SetpointCalculator:
         self.power_limit_min = config.get("POWER_LIMIT_MIN", -2300)
         self.power_limit_max = config.get("POWER_LIMIT_MAX", 2250)
         self.delta_limit = config.get("SETPOINT_DELTA_LIMIT", 2000)
+        self.burst_threshold = config.get("BURST_THRESHOLD", 150)
+        self.burst_gain = config.get("BURST_GAIN", 0.8)
 
         # Strategies in priority order (as in main.py)
         self.strategies = [
@@ -262,11 +264,13 @@ class SetpointCalculator:
         if state.do_not_supply_charger and state.ev_power > 100:
             effective_gt = state.gt - state.ev_power
 
-        if state.filtered_gt is None:
+        old_filtered_gt = state.filtered_gt
+
+        if old_filtered_gt is None:
             new_filtered_gt = float(effective_gt)
         else:
             new_filtered_gt = (self.ema_alpha * effective_gt) + (
-                (1 - self.ema_alpha) * state.filtered_gt
+                (1 - self.ema_alpha) * old_filtered_gt
             )
 
         state.filtered_gt = new_filtered_gt
@@ -277,6 +281,17 @@ class SetpointCalculator:
         for strategy in self.strategies:
             raw_vanew, flags = strategy.calculate(state, raw_vanew)
             total_flags += flags
+
+        # Burst correction: immediate response to sudden load spikes
+        # When gt jumps (e.g. pump turns on), EMA lags and strategies under-correct.
+        # Apply direct proportional correction to close the gap faster.
+        burst_flags = ""
+        if old_filtered_gt is not None:
+            spike = effective_gt - old_filtered_gt
+            if abs(spike) > self.burst_threshold:
+                burst_correction = int(-spike * self.burst_gain)
+                raw_vanew = raw_vanew + burst_correction
+                burst_flags = f"[B:{burst_correction:+d}] "
 
         # Rate limit: apply 9/10 of the change (fast convergence)
         # Each cycle closes 90% of the gap — tight grid control
@@ -294,5 +309,7 @@ class SetpointCalculator:
             total_flags += f"[!Δ{int(abs(delta))}] "
 
         return ControlResult(
-            setpoint=int(vanew), flags=total_flags.strip(), filtered_gt=new_filtered_gt
+            setpoint=int(vanew),
+            flags=burst_flags + total_flags.strip(),
+            filtered_gt=new_filtered_gt,
         )
