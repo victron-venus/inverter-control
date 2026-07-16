@@ -323,9 +323,13 @@ class InverterController:
             or self.ha.get_sensor("corrected_soc", 0),
             "daily_stats": {
                 "produced_today": self.ha.get_sensor("produced_today", 0),
+                "produced_dollars": self.ha.get_sensor("produced_dollars", 0),
                 "grid_kwh": self.ha.get_sensor("grid_kwh_today", 0),
                 "battery_in": self.ha.get_sensor("battery_in_today", 0),
                 "battery_out": self.ha.get_sensor("battery_out_today", 0),
+                "battery_in_yesterday": self.ha.get_sensor("battery_in_yesterday", 0),
+                "battery_out_yesterday": self.ha.get_sensor("battery_out_yesterday", 0),
+                "pv_total_daily": self.ha.get_sensor("pv_total_daily", 0),
                 "tasmota_daily": [
                     self.ha.get_sensor("tasmota_1_daily", 0),
                     self.ha.get_sensor("tasmota_2_daily", 0),
