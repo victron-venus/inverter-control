@@ -1,3 +1,17 @@
+## v1.18.0
+
+### Feature: Burst Correction for Sudden Load Spikes
+
+When a load turns on suddenly (e.g. pump consuming ~1kW), the EMA filter lags behind the real grid state, causing strategies to under-correct. Result: inverter exports -100 to -400W to grid for several cycles before catching up.
+
+**Burst detection** in `SetpointCalculator` now fires when the instantaneous grid reading (`gt`) diverges from the filtered value (`filtered_gt`) by more than `BURST_THRESHOLD` (150W). An immediate proportional correction (`BURST_GAIN` = 80% of the spike) is applied, bypassing EMA lag.
+
+Config:
+- `BURST_THRESHOLD = 150` — minimum spike to trigger (Watts)
+- `BURST_GAIN = 0.8` — fraction of spike to correct immediately
+
+Console flag: `[B:+320]` = burst corrected by +320W
+
 ## v1.17.1
 
 ### Fix: Restore missing daily_stats fields in MQTT state
@@ -12,4 +26,4 @@ Added to MQTT `inverter/state` payload:
 
 ### Fix: publish-release workflow on protected branches
 
-GitHub Contents API rejects direct writes to protected `main` branch. Workflow now creates a temporary branch, opens a PR, merges, and cleans up.
+GitHub Contents API rejects direct writes to protected `main` branch. Simplified workflow to just log the release.
