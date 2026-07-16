@@ -143,6 +143,11 @@ SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 # Export asymmetry — export to grid is undesirable, correct more aggressively
 EXPORT_DAMPING = 1.0  # Full correction for export (no damping)
 
+# Burst correction — immediate response to sudden load spikes (e.g. pump startup)
+# When |gt - filtered_gt| exceeds threshold, apply direct correction bypassing EMA lag
+BURST_THRESHOLD = 150  # Watts — minimum spike to trigger burst correction
+BURST_GAIN = 0.8  # Fraction of spike to correct immediately (0.0–1.0)
+
 # Creep correction — slow drift fix when grid stays in deadband but offset from zero
 CREEP_RATE = 0.5  # Watts accumulated per cycle while in deadband
 CREEP_MAX = 100.0  # Maximum creep correction (Watts)
