@@ -1,4 +1,10 @@
-## v1.18.0
+v1.18.1
+
+### Fix: Restore GitHub release creation in publish-release workflow
+
+The workflow was gutted to just log instead of creating a release. Restored using `softprops/action-gh-release` with `body_path: release.txt`.
+
+v1.18.0
 
 ### Feature: Burst Correction for Sudden Load Spikes
 
