@@ -23,9 +23,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-    - name: Report release
-      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
       with:
-        script: |
-          const tag = context.ref.replace('refs/tags/', '');
-          console.log('Release published: ' + tag);
+        body_path: release.txt
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

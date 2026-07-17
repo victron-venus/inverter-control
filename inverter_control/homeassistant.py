@@ -9,7 +9,7 @@ import time
 import logging
 import threading
 from typing import Dict, Any, Optional
-from config import (
+from .config import (
     HA_URL,
     HA_TOKEN,
     HA_TIMEOUT,
