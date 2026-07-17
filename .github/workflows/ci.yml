@@ -38,7 +38,7 @@ jobs:
         run: ruff format --check .
 
       - name: Syntax check
-        run: python -m py_compile main.py config.py victron.py homeassistant.py mqtt_bridge.py ui_config.py logic.py console_ui.py
+        run: python -m py_compile main.py inverter_control/config.py inverter_control/victron.py inverter_control/homeassistant.py inverter_control/mqtt_bridge.py inverter_control/ui_config.py inverter_control/logic.py inverter_control/console_ui.py
 
   test:
     runs-on: ubuntu-latest
