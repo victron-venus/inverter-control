@@ -11,7 +11,7 @@ try:
 except ImportError:
     from backports.zoneinfo import ZoneInfo
 
-from config import (
+from .config import (
     TIMEZONE,
     Colors as C,
     ENABLE_EV,
