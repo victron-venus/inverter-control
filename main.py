@@ -43,9 +43,9 @@ from config import (
     BURST_THRESHOLD,
     BURST_GAIN,
 )
-from victron import get_victron
-from homeassistant import get_ha
-from console_server import (
+from inverter_control.victron import get_victron
+from inverter_control.homeassistant import get_ha
+from inverter_control.console_server import (
     start_server as start_console_server,
     stop_server as stop_console_server,
     broadcast_line,

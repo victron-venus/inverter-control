@@ -8,7 +8,7 @@ import subprocess
 import re
 import logging
 from typing import Optional, Dict, Any, Tuple
-from config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
+from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
 logger = logging.getLogger("inverter-control")
 
