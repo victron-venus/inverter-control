@@ -148,6 +148,12 @@ EXPORT_DAMPING = 1.0  # Full correction for export (no damping)
 BURST_THRESHOLD = 150  # Watts — minimum spike to trigger burst correction
 BURST_GAIN = 0.8  # Fraction of spike to correct immediately (0.0–1.0)
 
+# D-term: prevent overshoot when gt converges to zero fast
+# When gt is close to zero but still moving quickly, brake to avoid crossing zero
+D_BRAKE_ZONE = 100  # Watts — how close to zero to start braking
+D_THRESHOLD = 50  # Watts/cycle — minimum derivative to trigger braking
+D_GAIN = 0.3  # Fraction of derivative to apply as brake (0.0–1.0)
+
 # Creep correction — slow drift fix when grid stays in deadband but offset from zero
 CREEP_RATE = 0.5  # Watts accumulated per cycle while in deadband
 CREEP_MAX = 100.0  # Maximum creep correction (Watts)

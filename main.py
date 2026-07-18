@@ -18,7 +18,7 @@ import atexit
 import gc
 from typing import Dict, Any, Optional
 
-from config import (
+from inverter_control.config import (
     POWER_LIMIT_MAX,
     POWER_LIMIT_MIN,
     LOOP_INTERVAL,
@@ -42,6 +42,9 @@ from config import (
     EXPORT_DAMPING,
     BURST_THRESHOLD,
     BURST_GAIN,
+    D_BRAKE_ZONE,
+    D_THRESHOLD,
+    D_GAIN,
 )
 from inverter_control.victron import get_victron
 from inverter_control.homeassistant import get_ha
@@ -50,11 +53,11 @@ from inverter_control.console_server import (
     stop_server as stop_console_server,
     broadcast_line,
 )
-from logic import SetpointCalculator, SystemState
-from console_ui import ConsoleUI
+from inverter_control.logic import SetpointCalculator, SystemState
+from inverter_control.console_ui import ConsoleUI
 
 try:
-    from mqtt_bridge import get_mqtt_bridge, MQTT_AVAILABLE
+    from inverter_control.mqtt_bridge import get_mqtt_bridge, MQTT_AVAILABLE
 except ImportError:
     MQTT_AVAILABLE = False
 
@@ -125,7 +128,7 @@ class InverterController:
         self.ha = get_ha()
 
         # Load UI configuration
-        from ui_config import get_ui_config
+        from inverter_control.ui_config import get_ui_config
 
         self.ui_config = get_ui_config()
 
@@ -145,6 +148,9 @@ class InverterController:
             "EXPORT_DAMPING": EXPORT_DAMPING,
             "BURST_THRESHOLD": BURST_THRESHOLD,
             "BURST_GAIN": BURST_GAIN,
+            "D_BRAKE_ZONE": D_BRAKE_ZONE,
+            "D_THRESHOLD": D_THRESHOLD,
+            "D_GAIN": D_GAIN,
         }
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron)
