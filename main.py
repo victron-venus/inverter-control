@@ -484,9 +484,12 @@ def _run_main_loop(controller, mqtt_bridge):
     """Run the main control loop until exit or error."""
     gc_interval = 300
     last_gc_time = time.time()
-    heartbeat_file = "/tmp/inverter-control.heartbeat"
+    # Use /run for runtime files (cleared on reboot, secure)
+    heartbeat_dir = "/run/inverter-control"
+    heartbeat_file = f"{heartbeat_dir}/heartbeat"
 
     try:
+        os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
         while True:
             if not controller.run_cycle():
                 logger.info("run_cycle returned False - exiting main loop")
