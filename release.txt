@@ -1,3 +1,20 @@
+v1.18.5
+
+### Docs: README with PackageManager guide and troubleshooting
+
+Updated README with:
+- Architecture diagram reflecting `inverter_control/` package structure
+- PackageManager installation guide (branch: `main`, not `latest`)
+- Troubleshooting section: ImportError after refactor, PackageManager discovery, stale dashboard, secrets import conflict, console security
+- Console flags documentation for `[B:]`, `[D:]`, `[!Δ]`
+
+### Code review fixes
+
+- **log-forwarder**: bare except now prints full traceback to stderr
+- **install.sh**: pip dependencies pinned (`fastapi>=0.100,<1`, `uvicorn>=0.20,<1`, `msgpack>=1.0,<2`)
+- **MQTT_SLIM_EXCLUDE_KEYS**: tuple → frozenset (O(1) lookup)
+- **Burst bypasses rate limiter**: when burst fires, convergence is100% instead of90% — maximum responsiveness to sudden load spikes
+
 v1.18.4
 
 ### Fix: PackageManager integration
