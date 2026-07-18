@@ -36,10 +36,10 @@ chmod +x "$INSTALL_DIR/healthcheck.sh" 2>/dev/null || true
 
 # Install required Python packages (pinned for Venus OS stability)
 echo ">>> Installing Python dependencies..."
-pip3 install "requests>=2.28,<3" "fastapi>=0.100,<1" "uvicorn>=0.20,<1" "msgpack>=1.0,<2" 2>/dev/null || {
+pip3 install "requests>=2.28,<3" "msgpack>=1.0,<2" 2>/dev/null || {
     opkg update 2>/dev/null || true
     opkg install python3-requests 2>/dev/null || true
-    pip3 install "requests>=2.28,<3" "fastapi>=0.100,<1" "uvicorn>=0.20,<1" "msgpack>=1.0,<2" 2>/dev/null || true
+    pip3 install "requests>=2.28,<3" "msgpack>=1.0,<2" 2>/dev/null || true
 }
 
 # Create wrapper script for screen

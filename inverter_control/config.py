@@ -194,17 +194,6 @@ TASMOTA_DBUS_SERVICES = [
 # TASMOTA_IPS imported from secrets.py
 
 # =============================================================================
-# WEB SERVER
-# =============================================================================
-
-WEB_PORT = 8080
-WEB_HOST = "0.0.0.0"
-
-# History for graphs (seconds)
-HISTORY_DURATION = 3600  # 1 hour of history
-HISTORY_INTERVAL = 2  # Store point every 2 seconds
-
-# =============================================================================
 # INVERTER STATES (VE.Bus)
 # =============================================================================
 
@@ -227,11 +216,6 @@ INVERTER_STATES = {
 # =============================================================================
 # CONSOLE COLORS (ANSI)
 # =============================================================================
-
-# SSL Configuration (for HTTPS)
-SSL_ENABLED = True
-SSL_CERT = "/data/inverter_control/inverter-control.crt"
-SSL_KEY = "/data/inverter_control/inverter-control.key"
 
 
 class Colors:
