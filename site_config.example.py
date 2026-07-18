@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Secrets Configuration Example
+Site Configuration Example
 
-Copy this file to secrets.py and fill in your values.
-secrets.py is NOT tracked by git.
+Copy this file to site_config.py and fill in your values.
+site_config.py is NOT tracked by git.
 """
 
 # =============================================================================

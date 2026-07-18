@@ -106,7 +106,7 @@ inverter-control/              # Git repo root
 ├── inverter_control/          # Python package
 │   ├── __init__.py
 │   ├── config.py              # Non-sensitive parameters (tuning, limits, flags)
-│   ├── secrets.py             # Sensitive config — NOT in git (see secrets.example.py)
+│   ├── site_config.py             # Sensitive config — NOT in git (see site_config.example.py)
 │   ├── logic.py               # SetpointCalculator, strategies, EMA, burst, D-term
 │   ├── victron.py             # D-Bus I/O — grid power, inverter power, setpoint write
 │   ├── homeassistant.py       # HA API polling with circuit breaker
@@ -121,7 +121,7 @@ inverter-control/              # Git repo root
 ├── version                    # Current version (read by PackageManager)
 ├── deploy.sh                  # SSH deploy to Cerbo/Pi (dev workflow)
 ├── install.sh                 # Manual installer (legacy, prefer setup)
-├── secrets.example.py         # Template for secrets.py
+├── site_config.example.py         # Template for site_config.py
 ├── tests/
 │   └── test_logic.py          # Unit tests for control logic
 ├── services/
@@ -137,8 +137,8 @@ inverter-control/              # Git repo root
 
 ## Configuration
 
-1. Copy `secrets.example.py` to `secrets.py`
-2. Edit `secrets.py` with your actual values:
+1. Copy `site_config.example.py` to `site_config.py`
+2. Edit `site_config.py` with your actual values:
 
 ```python
 # Home Assistant connection
@@ -152,7 +152,7 @@ PORTAL_ID = "your_portal_id"
 TASMOTA_IPS = ['192.168.x.x', '192.168.x.x']
 
 # HA Sensors, VUE sensors, booleans, etc.
-# See secrets.example.py for full template
+# See site_config.example.py for full template
 ```
 
 3. Edit `config.py` for non-sensitive parameters:
@@ -205,9 +205,9 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 
 3. **Configure secrets** (from your local machine):
    ```bash
-   cp secrets.example.py secrets.py
-   # Edit secrets.py with your HA token, Tasmota IPs, sensor names, etc.
-   scp secrets.py root@cerbo:/data/inverter-control/
+   cp site_config.example.py site_config.py
+   # Edit site_config.py with your HA token, Tasmota IPs, sensor names, etc.
+   scp site_config.py root@cerbo:/data/inverter-control/
    ```
 
 4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
@@ -217,7 +217,7 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 PackageManager discovers packages by scanning `/data/` for directories containing both a `version` file and a `setup` script. The `setup` script (sourced from this repo) is executed with the `INSTALL` action by SetupHelper, which:
 
 - Creates `/data/inverter-control/` and copies `main.py` + `inverter_control/` package
-- Copies `secrets.py` from `/data/setupOptions/inverter-control/` or the package
+- Copies `site_config.py` from `/data/setupOptions/inverter-control/` or the package
 - Creates the daemontools service under `/service/inverter-control/`
 - Restarts the service
 
@@ -466,7 +466,7 @@ After 5 consecutive HA poll failures, the circuit breaker opens for 60 seconds. 
 grep "circuit breaker" /var/log/inverter-control.log
 ```
 
-If persistent: check `HA_URL` and `HA_TOKEN` in `secrets.py`.
+If persistent: check `HA_URL` and `HA_TOKEN` in `site_config.py`.
 
 ### D-Bus errors
 
@@ -490,13 +490,13 @@ grep MQTT /var/log/inverter-control.log | tail -10
 
 ### Secrets import conflict (known issue)
 
-Python 3.6+ has a built-in `secrets` module. Our `secrets.py` relies on local import priority (current directory wins). If the working directory is wrong, Python imports the stdlib `secrets` instead, and all HA/EV features silently disable.
+Python 3.6+ has a built-in `secrets` module. Our `site_config.py` relies on local import priority (current directory wins). If the working directory is wrong, Python imports the stdlib `secrets` instead, and all HA/EV features silently disable.
 
 **Symptoms**: HA features disabled, `ENABLE_HA = False` in logs.
 
 **Workaround**: Ensure the service `cd`s to `/data/inverter-control/` before running (the `run` script handles this).
 
-**Long-term fix**: Rename `secrets.py` to `site_config.py` or `local_config.py`.
+**Long-term fix**: Rename `site_config.py` to `site_config.py` or `local_config.py`.
 
 ### Console server on port 9999
 

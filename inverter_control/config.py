@@ -5,10 +5,10 @@ All configurable parameters in one place
 """
 
 # =============================================================================
-# SECRETS (imported from secrets.py - not tracked by git)
+# SITE CONFIG (imported from site_config.py - not tracked by git)
 # =============================================================================
 try:
-    from secrets import (
+    from site_config import (
         HA_URL,
         HA_TOKEN,
         PORTAL_ID,
@@ -22,8 +22,8 @@ try:
         HA_BINARY_SENSORS,
     )
 except ImportError:
-    # Fallback for development or if secrets.py doesn't exist
-    print("WARNING: secrets.py not found! Copy secrets.example.py to secrets.py")
+    # Fallback for development or if site_config.py doesn't exist
+    print("WARNING: site_config.py not found! Copy site_config.example.py to site_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     HA_TOKEN = "your_token_here"
     PORTAL_ID = "your_portal_id"
@@ -36,20 +36,20 @@ except ImportError:
     HA_PUMP_SWITCH = ""
     HA_BINARY_SENSORS = {}
 
-# Optional laundry controls (may not exist in older secrets.py)
+# Optional laundry controls (may not exist in older site_config.py)
 # Import each separately to handle partial configurations
 try:
-    from secrets import HA_WASHER_POWER
+    from site_config import HA_WASHER_POWER
 except ImportError:
     HA_WASHER_POWER = ""
 
 try:
-    from secrets import HA_DRYER_POWER
+    from site_config import HA_DRYER_POWER
 except ImportError:
     HA_DRYER_POWER = ""
 
 try:
-    from secrets import HA_LAUNDRY_OUTLET
+    from site_config import HA_LAUNDRY_OUTLET
 except ImportError:
     HA_LAUNDRY_OUTLET = ""
 
@@ -81,7 +81,7 @@ if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_DISHWASHER = False
     ENABLE_WASHER = False
     ENABLE_DRYER = False
-    print("INFO: Home Assistant disabled (no valid HA_TOKEN in secrets.py)")
+    print("INFO: Home Assistant disabled (no valid HA_TOKEN in site_config.py)")
 
 # =============================================================================
 # MQTT BRIDGE (for remote web dashboard)
@@ -123,7 +123,7 @@ DRY_RUN = False  # Live mode - sending commands to Victron
 # VICTRON SYSTEM
 # =============================================================================
 
-# PORTAL_ID imported from secrets.py
+# PORTAL_ID imported from site_config.py
 
 # Power limits for outlet protection (Watts)
 POWER_LIMIT_MAX = 2250  # Maximum feed-in (positive = charging battery)
@@ -173,7 +173,7 @@ INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
 
 # HA_URL, HA_TOKEN, HA_SENSORS, VUE_SENSORS, HA_BOOLEANS,
 # HA_DUMP_LOADS, HA_WATER_VALVE, HA_BINARY_SENSORS
-# are all imported from secrets.py
+# are all imported from site_config.py
 
 HA_TIMEOUT = 2.0  # seconds
 
@@ -191,7 +191,7 @@ TASMOTA_DBUS_SERVICES = [
 ]
 
 # Fallback HTTP polling if D-Bus not available
-# TASMOTA_IPS imported from secrets.py
+# TASMOTA_IPS imported from site_config.py
 
 # =============================================================================
 # INVERTER STATES (VE.Bus)
