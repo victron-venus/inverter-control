@@ -262,7 +262,9 @@ class SetpointCalculator:
             ChargeBatteryStrategy(),
         ]
 
-    def _apply_burst_correction(self, raw_vanew: int, effective_gt: float, old_filtered_gt: float | None) -> tuple[int, str, bool]:
+    def _apply_burst_correction(
+        self, raw_vanew: int, effective_gt: float, old_filtered_gt: float | None
+    ) -> tuple[int, str, bool]:
         """Apply burst correction for sudden load spikes. Returns (vanew, flags, fired)."""
         if old_filtered_gt is None:
             return raw_vanew, "", False
@@ -291,8 +293,12 @@ class SetpointCalculator:
             effective_gt = state.gt - state.ev_power
 
         old_filtered_gt = state.filtered_gt
-        new_filtered_gt = float(effective_gt) if old_filtered_gt is None else (
-            self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt
+        new_filtered_gt = (
+            float(effective_gt)
+            if old_filtered_gt is None
+            else (
+                self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt
+            )
         )
         state.filtered_gt = new_filtered_gt
 
@@ -304,7 +310,9 @@ class SetpointCalculator:
             total_flags += flags
 
         # Apply corrections
-        raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(raw_vanew, effective_gt, old_filtered_gt)
+        raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(
+            raw_vanew, effective_gt, old_filtered_gt
+        )
         raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
         self.prev_effective_gt = effective_gt
 

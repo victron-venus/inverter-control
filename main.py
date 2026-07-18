@@ -499,7 +499,7 @@ def _run_main_loop(controller, mqtt_bridge):
 
             # Write heartbeat for watchdog
             try:
-                with open(heartbeat_file, 'w') as f:
+                with open(heartbeat_file, "w") as f:
                     f.write(str(int(time.time())))
             except OSError:
                 pass  # Ignore if heartbeat fails
