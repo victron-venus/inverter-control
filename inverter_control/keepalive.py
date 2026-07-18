@@ -111,6 +111,7 @@ def main():
         # Check if main process is back (TCP console server on port 9999)
         try:
             import socket
+
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
             result = sock.connect_ex(("localhost", 9999))
