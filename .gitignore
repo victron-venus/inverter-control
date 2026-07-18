@@ -36,8 +36,8 @@ Thumbs.db
 # Local config overrides
 config.local.py
 
-# Secrets (contains API keys, tokens, IPs)
-secrets.py
+# Site config (contains API keys, tokens, IPs)
+site_config.py
 
 LOGIC_RUS.md
 
