@@ -1,3 +1,18 @@
+v1.18.6
+
+### Test: burst bypass rate limiter coverage
+
+Added `test_burst_bypasses_rate_limiter` verifying convergence=1.0 (burst fires) vs convergence=0.9 (no burst). Updated `test_burst_correction_magnitude` for new behavior.
+
+### Cleanup: remove dead web server code
+
+Web server (FastAPI/uvicorn) was removed in earlier versions but artifacts remained:
+
+- Removed `WEB_PORT`, `WEB_HOST`, `HISTORY_DURATION`, `HISTORY_INTERVAL` from config.py
+- Removed `SSL_ENABLED`, `SSL_CERT`, `SSL_KEY` from config.py
+- Replaced `curl http://localhost:8080/api/state` in keepalive.py with TCP socket check on port 9999
+- Removed `fastapi`, `uvicorn`, `websockets` from requirements.txt and install.sh
+
 v1.18.5
 
 ### Docs: README with PackageManager guide and troubleshooting
