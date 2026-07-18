@@ -13,3 +13,12 @@ disable = [
     "W0718",  # Catching general Exception
     "W0613",  # Unused argument
 ]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+ignore = [
+    "E722",  # Do not use bare except
+    "F841",  # Local variable assigned but never used
+]
