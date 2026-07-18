@@ -1,3 +1,17 @@
+v1.18.4
+
+### Fix: PackageManager integration
+
+After the `inverter_control/` package refactor, PackageManager could not discover or install the package because:
+
+- `deploy.sh` did not copy the `setup` script (required by PackageManager to detect the package)
+- `gitHubInfo` pointed to `victron-venus:latest` which resolved to v1.7.0 (ancient tag)
+- PackageManager's `AddStoredPackages()` skips directories without a `setup` file
+
+Fixed:
+- `deploy.sh` now copies `setup` and `gitHubInfo` to the device
+- `gitHubInfo` changed to `victron-venus:main`
+
 v1.18.3
 
 ### Fix: missed bare import in _setup_mqtt_bridge
