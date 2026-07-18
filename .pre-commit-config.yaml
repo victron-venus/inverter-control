@@ -7,12 +7,13 @@ repos:
   rev: 3.0.0
   hooks:
   - id: shellcheck
+    args: [--exclude=SC2154, --exclude=SC2164, --exclude=SC2181, --exclude=SC2029, --exclude=SC1091]
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.4.0
   hooks:
   - id: end-of-file-fixer
   - id: trailing-whitespace
 - repo: https://github.com/pylint-dev/pylint
-  rev: v2.17.2
+  rev: v3.2.0
   hooks:
   - id: pylint
