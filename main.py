@@ -444,7 +444,7 @@ def main():
 
 def _setup_mqtt_bridge(controller):
     """Set up MQTT bridge and register command callbacks. Returns bridge or None."""
-    from config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_PREFIX
+    from inverter_control.config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_PREFIX
 
     if not MQTT_AVAILABLE or not MQTT_BROKER:
         return None
