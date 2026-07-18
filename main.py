@@ -484,6 +484,7 @@ def _run_main_loop(controller, mqtt_bridge):
     """Run the main control loop until exit or error."""
     gc_interval = 300
     last_gc_time = time.time()
+    heartbeat_file = "/tmp/inverter-control.heartbeat"
 
     try:
         while True:
@@ -492,6 +493,14 @@ def _run_main_loop(controller, mqtt_bridge):
                 break
             if mqtt_bridge and mqtt_bridge.connected:
                 mqtt_bridge.publish_state(controller.get_state_for_mqtt())
+
+            # Write heartbeat for watchdog
+            try:
+                with open(heartbeat_file, 'w') as f:
+                    f.write(str(int(time.time())))
+            except OSError:
+                pass  # Ignore if heartbeat fails
+
             now = time.time()
             if now - last_gc_time > gc_interval:
                 last_gc_time = now
