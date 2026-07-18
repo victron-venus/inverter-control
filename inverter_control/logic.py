@@ -292,12 +292,14 @@ class SetpointCalculator:
         # When gt jumps (e.g. pump turns on), EMA lags and strategies under-correct.
         # Apply direct proportional correction to close the gap faster.
         burst_flags = ""
+        burst_fired = False
         if old_filtered_gt is not None:
             spike = effective_gt - old_filtered_gt
             if abs(spike) > self.burst_threshold:
                 burst_correction = int(-spike * self.burst_gain)
                 raw_vanew = raw_vanew + burst_correction
                 burst_flags = f"[B:{burst_correction:+d}] "
+                burst_fired = True
 
         # D-term: prevent overshoot when gt is converging to zero fast
         # When gt is close to zero but still moving quickly, apply braking
@@ -313,8 +315,10 @@ class SetpointCalculator:
 
         # Rate limit: apply 9/10 of the change (fast convergence)
         # Each cycle closes 90% of the gap — tight grid control
+        # Burst bypasses rate limiter for maximum responsiveness
         diff = raw_vanew - state.previous_setpoint
-        vanew = state.previous_setpoint + int(diff * 9 / 10)
+        convergence = 1.0 if burst_fired else 0.9
+        vanew = state.previous_setpoint + int(diff * convergence)
 
         # Apply safety limits
         vanew = max(self.power_limit_min, min(self.power_limit_max, vanew))

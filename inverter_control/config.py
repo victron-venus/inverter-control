@@ -97,7 +97,7 @@ MQTT_TOPIC_PREFIX = "inverter"
 # so switch state is read from HA in the dashboard instead of duplicated over MQTT.
 MQTT_SLIM_STATE = True
 
-MQTT_SLIM_EXCLUDE_KEYS = (
+MQTT_SLIM_EXCLUDE_KEYS = frozenset({
     "laundry_outlet",
     "home_recliner",
     "home_garage",
@@ -109,7 +109,7 @@ MQTT_SLIM_EXCLUDE_KEYS = (
     "dryer_time",
     "washer_power",
     "dryer_power",
-)
+})
 
 # =============================================================================
 # RUNTIME MODE
