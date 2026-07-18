@@ -24,12 +24,9 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     mkdir -p /var/log/inverter-control
     
     # Install Python scripts
+    mkdir -p "$installDir/inverter_control"
     cp "$scriptDir/main.py" "$installDir/"
-    cp "$scriptDir/config.py" "$installDir/"
-    cp "$scriptDir/homeassistant.py" "$installDir/"
-    cp "$scriptDir/victron.py" "$installDir/"
-    cp "$scriptDir/keepalive.py" "$installDir/"
-    cp "$scriptDir/mqtt_bridge.py" "$installDir/"
+    cp "$scriptDir/inverter_control/"*.py "$installDir/inverter_control/"
     chmod +x "$installDir/main.py"
     
     # Install secrets from setupOptions or use example
@@ -43,9 +40,6 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         cp "$scriptDir/secrets.example.py" "$installDir/secrets.py"
         logMessage "WARNING: Using secrets.example.py - configure /data/setupOptions/$packageName/secrets.py"
     fi
-    
-    # Install ui_config module
-    cp "$scriptDir/ui_config.py" "$installDir/"
 fi
 
 #### uninstall

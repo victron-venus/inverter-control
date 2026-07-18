@@ -8,7 +8,7 @@
 
 set -e
 
-INSTALL_DIR="/data/inverter_control"
+INSTALL_DIR="/data/inverter-control"
 SERVICE_NAME="inverter-control"
 SCREEN_NAME="inverter"
 SEPARATOR="=============================================="
@@ -26,13 +26,9 @@ mkdir -p "$INSTALL_DIR/web"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
     echo ">>> Copying files to $INSTALL_DIR..."
-    cp "$SCRIPT_DIR/config.py" "$INSTALL_DIR/" 2>/dev/null || true
+    mkdir -p "$INSTALL_DIR/inverter_control"
     cp "$SCRIPT_DIR/main.py" "$INSTALL_DIR/" 2>/dev/null || true
-    cp "$SCRIPT_DIR/victron.py" "$INSTALL_DIR/" 2>/dev/null || true
-    cp "$SCRIPT_DIR/homeassistant.py" "$INSTALL_DIR/" 2>/dev/null || true
-    cp "$SCRIPT_DIR/web/__init__.py" "$INSTALL_DIR/web/" 2>/dev/null || true
-    cp "$SCRIPT_DIR/web/server.py" "$INSTALL_DIR/web/" 2>/dev/null || true
-    cp "$SCRIPT_DIR/web/app.py" "$INSTALL_DIR/web/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/inverter_control/"*.py "$INSTALL_DIR/inverter_control/" 2>/dev/null || true
 fi
 
 chmod +x "$INSTALL_DIR/main.py"
@@ -51,7 +47,7 @@ echo ">>> Creating screen wrapper..."
 cat > "$INSTALL_DIR/run-in-screen.sh" << 'EOF'
 #!/bin/bash
 SCREEN_NAME="inverter"
-INSTALL_DIR="/data/inverter_control"
+INSTALL_DIR="/data/inverter-control"
 
 # Check if screen session exists
 if screen -list | grep -q "$SCREEN_NAME"; then

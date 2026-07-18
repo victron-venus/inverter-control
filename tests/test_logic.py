@@ -21,6 +21,9 @@ class TestLogic(unittest.TestCase):
             "EXPORT_DAMPING": 1.0,  # Full correction for export
             "CREEP_RATE": 0.5,
             "CREEP_MAX": 100.0,
+            "D_BRAKE_ZONE": 100,
+            "D_THRESHOLD": 50,
+            "D_GAIN": 0.3,
         }
         self.calculator = SetpointCalculator(self.config)
 
@@ -370,6 +373,82 @@ class TestLogic(unittest.TestCase):
         self.assertGreater(result.setpoint, 300)
         self.assertLess(result.setpoint, 450)
         self.assertIn("[B:", result.flags)
+
+    def test_d_term_brakes_when_approaching_zero_fast(self):
+        """When gt is close to zero but dropping fast, D-term should brake
+        to prevent overshoot into export territory."""
+        self.config["EMA_ALPHA"] = 1.0
+        self.config["D_BRAKE_ZONE"] = 100
+        self.config["D_THRESHOLD"] = 50
+        self.config["D_GAIN"] = 0.3
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 500
+
+        # Cycle 1: gt = 80 (close to zero, moving toward zero from above)
+        state.gt = 80
+        state.filtered_gt = 80.0
+        result1 = calculator.calculate(state)
+        self.assertNotIn("[D:", result1.flags)
+
+        # Cycle 2: gt drops to -30 (moved 110W in one cycle — fast approach to zero)
+        state.gt = -30
+        state.filtered_gt = -30.0
+        result2 = calculator.calculate(state)
+
+        # d_gt = -30 - 80 = -110, abs(-110) > 50 threshold
+        # abs(-30) < 100 brake zone → D-term fires
+        # brake = -(-110) * 0.3 = +33 (slow down the correction)
+        self.assertIn("[D:", result2.flags)
+
+    def test_d_term_no_brake_outside_zone(self):
+        """When gt is far from zero, D-term should not fire even if moving fast."""
+        self.config["EMA_ALPHA"] = 1.0
+        self.config["D_BRAKE_ZONE"] = 100
+        self.config["D_THRESHOLD"] = 50
+        self.config["D_GAIN"] = 0.3
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+
+        # Cycle 1: gt = 500 (far from zero)
+        state.gt = 500
+        state.filtered_gt = 500.0
+        calculator.calculate(state)
+
+        # Cycle 2: gt = 300 (moving fast but still far from zero)
+        state.gt = 300
+        state.filtered_gt = 300.0
+        result = calculator.calculate(state)
+
+        # abs(300) > 100 brake zone → D-term does NOT fire
+        self.assertNotIn("[D:", result.flags)
+
+    def test_d_term_no_brake_slow_movement(self):
+        """When gt is close to zero but moving slowly, D-term should not fire."""
+        self.config["EMA_ALPHA"] = 1.0
+        self.config["D_BRAKE_ZONE"] = 100
+        self.config["D_THRESHOLD"] = 50
+        self.config["D_GAIN"] = 0.3
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+
+        # Cycle 1: gt = 80
+        state.gt = 80
+        state.filtered_gt = 80.0
+        calculator.calculate(state)
+
+        # Cycle 2: gt = 60 (only moved 20W — slow)
+        state.gt = 60
+        state.filtered_gt = 60.0
+        result = calculator.calculate(state)
+
+        # d_gt = 60 - 80 = -20, abs(-20) < 50 threshold → no D-term
+        self.assertNotIn("[D:", result.flags)
 
 
 if __name__ == "__main__":

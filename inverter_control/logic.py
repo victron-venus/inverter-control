@@ -232,6 +232,12 @@ class SetpointCalculator:
         self.burst_threshold = config.get("BURST_THRESHOLD", 150)
         self.burst_gain = config.get("BURST_GAIN", 0.8)
 
+        # D-term: prevent overshoot when gt is converging to zero fast
+        self.d_brake_zone = config.get("D_BRAKE_ZONE", 100)
+        self.d_threshold = config.get("D_THRESHOLD", 50)
+        self.d_gain = config.get("D_GAIN", 0.3)
+        self.prev_effective_gt: Optional[float] = None
+
         # Strategies in priority order (as in main.py)
         self.strategies = [
             NormalStrategy(
@@ -293,6 +299,18 @@ class SetpointCalculator:
                 raw_vanew = raw_vanew + burst_correction
                 burst_flags = f"[B:{burst_correction:+d}] "
 
+        # D-term: prevent overshoot when gt is converging to zero fast
+        # When gt is close to zero but still moving quickly, apply braking
+        # to avoid crossing zero and exporting to grid.
+        d_flags = ""
+        if self.prev_effective_gt is not None:
+            d_gt = effective_gt - self.prev_effective_gt
+            if abs(effective_gt) < self.d_brake_zone and abs(d_gt) > self.d_threshold:
+                brake = -int(d_gt * self.d_gain)
+                raw_vanew = raw_vanew + brake
+                d_flags = f"[D:{brake:+d}] "
+        self.prev_effective_gt = effective_gt
+
         # Rate limit: apply 9/10 of the change (fast convergence)
         # Each cycle closes 90% of the gap — tight grid control
         diff = raw_vanew - state.previous_setpoint
@@ -310,6 +328,6 @@ class SetpointCalculator:
 
         return ControlResult(
             setpoint=int(vanew),
-            flags=burst_flags + total_flags.strip(),
+            flags=burst_flags + d_flags + total_flags.strip(),
             filtered_gt=new_filtered_gt,
         )

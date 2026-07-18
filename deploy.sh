@@ -27,32 +27,27 @@ echo ""
 echo ">>> Checking Python syntax..."
 python3 -m py_compile \
     "$SCRIPT_DIR/main.py" \
-    "$SCRIPT_DIR/config.py" \
-    "$SCRIPT_DIR/victron.py" \
-    "$SCRIPT_DIR/homeassistant.py" \
-    "$SCRIPT_DIR/mqtt_bridge.py" \
-    "$SCRIPT_DIR/ui_config.py" \
-    "$SCRIPT_DIR/keepalive.py" \
-    "$SCRIPT_DIR/console_server.py" \
-    "$SCRIPT_DIR/log-forwarder.py"
+    "$SCRIPT_DIR/inverter_control/__init__.py" \
+    "$SCRIPT_DIR/inverter_control/config.py" \
+    "$SCRIPT_DIR/inverter_control/victron.py" \
+    "$SCRIPT_DIR/inverter_control/homeassistant.py" \
+    "$SCRIPT_DIR/inverter_control/mqtt_bridge.py" \
+    "$SCRIPT_DIR/inverter_control/ui_config.py" \
+    "$SCRIPT_DIR/inverter_control/keepalive.py" \
+    "$SCRIPT_DIR/inverter_control/console_server.py" \
+    "$SCRIPT_DIR/inverter_control/console_ui.py" \
+    "$SCRIPT_DIR/inverter_control/logic.py" \
+    "$SCRIPT_DIR/inverter_control/log-forwarder.py"
 echo "    Syntax OK"
 
 # Create directories on remote
 echo ">>> Creating directories..."
-ssh "$SSH_HOST" "mkdir -p $INSTALL_DIR $SETUP_OPTIONS_DIR"
+ssh "$SSH_HOST" "mkdir -p $INSTALL_DIR/inverter_control $SETUP_OPTIONS_DIR"
 
 # Copy Python files
 echo ">>> Copying files..."
-scp -q "$SCRIPT_DIR/main.py" \
-       "$SCRIPT_DIR/config.py" \
-       "$SCRIPT_DIR/victron.py" \
-       "$SCRIPT_DIR/homeassistant.py" \
-       "$SCRIPT_DIR/mqtt_bridge.py" \
-       "$SCRIPT_DIR/ui_config.py" \
-       "$SCRIPT_DIR/keepalive.py" \
-       "$SCRIPT_DIR/console_server.py" \
-       "$SCRIPT_DIR/log-forwarder.py" \
-       "$SSH_HOST:$INSTALL_DIR/"
+scp -q "$SCRIPT_DIR/main.py" "$SSH_HOST:$INSTALL_DIR/"
+scp -qr "$SCRIPT_DIR/inverter_control/"* "$SSH_HOST:$INSTALL_DIR/inverter_control/"
 
 # Copy log-forwarder service
 echo ">>> Setting up log-forwarder service..."
