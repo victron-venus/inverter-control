@@ -78,13 +78,22 @@ If you are browsing this repo for inspiration, that history is intentional: **st
 
 This Python application controls a Victron inverter to maintain zero grid feed-in/consumption while supporting various operating modes. It's designed for split-phase (120/240V) systems where L2 loads need to be compensated by L1 export.
 
-```
-[Solar] → [MPPT] → [Battery] ← → [Inverter] ← → [Grid L1]
-                                      ↓
-[Tasmota PV] → [AC Grid] ←------------|
-                                      |
-                    [Loads L1] ←------|
-                    [Loads L2] ←------ Grid L2 (no inverter)
+```mermaid
+flowchart TD
+    Solar["Solar Panel"] -->|"DC"| MPPT["Inline MPPT\nInverter"]
+    MPPT -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
+    Tasmota -->|"AC"| Grid["AC Grid"]
+
+    Battery["Battery 48V"] <-->|"DC"| Inverter["Victron\nInverter"]
+    Inverter <-->|"AC L1"| Grid
+    Grid -->|"AC L1"| Loads1["Loads L1"]
+    Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
+
+    Tasmota -.->|"HTTP\npolling"| Script["This Script\non Cerbo GX"]
+    HA["Home Assistant"] -.->|"HTTP\npolling"| Script
+
+    Script -->|"D-Bus"| Inverter
+    Script -->|"MQTT"| Dashboard["Remote\nDashboard"]
 ```
 
 
@@ -369,7 +378,7 @@ Vue energy monitors can work but have significant limitations:
 
 Official Victron solutions like **VM-3P75CT** (3-phase CT meter):
 - **Pros**: Native D-Bus integration, no additional software needed
-- **Cons**: 
+- **Cons**:
   - Expensive (~$300+)
   - Requires Ethernet cable to electrical panel (often in garage)
   - Reports instantaneous values which can make control loop less stable than averaged readings
