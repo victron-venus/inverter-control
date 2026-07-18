@@ -49,6 +49,12 @@ echo ">>> Copying files..."
 scp -q "$SCRIPT_DIR/main.py" "$SSH_HOST:$INSTALL_DIR/"
 scp -qr "$SCRIPT_DIR/inverter_control/"* "$SSH_HOST:$INSTALL_DIR/inverter_control/"
 
+# Copy setup and gitHubInfo for PackageManager discovery
+echo ">>> Copying setup files..."
+scp -q "$SCRIPT_DIR/setup" "$SSH_HOST:$INSTALL_DIR/"
+ssh "$SSH_HOST" "chmod +x $INSTALL_DIR/setup"
+scp -q "$SCRIPT_DIR/gitHubInfo" "$SSH_HOST:$INSTALL_DIR/"
+
 # Copy log-forwarder service
 echo ">>> Setting up log-forwarder service..."
 ssh "$SSH_HOST" "mkdir -p $INSTALL_DIR/service/log-forwarder"
