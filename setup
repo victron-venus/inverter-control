@@ -18,27 +18,34 @@ fi
 #### install
 if [ "$scriptAction" == 'INSTALL' ]; then
     logMessage "Installing $packageName"
-    
+
+    # Backup existing installation for rollback
+    if [ -d "$installDir" ]; then
+        logMessage "Backing up existing installation for rollback"
+        rm -rf "${installDir}.rollback"
+        cp -a "$installDir" "${installDir}.rollback"
+    fi
+
     # Create directories
     mkdir -p "$installDir"
     mkdir -p /var/log/inverter-control
-    
+
     # Install Python scripts
     mkdir -p "$installDir/inverter_control"
     cp "$scriptDir/main.py" "$installDir/"
     cp "$scriptDir/inverter_control/"*.py "$installDir/inverter_control/"
     chmod +x "$installDir/main.py"
-    
-    # Install secrets from setupOptions or use example
-    if [ -f "/data/setupOptions/$packageName/secrets.py" ]; then
-        cp "/data/setupOptions/$packageName/secrets.py" "$installDir/"
-        logMessage "Using secrets.py from setupOptions"
-    elif [ -f "$scriptDir/secrets.py" ]; then
-        cp "$scriptDir/secrets.py" "$installDir/"
-        logMessage "Using secrets.py from package (configure in /data/setupOptions/$packageName/secrets.py)"
+
+    # Install config from setupOptions or use example
+    if [ -f "/data/setupOptions/$packageName/site_config.py" ]; then
+        cp "/data/setupOptions/$packageName/site_config.py" "$installDir/"
+        logMessage "Using site_config.py from setupOptions"
+    elif [ -f "$scriptDir/site_config.py" ]; then
+        cp "$scriptDir/site_config.py" "$installDir/"
+        logMessage "Using site_config.py from package"
     else
-        cp "$scriptDir/secrets.example.py" "$installDir/secrets.py"
-        logMessage "WARNING: Using secrets.example.py - configure /data/setupOptions/$packageName/secrets.py"
+        cp "$scriptDir/site_config.example.py" "$installDir/site_config.py"
+        logMessage "WARNING: Using site_config.example.py - configure /data/setupOptions/$packageName/site_config.py"
     fi
 fi
 

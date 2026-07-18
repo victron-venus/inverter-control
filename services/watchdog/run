@@ -1,0 +1,120 @@
+#!/bin/sh
+# Venus OS Service Watchdog
+# Monitors services via heartbeat files; restarts if stale; disables after repeated failures
+#
+# Usage: ./watchdog.sh
+# Heartbeat file format: timestamp (unix epoch) written by monitored service
+#
+# Environment:
+#   WATCHDOG_INTERVAL - seconds between checks (default: 10)
+#   WATCHDOG_TIMEOUT   - consider stale if heartbeat older than this (default: 60)
+#   WATCHDOG_MAX_RESTARTS - restarts before disable (default: 3)
+#   WATCHDOG_WINDOW   - time window in seconds for restart count (default: 300)
+#   WATCHDOG_LOG       - log file (default: /var/log/watchdog.log)
+
+set -euo pipefail
+
+NAME="watchdog"
+VERSION="1.0.0"
+WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
+WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-60}"
+WATCHDOG_MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-3}"
+WATCHDOG_WINDOW="${WATCHDOG_WINDOW:-300}"
+WATCHDOG_LOG="${WATCHDOG_LOG:-/var/log/watchdog.log}"
+HB_DIR="/tmp"
+
+# Services to monitor: name -> heartbeat file
+SERVICES="${SERVICES:-inverter-control mqtt-battery tasmota-pv}"
+
+log() {
+    echo "$(date +'%Y-%m-%d %H:%M:%S') $1" >> "$WATCHDOG_LOG"
+}
+
+get_restart_count() {
+    local service="$1"
+    local now=$(date +%s)
+    local window_start=$((now - WATCHDOG_WINDOW))
+    local count=0
+    local dir="$HB_DIR/.watchdog_restarts"
+
+    [ -d "$dir" ] || return 0
+
+    for ts in $(ls "$dir/${service}_"*.time 2>/dev/null); do
+        local restarts_ts=$(cat "$ts" 2>/dev/null) || continue
+        if [ -n "$restarts_ts" ] && [ "$restarts_ts" -ge "$window_start" ]; then
+            count=$((count + 1))
+        fi
+    done
+    echo "$count"
+}
+
+record_restart() {
+    local service="$1"
+    local dir="$HB_DIR/.watchdog_restarts"
+    mkdir -p "$dir"
+    touch "$dir/${service}_$(date +%s).time"
+}
+
+disable_service() {
+    local service="$1"
+    local svc_dir="/service/${service}"
+
+    log "WARN: $service exceeded max restarts ($WATCHDOG_MAX_RESTARTS in ${WATCHDOG_WINDOW}s), disabling"
+    if [ -d "$svc_dir" ]; then
+        svc -d "$svc_dir" 2>/dev/null || true
+    fi
+}
+
+check_service() {
+    local service="$1"
+    local hb_file="$HB_DIR/${service}.heartbeat"
+    local svc_dir="/service/${service}"
+
+    # Skip if no heartbeat file expected
+    [ -f "$hb_file" ] || return 0
+
+    # Read heartbeat timestamp
+    if [ ! -f "$hb_file" ]; then
+        log "INFO: $service no heartbeat file (not running?)"
+        return 0
+    fi
+
+    local hb_time
+    hb_time=$(cat "$hb_file" 2>/dev/null) || return 0
+
+    if [ -z "$hb_time" ]; then
+        log "WARN: $service heartbeat is empty"
+        return 0
+    fi
+
+    local now
+    now=$(date +%s)
+    local age=$((now - hb_time))
+
+    if [ "$age" -gt "$WATCHDOG_TIMEOUT" ]; then
+        log "WARN: $service stale (${age}s > ${WATCHDOG_TIMEOUT}s)"
+
+        # Count recent restarts
+        local restarts
+        restarts=$(get_restart_count "$service")
+
+        if [ "$restarts" -ge "$WATCHDOG_MAX_RESTARTS" ]; then
+            disable_service "$service"
+            return 1
+        fi
+
+        # Restart service
+        log "INFO: restarting $service"
+        record_restart "$service"
+        svc -t "$svc_dir" 2>/dev/null || true
+    fi
+}
+
+log "=== watchdog v${VERSION} started (interval=${WATCHDOG_INTERVAL}s, timeout=${WATCHDOG_TIMEOUT}s) ==="
+
+while true; do
+    for service in $SERVICES; do
+        check_service "$service" || true
+    done
+    sleep "$WATCHDOG_INTERVAL"
+done
