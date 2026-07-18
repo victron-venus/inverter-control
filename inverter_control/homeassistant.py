@@ -4,11 +4,15 @@ Home Assistant Integration
 API access with caching and fallback for unreliable connections
 """
 
-import requests
-import time
 import logging
+import re
 import threading
+import time
 from typing import Dict, Any, Optional
+
+import requests
+import urllib3  # noqa: E402
+
 from .config import (
     HA_URL,
     HA_TOKEN,
@@ -34,7 +38,6 @@ logger = logging.getLogger("inverter-control")
 
 # Disable insecure request warnings for local HA instance (http:// is intentional)
 # nosec B310
-import urllib3  # noqa: E402
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -59,7 +62,7 @@ class HomeAssistantResponseError(HomeAssistantError):
     """Raised when HA returns invalid response format"""
 
 
-class HomeAssistantClient:
+class HomeAssistantClient:  # pylint: disable=too-many-public-methods
     """
     Home Assistant API client with caching and fallback.
     Runs polling in background thread.
@@ -114,6 +117,7 @@ class HomeAssistantClient:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._start_time: float = 0
 
     def start(self):
         """Start background polling thread"""
@@ -161,8 +165,6 @@ class HomeAssistantClient:
         if value in (None, "unavailable", "unknown", "None", ""):
             return default
         try:
-            import re
-
             s = str(value).strip()
             m = re.match(r"^([+-]?\d+\.?\d*)", s)
             if m:
@@ -190,7 +192,7 @@ class HomeAssistantClient:
             if len(parts) == 3:
                 hours, mins, secs = int(parts[0]), int(parts[1]), int(parts[2])
                 return hours * 60 + mins + (1 if secs >= 30 else 0)
-            elif len(parts) == 2:
+            if len(parts) == 2:
                 mins, secs = int(parts[0]), int(parts[1])
                 return mins + (1 if secs >= 30 else 0)
         except Exception:
@@ -233,9 +235,7 @@ class HomeAssistantClient:
 
                 # Throttle error logging to once per minute
                 if now - self._last_error_log > 60:
-                    logger.warning(
-                        f"HA poll failed ({self._consecutive_failures}x): {e}"
-                    )
+                    logger.warning(f"HA poll failed ({self._consecutive_failures}x): {e}")
                     self._last_error_log = now
 
             time.sleep(HA_POLL_INTERVAL)
@@ -259,10 +259,10 @@ class HomeAssistantClient:
                 json={"template": template},
                 timeout=(3, HA_TIMEOUT),  # (connect_timeout, read_timeout)
             )
-        except requests.exceptions.Timeout:
-            raise HomeAssistantTimeoutError("HA timeout")
-        except requests.exceptions.ConnectionError:
-            raise HomeAssistantConnectionError("HA connection failed")
+        except requests.exceptions.Timeout as exc:
+            raise HomeAssistantTimeoutError("HA timeout") from exc
+        except requests.exceptions.ConnectionError as exc:
+            raise HomeAssistantConnectionError("HA connection failed") from exc
 
         if response.status_code != 200:
             raise HomeAssistantAPIError(f"HA API error: {response.status_code}")
@@ -280,9 +280,7 @@ class HomeAssistantClient:
         for key in HA_SENSORS:
             if key in data:
                 self._sensors[key] = (
-                    data[key]
-                    if key in duration_sensors
-                    else self._parse_numeric(data[key])
+                    data[key] if key in duration_sensors else self._parse_numeric(data[key])
                 )
 
         for key in VUE_SENSORS:
@@ -537,7 +535,7 @@ _ha_client: Optional[HomeAssistantClient] = None
 
 def get_ha() -> HomeAssistantClient:
     """Get or create HA client"""
-    global _ha_client
+    global _ha_client  # pylint: disable=global-statement
     if _ha_client is None:
         _ha_client = HomeAssistantClient()
         _ha_client.start()

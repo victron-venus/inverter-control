@@ -41,7 +41,7 @@ LOG_SOURCES = {
 def load_state():
     """Load file positions from state file."""
     try:
-        with open(STATE_FILE, "r") as f:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except (IOError, ValueError):
         return {}
@@ -50,7 +50,7 @@ def load_state():
 def save_state(state):
     """Save file positions to state file."""
     try:
-        with open(STATE_FILE, "w") as f:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f)
     except IOError as e:
         print(f"Warning: Could not save state: {e}", file=sys.stderr)
@@ -109,7 +109,7 @@ def read_new_lines(filepath, position, inode):
         if stat.st_size < new_position:
             new_position = 0
 
-        with open(filepath, "r", errors="replace") as f:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             f.seek(new_position)
             for line in f:
                 line = line.rstrip("\n\r")
@@ -167,7 +167,7 @@ def push_to_loki(payload):
             resp = requests.post(LOKI_URL, data=data, headers=headers, timeout=10)
             resp.raise_for_status()
         else:
-            req = urllib.request.Request(
+            req = urllib.request.Request(  # pylint: disable=used-before-assignment
                 LOKI_URL, data=data, headers=headers, method="POST"
             )
             with urllib.request.urlopen(req, timeout=10) as resp:

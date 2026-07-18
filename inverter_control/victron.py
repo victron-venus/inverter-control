@@ -7,6 +7,7 @@ Fast D-Bus access for grid control and monitoring
 import subprocess
 import re
 import logging
+import time
 from typing import Optional, Dict, Any, Tuple
 from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
@@ -19,12 +20,12 @@ HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
 
 
 # Timeout handler for stuck subprocesses
-class TimeoutError(Exception):
-    pass
+class DBusTimeoutError(Exception):
+    """Raised when a D-Bus subprocess call times out"""
 
 
 def timeout_handler(signum, frame):
-    raise TimeoutError("D-Bus call timed out")
+    raise DBusTimeoutError("D-Bus call timed out")
 
 
 class VictronDBus:
@@ -47,14 +48,13 @@ class VictronDBus:
 
     def _discover_services(self):
         """Discover VE.Bus and MPPT services"""
-        import time
 
         self._last_scan_time = time.time()
         old_vebus = self._vebus_service
 
         try:
             result = subprocess.run(
-                ["dbus", "-y"], capture_output=True, text=True, timeout=2
+                ["dbus", "-y"], capture_output=True, text=True, timeout=2, check=False
             )
             lines = result.stdout.strip().split("\n")
 
@@ -71,9 +71,7 @@ class VictronDBus:
 
             # Log if service changed
             if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
-                print(
-                    f"  [D-Bus] VE.Bus service changed: {old_vebus} -> {self._vebus_service}"
-                )
+                print(f"  [D-Bus] VE.Bus service changed: {old_vebus} -> {self._vebus_service}")
             elif not old_vebus and self._vebus_service:
                 print(f"  [D-Bus] VE.Bus service found: {self._vebus_service}")
 
@@ -84,7 +82,6 @@ class VictronDBus:
 
     def _check_rescan_needed(self) -> bool:
         """Check if D-Bus rescan is needed and perform it if so"""
-        import time
 
         now = time.time()
 
@@ -119,6 +116,7 @@ class VictronDBus:
                 text=True,
                 timeout=timeout,
                 start_new_session=True,
+                check=False,
             )
             if result.returncode == 0 and result.stdout:
                 return result.stdout.strip()
@@ -130,7 +128,6 @@ class VictronDBus:
 
     def _dbus_get(self, service: str, path: str) -> Optional[str]:
         """Get a single value from D-Bus (fast)"""
-        import time
 
         # Check if rescan needed before operation
         self._check_rescan_needed()
@@ -157,11 +154,8 @@ class VictronDBus:
         self._consecutive_errors += 1
         return None
 
-    def _dbus_set(
-        self, service: str, path: str, value: int, value_type: str = "int16"
-    ) -> bool:
+    def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
         """Set a value on D-Bus"""
-        import time
 
         self._check_rescan_needed()
 
@@ -290,9 +284,7 @@ class VictronDBus:
         if not self._vebus_service:
             return False
 
-        return self._dbus_set(
-            self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16"
-        )
+        return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16")
 
     def get_mppt_data(self) -> Dict[str, Dict[str, float]]:
         """Get power and current from all MPPT chargers"""
@@ -408,7 +400,7 @@ class VictronDBus:
             is_external = True
         elif hub4_mode == 1:
             is_external = False
-            if bl_state == 0 or bl_state == 10:
+            if bl_state in (0, 10):
                 mode_name = "Optimized without BatteryLife"
             elif bl_state == 9:
                 mode_name = "Keep batteries charged"
@@ -436,16 +428,15 @@ class VictronDBus:
         if external:
             # External control: Hub4Mode = 3
             return self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32")
-        else:
-            # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
-            success1 = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32")
-            success2 = self._dbus_set(
-                SETTINGS_SERVICE,
-                "/Settings/CGwacs/BatteryLife/State",
-                0,
-                "int32",
-            )
-            return success1 and success2
+        # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
+        success1 = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32")
+        success2 = self._dbus_set(
+            SETTINGS_SERVICE,
+            "/Settings/CGwacs/BatteryLife/State",
+            0,
+            "int32",
+        )
+        return success1 and success2
 
     def _get_float(self, service: str, path: str) -> float:
         """Read a D-Bus path and return its float value, or 0.0 on failure."""
@@ -540,7 +531,7 @@ _victron: Optional[VictronDBus] = None
 
 def get_victron() -> VictronDBus:
     """Get or create Victron D-Bus interface"""
-    global _victron
+    global _victron  # pylint: disable=global-statement
     if _victron is None:
         _victron = VictronDBus()
     return _victron

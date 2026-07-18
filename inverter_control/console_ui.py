@@ -29,7 +29,7 @@ class ConsoleUI:
         self.victron = victron_interface
         self.title_update_counter = 0
 
-    def format_line(
+    def format_line(  # pylint: disable=too-many-arguments
         self,
         sys_data: Dict[str, Any],
         setpoint: int,
@@ -90,9 +90,7 @@ class ConsoleUI:
         def fmt_current(a):
             return "0A" if a < 0.05 else f"{a:.1f}A"
 
-        mppt_str = "+".join(
-            f"{int(m['w'])}[{fmt_current(m['a'])}]" for m in mppt_data.values()
-        )
+        mppt_str = "+".join(f"{int(m['w'])}[{fmt_current(m['a'])}]" for m in mppt_data.values())
         tas_str = "+".join(str(int(p)) for p in tasmota_powers if p > 0)
 
         solar_str = f"{C.CYAN}{int(solar_total)}("
@@ -139,9 +137,7 @@ class ConsoleUI:
         parts.append(fmt_appliance_time(self.ha.get_sensor("dryer_time", "")))
 
         if ENABLE_DISHWASHER and self.ha.get_binary_sensor("dishwasher_running"):
-            parts.append(
-                fmt_appliance_time(self.ha.get_sensor("dishwasher_duration", ""))
-            )
+            parts.append(fmt_appliance_time(self.ha.get_sensor("dishwasher_duration", "")))
 
         return "".join(parts)
 
@@ -158,9 +154,7 @@ class ConsoleUI:
         bin_kwh = self.ha.get_sensor("battery_in_today", 0)
         bout_kwh = self.ha.get_sensor("battery_out_today", 0)
 
-        title = (
-            f"{produced}kW(${dollars})[G:{grid_kwh}kW] B.I:{bin_kwh}kWh,O:{bout_kwh}kWh"
-        )
+        title = f"{produced}kW(${dollars})[G:{grid_kwh}kW] B.I:{bin_kwh}kWh,O:{bout_kwh}kWh"
         print(f"\033]2;{title}\007", end="", flush=True)
 
 
