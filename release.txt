@@ -1,3 +1,33 @@
+v1.18.2
+
+### Fix: Deploy scripts for inverter_control package refactor
+
+After moving all modules into `inverter_control/` subdirectory (v1.18.1), the deployment scripts were still copying individual files from the project root — causing the dashboard to show stale data and the service to crash on import errors.
+
+Fixed:
+- `main.py` — all bare imports updated to `inverter_control.*` prefix
+- `deploy.sh` — py_compile and scp now use the `inverter_control/` package
+- `install.sh` — corrected INSTALL_DIR path (`/data/inverter_control` → `/data/inverter-control`)
+- `setup` — copies the `inverter_control/` package instead of individual files
+- `service/log-forwarder/run` — updated path to `inverter_control/log-forwarder.py`
+
+### Feature: D-term (derivative) for overshoot prevention
+
+When a sudden load change occurs, the inverter ramps up to meet the setpoint but often overshoots past zero into grid export before settling. The existing burst correction catches the initial spike, but the overshoot happens after — when gt is already close to zero but still moving fast.
+
+Added a derivative (D) term that applies braking when:
+- `gt` is close to zero (within `D_BRAKE_ZONE` = 100W)
+- `gt` is changing fast (derivative > `D_THRESHOLD` = 50W/cycle)
+
+The brake is proportional to the speed of approach: `brake = -d_gt * D_GAIN` (0.3).
+
+Config:
+- `D_BRAKE_ZONE = 100` — how close to zero to start braking (Watts)
+- `D_THRESHOLD = 50` — minimum derivative to trigger (Watts/cycle)
+- `D_GAIN = 0.3` — fraction of derivative to apply as brake
+
+Console flag: `[D:+33]` = D-term applied +33W brake
+
 v1.18.1
 
 ### Fix: Restore GitHub release creation in publish-release workflow
