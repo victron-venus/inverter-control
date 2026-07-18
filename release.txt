@@ -1,3 +1,9 @@
+v1.18.3
+
+### Fix: missed bare import in _setup_mqtt_bridge
+
+`from config import MQTT_BROKER...` was not updated to `from inverter_control.config import...` — caused ImportError crash on startup.
+
 v1.18.2
 
 ### Fix: Deploy scripts for inverter_control package refactor
