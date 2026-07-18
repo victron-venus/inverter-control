@@ -74,6 +74,10 @@ if [[ -f "$SCRIPT_DIR/version" ]]; then
     scp -q "$SCRIPT_DIR/version" "$SSH_HOST:$INSTALL_DIR/"
 fi
 
+# Restart PackageManager to discover package
+echo ">>> Restarting PackageManager..."
+ssh "$SSH_HOST" "svc -t /service/PackageManager 2>/dev/null || true"
+
 # Restart service
 echo ">>> Restarting service..."
 ssh "$SSH_HOST" "svc -t /service/inverter-control 2>/dev/null || true"
