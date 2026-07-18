@@ -68,14 +68,13 @@ class BaseStrategy(ABC):
         Calculate setpoint and return (new_setpoint, flags)
         current_vanew: the setpoint calculated by previous (lower priority) strategies
         """
-        pass
 
 
 class NormalStrategy(BaseStrategy):
     """Base strategy: Target grid zero with creep correction in deadband.
     Asymmetric response: export (gt < 0) corrected more aggressively than import."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         damping_factor: float,
         deadband_low: int,
@@ -103,9 +102,7 @@ class NormalStrategy(BaseStrategy):
             flags += f"[EV:{int(state.ev_power)}] "
 
         # Step 5: Base Calculation - Target Grid Zero
-        smoothed_gt = (
-            state.filtered_gt if state.filtered_gt is not None else float(effective_gt)
-        )
+        smoothed_gt = state.filtered_gt if state.filtered_gt is not None else float(effective_gt)
 
         if self.deadband_low < smoothed_gt < self.deadband_high:
             self.stable_count += 1
@@ -164,9 +161,7 @@ class DoNotSupplyChargerStrategy(BaseStrategy):
 
     def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
         if state.do_not_supply_charger and state.ev_power > 100:
-            max_ac_output = max(
-                0, int(state.mppt_total * self.efficiency) - self.solar_offset
-            )
+            max_ac_output = max(0, int(state.mppt_total * self.efficiency) - self.solar_offset)
             min_setpoint = -max_ac_output
             if current_vanew < min_setpoint:
                 return min_setpoint, f"[NoEV:{max_ac_output}] "
@@ -296,9 +291,7 @@ class SetpointCalculator:
         new_filtered_gt = (
             float(effective_gt)
             if old_filtered_gt is None
-            else (
-                self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt
-            )
+            else (self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt)
         )
         state.filtered_gt = new_filtered_gt
 

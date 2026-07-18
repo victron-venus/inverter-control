@@ -23,9 +23,7 @@ except ImportError:
 class MQTTBridge:
     """Publishes state to MQTT, receives commands"""
 
-    def __init__(
-        self, broker: str = "localhost", port: int = 1883, prefix: str = "inverter"
-    ):
+    def __init__(self, broker: str = "localhost", port: int = 1883, prefix: str = "inverter"):
         self.broker = broker
         self.port = port
         self.prefix = prefix
@@ -61,7 +59,7 @@ class MQTTBridge:
             self._client.loop_stop()
             self._client.disconnect()
 
-    def _on_connect(self, client, userdata, flags, rc, properties=None):
+    def _on_connect(self, client, userdata, flags, rc, properties=None):  # pylint: disable=too-many-arguments,unused-argument
         """Connected to broker"""
         self._connected = True
         logger.info("MQTT connected")
@@ -69,7 +67,7 @@ class MQTTBridge:
         # Subscribe to command topics
         client.subscribe(f"{self.prefix}/cmd/#")
 
-    def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):
+    def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):  # pylint: disable=too-many-arguments,unused-argument
         """Disconnected from broker"""
         self._connected = False
         if rc != 0:
@@ -107,9 +105,7 @@ class MQTTBridge:
             return
 
         try:
-            self._client.publish(
-                f"{self.prefix}/state", json.dumps(state), qos=0, retain=True
-            )
+            self._client.publish(f"{self.prefix}/state", json.dumps(state), qos=0, retain=True)
         except Exception as e:
             logger.debug(f"MQTT publish error: {e}")
 
@@ -136,7 +132,7 @@ def get_mqtt_bridge(
     broker: str = "localhost", port: int = 1883, prefix: str = "inverter"
 ) -> Optional[MQTTBridge]:
     """Get or create MQTT bridge"""
-    global _mqtt_bridge
+    global _mqtt_bridge  # pylint: disable=global-statement
 
     if not MQTT_AVAILABLE:
         return None

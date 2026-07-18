@@ -8,7 +8,7 @@ All configurable parameters in one place
 # SITE CONFIG (imported from site_config.py - not tracked by git)
 # =============================================================================
 try:
-    from site_config import (
+    from site_config import (  # pylint: disable=unused-import
         HA_URL,
         HA_TOKEN,
         PORTAL_ID,
@@ -23,9 +23,7 @@ try:
     )
 except ImportError:
     # Fallback for development or if site_config.py doesn't exist
-    print(
-        "WARNING: site_config.py not found! Copy site_config.example.py to site_config.py"
-    )
+    print("WARNING: site_config.py not found! Copy site_config.example.py to site_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     HA_TOKEN = "your_token_here"
     PORTAL_ID = "your_portal_id"
@@ -41,17 +39,17 @@ except ImportError:
 # Optional laundry controls (may not exist in older site_config.py)
 # Import each separately to handle partial configurations
 try:
-    from site_config import HA_WASHER_POWER
+    from site_config import HA_WASHER_POWER  # pylint: disable=unused-import
 except ImportError:
     HA_WASHER_POWER = ""
 
 try:
-    from site_config import HA_DRYER_POWER
+    from site_config import HA_DRYER_POWER  # pylint: disable=unused-import
 except ImportError:
     HA_DRYER_POWER = ""
 
 try:
-    from site_config import HA_LAUNDRY_OUTLET
+    from site_config import HA_LAUNDRY_OUTLET  # pylint: disable=unused-import
 except ImportError:
     HA_LAUNDRY_OUTLET = ""
 
@@ -223,6 +221,8 @@ INVERTER_STATES = {
 
 
 class Colors:
+    """ANSI color codes for terminal output"""
+
     RED = "\033[31m"
     GREEN = "\033[32m"
     YELLOW = "\033[33m"
