@@ -26,6 +26,11 @@ Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
 > **Disclaimer**: Most grid-zero goals can be achieved using Victron's built-in **ESS Optimized (without BatteryLife)** mode. This project exists for specific edge cases requiring custom logic (split-phase compensation, EV charger exclusion, multiple solar sources, etc.). This code was developed for a particular setup and is unlikely to work as a drop-in solution — treat it as a learning resource or starting point for your own implementation.
 
+## Documentation
+
+- [System Architecture](.github/docs/system-architecture.md) - Data flow diagrams, runbook
+- [ADR](.github/docs/adr-001-grid-zero-architecture.md) - Architecture Decision Records
+
 ### Where this project came from
 
 This repository did not start as a polished Python package. Roughly **three years ago** it began as the smallest thing that could work: a **single shell pipeline** glued together with `mosquitto_sub`, a few arithmetic hacks, and a helper script. No repository structure, no D-Bus abstraction, no Home Assistant — just “read a number from MQTT, clamp it, hand it to the inverter.”
