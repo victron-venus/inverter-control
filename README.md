@@ -101,17 +101,38 @@ This Python application controls a Victron inverter to maintain zero grid feed-i
 ## Architecture
 
 ```
-inverter_control/
-├── config.py           # Non-sensitive parameters
-├── secrets.py          # Sensitive config (not in git)
-├── secrets.example.py  # Template for secrets.py
-├── main.py             # Main control loop and console output
-├── victron.py          # D-Bus interface for Victron devices
-├── homeassistant.py    # HA API with caching and fallback
-├── deploy.sh           # Deploy to Venus OS
-├── install.sh          # Install on Venus OS
-├── LOGIC.md            # Control logic documentation (EN)
-└── README.md
+inverter-control/              # Git repo root
+├── main.py                    # Entry point — control loop, CLI, MQTT setup
+├── inverter_control/          # Python package
+│   ├── __init__.py
+│   ├── config.py              # Non-sensitive parameters (tuning, limits, flags)
+│   ├── secrets.py             # Sensitive config — NOT in git (see secrets.example.py)
+│   ├── logic.py               # SetpointCalculator, strategies, EMA, burst, D-term
+│   ├── victron.py             # D-Bus I/O — grid power, inverter power, setpoint write
+│   ├── homeassistant.py       # HA API polling with circuit breaker
+│   ├── mqtt_bridge.py         # MQTT subscribe/publish for external control
+│   ├── console_ui.py          # Terminal dashboard renderer
+│   ├── console_server.py      # TCP server (port 9999) for remote console
+│   ├── keepalive.py           # Setpoint keepalive during restart
+│   ├── ui_config.py           # Dashboard layout configuration
+│   └── log-forwarder.py       # Forwards daemontools logs to syslog
+├── setup                      # SetupHelper-compatible installer (run by PackageManager)
+├── gitHubInfo                 # GitHub user:branch for PackageManager auto-download
+├── version                    # Current version (read by PackageManager)
+├── deploy.sh                  # SSH deploy to Cerbo/Pi (dev workflow)
+├── install.sh                 # Manual installer (legacy, prefer setup)
+├── secrets.example.py         # Template for secrets.py
+├── tests/
+│   └── test_logic.py          # Unit tests for control logic
+├── services/
+│   └── inverter-control/
+│       └── run                # daemontools service runner
+├── service/
+│   └── log-forwarder/
+│       └── run                # Log forwarder service
+├── LOGIC.md                   # Control logic documentation (EN)
+├── LOGIC_RUS.md               # Control logic documentation (RU)
+└── release.sh                 # Tag, push, create GitHub release
 ```
 
 ## Configuration
@@ -164,9 +185,9 @@ This allows running the inverter control standalone without Home Assistant.
 
 ## Installation
 
-### Option 1: SetupHelper (Recommended)
+### Option 1: SetupHelper / PackageManager (Recommended)
 
-The easiest way to install is via [SetupHelper](https://github.com/kwindrem/SetupHelper) PackageManager:
+The easiest way to install is via [SetupHelper](https://github.com/kwindrem/SetupHelper) PackageManager. The `setup` script in this repo is PackageManager-compatible and handles service creation, file placement, and restarts.
 
 1. **Install SetupHelper** (if not already installed):
    ```bash
@@ -179,40 +200,53 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    - Settings → PackageManager → Inactive packages → **new**
    - Package name: `inverter-control`
    - GitHub user: `victron-venus`
-   - Branch/tag: `latest`
+   - Branch: `main`
    - Proceed → Download → Install
 
-3. **Copy secrets.py** (run from your local machine):
+3. **Configure secrets** (from your local machine):
    ```bash
-   # Create secrets.py from example
    cp secrets.example.py secrets.py
-   # Edit secrets.py with your HA token, sensor names, etc.
-   
-   # Copy to Cerbo
-   ./postinstall.sh
+   # Edit secrets.py with your HA token, Tasmota IPs, sensor names, etc.
+   scp secrets.py root@cerbo:/data/inverter-control/
    ```
 
-4. **Done!** The package will automatically reinstall after Venus OS updates.
+4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
 
-### Option 2: Manual Install
+#### How PackageManager Works
+
+PackageManager discovers packages by scanning `/data/` for directories containing both a `version` file and a `setup` script. The `setup` script (sourced from this repo) is executed with the `INSTALL` action by SetupHelper, which:
+
+- Creates `/data/inverter-control/` and copies `main.py` + `inverter_control/` package
+- Copies `secrets.py` from `/data/setupOptions/inverter-control/` or the package
+- Creates the daemontools service under `/service/inverter-control/`
+- Restarts the service
+
+The `gitHubInfo` file tells PackageManager where to download from:
+```
+victron-venus:main
+```
+This means: download `https://github.com/victron-venus/inverter-control/archive/main.tar.gz`
+
+### Option 2: Deploy Script (Development)
+
+For development or testing, use `deploy.sh`:
 
 ```bash
-cd inverter_control
-./deploy.sh Cerbo    # 'Cerbo' is SSH host alias
+./deploy.sh Cerbo    # 'Cerbo' is SSH host alias in ~/.ssh/config
 ```
 
-### Manual installation on Venus OS
+This copies `main.py`, the `inverter_control/` package, `setup`, and `gitHubInfo` to the device, then restarts the service.
+
+### Option 3: Manual Install
 
 ```bash
 # Copy files to Venus OS
-scp -r inverter_control root@cerbo:/data/
+scp -r main.py inverter_control/ setup gitHubInfo version root@cerbo:/data/inverter-control/
 
-# SSH to Venus OS
+# SSH to Venus OS and run installer
 ssh root@cerbo
-
-# Run installer
-cd /data/inverter_control
-./install.sh
+cd /data/inverter-control
+./setup
 ```
 
 ## Usage
@@ -298,6 +332,9 @@ Flags:
 - `[NoEV]` - EV charger exclusion limit applied
 - `[CHG]` - Charge battery mode
 - `[MC+/-]` - Minimize charging load changes
+- `[B:+320]` - Burst correction applied (sudden spike response)
+- `[D:+33]` - D-term braking (prevents overshoot when approaching zero fast)
+- `[!ΔNNN]` - Software fuse triggered (delta exceeded limit)
 
 ## Grid Metering Options
 
@@ -348,11 +385,91 @@ If already using Vue with cloud, it still works but expect:
 ## Troubleshooting
 
 ### Service not starting
+
 ```bash
-cat /var/log/inverter-control/current | tai64nlocal | tail -50
+# Check service status
+svstat /service/inverter-control
+
+# View recent logs
+tail -50 /var/log/inverter-control.log
+
+# Check for import errors (common after refactor)
+cd /data/inverter-control && python3 -c "from inverter_control.config import LOOP_INTERVAL; print('OK')"
 ```
 
+### ImportError after package refactor (v1.18.1+)
+
+After moving modules into `inverter_control/` subdirectory, the service crashes with `ImportError` if the package is not deployed. Symptoms: service starts, shows banner, immediately exits.
+
+**Cause**: `deploy.sh` or PackageManager did not copy the `inverter_control/` directory.
+
+**Fix**:
+```bash
+# Check if package exists
+ls /data/inverter-control/inverter_control/
+
+# If missing, redeploy
+./deploy.sh Cerbo
+
+# Or manually
+scp -r inverter_control/ root@cerbo:/data/inverter-control/
+ssh root@cerbo "svc -t /service/inverter-control"
+```
+
+### PackageManager not discovering the package
+
+PackageManager's `AddStoredPackages()` requires both a `version` file AND a `setup` script in `/data/inverter-control/`.
+
+**Check**:
+```bash
+ls -la /data/inverter-control/version /data/inverter-control/setup
+cat /data/inverter-control/gitHubInfo   # should show: victron-venus:main
+```
+
+**Common issues**:
+- `setup` file missing → PackageManager skips the directory silently
+- `gitHubInfo` points to `latest` tag (which may be ancient) → should be `main`
+- `DO_NOT_AUTO_ADD` flag in `/data/setupOptions/inverter-control/` → manual removal marker
+
+**Fix**:
+```bash
+# Copy setup and gitHubInfo
+scp setup gitHubInfo root@cerbo:/data/inverter-control/
+ssh root@cerbo "chmod +x /data/inverter-control/setup"
+
+# Restart PackageManager to re-scan
+svc -t /service/PackageManager
+```
+
+**Verify**:
+```bash
+tail -20 /var/log/PackageManager/current | grep inverter
+# Should show: adding inverter-control / checking inverter-control
+```
+
+### Dashboard shows stale data (not updating)
+
+**Symptom**: Console dashboard shows data on startup but never refreshes.
+
+**Cause**: Service is not running, or D-Bus polling loop crashed.
+
+```bash
+svstat /service/inverter-control        # Check if up
+tail -20 /var/log/inverter-control.log  # Check for errors
+```
+
+### Home Assistant circuit breaker
+
+After 5 consecutive HA poll failures, the circuit breaker opens for 60 seconds. This is normal — HA restarts, network blips, etc.
+
+```bash
+grep "circuit breaker" /var/log/inverter-control.log
+```
+
+If persistent: check `HA_URL` and `HA_TOKEN` in `secrets.py`.
+
 ### D-Bus errors
+
 ```bash
 # Check VE.Bus service
 dbus -y | grep vebus
@@ -361,12 +478,29 @@ dbus -y | grep vebus
 dbus -y com.victronenergy.system / GetValue
 ```
 
-### Home Assistant connection
+### MQTT connection
+
 ```bash
-# Test from Venus OS
-curl -H "Authorization: Bearer YOUR_HA_TOKEN" \
-     http://YOUR_HA_IP:8123/api/states/sensor.your_sensor
+# Check MQTT broker is running
+mosquitto_sub -t '$SYS/broker/uptime' -C 1
+
+# Check inverter-control MQTT logs
+grep MQTT /var/log/inverter-control.log | tail -10
 ```
+
+### Secrets import conflict (known issue)
+
+Python 3.6+ has a built-in `secrets` module. Our `secrets.py` relies on local import priority (current directory wins). If the working directory is wrong, Python imports the stdlib `secrets` instead, and all HA/EV features silently disable.
+
+**Symptoms**: HA features disabled, `ENABLE_HA = False` in logs.
+
+**Workaround**: Ensure the service `cd`s to `/data/inverter-control/` before running (the `run` script handles this).
+
+**Long-term fix**: Rename `secrets.py` to `site_config.py` or `local_config.py`.
+
+### Console server on port 9999
+
+The TCP console server binds to `0.0.0.0:9999` without authentication. This provides read-only access to live inverter data. For home LAN this is fine; if the Cerbo is exposed to the internet, consider IP whitelisting or firewall rules.
 
 ## Dependencies
 

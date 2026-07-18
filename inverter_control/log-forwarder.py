@@ -10,6 +10,7 @@ import json
 import os
 import time
 import sys
+import traceback
 
 try:
     import requests
@@ -233,6 +234,7 @@ def main():
             process_logs()
         except Exception as e:
             print(f"Error in main loop: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
 
         time.sleep(POLL_INTERVAL)
 
