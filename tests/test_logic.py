@@ -350,7 +350,8 @@ class TestLogic(unittest.TestCase):
         self.assertNotIn("[B:", result.flags)
 
     def test_burst_correction_magnitude(self):
-        """Burst correction should apply gain fraction of the spike."""
+        """Burst correction should apply gain fraction of the spike.
+        Burst now bypasses rate limiter (convergence=1.0) for max responsiveness."""
         self.config["EMA_ALPHA"] = 0.3  # Realistic EMA
         self.config["BURST_THRESHOLD"] = 100
         self.config["BURST_GAIN"] = 0.8
@@ -369,10 +370,46 @@ class TestLogic(unittest.TestCase):
         #   correction = -(-120)*1.0 = 120, raw_vanew = 0+120 = 120
         # Burst: spike = -400-0 = -400, burst_correction = 320
         #   raw_vanew = 120+320 = 440
-        # Rate limit: 0+(440)*9/10 = 396
-        self.assertGreater(result.setpoint, 300)
-        self.assertLess(result.setpoint, 450)
+        # Burst fired → convergence=1.0, no rate limit: 0+(440)*1.0 = 440
+        self.assertEqual(result.setpoint, 440)
         self.assertIn("[B:", result.flags)
+
+    def test_burst_bypasses_rate_limiter(self):
+        """When burst fires, rate limiter uses 100% convergence instead of 90%.
+        This ensures maximum responsiveness to sudden load spikes."""
+        self.config["EMA_ALPHA"] = 1.0  # No EMA lag for clean math
+        self.config["BURST_THRESHOLD"] = 100
+        self.config["BURST_GAIN"] = 0.8
+        calculator = SetpointCalculator(self.config)
+
+        state = self.get_base_state()
+        state.previous_setpoint = 0
+        state.filtered_gt = 0.0
+
+        # Spike of -500W (export)
+        state.gt = -500
+        result_no_burst = calculator.calculate(state)
+
+        # With burst: spike=-500, burst_correction=400
+        # Strategies: smoothed_gt=-500, correction=500, raw_vanew=500
+        # raw_vanew = 500+400 = 900
+        # Burst fired → convergence=1.0: 0+900*1.0 = 900
+        self.assertEqual(result_no_burst.setpoint, 900)
+        self.assertIn("[B:", result_no_burst.flags)
+
+        # Now test WITHOUT burst (small spike below threshold)
+        calculator2 = SetpointCalculator(self.config)
+        state2 = self.get_base_state()
+        state2.previous_setpoint = 0
+        state2.filtered_gt = 0.0
+        state2.gt = -80  # Below threshold of 100
+        result_below = calculator2.calculate(state2)
+
+        # No burst → convergence=0.9
+        # Strategies: smoothed_gt=-80, correction=80, raw_vanew=80
+        # No burst → convergence=0.9: 0+80*0.9 = 72
+        self.assertEqual(result_below.setpoint, 72)
+        self.assertNotIn("[B:", result_below.flags)
 
     def test_d_term_brakes_when_approaching_zero_fast(self):
         """When gt is close to zero but dropping fast, D-term should brake

@@ -108,23 +108,14 @@ def main():
     count = 0
 
     while time.time() - start < DURATION:
-        # Check if main process is back
+        # Check if main process is back (TCP console server on port 9999)
         try:
-            result = subprocess.run(
-                [
-                    "curl",
-                    "-s",
-                    "-o",
-                    "/dev/null",
-                    "-w",
-                    "%{http_code}",
-                    "http://localhost:8080/api/state",  # nosec B310 — local API
-                ],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-            if result.stdout.strip() == "200":
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex(("localhost", 9999))
+            sock.close()
+            if result == 0:
                 print("[Keepalive] Main process is back, exiting")
                 return 0
         except Exception:
