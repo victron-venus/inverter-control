@@ -262,6 +262,26 @@ class SetpointCalculator:
             ChargeBatteryStrategy(),
         ]
 
+    def _apply_burst_correction(self, raw_vanew: int, effective_gt: float, old_filtered_gt: float | None) -> tuple[int, str, bool]:
+        """Apply burst correction for sudden load spikes. Returns (vanew, flags, fired)."""
+        if old_filtered_gt is None:
+            return raw_vanew, "", False
+        spike = effective_gt - old_filtered_gt
+        if abs(spike) <= self.burst_threshold:
+            return raw_vanew, "", False
+        correction = int(-spike * self.burst_gain)
+        return raw_vanew + correction, f"[B:{correction:+d}] ", True
+
+    def _apply_d_term(self, raw_vanew: int, effective_gt: float) -> tuple[int, str]:
+        """Apply D-term braking to prevent overshoot. Returns (vanew, flags)."""
+        if self.prev_effective_gt is None:
+            return raw_vanew, ""
+        d_gt = effective_gt - self.prev_effective_gt
+        if abs(effective_gt) >= self.d_brake_zone or abs(d_gt) <= self.d_threshold:
+            return raw_vanew, ""
+        brake = -int(d_gt * self.d_gain)
+        return raw_vanew + brake, f"[D:{brake:+d}] "
+
     def calculate(self, state: SystemState) -> ControlResult:
         """Execute the control logic pipeline"""
 
@@ -271,14 +291,9 @@ class SetpointCalculator:
             effective_gt = state.gt - state.ev_power
 
         old_filtered_gt = state.filtered_gt
-
-        if old_filtered_gt is None:
-            new_filtered_gt = float(effective_gt)
-        else:
-            new_filtered_gt = (self.ema_alpha * effective_gt) + (
-                (1 - self.ema_alpha) * old_filtered_gt
-            )
-
+        new_filtered_gt = float(effective_gt) if old_filtered_gt is None else (
+            self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt
+        )
         state.filtered_gt = new_filtered_gt
 
         # Run strategies
@@ -288,42 +303,18 @@ class SetpointCalculator:
             raw_vanew, flags = strategy.calculate(state, raw_vanew)
             total_flags += flags
 
-        # Burst correction: immediate response to sudden load spikes
-        # When gt jumps (e.g. pump turns on), EMA lags and strategies under-correct.
-        # Apply direct proportional correction to close the gap faster.
-        burst_flags = ""
-        burst_fired = False
-        if old_filtered_gt is not None:
-            spike = effective_gt - old_filtered_gt
-            if abs(spike) > self.burst_threshold:
-                burst_correction = int(-spike * self.burst_gain)
-                raw_vanew = raw_vanew + burst_correction
-                burst_flags = f"[B:{burst_correction:+d}] "
-                burst_fired = True
-
-        # D-term: prevent overshoot when gt is converging to zero fast
-        # When gt is close to zero but still moving quickly, apply braking
-        # to avoid crossing zero and exporting to grid.
-        d_flags = ""
-        if self.prev_effective_gt is not None:
-            d_gt = effective_gt - self.prev_effective_gt
-            if abs(effective_gt) < self.d_brake_zone and abs(d_gt) > self.d_threshold:
-                brake = -int(d_gt * self.d_gain)
-                raw_vanew = raw_vanew + brake
-                d_flags = f"[D:{brake:+d}] "
+        # Apply corrections
+        raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(raw_vanew, effective_gt, old_filtered_gt)
+        raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
         self.prev_effective_gt = effective_gt
 
         # Rate limit: apply 9/10 of the change (fast convergence)
-        # Each cycle closes 90% of the gap — tight grid control
-        # Burst bypasses rate limiter for maximum responsiveness
         diff = raw_vanew - state.previous_setpoint
         convergence = 1.0 if burst_fired else 0.9
         vanew = state.previous_setpoint + int(diff * convergence)
 
-        # Apply safety limits
+        # Apply safety limits and software fuse
         vanew = max(self.power_limit_min, min(self.power_limit_max, vanew))
-
-        # Apply software fuse (delta limit)
         delta = vanew - state.previous_setpoint
         if abs(delta) > self.delta_limit:
             limited_delta = self.delta_limit if delta > 0 else -self.delta_limit
