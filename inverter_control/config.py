@@ -232,3 +232,56 @@ class Colors:
     WHITE = "\033[37m"
     RESET = "\033[0m"
     BOLD = "\033[1m"
+
+
+# =============================================================================
+# STARTUP CONFIG VALIDATION
+# =============================================================================
+# Catch type mismatches early (e.g. HA_TOKEN = 123 instead of str)
+# so the service fails fast at import time, not at runtime.
+
+
+def _check_type(name: str, value, expected) -> str | None:
+    if not isinstance(value, expected):
+        return f"{name} must be {expected if isinstance(expected, type) else '/'.join(t.__name__ for t in expected)}, got {type(value).__name__}"
+    return None
+
+
+def _check_range(name: str, value, lo, hi) -> str | None:
+    if not isinstance(value, (int, float)):
+        return None  # type check already handles this
+    if not lo <= value <= hi:
+        return f"{name} must be {lo}-{hi}, got {value!r}"
+    return None
+
+
+def _validate_config():
+    """Validate critical config values at import time."""
+    checks = [
+        _check_type("HA_TOKEN", HA_TOKEN, str),
+        _check_type("HA_URL", HA_URL, str),
+        _check_type("PORTAL_ID", PORTAL_ID, str),
+        _check_type("TASMOTA_IPS", TASMOTA_IPS, (list, tuple)),
+        _check_type("HA_SENSORS", HA_SENSORS, dict),
+        _check_type("VUE_SENSORS", VUE_SENSORS, dict),
+        _check_type("HA_BOOLEANS", HA_BOOLEANS, dict),
+        _check_type("HA_DUMP_LOADS", HA_DUMP_LOADS, (list, tuple)),
+        _check_type("LOOP_INTERVAL", LOOP_INTERVAL, (int, float)),
+        _check_type("POWER_LIMIT_MAX", POWER_LIMIT_MAX, (int, float)),
+        _check_type("POWER_LIMIT_MIN", POWER_LIMIT_MIN, (int, float)),
+        _check_type("DAMPING_FACTOR", DAMPING_FACTOR, (int, float)),
+        _check_type("EMA_ALPHA", EMA_ALPHA, (int, float)),
+        _check_range("DAMPING_FACTOR", DAMPING_FACTOR, 0.0, 1.0),
+        _check_range("EMA_ALPHA", EMA_ALPHA, 0.0, 1.0),
+    ]
+
+    if LOOP_INTERVAL <= 0:
+        checks.append(f"LOOP_INTERVAL must be positive number, got {LOOP_INTERVAL!r}")
+
+    errors = [c for c in checks if c is not None]
+    if errors:
+        msg = "Configuration errors (fix site_config.py):\n  - " + "\n  - ".join(errors)
+        raise ValueError(msg)
+
+
+_validate_config()
