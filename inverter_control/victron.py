@@ -78,7 +78,7 @@ class VictronDBus:
             self._consecutive_errors = 0
 
         except Exception as e:
-            print(f"Error discovering D-Bus services: {e}")
+            logger.debug("D-Bus service discovery failed: %s", e)
 
     def _check_rescan_needed(self) -> bool:
         """Check if D-Bus rescan is needed and perform it if so"""
@@ -122,8 +122,8 @@ class VictronDBus:
                 return result.stdout.strip()
         except subprocess.TimeoutExpired:
             pass  # Timeout is expected sometimes
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("D-Bus subprocess failed: %s", e)
         return None
 
     def _dbus_get(self, service: str, path: str) -> Optional[str]:
@@ -230,8 +230,8 @@ class VictronDBus:
                 try:
                     val = float(match.group(1))
                     data[key] = int(val) if key not in ("bv", "bc") else val
-                except Exception:
-                    pass
+                except (ValueError, TypeError) as e:
+                    logger.debug("D-Bus system data parse failed for %s: %s", key, e)
 
         data["gt"] = data["g1"] + data["g2"]
         data["tt"] = data["t1"] + data["t2"]
@@ -248,8 +248,8 @@ class VictronDBus:
             try:
                 code = int(val)
                 return code, INVERTER_STATES.get(code, f"? ({code})")
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("Inverter state parse failed: %s", e)
         return 0, "Unknown"
 
     def get_inverter_power(self) -> int:
@@ -262,8 +262,8 @@ class VictronDBus:
         if val:
             try:
                 return int(float(val))
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("Inverter power parse failed: %s", e)
         return 0
 
     def get_ac_in_power(self) -> int:
@@ -275,8 +275,8 @@ class VictronDBus:
         if val:
             try:
                 return int(float(val))
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("AC input power parse failed: %s", e)
         return 0
 
     def set_grid_setpoint(self, watts: int) -> bool:
@@ -298,16 +298,16 @@ class VictronDBus:
             if val:
                 try:
                     mppt_data["w"] = float(val)
-                except Exception:
-                    pass
+                except (ValueError, TypeError) as e:
+                    logger.debug("MPPT power parse failed for %s: %s", service, e)
 
             # Get current
             val = self._dbus_get(service, DC_CURRENT_PATH)
             if val:
                 try:
                     mppt_data["a"] = float(val)
-                except Exception:
-                    pass
+                except (ValueError, TypeError) as e:
+                    logger.debug("MPPT current parse failed for %s: %s", service, e)
 
             data[f"mppt{i}"] = mppt_data
 
@@ -322,7 +322,8 @@ class VictronDBus:
             if val:
                 try:
                     powers.append(float(val))
-                except Exception:
+                except (ValueError, TypeError) as e:
+                    logger.debug("Tasmota PV power parse failed for %s: %s", service, e)
                     powers.append(0.0)
             else:
                 powers.append(0.0)
@@ -335,8 +336,8 @@ class VictronDBus:
         if val:
             try:
                 return float(val)
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("Battery SoC parse failed: %s", e)
         return None
 
     def get_battery_chain_socs(self) -> list:
@@ -357,7 +358,8 @@ class VictronDBus:
             if val:
                 try:
                     socs.append(float(val))
-                except Exception:
+                except (ValueError, TypeError) as e:
+                    logger.debug("Battery chain SoC parse failed for %s: %s", service, e)
                     socs.append(0.0)
             else:
                 socs.append(0.0)
@@ -380,15 +382,15 @@ class VictronDBus:
         if val:
             try:
                 hub4_mode = int(val)
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("Hub4 mode parse failed: %s", e)
 
         val = self._dbus_get(SETTINGS_SERVICE, "/Settings/CGwacs/BatteryLife/State")
         if val:
             try:
                 bl_state = int(val)
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("BatteryLife state parse failed: %s", e)
 
         # Determine mode name
         # BatteryLife states:
@@ -444,8 +446,8 @@ class VictronDBus:
         if val:
             try:
                 return float(val)
-            except Exception:
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("D-Bus float read failed for %s/%s: %s", service, path, e)
         return 0.0
 
     @staticmethod
