@@ -4,11 +4,8 @@ Inverter Control - Main Entry Point
 Grid-zero feed-in control for Victron system with split-phase compensation
 """
 
-import sys
 import os
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
+import sys
 import time
 import argparse
 import signal
@@ -68,7 +65,7 @@ except ImportError:
 # =============================================================================
 # LOGGING SETUP - All errors go to file
 # =============================================================================
-LOG_FILE = "/var/log/inverter-control.log"
+LOG_FILE = os.environ.get("INVERTER_CONTROL_LOG_FILE", "/var/log/inverter-control.log")
 
 logger = logging.getLogger("inverter-control")
 logger.setLevel(logging.DEBUG)
