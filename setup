@@ -7,7 +7,6 @@
 source "/data/SetupHelper/HelperResources/IncludeHelpers"
 #### end of lines to include helper resources
 
-packageName="inverter-control"
 installDir="/data/inverter-control"
 
 #### running manually - prompt for input
@@ -52,7 +51,7 @@ fi
 #### uninstall
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
-    
+
     # Remove installation directory
     rm -rf "$installDir"
 fi
