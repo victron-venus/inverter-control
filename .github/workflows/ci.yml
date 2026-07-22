@@ -29,7 +29,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install linters
-        run: pip install ruff
+        run: pip install --only-binary :all: ruff
 
       - name: Ruff lint
         run: ruff check .
@@ -60,7 +60,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pip install pytest pytest-cov
+          pip install --only-binary :all: "pytest==8.4.1" "pytest-cov==6.2.1"
           PYTHONPATH=. pytest tests/ -v
 
   validate-secrets-template:
