@@ -19,15 +19,6 @@ SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
 
 
-# Timeout handler for stuck subprocesses
-class DBusTimeoutError(Exception):
-    """Raised when a D-Bus subprocess call times out"""
-
-
-def timeout_handler(signum, frame):
-    raise DBusTimeoutError("D-Bus call timed out")
-
-
 class VictronDBus:
     """
     Fast D-Bus interface for Victron system.
