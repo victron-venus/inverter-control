@@ -4,10 +4,12 @@ Keepalive script - maintains last setpoint during main process restart.
 Runs for a short time, sending cached setpoint to prevent Victron standby.
 """
 
+import os
+import re
+import socket
 import subprocess
 import time
 import sys
-import os
 
 # How long to run (seconds)
 DURATION = int(os.environ.get("KEEPALIVE_DURATION", "30"))
@@ -78,9 +80,6 @@ def find_vebus_service():
         )
         for line in result.stdout.split("\n"):
             if "com.victronenergy.vebus" in line:
-                # Extract service name
-                import re
-
                 match = re.search(r"(com\.victronenergy\.vebus\.\w+)", line)
                 if match:
                     return match.group(1)
@@ -110,8 +109,6 @@ def main():
     while time.time() - start < DURATION:
         # Check if main process is back (TCP console server on port 9999)
         try:
-            import socket
-
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)
             result = sock.connect_ex(("localhost", 9999))
