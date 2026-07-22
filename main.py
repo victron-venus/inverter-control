@@ -149,7 +149,6 @@ class InverterController:
         self.console = ConsoleUI(self.ha, self.victron)
 
         # State
-        self.start_time = time.time()
         self.current_setpoint = 0
         self.previous_setpoint = 0
         self.manual_setpoint: Optional[int] = None
@@ -512,7 +511,7 @@ def _main_inner():
 
     print(f"=== Inverter Control {VERSION} ===")
 
-    dry_run_mode = args.dry_run if args.dry_run else None
+    dry_run_mode = args.dry_run or None
     controller = InverterController(dry_run=dry_run_mode)
 
     mode = "DRY-RUN (safe mode)" if controller.dry_run else "LIVE (sending commands)"

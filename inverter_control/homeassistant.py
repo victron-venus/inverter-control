@@ -461,60 +461,34 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
     # === Control Methods ===
 
-    def toggle_entity(self, entity_id: str) -> bool:
-        """Toggle a switch or input_boolean"""
+    def _call_service(self, domain: str, action: str, entity_id: str) -> bool:
+        """Call a HA service domain/action for an entity"""
         try:
-            domain = entity_id.split(".")[0]
             response = self._session.post(
-                f"{HA_URL}/api/services/{domain}/toggle",
+                f"{HA_URL}/api/services/{domain}/{action}",
                 json={"entity_id": entity_id},
                 timeout=(3, HA_TIMEOUT),
             )
             return response.status_code == 200
         except Exception as e:
-            logger.warning(f"Toggle {entity_id} failed: {e}")
+            logger.warning(f"{action} {entity_id} failed: {e}")
             return False
+
+    def toggle_entity(self, entity_id: str) -> bool:
+        """Toggle a switch or input_boolean"""
+        return self._call_service(entity_id.split(".")[0], "toggle", entity_id)
 
     def press_button(self, entity_id: str) -> bool:
         """Press a button entity"""
-        try:
-            response = self._session.post(
-                f"{HA_URL}/api/services/button/press",
-                json={"entity_id": entity_id},
-                timeout=(3, HA_TIMEOUT),
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning(f"Press {entity_id} failed: {e}")
-            return False
+        return self._call_service(entity_id.split(".")[0], "press", entity_id)
 
     def turn_on(self, entity_id: str) -> bool:
         """Turn on a switch or light"""
-        try:
-            domain = entity_id.split(".")[0]
-            response = self._session.post(
-                f"{HA_URL}/api/services/{domain}/turn_on",
-                json={"entity_id": entity_id},
-                timeout=(3, HA_TIMEOUT),
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning(f"Turn on {entity_id} failed: {e}")
-            return False
+        return self._call_service(entity_id.split(".")[0], "turn_on", entity_id)
 
     def turn_off(self, entity_id: str) -> bool:
         """Turn off a switch or light"""
-        try:
-            domain = entity_id.split(".")[0]
-            response = self._session.post(
-                f"{HA_URL}/api/services/{domain}/turn_off",
-                json={"entity_id": entity_id},
-                timeout=(3, HA_TIMEOUT),
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning(f"Turn off {entity_id} failed: {e}")
-            return False
+        return self._call_service(entity_id.split(".")[0], "turn_off", entity_id)
 
     def control_dump_loads(self, turn_on: bool) -> int:
         """Control all dump loads for minimize_charging. Returns count of changed."""
