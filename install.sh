@@ -31,7 +31,6 @@ if [[ "$SCRIPT_DIR" != "$INSTALL_DIR" ]]; then
 fi
 
 chmod +x "$INSTALL_DIR/main.py"
-chmod +x "$INSTALL_DIR/healthcheck.sh" 2>/dev/null || true
 
 # Install required Python packages (pinned for Venus OS stability)
 echo ">>> Installing Python dependencies..."
@@ -87,18 +86,6 @@ chmod +x /service/$SERVICE_NAME/run
 
 # Remove old log service if exists (we use simple file logging now)
 rm -rf /service/$SERVICE_NAME/log 2>/dev/null || true
-
-# Create healthcheck service (watchdog)
-echo ">>> Setting up healthcheck watchdog..."
-#mkdir -p /service/inverter-healthcheck
-
-#cat > /service/inverter-healthcheck/run << EOF
-##!/bin/sh
-#exec 2>&1
-#sleep 60  # Wait for main service to start
-#exec $INSTALL_DIR/healthcheck.sh
-#EOF
-#chmod +x /service/inverter-healthcheck/run
 
 echo ""
 echo "$SEPARATOR"

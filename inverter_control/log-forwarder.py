@@ -23,7 +23,7 @@ except ImportError:
     USE_REQUESTS = False
 
 # Configuration
-LOKI_URL = os.environ.get("LOKI_URL", "http://192.168.167.25:3100/loki/api/v1/push")  # nosec B310 # nosonar — local Loki
+LOKI_URL = os.environ.get("LOKI_URL", "http://192.168.167.25:3100/loki/api/v1/push")  # nosec B310 # nosonar — local Loki # nosem S1313
 STATE_FILE = os.environ.get("STATE_FILE", "/var/log/log-forwarder-state.json")  # nosec B310 # nosonar — single-user embedded device
 POLL_INTERVAL = 5  # seconds
 BATCH_SIZE = 100  # max lines per push
