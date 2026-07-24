@@ -24,6 +24,15 @@
 
 Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
+---
+
+## Release Channels & CI/CD
+
+- **Stable Releases**: Tagged as `vX.Y.Z` (e.g., `v1.0.0`). Package archive (`inverter-control-*.tar.gz`) published automatically to GitHub Releases.
+- **Pre-releases**: Tagged with `-rc.N` or `-beta.N`. Automatically marked as Pre-release on GitHub Releases to protect live grid-control systems.
+
+---
+
 > **Disclaimer**: Most grid-zero goals can be achieved using Victron's built-in **ESS Optimized (without BatteryLife)** mode. This project exists for specific edge cases requiring custom logic (split-phase compensation, EV charger exclusion, multiple solar sources, etc.). This code was developed for a particular setup and is unlikely to work as a drop-in solution — treat it as a learning resource or starting point for your own implementation.
 
 ## Documentation
