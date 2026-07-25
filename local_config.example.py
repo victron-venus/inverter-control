@@ -2,8 +2,8 @@
 """
 Site Configuration Example
 
-Copy this file to site_config.py and fill in your values.
-site_config.py is NOT tracked by git.
+Copy this file to local_config.py and fill in your values.
+local_config.py is NOT tracked by git.
 """
 
 # =============================================================================
