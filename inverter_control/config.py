@@ -5,10 +5,10 @@ All configurable parameters in one place
 """
 
 # =============================================================================
-# SITE CONFIG (imported from site_config.py - not tracked by git)
+# LOCAL CONFIG (imported from local_config.py - not tracked by git)
 # =============================================================================
 try:
-    from site_config import (  # pylint: disable=unused-import
+    from local_config import (  # pylint: disable=unused-import
         HA_URL,
         HA_TOKEN,
         PORTAL_ID,
@@ -22,8 +22,8 @@ try:
         HA_BINARY_SENSORS,
     )
 except ImportError:
-    # Fallback for development or if site_config.py doesn't exist
-    print("WARNING: site_config.py not found! Copy site_config.example.py to site_config.py")
+    # Fallback for development or if local_config.py doesn't exist
+    print("WARNING: local_config.py not found! Copy local_config.example.py to local_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     HA_TOKEN = "your_token_here"
     PORTAL_ID = "your_portal_id"
@@ -36,20 +36,20 @@ except ImportError:
     HA_PUMP_SWITCH = ""
     HA_BINARY_SENSORS = {}
 
-# Optional laundry controls (may not exist in older site_config.py)
+# Optional laundry controls (may not exist in older local_config.py)
 # Import each separately to handle partial configurations
 try:
-    from site_config import HA_WASHER_POWER  # pylint: disable=unused-import
+    from local_config import HA_WASHER_POWER  # pylint: disable=unused-import
 except ImportError:
     HA_WASHER_POWER = ""
 
 try:
-    from site_config import HA_DRYER_POWER  # pylint: disable=unused-import
+    from local_config import HA_DRYER_POWER  # pylint: disable=unused-import
 except ImportError:
     HA_DRYER_POWER = ""
 
 try:
-    from site_config import HA_LAUNDRY_OUTLET  # pylint: disable=unused-import
+    from local_config import HA_LAUNDRY_OUTLET  # pylint: disable=unused-import
 except ImportError:
     HA_LAUNDRY_OUTLET = ""
 
@@ -81,7 +81,7 @@ if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_DISHWASHER = False
     ENABLE_WASHER = False
     ENABLE_DRYER = False
-    print("INFO: Home Assistant disabled (no valid HA_TOKEN in site_config.py)")
+    print("INFO: Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
 
 # =============================================================================
 # MQTT BRIDGE (for remote web dashboard)
@@ -125,7 +125,7 @@ DRY_RUN = False  # Live mode - sending commands to Victron
 # VICTRON SYSTEM
 # =============================================================================
 
-# PORTAL_ID imported from site_config.py
+# PORTAL_ID imported from local_config.py
 
 # Power limits for outlet protection (Watts)
 POWER_LIMIT_MAX = 2250  # Maximum feed-in (positive = charging battery)
@@ -175,7 +175,7 @@ INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
 
 # HA_URL, HA_TOKEN, HA_SENSORS, VUE_SENSORS, HA_BOOLEANS,
 # HA_DUMP_LOADS, HA_WATER_VALVE, HA_BINARY_SENSORS
-# are all imported from site_config.py
+# are all imported from local_config.py
 
 HA_TIMEOUT = 2.0  # seconds
 
@@ -193,7 +193,7 @@ TASMOTA_DBUS_SERVICES = [
 ]
 
 # Fallback HTTP polling if D-Bus not available
-# TASMOTA_IPS imported from site_config.py
+# TASMOTA_IPS imported from local_config.py
 
 # =============================================================================
 # INVERTER STATES (VE.Bus)
@@ -280,7 +280,7 @@ def _validate_config():
 
     errors = [c for c in checks if c is not None]
     if errors:
-        msg = "Configuration errors (fix site_config.py):\n  - " + "\n  - ".join(errors)
+        msg = "Configuration errors (fix local_config.py):\n  - " + "\n  - ".join(errors)
         raise ValueError(msg)
 
 
