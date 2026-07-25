@@ -519,11 +519,50 @@ Python 3.6+ has a built-in `secrets` module. Our `site_config.py` relies on loca
 
 **Workaround**: Ensure the service `cd`s to `/data/inverter-control/` before running (the `run` script handles this).
 
-**Long-term fix**: Rename `site_config.py` to `site_config.py` or `local_config.py`.
+**Long-term fix**: Config was renamed to `local_config.py` (v2.x+).
 
-### Console server on port 9999
+### TCP Console Server (Port 9999)
 
-The TCP console server binds to `0.0.0.0:9999` without authentication. This provides read-only access to live inverter data. For home LAN this is fine; if the Cerbo is exposed to the internet, consider IP whitelisting or firewall rules.
+The TCP console server binds to `0.0.0.0:9999` and provides **read-only** access to live inverter data via a simple telnet-style interface.
+
+**Security Options** (choose one):
+
+#### Option 1: Firewall (Recommended)
+
+Block external access — only allow from trusted subnets:
+
+```bash
+# On Cerbo GX / Venus OS
+iptables -A INPUT -p tcp --dport 9999 -s 192.168.1.0/24 -j ACCEPT
+iptables -A INPUT -p tcp --dport 9999 -j DROP
+```
+
+Or via VenOS rc.local for persistence:
+
+```bash
+# Add to /data/rc.local
+iptables -I INPUT -p tcp --dport 9999 -s 192.168.1.0/24 -j ACCEPT
+iptables -A INPUT -p tcp --dport 9999 -j DROP
+```
+
+#### Option 2: SSH Tunnel (For Remote Access)
+
+Instead of exposing port 9999, use SSH port forwarding:
+
+```bash
+# From your local machine
+ssh -L 9999:localhost:9999 root@cerbo
+# Then connect your client to localhost:9999
+```
+
+#### Option 3: Disable If Unused
+
+```python
+# In local_config.py
+ENABLE_CONSOLE_SERVER = False  # Disable TCP console entirely
+```
+
+**Note**: The console server is read-only — it cannot send commands to the controller. No authentication is required by design (minimizing attack surface). If you need remote access, use SSH tunnel.
 
 ## Dependencies
 
