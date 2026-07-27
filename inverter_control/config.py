@@ -229,6 +229,7 @@ DVCC_IMBALANCE_AGGRESSIVE = 0.10  # V - Aggressive reduction
 DVCC_IMBALANCE_CRITICAL = 0.20  # V - Minimal current only
 
 # DVCC Temperature Limits (°C) - LiFePO4 safe range
+DVCC_TEMP_REDUCED = 5  # °C - Below this, charge current is heavily reduced
 DVCC_TEMP_FULL_CURRENT_MIN = 10  # °C - Full current above this temp
 DVCC_TEMP_FULL_CURRENT_MAX = 40  # °C - Full current below this temp
 DVCC_TEMP_STOP_CHARGE = 0  # °C - Stop charging below (lithium plating risk)
