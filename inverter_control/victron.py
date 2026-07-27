@@ -540,7 +540,7 @@ class VictronDBus:
                         if v > 0:
                             all_cell_voltages.append((v, len(all_cell_voltages)))
                     except (ValueError, TypeError):
-                        pass
+                        pass  # Ignore invalid D-Bus values
 
             # Get cell temperatures
             for i in range(1, 17):
@@ -552,7 +552,7 @@ class VictronDBus:
                         if -50 <= t <= 100:  # Sanity check
                             all_cell_temps.append(t)
                     except (ValueError, TypeError):
-                        pass
+                        pass  # Ignore invalid temperature values
 
             # Get SoC
             soc_val = self._dbus_get(service, "/Soc")
@@ -561,7 +561,7 @@ class VictronDBus:
                     total_soc += float(soc_val)
                     soc_count += 1
                 except (ValueError, TypeError):
-                    pass
+                    pass  # Ignore invalid SoC values
 
             # Get BMS allow signals
             allow_c = self._dbus_get(service, "/Info/AllowCharge")
@@ -569,14 +569,14 @@ class VictronDBus:
                 try:
                     allow_charge = allow_charge and (int(float(allow_c)) == 1)
                 except (ValueError, TypeError):
-                    pass
+                    pass  # Ignore invalid AllowCharge value
 
             allow_d = self._dbus_get(service, "/Info/AllowDischarge")
             if allow_d is not None:
                 try:
                     allow_discharge = allow_discharge and (int(float(allow_d)) == 1)
                 except (ValueError, TypeError):
-                    pass
+                    pass  # Ignore invalid AllowDischarge value
 
         result: dict[str, Any] = {
             "max_cell": None,
