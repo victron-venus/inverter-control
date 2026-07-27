@@ -121,11 +121,15 @@ class HardwareWatchdog:
         timeout_seconds: int = 30,
         check_interval: float = 1.0,
         dry_run: bool = False,
+        get_setpoint=None,
     ):
         self.victron = victron
         self.timeout_seconds = timeout_seconds
         self.check_interval = check_interval
         self.dry_run = dry_run
+        # Optional callback returning the last-applied grid setpoint, so it
+        # can be restored (instead of assuming external mode) after recovery.
+        self._get_setpoint = get_setpoint
         self._last_dbus_update = 0.0
         self._last_mqtt_update = 0.0
         self._enabled = False
@@ -133,6 +137,8 @@ class HardwareWatchdog:
         self._stop_event = threading.Event()
         self._triggered = False
         self._hardware_forced = False
+        self._pre_forced_external: Optional[bool] = None
+        self._pre_forced_setpoint: int = 0
         self._lock = threading.Lock()
 
     def mark_dbus_update(self):
@@ -153,6 +159,8 @@ class HardwareWatchdog:
         self._stop_event.clear()
         self._triggered = False
         self._hardware_forced = False
+        self._pre_forced_external = None
+        self._pre_forced_setpoint = 0
         now = time.time()
         self._last_dbus_update = now
         self._last_mqtt_update = now
@@ -190,6 +198,9 @@ class HardwareWatchdog:
                 logger.warning("[DRY] watchdog would force 0W setpoint / ESS pass-through")
                 return
             try:
+                # Remember prior ESS mode/setpoint so we can restore them on recovery
+                self._pre_forced_external = self.victron.get_ess_mode().get("is_external")
+                self._pre_forced_setpoint = self._get_setpoint() if self._get_setpoint else 0
                 # Force ESS to pass-through mode (0W setpoint = fallback)
                 self.victron.set_grid_setpoint(0)
                 # Also force external control mode off for safety
@@ -201,19 +212,26 @@ class HardwareWatchdog:
             # Latched while in dry-run (or hardware action previously failed) but now
             # live - still stale, so apply the live failsafe action now.
             try:
+                if self._pre_forced_external is None:
+                    self._pre_forced_external = self.victron.get_ess_mode().get("is_external")
+                    self._pre_forced_setpoint = self._get_setpoint() if self._get_setpoint else 0
                 self.victron.set_grid_setpoint(0)
                 self.victron.set_ess_mode(external=False)
                 self._hardware_forced = True
             except Exception:
                 pass  # Best effort - don't crash watchdog
         elif not stale and self._triggered:
-            # Telemetry recovered - re-arm watchdog and restore external control
+            # Telemetry recovered - re-arm watchdog and restore prior ESS mode/setpoint
             self._triggered = False
             if self._hardware_forced:
                 try:
-                    self.victron.set_ess_mode(external=True)
+                    if self._pre_forced_external:
+                        self.victron.set_ess_mode(external=True)
+                        self.victron.set_grid_setpoint(self._pre_forced_setpoint)
                 except Exception:
                     pass  # Best effort - don't crash watchdog
+                self._pre_forced_external = None
+                self._pre_forced_setpoint = 0
                 self._hardware_forced = False
             logger.info("hardware watchdog re-armed after telemetry recovery")
 
@@ -308,6 +326,7 @@ class InverterController:
             timeout_seconds=30,
             check_interval=5.0,
             dry_run=self.dry_run,
+            get_setpoint=lambda: self.previous_setpoint,
         )
 
     def set_loop_interval(self, interval: float) -> float:
