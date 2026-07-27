@@ -28,12 +28,29 @@ from inverter_control.config import (
     DRY_RUN,
     DVCC_CCL_CHANGE_RATE,
     DVCC_CELL_BALANCE_VOLTAGE,
+    DVCC_CELL_CUTOFF,
+    DVCC_CELL_FULL_CURRENT,
     DVCC_CELL_MAX_VOLTAGE,
+    DVCC_CELL_NEAR_FULL,
     DVCC_CELL_START_LIMIT,
     DVCC_DCL_CHANGE_RATE,
     DVCC_ENABLED,
+    DVCC_IMBALANCE_AGGRESSIVE,
+    DVCC_IMBALANCE_CRITICAL,
+    DVCC_IMBALANCE_START_LIMIT,
     DVCC_MAX_CHARGE_CURRENT,
     DVCC_MAX_DISCHARGE_CURRENT,
+    DVCC_MIN_CHARGE_CURRENT,
+    DVCC_SOC_DISCHARGE_REDUCED,
+    DVCC_SOC_DISCHARGE_STOP,
+    DVCC_SOC_REDUCE_FACTOR,
+    DVCC_SOC_REDUCE_START,
+    DVCC_TEMP_DISCHARGE_MIN,
+    DVCC_TEMP_DISCHARGE_REDUCED,
+    DVCC_TEMP_FULL_CURRENT_MAX,
+    DVCC_TEMP_FULL_CURRENT_MIN,
+    DVCC_TEMP_STOP_CHARGE,
+    DVCC_TEMP_STOP_CHARGE_HIGH,
     EMA_ALPHA,
     ENABLE_EV,
     ENABLE_HA,
@@ -347,6 +364,23 @@ class InverterController:
                     "DVCC_CELL_BALANCE_VOLTAGE": DVCC_CELL_BALANCE_VOLTAGE,
                     "DVCC_CCL_CHANGE_RATE": DVCC_CCL_CHANGE_RATE,
                     "DVCC_DCL_CHANGE_RATE": DVCC_DCL_CHANGE_RATE,
+                    "DVCC_CELL_FULL_CURRENT": DVCC_CELL_FULL_CURRENT,
+                    "DVCC_CELL_NEAR_FULL": DVCC_CELL_NEAR_FULL,
+                    "DVCC_CELL_CUTOFF": DVCC_CELL_CUTOFF,
+                    "DVCC_MIN_CHARGE_CURRENT": DVCC_MIN_CHARGE_CURRENT,
+                    "DVCC_IMBALANCE_START_LIMIT": DVCC_IMBALANCE_START_LIMIT,
+                    "DVCC_IMBALANCE_AGGRESSIVE": DVCC_IMBALANCE_AGGRESSIVE,
+                    "DVCC_IMBALANCE_CRITICAL": DVCC_IMBALANCE_CRITICAL,
+                    "DVCC_TEMP_STOP_CHARGE": DVCC_TEMP_STOP_CHARGE,
+                    "DVCC_TEMP_FULL_CURRENT_MIN": DVCC_TEMP_FULL_CURRENT_MIN,
+                    "DVCC_TEMP_FULL_CURRENT_MAX": DVCC_TEMP_FULL_CURRENT_MAX,
+                    "DVCC_TEMP_STOP_CHARGE_HIGH": DVCC_TEMP_STOP_CHARGE_HIGH,
+                    "DVCC_TEMP_DISCHARGE_MIN": DVCC_TEMP_DISCHARGE_MIN,
+                    "DVCC_TEMP_DISCHARGE_REDUCED": DVCC_TEMP_DISCHARGE_REDUCED,
+                    "DVCC_SOC_REDUCE_START": DVCC_SOC_REDUCE_START,
+                    "DVCC_SOC_REDUCE_FACTOR": DVCC_SOC_REDUCE_FACTOR,
+                    "DVCC_SOC_DISCHARGE_STOP": DVCC_SOC_DISCHARGE_STOP,
+                    "DVCC_SOC_DISCHARGE_REDUCED": DVCC_SOC_DISCHARGE_REDUCED,
                 }
             )
             self.dvcc_limits: DvccLimits | None = None
@@ -539,6 +573,7 @@ class InverterController:
             "version": VERSION,
             "uptime": int(time.time() - self._start_time),
             "ui_config": self.ui_config,
+            "dvcc_limits": self.dvcc_limits.__dict__ if self.dvcc_limits else None,
         }
 
     def get_state_for_mqtt(self) -> dict[str, Any]:
@@ -559,6 +594,13 @@ class InverterController:
             sys_data = self.victron.get_system_data()
             # Mark D-Bus telemetry as fresh for hardware watchdog
             self._watchdog.mark_dbus_update()
+
+            if self.dvcc_calculator is not None:
+                self.dvcc_limits = self.dvcc_calculator.calculate(
+                    {
+                        "soc": sys_data.get("soc"),
+                    }
+                )
             if self.manual_setpoint is not None:
                 setpoint = self.manual_setpoint
                 flags = "[MANUAL] "

@@ -111,7 +111,10 @@ class DvccCalculator:
         # Rate limiting state
         self._last_ccl = self._max_charge_current
         self._last_dcl = self._max_discharge_current
-        self._last_update_time = time.time()
+        # None until the first calculate() call, so we don't compute a stale/inflated
+        # dt from the time elapsed since __init__ (which may be long before the first
+        # calculate() call).
+        self._last_update_time: float | None = None
 
         logger.info(
             "DVCC initialized: %d cells, max_charge=%.1fA, max_discharge=%.1fA",
@@ -384,24 +387,30 @@ class DvccCalculator:
             dcl = 0.0
             dcl_reason = "bms_blocked"
 
-        # Rate limiting for smooth transitions
+        # Rate limiting for smooth transitions (skip for hard safety cutoffs)
         now = time.time()
-        dt = now - self._last_update_time
+        first_call = self._last_update_time is None
+        dt = (now - self._last_update_time) if not first_call else 0.0
         self._last_update_time = now
 
         max_ccl_change = self.config.ccl_change_rate * dt
         max_dcl_change = self.config.dcl_change_rate * dt
 
-        if ccl > self._last_ccl:
-            ccl = min(ccl, self._last_ccl + max_ccl_change)
-        elif ccl < self._last_ccl:
-            # Allow faster reduction for safety
-            ccl = max(ccl, self._last_ccl - max_ccl_change * 2)
+        ccl_hard_stop = first_call or (ccl == 0.0) or (not allow_charge)
+        dcl_hard_stop = first_call or (dcl == 0.0) or (not allow_discharge)
 
-        if dcl > self._last_dcl:
-            dcl = min(dcl, self._last_dcl + max_dcl_change)
-        elif dcl < self._last_dcl:
-            dcl = max(dcl, self._last_dcl - max_dcl_change * 2)
+        if not ccl_hard_stop:
+            if ccl > self._last_ccl:
+                ccl = min(ccl, self._last_ccl + max_ccl_change)
+            elif ccl < self._last_ccl:
+                # Allow faster reduction for safety
+                ccl = max(ccl, self._last_ccl - max_ccl_change * 2)
+
+        if not dcl_hard_stop:
+            if dcl > self._last_dcl:
+                dcl = min(dcl, self._last_dcl + max_dcl_change)
+            elif dcl < self._last_dcl:
+                dcl = max(dcl, self._last_dcl - max_dcl_change * 2)
 
         self._last_ccl = ccl
         self._last_dcl = dcl
@@ -443,5 +452,24 @@ def create_dvcc_from_config(config: dict[str, Any]) -> DvccCalculator:
             cell_balance_full=config.get("DVCC_CELL_BALANCE_VOLTAGE", 3.55),
             ccl_change_rate=config.get("DVCC_CCL_CHANGE_RATE", 10.0),
             dcl_change_rate=config.get("DVCC_DCL_CHANGE_RATE", 15.0),
+            cell_full_current=config.get("DVCC_CELL_FULL_CURRENT", 3.40),
+            cell_start_limit=config.get("DVCC_CELL_START_LIMIT", 3.45),
+            cell_balance_voltage=config.get("DVCC_CELL_BALANCE_VOLTAGE", 3.50),
+            cell_near_full=config.get("DVCC_CELL_NEAR_FULL", 3.55),
+            cell_cutoff=config.get("DVCC_CELL_CUTOFF", 3.60),
+            min_charge_current=config.get("DVCC_MIN_CHARGE_CURRENT", 2.0),
+            imbalance_start=config.get("DVCC_IMBALANCE_START_LIMIT", 0.05),
+            imbalance_aggressive=config.get("DVCC_IMBALANCE_AGGRESSIVE", 0.10),
+            imbalance_critical=config.get("DVCC_IMBALANCE_CRITICAL", 0.20),
+            temp_charge_min=config.get("DVCC_TEMP_STOP_CHARGE", 0.0),
+            temp_charge_optimal=config.get("DVCC_TEMP_FULL_CURRENT_MIN", 10.0),
+            temp_charge_limit=config.get("DVCC_TEMP_FULL_CURRENT_MAX", 45.0),
+            temp_charge_stop=config.get("DVCC_TEMP_STOP_CHARGE_HIGH", 50.0),
+            temp_discharge_min=config.get("DVCC_TEMP_DISCHARGE_MIN", -20.0),
+            temp_discharge_reduced=config.get("DVCC_TEMP_DISCHARGE_REDUCED", -10.0),
+            soc_reduce_start=config.get("DVCC_SOC_REDUCE_START", 95.0),
+            soc_reduce_factor=config.get("DVCC_SOC_REDUCE_FACTOR", 0.5),
+            soc_discharge_stop=config.get("DVCC_SOC_DISCHARGE_STOP", 5.0),
+            soc_discharge_reduced=config.get("DVCC_SOC_DISCHARGE_REDUCED", 10.0),
         )
     )
