@@ -503,6 +503,106 @@ class VictronDBus:
 
         return batteries
 
+    def get_battery_cell_data(self) -> dict[str, Any]:
+        """Get detailed cell data from battery chains for DVCC calculation.
+
+        Returns dict with:
+        - max_cell: Highest cell voltage across all chains
+        - max_cell_id: Cell index of highest voltage
+        - min_cell: Lowest cell voltage across all chains
+        - min_cell_id: Cell index of lowest voltage
+        - max_temp: Highest cell temperature
+        - min_temp: Lowest cell temperature
+        - soc: Overall SoC
+        - allow_charge: Whether BMS allows charging
+        - allow_discharge: Whether BMS allows discharging
+        """
+        cell_services = [
+            "com.victronenergy.battery.dbus-mqtt-chain1",
+            "com.victronenergy.battery.dbus-mqtt-chain2",
+        ]
+
+        all_cell_voltages = []
+        all_cell_temps = []
+        total_soc = 0.0
+        soc_count = 0
+        allow_charge = True
+        allow_discharge = True
+
+        for service in cell_services:
+            # Get cell voltages - path list of cell voltage paths
+            for i in range(1, 17):  # Support up to 16 cells per chain
+                path = f"/Cell/{i}/Voltage"
+                val = self._dbus_get(service, path)
+                if val is not None:
+                    try:
+                        v = float(val)
+                        if v > 0:
+                            all_cell_voltages.append((v, len(all_cell_voltages)))
+                    except (ValueError, TypeError):
+                        pass
+
+            # Get cell temperatures
+            for i in range(1, 17):
+                path = f"/Cell/{i}/Temperature"
+                val = self._dbus_get(service, path)
+                if val is not None:
+                    try:
+                        t = float(val)
+                        if -50 <= t <= 100:  # Sanity check
+                            all_cell_temps.append(t)
+                    except (ValueError, TypeError):
+                        pass
+
+            # Get SoC
+            soc_val = self._dbus_get(service, "/Soc")
+            if soc_val is not None:
+                try:
+                    total_soc += float(soc_val)
+                    soc_count += 1
+                except (ValueError, TypeError):
+                    pass
+
+            # Get BMS allow signals
+            allow_c = self._dbus_get(service, "/Info/AllowCharge")
+            if allow_c is not None:
+                try:
+                    allow_charge = allow_charge and (int(float(allow_c)) == 1)
+                except (ValueError, TypeError):
+                    pass
+
+            allow_d = self._dbus_get(service, "/Info/AllowDischarge")
+            if allow_d is not None:
+                try:
+                    allow_discharge = allow_discharge and (int(float(allow_d)) == 1)
+                except (ValueError, TypeError):
+                    pass
+
+        result: dict[str, Any] = {
+            "max_cell": None,
+            "max_cell_id": None,
+            "min_cell": None,
+            "min_cell_id": None,
+            "max_temp": None,
+            "min_temp": None,
+            "soc": round(total_soc / soc_count, 1) if soc_count else None,
+            "allow_charge": allow_charge,
+            "allow_discharge": allow_discharge,
+        }
+
+        if all_cell_voltages:
+            all_cell_voltages.sort(key=lambda x: x[0], reverse=True)
+            result["max_cell"] = round(all_cell_voltages[0][0], 3)
+            result["max_cell_id"] = all_cell_voltages[0][1]
+            result["min_cell"] = round(all_cell_voltages[-1][0], 3)
+            result["min_cell_id"] = all_cell_voltages[-1][1]
+
+        if all_cell_temps:
+            result["max_temp"] = round(max(all_cell_temps), 1)
+            result["min_temp"] = round(min(all_cell_temps), 1)
+
+        return result
+
     def get_mppt_chargers(self) -> list:
         """Get detailed data for all MPPT chargers
 

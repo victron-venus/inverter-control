@@ -74,7 +74,7 @@ class NormalStrategy(BaseStrategy):
     """Base strategy: Target grid zero with creep correction in deadband.
     Asymmetric response: export (gt < 0) corrected more aggressively than import."""
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         damping_factor: float,
         deadband_low: int,
