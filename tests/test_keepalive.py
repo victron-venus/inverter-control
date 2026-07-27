@@ -1,11 +1,13 @@
 """
 Unit tests for Inverter Control Keepalive
 """
-import sys
+
 import os
-import pytest
-from unittest.mock import patch, MagicMock
 import subprocess
+import sys
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -76,7 +78,9 @@ class TestDBusSet:
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        result = keepalive.dbus_set("com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", 500)
+        result = keepalive.dbus_set(
+            "com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", 500
+        )
         assert result is True
         mock_run.assert_called_once()
 
@@ -85,7 +89,9 @@ class TestDBusSet:
         """Test D-Bus write failure returns False"""
         mock_run.side_effect = Exception("D-Bus error")
 
-        result = keepalive.dbus_set("com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", 500)
+        result = keepalive.dbus_set(
+            "com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", 500
+        )
         assert result is False
 
 
@@ -121,7 +127,7 @@ class TestFindVebusService:
         """Test fallback when no VE.Bus service found"""
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "array [\n  string \"com.victronenergy.solarcharger.ttyUSB3\"\n]"
+        mock_result.stdout = 'array [\n  string "com.victronenergy.solarcharger.ttyUSB3"\n]'
         mock_run.return_value = mock_result
 
         result = keepalive.find_vebus_service()
@@ -202,7 +208,9 @@ class TestKeepaliveDuration:
     @patch("inverter_control.keepalive.socket.socket")
     @patch("inverter_control.keepalive.dbus_get")
     @patch("inverter_control.keepalive.find_vebus_service")
-    def test_default_duration(self, mock_find_vebus, mock_dbus_get, mock_socket, mock_sleep, mock_time):
+    def test_default_duration(
+        self, mock_find_vebus, mock_dbus_get, mock_socket, mock_sleep, mock_time
+    ):
         """Test default duration is 30 seconds"""
         mock_find_vebus.return_value = "com.victronenergy.vebus.ttyUSB2"
         mock_dbus_get.return_value = 0

@@ -6,7 +6,8 @@ Publishes state and subscribes to commands from remote dashboard
 
 import json
 import logging
-from typing import Callable, Dict, Any, Optional
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger("inverter-control")
 
@@ -27,9 +28,9 @@ class MQTTBridge:
         self.broker = broker
         self.port = port
         self.prefix = prefix
-        self._client: Optional[mqtt.Client] = None
+        self._client: mqtt.Client | None = None
         self._connected = False
-        self._callbacks: Dict[str, Callable] = {}
+        self._callbacks: dict[str, Callable] = {}
 
         if not MQTT_AVAILABLE:
             return
@@ -99,7 +100,7 @@ class MQTTBridge:
         """Register callback for command"""
         self._callbacks[command] = callback
 
-    def publish_state(self, state: Dict[str, Any]):
+    def publish_state(self, state: dict[str, Any]):
         """Publish current state"""
         if not self._client or not self._connected:
             return
@@ -125,12 +126,12 @@ class MQTTBridge:
 
 
 # Global instance
-_mqtt_bridge: Optional[MQTTBridge] = None
+_mqtt_bridge: MQTTBridge | None = None
 
 
 def get_mqtt_bridge(
     broker: str = "localhost", port: int = 1883, prefix: str = "inverter"
-) -> Optional[MQTTBridge]:
+) -> MQTTBridge | None:
     """Get or create MQTT bridge"""
     global _mqtt_bridge  # pylint: disable=global-statement
 

@@ -1,11 +1,13 @@
 """
 Unit tests for Victron D-Bus Interface
 """
-import sys
+
 import os
-import pytest
-from unittest.mock import patch, MagicMock
 import subprocess
+import sys
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -133,14 +135,14 @@ class TestVictronDBus:
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = (
-                'Ac/Grid/L1/Power\nvariant       int32 500\n'
-                'Ac/Grid/L2/Power\nvariant       int32 -300\n'
-                'Ac/Consumption/L1/Power\nvariant       int32 200\n'
-                'Ac/Consumption/L2/Power\nvariant       int32 100\n'
-                'Dc/Battery/Voltage\nvariant       double 52.4\n'
-                'Dc/Battery/Current\nvariant       double -5.2\n'
-                'Dc/Battery/Power\nvariant       int32 -270\n'
-                'Dc/Pv/Power\nvariant       int32 1500\n'
+                "Ac/Grid/L1/Power\nvariant       int32 500\n"
+                "Ac/Grid/L2/Power\nvariant       int32 -300\n"
+                "Ac/Consumption/L1/Power\nvariant       int32 200\n"
+                "Ac/Consumption/L2/Power\nvariant       int32 100\n"
+                "Dc/Battery/Voltage\nvariant       double 52.4\n"
+                "Dc/Battery/Current\nvariant       double -5.2\n"
+                "Dc/Battery/Power\nvariant       int32 -270\n"
+                "Dc/Pv/Power\nvariant       int32 1500\n"
             )
             mock_run.return_value = mock_result
 
@@ -385,6 +387,7 @@ class TestVictronDBus:
     def test_get_all_batteries(self):
         """Test getting all batteries"""
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+
             def side_effect(service, path):
                 values = {
                     "com.victronenergy.battery.dbus-mqtt-chain1": {

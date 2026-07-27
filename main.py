@@ -4,58 +4,73 @@ Inverter Control - Main Entry Point
 Grid-zero feed-in control for Victron system with split-phase compensation
 """
 
-import os
-import sys
-import time
-import threading
 import argparse
-import signal
-import logging
-import traceback
 import atexit
 import gc
-from typing import Dict, Any, Optional
+import logging
+import os
+import signal
+import sys
+import threading
+import time
+import traceback
+from typing import Any
 
 from inverter_control.config import (
-    POWER_LIMIT_MAX,
-    POWER_LIMIT_MIN,
-    LOOP_INTERVAL,
-    GRID_ZERO_DEADBAND_LOW,
-    GRID_ZERO_DEADBAND_HIGH,
+    BURST_GAIN,
+    BURST_THRESHOLD,
+    CREEP_MAX,
+    CREEP_RATE,
+    D_BRAKE_ZONE,
+    D_GAIN,
+    D_THRESHOLD,
     DAMPING_FACTOR,
-    EMA_ALPHA,
-    SOLAR_OUTPUT_OFFSET,
-    INVERTER_EFFICIENCY,
-    SETPOINT_DELTA_LIMIT,
-    Colors as C,
     DRY_RUN,
+    DVCC_CCL_CHANGE_RATE,
+    DVCC_CELL_BALANCE_VOLTAGE,
+    DVCC_CELL_MAX_VOLTAGE,
+    DVCC_CELL_START_LIMIT,
+    DVCC_DCL_CHANGE_RATE,
+    DVCC_ENABLED,
+    DVCC_MAX_CHARGE_CURRENT,
+    DVCC_MAX_DISCHARGE_CURRENT,
+    EMA_ALPHA,
     ENABLE_EV,
-    ENABLE_WATER,
     ENABLE_HA,
     ENABLE_HA_LOADS,
-    MQTT_SLIM_STATE,
-    MQTT_SLIM_EXCLUDE_KEYS,
-    CREEP_RATE,
-    CREEP_MAX,
+    ENABLE_WATER,
     EXPORT_DAMPING,
-    BURST_THRESHOLD,
-    BURST_GAIN,
-    D_BRAKE_ZONE,
-    D_THRESHOLD,
-    D_GAIN,
+    GRID_ZERO_DEADBAND_HIGH,
+    GRID_ZERO_DEADBAND_LOW,
+    INVERTER_EFFICIENCY,
+    LOOP_INTERVAL,
+    MQTT_SLIM_EXCLUDE_KEYS,
+    MQTT_SLIM_STATE,
+    POWER_LIMIT_MAX,
+    POWER_LIMIT_MIN,
+    SETPOINT_DELTA_LIMIT,
+    SOLAR_OUTPUT_OFFSET,
 )
-from inverter_control.victron import get_victron
-from inverter_control.homeassistant import get_ha
+from inverter_control.config import (
+    Colors as C,
+)
 from inverter_control.console_server import (
-    start_server as start_console_server,
-    stop_server as stop_console_server,
     broadcast_line,
 )
-from inverter_control.logic import SetpointCalculator, SystemState
+from inverter_control.console_server import (
+    start_server as start_console_server,
+)
+from inverter_control.console_server import (
+    stop_server as stop_console_server,
+)
 from inverter_control.console_ui import ConsoleUI
+from inverter_control.dvcc import DvccLimits, create_dvcc_from_config
+from inverter_control.homeassistant import get_ha
+from inverter_control.logic import SetpointCalculator, SystemState
+from inverter_control.victron import get_victron
 
 try:
-    from inverter_control.mqtt_bridge import get_mqtt_bridge, MQTT_AVAILABLE
+    from inverter_control.mqtt_bridge import MQTT_AVAILABLE, get_mqtt_bridge
 except ImportError:
     MQTT_AVAILABLE = False
 
@@ -137,7 +152,7 @@ class HardwareWatchdog:
         self._stop_event = threading.Event()
         self._triggered = False
         self._hardware_forced = False
-        self._pre_forced_external: Optional[bool] = None
+        self._pre_forced_external: bool | None = None
         self._pre_forced_setpoint: int = 0
         self._lock = threading.Lock()
 
@@ -263,14 +278,16 @@ class InverterController:
     Coordinates I/O (D-Bus, HA) and delegates logic to SetpointCalculator.
     """
 
-    def __init__(self, dry_run: Optional[bool] = None):
+    def __init__(self, dry_run: bool | None = None):
         self._start_time = time.time()
         self.dry_run = dry_run if dry_run is not None else DRY_RUN
         self.victron = get_victron()
         self.ha = get_ha()
 
         # Load UI configuration
-        from inverter_control.ui_config import get_ui_config  # pylint: disable=import-outside-toplevel
+        from inverter_control.ui_config import (
+            get_ui_config,  # pylint: disable=import-outside-toplevel
+        )
 
         self.ui_config = get_ui_config()
 
@@ -300,12 +317,12 @@ class InverterController:
         # State
         self.current_setpoint = 0
         self.previous_setpoint = 0
-        self.manual_setpoint: Optional[int] = None
+        self.manual_setpoint: int | None = None
         self.delay = 0  # Delay counter for load switching
-        self.filtered_gt: Optional[float] = None
+        self.filtered_gt: float | None = None
 
         self.loop_count = 0
-        self.state: Dict[str, Any] = {}
+        self.state: dict[str, Any] = {}
 
         # Cached D-Bus data
         self._cached_mppt_data = {}
@@ -317,6 +334,25 @@ class InverterController:
         self.power_limit_min = POWER_LIMIT_MIN
         self.power_limit_max = POWER_LIMIT_MAX
         self.loop_interval = LOOP_INTERVAL
+
+        # DVCC Calculator for dynamic battery current limits (SoC & Cell Temp curves)
+        if DVCC_ENABLED:
+            self.dvcc_calculator = create_dvcc_from_config(
+                {
+                    "DVCC_CELL_COUNT": 16,  # Will be updated from actual battery data
+                    "DVCC_MAX_CHARGE_CURRENT": DVCC_MAX_CHARGE_CURRENT,
+                    "DVCC_MAX_DISCHARGE_CURRENT": DVCC_MAX_DISCHARGE_CURRENT,
+                    "DVCC_CELL_MAX_VOLTAGE": DVCC_CELL_MAX_VOLTAGE,
+                    "DVCC_CELL_START_LIMIT": DVCC_CELL_START_LIMIT,
+                    "DVCC_CELL_BALANCE_VOLTAGE": DVCC_CELL_BALANCE_VOLTAGE,
+                    "DVCC_CCL_CHANGE_RATE": DVCC_CCL_CHANGE_RATE,
+                    "DVCC_DCL_CHANGE_RATE": DVCC_DCL_CHANGE_RATE,
+                }
+            )
+            self.dvcc_limits: DvccLimits | None = None
+        else:
+            self.dvcc_calculator = None
+            self.dvcc_limits = None
 
         # Hardware watchdog - triggers fallback if telemetry stops.
         # Started explicitly in _run_main_loop (not here) to avoid triggering
@@ -334,7 +370,7 @@ class InverterController:
         logger.info(f"Loop interval changed to {self.loop_interval}s")
         return self.loop_interval
 
-    def set_power_limits(self, min_val: int, max_val: int) -> Dict[str, int]:
+    def set_power_limits(self, min_val: int, max_val: int) -> dict[str, int]:
         self.power_limit_min = max(min_val, -3000)
         self.power_limit_max = min(max_val, 3000)
         # Update calculator limits
@@ -350,7 +386,7 @@ class InverterController:
         logger.info(f"Mode changed to {mode}")
         return self.dry_run
 
-    def toggle_ess_mode(self) -> Dict[str, Any]:
+    def toggle_ess_mode(self) -> dict[str, Any]:
         current = self.victron.get_ess_mode()
         new_external = not current["is_external"]
         if self.victron.set_ess_mode(external=new_external):
@@ -359,14 +395,14 @@ class InverterController:
             return new_mode
         return current
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> dict[str, Any]:
         return self.state
 
     def set_manual_setpoint(self, value: int) -> bool:
         self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
         return True
 
-    def calculate_setpoint(self, sys_data: Dict[str, Any]) -> tuple[int, str]:
+    def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""
 
         # Prepare SystemState snapshot
@@ -406,7 +442,7 @@ class InverterController:
 
         return result.setpoint, result.flags
 
-    def handle_minimize_charging(self, sys_data: Dict[str, Any]):
+    def handle_minimize_charging(self, sys_data: dict[str, Any]):
         try:
             if self.delay > 0:
                 self.delay -= 1
@@ -431,7 +467,7 @@ class InverterController:
         except Exception as e:
             logger.warning(f"minimize_charging error: {e}")
 
-    def update_state(self, sys_data: Dict[str, Any], setpoint: int):
+    def update_state(self, sys_data: dict[str, Any], setpoint: int):
         self._cached_mppt_data = self.victron.get_mppt_data()
         self._cached_tasmota_powers = self.victron.get_tasmota_pv_power()
         self._cached_battery_socs = self.victron.get_battery_chain_socs()
@@ -505,7 +541,7 @@ class InverterController:
             "ui_config": self.ui_config,
         }
 
-    def get_state_for_mqtt(self) -> Dict[str, Any]:
+    def get_state_for_mqtt(self) -> dict[str, Any]:
         if not MQTT_SLIM_STATE:
             return self.state
         out = dict(self.state)
@@ -590,7 +626,11 @@ def main():
 
 def _setup_mqtt_bridge(controller):
     """Set up MQTT bridge and register command callbacks. Returns bridge or None."""
-    from inverter_control.config import MQTT_BROKER, MQTT_PORT, MQTT_TOPIC_PREFIX  # pylint: disable=import-outside-toplevel
+    from inverter_control.config import (  # pylint: disable=import-outside-toplevel
+        MQTT_BROKER,
+        MQTT_PORT,
+        MQTT_TOPIC_PREFIX,
+    )
 
     if not MQTT_AVAILABLE or not MQTT_BROKER:
         return None
