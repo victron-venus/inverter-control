@@ -596,12 +596,8 @@ class InverterController:
             self._watchdog.mark_dbus_update()
 
             if self.dvcc_calculator is not None:
-                soc = self.victron.get_battery_soc()
-                self.dvcc_limits = self.dvcc_calculator.calculate(
-                    {
-                        "soc": soc,
-                    }
-                )
+                battery_data = self.victron.get_battery_cell_data()
+                self.dvcc_limits = self.dvcc_calculator.calculate(battery_data)
             if self.manual_setpoint is not None:
                 setpoint = self.manual_setpoint
                 flags = "[MANUAL] "

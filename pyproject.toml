@@ -24,6 +24,7 @@ disable = [
     "W1203",  # f-string logging (style preference)
     "R0902",  # Too many instance attributes
     "R0903",  # Too few public methods
+    "R0912",  # Too many branches (complex calculation methods)
     "R0914",  # Too many local variables
     "R0915",  # Too many statements
     "C0116",  # Missing function docstring

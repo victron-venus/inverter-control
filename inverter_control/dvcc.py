@@ -111,9 +111,7 @@ class DvccCalculator:
         # Rate limiting state
         self._last_ccl = self._max_charge_current
         self._last_dcl = self._max_discharge_current
-        # None until the first calculate() call, so we don't compute a stale/inflated
-        # dt from the time elapsed since __init__ (which may be long before the first
-        # calculate() call).
+        # None until first calculate() call to avoid stale dt from construction
         self._last_update_time: float | None = None
 
         logger.info(
@@ -268,11 +266,9 @@ class DvccCalculator:
             factor = (v - 2.7) / (2.9 - 2.7)
             return max(max_dc * factor * 0.5, 0.0), f"low_cell_{v:.3f}V"
 
-        if v <= 3.1:
-            factor = (v - 2.9) / (3.0 - 2.9)
-            return max(max_dc * (0.5 + 0.5 * factor), 0.0), f"reducing_{v:.3f}V"
-
-        return max_dc, f"cell_ok_{v:.3f}V"
+        # v is between 2.9 and 3.0 here
+        factor = (v - 2.9) / (3.0 - 2.9)
+        return max(max_dc * (0.5 + 0.5 * factor), 0.0), f"reducing_{v:.3f}V"
 
     def calculate_dcl_from_temperature(
         self, min_temp: float | None, max_temp: float | None
@@ -389,31 +385,43 @@ class DvccCalculator:
 
         # Rate limiting for smooth transitions (skip for hard safety cutoffs)
         now = time.time()
-        first_call = self._last_update_time is None
-        dt = (now - self._last_update_time) if not first_call else 0.0
-        self._last_update_time = now
 
-        max_ccl_change = self.config.ccl_change_rate * dt
-        max_dcl_change = self.config.dcl_change_rate * dt
+        if self._last_update_time is None:
+            # First call - initialize timestamp, no rate limiting
+            self._last_update_time = now
+            self._last_ccl = ccl
+            self._last_dcl = dcl
+        else:
+            dt = now - self._last_update_time
+            self._last_update_time = now
 
-        ccl_hard_stop = first_call or (ccl == 0.0) or (not allow_charge)
-        dcl_hard_stop = first_call or (dcl == 0.0) or (not allow_discharge)
+            max_ccl_change = self.config.ccl_change_rate * dt
+            max_dcl_change = self.config.dcl_change_rate * dt
 
-        if not ccl_hard_stop:
-            if ccl > self._last_ccl:
-                ccl = min(ccl, self._last_ccl + max_ccl_change)
-            elif ccl < self._last_ccl:
-                # Allow faster reduction for safety
-                ccl = max(ccl, self._last_ccl - max_ccl_change * 2)
+            hard_stop_ccl = ccl == 0.0 or not allow_charge
+            hard_stop_dcl = dcl == 0.0 or not allow_discharge
 
-        if not dcl_hard_stop:
-            if dcl > self._last_dcl:
-                dcl = min(dcl, self._last_dcl + max_dcl_change)
-            elif dcl < self._last_dcl:
-                dcl = max(dcl, self._last_dcl - max_dcl_change * 2)
+            if not hard_stop_ccl:
+                if ccl > self._last_ccl:
+                    ccl = min(ccl, self._last_ccl + max_ccl_change)
+                elif ccl < self._last_ccl:
+                    # Allow faster reduction for safety
+                    ccl = max(ccl, self._last_ccl - max_ccl_change * 2)
+            else:
+                # Hard safety cutoff - apply immediately, no rate limit
+                self._last_ccl = 0.0
 
-        self._last_ccl = ccl
-        self._last_dcl = dcl
+            if not hard_stop_dcl:
+                if dcl > self._last_dcl:
+                    dcl = min(dcl, self._last_dcl + max_dcl_change)
+                elif dcl < self._last_dcl:
+                    dcl = max(dcl, self._last_dcl - max_dcl_change * 2)
+            else:
+                # Hard safety cutoff - apply immediately
+                self._last_dcl = 0.0
+
+            self._last_ccl = ccl
+            self._last_dcl = dcl
 
         # Calculate CVL (Charge Voltage Limit)
         cvl = self.config.cell_max_voltage * self.cell_count
@@ -452,24 +460,29 @@ def create_dvcc_from_config(config: dict[str, Any]) -> DvccCalculator:
             cell_balance_full=config.get("DVCC_CELL_BALANCE_VOLTAGE", 3.55),
             ccl_change_rate=config.get("DVCC_CCL_CHANGE_RATE", 10.0),
             dcl_change_rate=config.get("DVCC_DCL_CHANGE_RATE", 15.0),
+            # Cell voltage thresholds
             cell_full_current=config.get("DVCC_CELL_FULL_CURRENT", 3.40),
             cell_start_limit=config.get("DVCC_CELL_START_LIMIT", 3.45),
             cell_balance_voltage=config.get("DVCC_CELL_BALANCE_VOLTAGE", 3.50),
             cell_near_full=config.get("DVCC_CELL_NEAR_FULL", 3.55),
             cell_cutoff=config.get("DVCC_CELL_CUTOFF", 3.60),
-            min_charge_current=config.get("DVCC_MIN_CHARGE_CURRENT", 2.0),
+            # Imbalance thresholds
             imbalance_start=config.get("DVCC_IMBALANCE_START_LIMIT", 0.05),
             imbalance_aggressive=config.get("DVCC_IMBALANCE_AGGRESSIVE", 0.10),
             imbalance_critical=config.get("DVCC_IMBALANCE_CRITICAL", 0.20),
+            # Temperature thresholds (°C) - LiFePO4 safe range
             temp_charge_min=config.get("DVCC_TEMP_STOP_CHARGE", 0.0),
+            temp_charge_reduced=config.get("DVCC_TEMP_FULL_CURRENT_MIN", 10.0),
             temp_charge_optimal=config.get("DVCC_TEMP_FULL_CURRENT_MIN", 10.0),
-            temp_charge_limit=config.get("DVCC_TEMP_FULL_CURRENT_MAX", 45.0),
+            temp_charge_limit=config.get("DVCC_TEMP_FULL_CURRENT_MAX", 40.0),
             temp_charge_stop=config.get("DVCC_TEMP_STOP_CHARGE_HIGH", 50.0),
             temp_discharge_min=config.get("DVCC_TEMP_DISCHARGE_MIN", -20.0),
             temp_discharge_reduced=config.get("DVCC_TEMP_DISCHARGE_REDUCED", -10.0),
+            # SoC thresholds
             soc_reduce_start=config.get("DVCC_SOC_REDUCE_START", 95.0),
             soc_reduce_factor=config.get("DVCC_SOC_REDUCE_FACTOR", 0.5),
             soc_discharge_stop=config.get("DVCC_SOC_DISCHARGE_STOP", 5.0),
-            soc_discharge_reduced=config.get("DVCC_SOC_DISCHARGE_REDUCED", 10.0),
+            soc_discharge_reduced=config.get("DVCC_SOC_DISCHARGE_REDUCED", 15.0),
+            min_charge_current=config.get("DVCC_MIN_CHARGE_CURRENT", 2.0),
         )
     )
