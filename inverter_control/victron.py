@@ -38,6 +38,9 @@ class VictronDBus:
         self._last_scan_time: float = 0
         self._last_success_time: float = 0
         self._dbus_lock = threading.Lock()
+        # Cache of discovered cell counts per chain service, so we don't probe
+        # up to 16 cells every cycle once the real count is known.
+        self._chain_cell_counts: dict[str, int] = {}
         self._discover_services()
 
     def _discover_services(self):
@@ -530,20 +533,32 @@ class VictronDBus:
         allow_discharge = True
 
         for service in cell_services:
+            # Once we know how many cells a chain actually reports, stop
+            # probing all 16 possible slots every cycle - just query the
+            # known-present cells (plus one extra to detect growth).
+            known_count = self._chain_cell_counts.get(service, 16)
+            max_cell_index = min(known_count + 1, 16)
+            discovered_count = 0
+
             # Get cell voltages - path list of cell voltage paths
-            for i in range(1, 17):  # Support up to 16 cells per chain
+            for i in range(1, max_cell_index + 1):
                 path = f"/Cell/{i}/Voltage"
                 val = self._dbus_get(service, path)
                 if val is not None:
+                    discovered_count = i
                     try:
                         v = float(val)
                         if v > 0:
                             all_cell_voltages.append((v, len(all_cell_voltages)))
                     except (ValueError, TypeError):
                         pass
+                else:
+                    break
+
+            self._chain_cell_counts[service] = discovered_count
 
             # Get cell temperatures
-            for i in range(1, 17):
+            for i in range(1, max_cell_index + 1):
                 path = f"/Cell/{i}/Temperature"
                 val = self._dbus_get(service, path)
                 if val is not None:
@@ -553,6 +568,8 @@ class VictronDBus:
                             all_cell_temps.append(t)
                     except (ValueError, TypeError):
                         pass
+                else:
+                    break
 
             # Get SoC
             soc_val = self._dbus_get(service, "/Soc")

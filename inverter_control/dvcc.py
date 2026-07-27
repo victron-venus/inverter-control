@@ -407,18 +407,14 @@ class DvccCalculator:
                 elif ccl < self._last_ccl:
                     # Allow faster reduction for safety
                     ccl = max(ccl, self._last_ccl - max_ccl_change * 2)
-            else:
-                # Hard safety cutoff - apply immediately, no rate limit
-                self._last_ccl = 0.0
+            # else: hard safety cutoff - ccl is already 0.0, apply immediately below
 
             if not hard_stop_dcl:
                 if dcl > self._last_dcl:
                     dcl = min(dcl, self._last_dcl + max_dcl_change)
                 elif dcl < self._last_dcl:
                     dcl = max(dcl, self._last_dcl - max_dcl_change * 2)
-            else:
-                # Hard safety cutoff - apply immediately
-                self._last_dcl = 0.0
+            # else: hard safety cutoff - dcl is already 0.0, apply immediately below
 
             self._last_ccl = ccl
             self._last_dcl = dcl
@@ -472,7 +468,7 @@ def create_dvcc_from_config(config: dict[str, Any]) -> DvccCalculator:
             imbalance_critical=config.get("DVCC_IMBALANCE_CRITICAL", 0.20),
             # Temperature thresholds (°C) - LiFePO4 safe range
             temp_charge_min=config.get("DVCC_TEMP_STOP_CHARGE", 0.0),
-            temp_charge_reduced=config.get("DVCC_TEMP_FULL_CURRENT_MIN", 10.0),
+            temp_charge_reduced=config.get("DVCC_TEMP_REDUCED", 5.0),
             temp_charge_optimal=config.get("DVCC_TEMP_FULL_CURRENT_MIN", 10.0),
             temp_charge_limit=config.get("DVCC_TEMP_FULL_CURRENT_MAX", 40.0),
             temp_charge_stop=config.get("DVCC_TEMP_STOP_CHARGE_HIGH", 50.0),
