@@ -120,10 +120,12 @@ class HardwareWatchdog:
         victron,
         timeout_seconds: int = 30,
         check_interval: float = 1.0,
+        dry_run: bool = False,
     ):
         self.victron = victron
         self.timeout_seconds = timeout_seconds
         self.check_interval = check_interval
+        self.dry_run = dry_run
         self._last_dbus_update = 0.0
         self._last_mqtt_update = 0.0
         self._enabled = False
@@ -182,6 +184,9 @@ class HardwareWatchdog:
 
         if stale and not self._triggered:
             self._triggered = True
+            if self.dry_run:
+                logger.warning("[DRY] watchdog would force 0W setpoint / ESS pass-through")
+                return
             try:
                 # Force ESS to pass-through mode (0W setpoint = fallback)
                 self.victron.set_grid_setpoint(0)
@@ -189,6 +194,10 @@ class HardwareWatchdog:
                 self.victron.set_ess_mode(external=False)
             except Exception:
                 pass  # Best effort - don't crash watchdog
+        elif not stale and self._triggered:
+            # Telemetry recovered - re-arm watchdog
+            self._triggered = False
+            logger.info("hardware watchdog re-armed after telemetry recovery")
 
     def is_triggered(self) -> bool:
         """Return True if watchdog has triggered failsafe"""
@@ -273,13 +282,15 @@ class InverterController:
         self.power_limit_max = POWER_LIMIT_MAX
         self.loop_interval = LOOP_INTERVAL
 
-        # Hardware watchdog - triggers fallback if telemetry stops
+        # Hardware watchdog - triggers fallback if telemetry stops.
+        # Started explicitly in _run_main_loop (not here) to avoid triggering
+        # during a slow startup sequence.
         self._watchdog = HardwareWatchdog(
             victron=self.victron,
             timeout_seconds=30,
             check_interval=5.0,
+            dry_run=self.dry_run,
         )
-        self._watchdog.start()
 
     def set_loop_interval(self, interval: float) -> float:
         self.loop_interval = max(0.1, min(5.0, interval))
@@ -578,6 +589,10 @@ def _run_main_loop(controller, mqtt_bridge):
     # Use /run for runtime files (cleared on reboot, secure)
     heartbeat_dir = "/run/inverter-control"
     heartbeat_file = f"{heartbeat_dir}/heartbeat"
+
+    # Start the hardware watchdog just before entering the loop, so slow
+    # startup work above doesn't get mistaken for a stalled control loop.
+    controller._watchdog.start()
 
     try:
         os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)

@@ -11,8 +11,10 @@ requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
     "paho-mqtt>=2.0.0",
-    "ruff>=0.5.0",
 ]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.5.0"]
 
 [tool.pylint.messages_control]
 disable = [
