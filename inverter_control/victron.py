@@ -555,21 +555,25 @@ class VictronDBus:
                 else:
                     break
 
-            self._chain_cell_counts[service] = discovered_count
+            # Only grow immediately; keep prior count on a transient miss so a
+            # single failed probe doesn't slow re-discovery of all cells.
+            if discovered_count >= known_count:
+                self._chain_cell_counts[service] = discovered_count
+            elif discovered_count > 0:
+                self._chain_cell_counts[service] = discovered_count
 
-            # Get cell temperatures
-            for i in range(1, max_cell_index + 1):
+            # Get cell temperatures (may be sparse / non-contiguous)
+            for i in range(1, 17):
                 path = f"/Cell/{i}/Temperature"
                 val = self._dbus_get(service, path)
-                if val is not None:
-                    try:
-                        t = float(val)
-                        if -50 <= t <= 100:  # Sanity check
-                            all_cell_temps.append(t)
-                    except (ValueError, TypeError):
-                        pass  # Ignore invalid temperature values
-                else:
-                    break
+                if val is None:
+                    continue
+                try:
+                    t = float(val)
+                    if -50 <= t <= 100:  # Sanity check
+                        all_cell_temps.append(t)
+                except (ValueError, TypeError):
+                    pass  # Ignore invalid temperature values
 
             # Get SoC
             soc_val = self._dbus_get(service, "/Soc")
