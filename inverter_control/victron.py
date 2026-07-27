@@ -210,14 +210,14 @@ class VictronDBus:
 
         # Parse with regex for speed
         patterns = {
-            "g1": r"Ac/Grid/L1/Power.*?\n.*?(\-?[\d.]+)",
-            "g2": r"Ac/Grid/L2/Power.*?\n.*?(\-?[\d.]+)",
-            "t1": r"Ac/Consumption/L1/Power.*?\n.*?(\-?[\d.]+)",
-            "t2": r"Ac/Consumption/L2/Power.*?\n.*?(\-?[\d.]+)",
-            "bv": r'Dc/Battery/Voltage".*?\n.*?([\d.]+)',
-            "bc": r'Dc/Battery/Current".*?\n.*?(\-?[\d.]+)',
-            "bp": r"Dc/Battery/Power.*?\n.*?(\-?[\d.]+)",
-            "pv_total": r"Dc/Pv/Power.*?\n.*?([\d.]+)",
+            "g1": r"Ac/Grid/L1/Power.*?\n.*?\s(\-?[\d.]+)",
+            "g2": r"Ac/Grid/L2/Power.*?\n.*?\s(\-?[\d.]+)",
+            "t1": r"Ac/Consumption/L1/Power.*?\n.*?\s(\-?[\d.]+)",
+            "t2": r"Ac/Consumption/L2/Power.*?\n.*?\s(\-?[\d.]+)",
+            "bv": r"Dc/Battery/Voltage.*?\n.*?\s([\d.]+)",
+            "bc": r"Dc/Battery/Current.*?\n.*?\s(\-?[\d.]+)",
+            "bp": r"Dc/Battery/Power.*?\n.*?\s(\-?[\d.]+)",
+            "pv_total": r"Dc/Pv/Power.*?\n.*?\s([\d.]+)",
         }
 
         for key, pattern in patterns.items():
