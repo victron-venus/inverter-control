@@ -7,6 +7,7 @@ Fast D-Bus access for grid control and monitoring
 import subprocess
 import re
 import logging
+import threading
 import time
 from typing import Optional, Dict, Any, Tuple
 from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
@@ -35,6 +36,7 @@ class VictronDBus:
         self._consecutive_errors: int = 0
         self._last_scan_time: float = 0
         self._last_success_time: float = 0
+        self._dbus_lock = threading.Lock()
         self._discover_services()
 
     def _discover_services(self):
@@ -120,55 +122,57 @@ class VictronDBus:
     def _dbus_get(self, service: str, path: str) -> Optional[str]:
         """Get a single value from D-Bus (fast)"""
 
-        # Check if rescan needed before operation
-        self._check_rescan_needed()
+        with self._dbus_lock:
+            # Check if rescan needed before operation
+            self._check_rescan_needed()
 
-        result = self._safe_subprocess(
-            [
-                "dbus-send",
-                "--system",
-                "--print-reply=literal",
-                f"--dest={service}",
-                path,
-                "com.victronenergy.BusItem.GetValue",
-            ],
-            timeout=0.3,
-        )
-        if result:
-            parts = result.split()
-            if parts:
-                self._consecutive_errors = 0
-                self._last_success_time = time.time()
-                return parts[-1]
+            result = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply=literal",
+                    f"--dest={service}",
+                    path,
+                    "com.victronenergy.BusItem.GetValue",
+                ],
+                timeout=0.3,
+            )
+            if result:
+                parts = result.split()
+                if parts:
+                    self._consecutive_errors = 0
+                    self._last_success_time = time.time()
+                    return parts[-1]
 
-        # Track error
-        self._consecutive_errors += 1
-        return None
+            # Track error
+            self._consecutive_errors += 1
+            return None
 
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
         """Set a value on D-Bus"""
 
-        self._check_rescan_needed()
+        with self._dbus_lock:
+            self._check_rescan_needed()
 
-        result = self._safe_subprocess(
-            [
-                "dbus-send",
-                "--system",
-                "--type=method_call",
-                f"--dest={service}",
-                path,
-                "com.victronenergy.BusItem.SetValue",
-                f"variant:{value_type}:{value}",
-            ],
-            timeout=0.3,
-        )
-        if result is not None:
-            self._consecutive_errors = 0
-            self._last_success_time = time.time()
-            return True
+            result = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--type=method_call",
+                    f"--dest={service}",
+                    path,
+                    "com.victronenergy.BusItem.SetValue",
+                    f"variant:{value_type}:{value}",
+                ],
+                timeout=0.3,
+            )
+            if result is not None:
+                self._consecutive_errors = 0
+                self._last_success_time = time.time()
+                return True
 
-        self._consecutive_errors += 1
-        return False
+            self._consecutive_errors += 1
+            return False
 
     def get_system_data(self) -> Dict[str, Any]:
         """

@@ -1,3 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inverter-control"
+version = "0.1.0"
+description = "Grid-zero feed-in control for Victron system"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "paho-mqtt>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.5.0"]
+
 [tool.pylint.messages_control]
 disable = [
     "E0401",  # Unable to import (system libs not in venv)
@@ -13,6 +31,10 @@ disable = [
     "W0718",  # Catching general Exception
     "W0613",  # Unused argument
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["inverter_control*"]
 
 [tool.ruff]
 line-length = 100

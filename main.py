@@ -7,6 +7,7 @@ Grid-zero feed-in control for Victron system with split-phase compensation
 import os
 import sys
 import time
+import threading
 import argparse
 import signal
 import logging
@@ -103,6 +104,154 @@ class WatchdogTimeoutError(Exception):
     """Raised when a watchdog timeout occurs"""
 
 
+class HardwareWatchdog:
+    """
+    Hardware watchdog for Victron ESS setpoint safety.
+
+    Monitors telemetry freshness (D-Bus + MQTT). If no updates for timeout seconds,
+    forces ESS setpoint to 0W (pass-through/fallback mode) to prevent uncontrolled
+    grid export/import if the control loop stalls or crashes.
+
+    Runs as a daemon thread checking heartbeat every second.
+    """
+
+    def __init__(
+        self,
+        victron,
+        timeout_seconds: int = 30,
+        check_interval: float = 1.0,
+        dry_run: bool = False,
+        get_setpoint=None,
+    ):
+        self.victron = victron
+        self.timeout_seconds = timeout_seconds
+        self.check_interval = check_interval
+        self.dry_run = dry_run
+        # Optional callback returning the last-applied grid setpoint, so it
+        # can be restored (instead of assuming external mode) after recovery.
+        self._get_setpoint = get_setpoint
+        self._last_dbus_update = 0.0
+        self._last_mqtt_update = 0.0
+        self._enabled = False
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._triggered = False
+        self._hardware_forced = False
+        self._pre_forced_external: Optional[bool] = None
+        self._pre_forced_setpoint: int = 0
+        self._lock = threading.Lock()
+
+    def mark_dbus_update(self):
+        """Call when D-Bus telemetry is successfully read"""
+        with self._lock:
+            self._last_dbus_update = time.time()
+
+    def mark_mqtt_update(self):
+        """Call when MQTT state is successfully published"""
+        with self._lock:
+            self._last_mqtt_update = time.time()
+
+    def start(self):
+        """Start the watchdog monitoring thread"""
+        if self._enabled:
+            return
+        self._enabled = True
+        self._stop_event.clear()
+        self._triggered = False
+        self._hardware_forced = False
+        self._pre_forced_external = None
+        self._pre_forced_setpoint = 0
+        now = time.time()
+        self._last_dbus_update = now
+        self._last_mqtt_update = now
+        self._thread = threading.Thread(target=self._run, name="hardware-watchdog", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop the watchdog thread"""
+        self._enabled = False
+        self._stop_event.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+
+    def _run(self):
+        """Main watchdog loop - checks heartbeat every interval"""
+        while not self._stop_event.wait(self.check_interval):
+            if not self._enabled:
+                break
+            self._check_heartbeat()
+
+    def _check_heartbeat(self):
+        """Check if telemetry is stale and trigger failsafe if needed"""
+        now = time.time()
+        with self._lock:
+            dbus_age = now - self._last_dbus_update
+            mqtt_age = now - self._last_mqtt_update
+
+        # Trigger if BOTH D-Bus and MQTT are stale (control loop stopped)
+        # If at least one is fresh, the system is still alive
+        stale = dbus_age > self.timeout_seconds and mqtt_age > self.timeout_seconds
+
+        if stale and not self._triggered:
+            self._triggered = True
+            self._apply_failsafe()
+        elif stale and self._triggered and not self.dry_run and not self._hardware_forced:
+            # Latched while in dry-run (or hardware action previously failed) but now
+            # live - still stale, so apply the live failsafe action now.
+            self._apply_failsafe()
+        elif not stale and self._triggered:
+            self._recover_from_failsafe()
+
+    def _apply_failsafe(self):
+        """Force ESS into safe pass-through mode, remembering prior state for recovery"""
+        if self.dry_run:
+            logger.warning("[DRY] watchdog would force 0W setpoint / ESS pass-through")
+            return
+        try:
+            if self._pre_forced_external is None:
+                # Remember prior ESS mode/setpoint so we can restore them on recovery
+                self._pre_forced_external = self.victron.get_ess_mode().get("is_external")
+                self._pre_forced_setpoint = self._get_setpoint() if self._get_setpoint else 0
+            # Force ESS to pass-through mode (0W setpoint = fallback)
+            self.victron.set_grid_setpoint(0)
+            # Also force external control mode off for safety
+            self.victron.set_ess_mode(external=False)
+            self._hardware_forced = True
+        except Exception:
+            pass  # Best effort - don't crash watchdog
+
+    def _recover_from_failsafe(self):
+        """Telemetry recovered - re-arm watchdog and restore prior ESS mode/setpoint"""
+        self._triggered = False
+        if self._hardware_forced:
+            try:
+                if self._pre_forced_external:
+                    self.victron.set_ess_mode(external=True)
+                    self.victron.set_grid_setpoint(self._pre_forced_setpoint)
+            except Exception:
+                pass  # Best effort - don't crash watchdog
+            self._hardware_forced = False
+        self._pre_forced_external = None
+        self._pre_forced_setpoint = 0
+        logger.info("hardware watchdog re-armed after telemetry recovery")
+
+    def is_triggered(self) -> bool:
+        """Return True if watchdog has triggered failsafe"""
+        return self._triggered
+
+    def get_status(self) -> dict:
+        """Return watchdog status for diagnostics"""
+        now = time.time()
+        with self._lock:
+            return {
+                "enabled": self._enabled,
+                "triggered": self._triggered,
+                "timeout_seconds": self.timeout_seconds,
+                "dbus_age_seconds": round(now - self._last_dbus_update, 1),
+                "mqtt_age_seconds": round(now - self._last_mqtt_update, 1),
+            }
+
+
 # =============================================================================
 # INVERTER CONTROLLER
 # =============================================================================
@@ -169,6 +318,17 @@ class InverterController:
         self.power_limit_max = POWER_LIMIT_MAX
         self.loop_interval = LOOP_INTERVAL
 
+        # Hardware watchdog - triggers fallback if telemetry stops.
+        # Started explicitly in _run_main_loop (not here) to avoid triggering
+        # during a slow startup sequence.
+        self._watchdog = HardwareWatchdog(
+            victron=self.victron,
+            timeout_seconds=30,
+            check_interval=5.0,
+            dry_run=self.dry_run,
+            get_setpoint=lambda: self.previous_setpoint,
+        )
+
     def set_loop_interval(self, interval: float) -> float:
         self.loop_interval = max(0.1, min(5.0, interval))
         logger.info(f"Loop interval changed to {self.loop_interval}s")
@@ -185,6 +345,7 @@ class InverterController:
 
     def toggle_dry_run(self) -> bool:
         self.dry_run = not self.dry_run
+        self._watchdog.dry_run = self.dry_run
         mode = "DRY-RUN" if self.dry_run else "LIVE"
         logger.info(f"Mode changed to {mode}")
         return self.dry_run
@@ -360,6 +521,8 @@ class InverterController:
         signal.alarm(5)
         try:
             sys_data = self.victron.get_system_data()
+            # Mark D-Bus telemetry as fresh for hardware watchdog
+            self._watchdog.mark_dbus_update()
             if self.manual_setpoint is not None:
                 setpoint = self.manual_setpoint
                 flags = "[MANUAL] "
@@ -395,7 +558,7 @@ class InverterController:
                 if self.ha.get_boolean("no_feed"):
                     time.sleep(2)
             except Exception:
-                pass
+                pass  # Best effort - ignore HA lookup failures for this optional delay
             return True
         except KeyboardInterrupt:
             return False
@@ -465,6 +628,10 @@ def _run_main_loop(controller, mqtt_bridge):
     heartbeat_dir = "/run/inverter-control"
     heartbeat_file = f"{heartbeat_dir}/heartbeat"
 
+    # Start the hardware watchdog just before entering the loop, so slow
+    # startup work above doesn't get mistaken for a stalled control loop.
+    controller._watchdog.start()
+
     try:
         os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
         while True:
@@ -473,6 +640,8 @@ def _run_main_loop(controller, mqtt_bridge):
                 break
             if mqtt_bridge and mqtt_bridge.connected:
                 mqtt_bridge.publish_state(controller.get_state_for_mqtt())
+                # Mark MQTT telemetry as fresh for hardware watchdog
+                controller._watchdog.mark_mqtt_update()
 
             # Write heartbeat for watchdog
             try:
@@ -491,6 +660,11 @@ def _run_main_loop(controller, mqtt_bridge):
         print("\nShutting down...")
     finally:
         logger.info("Inverter Control shutting down")
+        # Stop hardware watchdog
+        try:
+            controller._watchdog.stop()
+        except Exception:
+            pass  # Best effort - shutdown must proceed even if watchdog stop fails
         stop_console_server()
         if mqtt_bridge:
             mqtt_bridge.disconnect()
