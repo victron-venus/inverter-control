@@ -506,6 +506,71 @@ class VictronDBus:
 
         return batteries
 
+    def _read_chain_cell_voltages(self, service: str, offset: int) -> list[tuple[float, int]]:
+        """Probe cell voltage paths for a chain, updating the cached cell count.
+
+        Once we know how many cells a chain actually reports, stop probing all
+        16 possible slots every cycle - just query the known-present cells
+        (plus one extra to detect growth). `offset` is the number of voltages
+        already collected from other chains, used to build a global cell id.
+        """
+        known_count = self._chain_cell_counts.get(service, 16)
+        max_cell_index = min(known_count + 1, 16)
+        discovered_count = 0
+        voltages = []
+
+        for i in range(1, max_cell_index + 1):
+            val = self._dbus_get(service, f"/Cell/{i}/Voltage")
+            if val is None:
+                break
+            discovered_count = i
+            try:
+                v = float(val)
+                if v > 0:
+                    voltages.append((v, offset + len(voltages)))
+            except (ValueError, TypeError):
+                pass  # Ignore invalid D-Bus values
+
+        # Only grow immediately; keep prior count on a transient miss so a
+        # single failed probe doesn't slow re-discovery of all cells.
+        if discovered_count > 0:
+            self._chain_cell_counts[service] = discovered_count
+
+        return voltages
+
+    def _read_chain_cell_temps(self, service: str) -> list[float]:
+        """Probe cell temperature paths for a chain (may be sparse / non-contiguous)."""
+        temps = []
+        for i in range(1, 17):
+            val = self._dbus_get(service, f"/Cell/{i}/Temperature")
+            if val is None:
+                continue
+            try:
+                t = float(val)
+                if -50 <= t <= 100:  # Sanity check
+                    temps.append(t)
+            except (ValueError, TypeError):
+                pass  # Ignore invalid temperature values
+        return temps
+
+    def _read_chain_soc(self, service: str) -> float | None:
+        soc_val = self._dbus_get(service, "/Soc")
+        if soc_val is None:
+            return None
+        try:
+            return float(soc_val)
+        except (ValueError, TypeError):
+            return None  # Ignore invalid SoC value
+
+    def _read_chain_allow_flag(self, service: str, path: str) -> bool | None:
+        val = self._dbus_get(service, path)
+        if val is None:
+            return None
+        try:
+            return int(float(val)) == 1
+        except (ValueError, TypeError):
+            return None  # Ignore invalid allow-flag value
+
     def get_battery_cell_data(self) -> dict[str, Any]:
         """Get detailed cell data from battery chains for DVCC calculation.
 
@@ -525,79 +590,31 @@ class VictronDBus:
             "com.victronenergy.battery.dbus-mqtt-chain2",
         ]
 
-        all_cell_voltages = []
-        all_cell_temps = []
+        all_cell_voltages: list[tuple[float, int]] = []
+        all_cell_temps: list[float] = []
         total_soc = 0.0
         soc_count = 0
         allow_charge = True
         allow_discharge = True
 
         for service in cell_services:
-            # Once we know how many cells a chain actually reports, stop
-            # probing all 16 possible slots every cycle - just query the
-            # known-present cells (plus one extra to detect growth).
-            known_count = self._chain_cell_counts.get(service, 16)
-            max_cell_index = min(known_count + 1, 16)
-            discovered_count = 0
+            all_cell_voltages.extend(
+                self._read_chain_cell_voltages(service, len(all_cell_voltages))
+            )
+            all_cell_temps.extend(self._read_chain_cell_temps(service))
 
-            # Get cell voltages - path list of cell voltage paths
-            for i in range(1, max_cell_index + 1):
-                path = f"/Cell/{i}/Voltage"
-                val = self._dbus_get(service, path)
-                if val is not None:
-                    discovered_count = i
-                    try:
-                        v = float(val)
-                        if v > 0:
-                            all_cell_voltages.append((v, len(all_cell_voltages)))
-                    except (ValueError, TypeError):
-                        pass  # Ignore invalid D-Bus values
-                else:
-                    break
+            soc = self._read_chain_soc(service)
+            if soc is not None:
+                total_soc += soc
+                soc_count += 1
 
-            # Only grow immediately; keep prior count on a transient miss so a
-            # single failed probe doesn't slow re-discovery of all cells.
-            if discovered_count >= known_count:
-                self._chain_cell_counts[service] = discovered_count
-            elif discovered_count > 0:
-                self._chain_cell_counts[service] = discovered_count
-
-            # Get cell temperatures (may be sparse / non-contiguous)
-            for i in range(1, 17):
-                path = f"/Cell/{i}/Temperature"
-                val = self._dbus_get(service, path)
-                if val is None:
-                    continue
-                try:
-                    t = float(val)
-                    if -50 <= t <= 100:  # Sanity check
-                        all_cell_temps.append(t)
-                except (ValueError, TypeError):
-                    pass  # Ignore invalid temperature values
-
-            # Get SoC
-            soc_val = self._dbus_get(service, "/Soc")
-            if soc_val is not None:
-                try:
-                    total_soc += float(soc_val)
-                    soc_count += 1
-                except (ValueError, TypeError):
-                    pass  # Ignore invalid SoC values
-
-            # Get BMS allow signals
-            allow_c = self._dbus_get(service, "/Info/AllowCharge")
+            allow_c = self._read_chain_allow_flag(service, "/Info/AllowCharge")
             if allow_c is not None:
-                try:
-                    allow_charge = allow_charge and (int(float(allow_c)) == 1)
-                except (ValueError, TypeError):
-                    pass  # Ignore invalid AllowCharge value
+                allow_charge = allow_charge and allow_c
 
-            allow_d = self._dbus_get(service, "/Info/AllowDischarge")
+            allow_d = self._read_chain_allow_flag(service, "/Info/AllowDischarge")
             if allow_d is not None:
-                try:
-                    allow_discharge = allow_discharge and (int(float(allow_d)) == 1)
-                except (ValueError, TypeError):
-                    pass  # Ignore invalid AllowDischarge value
+                allow_discharge = allow_discharge and allow_d
 
         result: dict[str, Any] = {
             "max_cell": None,
