@@ -230,9 +230,9 @@ class HardwareWatchdog:
                     self.victron.set_grid_setpoint(self._pre_forced_setpoint)
             except Exception:
                 pass  # Best effort - don't crash watchdog
-            self._pre_forced_external = None
-            self._pre_forced_setpoint = 0
             self._hardware_forced = False
+        self._pre_forced_external = None
+        self._pre_forced_setpoint = 0
         logger.info("hardware watchdog re-armed after telemetry recovery")
 
     def is_triggered(self) -> bool:
