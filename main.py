@@ -132,6 +132,7 @@ class HardwareWatchdog:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._triggered = False
+        self._hardware_forced = False
         self._lock = threading.Lock()
 
     def mark_dbus_update(self):
@@ -151,6 +152,7 @@ class HardwareWatchdog:
         self._enabled = True
         self._stop_event.clear()
         self._triggered = False
+        self._hardware_forced = False
         now = time.time()
         self._last_dbus_update = now
         self._last_mqtt_update = now
@@ -192,16 +194,27 @@ class HardwareWatchdog:
                 self.victron.set_grid_setpoint(0)
                 # Also force external control mode off for safety
                 self.victron.set_ess_mode(external=False)
+                self._hardware_forced = True
+            except Exception:
+                pass  # Best effort - don't crash watchdog
+        elif stale and self._triggered and not self.dry_run and not self._hardware_forced:
+            # Latched while in dry-run (or hardware action previously failed) but now
+            # live - still stale, so apply the live failsafe action now.
+            try:
+                self.victron.set_grid_setpoint(0)
+                self.victron.set_ess_mode(external=False)
+                self._hardware_forced = True
             except Exception:
                 pass  # Best effort - don't crash watchdog
         elif not stale and self._triggered:
             # Telemetry recovered - re-arm watchdog and restore external control
             self._triggered = False
-            if not self.dry_run:
+            if self._hardware_forced:
                 try:
                     self.victron.set_ess_mode(external=True)
                 except Exception:
                     pass
+                self._hardware_forced = False
             logger.info("hardware watchdog re-armed after telemetry recovery")
 
     def is_triggered(self) -> bool:
