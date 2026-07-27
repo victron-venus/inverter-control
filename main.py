@@ -213,7 +213,7 @@ class HardwareWatchdog:
                 try:
                     self.victron.set_ess_mode(external=True)
                 except Exception:
-                    pass
+                    pass  # Best effort - don't crash watchdog
                 self._hardware_forced = False
             logger.info("hardware watchdog re-armed after telemetry recovery")
 
@@ -539,7 +539,7 @@ class InverterController:
                 if self.ha.get_boolean("no_feed"):
                     time.sleep(2)
             except Exception:
-                pass
+                pass  # Best effort - ignore HA lookup failures for this optional delay
             return True
         except KeyboardInterrupt:
             return False
@@ -645,7 +645,7 @@ def _run_main_loop(controller, mqtt_bridge):
         try:
             controller._watchdog.stop()
         except Exception:
-            pass
+            pass  # Best effort - shutdown must proceed even if watchdog stop fails
         stop_console_server()
         if mqtt_bridge:
             mqtt_bridge.disconnect()
