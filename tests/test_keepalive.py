@@ -143,7 +143,7 @@ class TestKeepaliveMain:
     @patch("inverter_control.keepalive.socket.socket")
     @patch("inverter_control.keepalive.time.sleep")
     @patch("inverter_control.keepalive.time.time")
-    def test_main_process_back_exits_early(
+    def test_main_process_back_exits_early(  # pylint: disable=too-many-positional-arguments
         self, mock_time, mock_sleep, mock_socket, mock_dbus_set, mock_dbus_get, mock_find_vebus
     ):
         """Test exits early when main process returns"""
@@ -171,7 +171,7 @@ class TestKeepaliveMain:
     @patch("inverter_control.keepalive.socket.socket")
     @patch("inverter_control.keepalive.time.sleep")
     @patch("inverter_control.keepalive.time.time")
-    def test_main_sends_setpoint_until_timeout(
+    def test_main_sends_setpoint_until_timeout(  # pylint: disable=too-many-positional-arguments
         self, mock_time, mock_sleep, mock_socket, mock_dbus_set, mock_dbus_get, mock_find_vebus
     ):
         """Test sends setpoint repeatedly until timeout"""

@@ -303,14 +303,11 @@ class DvccCalculator:
         if soc <= self.config.soc_discharge_stop:
             return 0.0, f"soc_{soc:.0f}_deep_discharge"
 
-        if soc <= self.config.soc_discharge_reduced:
-            factor = (soc - self.config.soc_discharge_stop) / (
-                self.config.soc_discharge_reduced - self.config.soc_discharge_stop
-            )
-            factor = max(0.0, min(1.0, factor))
-            return max(self._max_discharge_current * factor * 0.5, 0.0), f"soc_{soc:.0f}_low"
-
-        return self._max_discharge_current, "soc_discharge_ok"
+        factor = (soc - self.config.soc_discharge_stop) / (
+            self.config.soc_discharge_reduced - self.config.soc_discharge_stop
+        )
+        factor = max(0.0, min(1.0, factor))
+        return max(self._max_discharge_current * factor * 0.5, 0.0), f"soc_{soc:.0f}_low"
 
     def calculate(self, data: dict[str, Any]) -> DvccLimits:
         """
