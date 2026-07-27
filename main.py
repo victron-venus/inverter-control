@@ -195,8 +195,13 @@ class HardwareWatchdog:
             except Exception:
                 pass  # Best effort - don't crash watchdog
         elif not stale and self._triggered:
-            # Telemetry recovered - re-arm watchdog
+            # Telemetry recovered - re-arm watchdog and restore external control
             self._triggered = False
+            if not self.dry_run:
+                try:
+                    self.victron.set_ess_mode(external=True)
+                except Exception:
+                    pass
             logger.info("hardware watchdog re-armed after telemetry recovery")
 
     def is_triggered(self) -> bool:
@@ -308,6 +313,7 @@ class InverterController:
 
     def toggle_dry_run(self) -> bool:
         self.dry_run = not self.dry_run
+        self._watchdog.dry_run = self.dry_run
         mode = "DRY-RUN" if self.dry_run else "LIVE"
         logger.info(f"Mode changed to {mode}")
         return self.dry_run
