@@ -8,30 +8,30 @@ import logging
 import re
 import threading
 import time
-from typing import Dict, Any, Optional
+from typing import Any
 
 import requests
-import urllib3  # noqa: E402
+import urllib3
 
 from .config import (
-    HA_URL,
-    HA_TOKEN,
-    HA_TIMEOUT,
-    HA_POLL_INTERVAL,
-    HA_SENSORS,
-    HA_BOOLEANS,
-    HA_BINARY_SENSORS,
-    HA_DUMP_LOADS,
-    HA_WATER_VALVE,
-    HA_PUMP_SWITCH,
-    VUE_SENSORS,
     ENABLE_DISHWASHER,
-    ENABLE_WASHER,
     ENABLE_DRYER,
+    ENABLE_WASHER,
     ENABLE_WATER,
-    HA_WASHER_POWER,
+    HA_BINARY_SENSORS,
+    HA_BOOLEANS,
     HA_DRYER_POWER,
+    HA_DUMP_LOADS,
     HA_LAUNDRY_OUTLET,
+    HA_POLL_INTERVAL,
+    HA_PUMP_SWITCH,
+    HA_SENSORS,
+    HA_TIMEOUT,
+    HA_TOKEN,
+    HA_URL,
+    HA_WASHER_POWER,
+    HA_WATER_VALVE,
+    VUE_SENSORS,
 )
 
 logger = logging.getLogger("inverter-control")
@@ -90,10 +90,10 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)
-        self._sensors: Dict[str, Any] = dict.fromkeys(HA_SENSORS, 0)
-        self._vue_sensors: Dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
-        self._booleans: Dict[str, bool] = dict.fromkeys(HA_BOOLEANS, False)
-        self._binary_sensors: Dict[str, bool] = dict.fromkeys(HA_BINARY_SENSORS, False)
+        self._sensors: dict[str, Any] = dict.fromkeys(HA_SENSORS, 0)
+        self._vue_sensors: dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
+        self._booleans: dict[str, bool] = dict.fromkeys(HA_BOOLEANS, False)
+        self._binary_sensors: dict[str, bool] = dict.fromkeys(HA_BINARY_SENSORS, False)
         self._water_valve: bool = False
         self._pump_switch: bool = False
         self._washer_power: bool = False
@@ -115,7 +115,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
         # Thread control
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._start_time: float = 0
 
@@ -147,7 +147,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         except Exception:
             pass
 
-    def _get_state(self, entity_id: str) -> Optional[str]:
+    def _get_state(self, entity_id: str) -> str | None:
         """Get entity state from HA"""
         try:
             response = self._session.get(
@@ -399,7 +399,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         with self._lock:
             return self._vue_sensors.get(key, default)
 
-    def get_all_vue_sensors(self) -> Dict[str, Any]:
+    def get_all_vue_sensors(self) -> dict[str, Any]:
         """Get copy of all VUE sensor values"""
         with self._lock:
             return dict(self._vue_sensors)
@@ -449,12 +449,12 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         with self._lock:
             return self._home_garage
 
-    def get_all_sensors(self) -> Dict[str, Any]:
+    def get_all_sensors(self) -> dict[str, Any]:
         """Get copy of all sensor values"""
         with self._lock:
             return dict(self._sensors)
 
-    def get_all_booleans(self) -> Dict[str, bool]:
+    def get_all_booleans(self) -> dict[str, bool]:
         """Get copy of all boolean values"""
         with self._lock:
             return dict(self._booleans)
@@ -504,7 +504,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
 
 # Singleton instance
-_ha_client: Optional[HomeAssistantClient] = None
+_ha_client: HomeAssistantClient | None = None
 
 
 def get_ha() -> HomeAssistantClient:

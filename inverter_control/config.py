@@ -9,17 +9,17 @@ All configurable parameters in one place
 # =============================================================================
 try:
     from local_config import (  # pylint: disable=unused-import
-        HA_URL,
-        HA_TOKEN,
-        PORTAL_ID,
-        TASMOTA_IPS,
-        HA_SENSORS,
-        VUE_SENSORS,
+        HA_BINARY_SENSORS,
         HA_BOOLEANS,
         HA_DUMP_LOADS,
-        HA_WATER_VALVE,
         HA_PUMP_SWITCH,
-        HA_BINARY_SENSORS,
+        HA_SENSORS,
+        HA_TOKEN,
+        HA_URL,
+        HA_WATER_VALVE,
+        PORTAL_ID,
+        TASMOTA_IPS,
+        VUE_SENSORS,
     )
 except ImportError:
     # Fallback for development or if local_config.py doesn't exist
@@ -194,6 +194,61 @@ TASMOTA_DBUS_SERVICES = [
 
 # Fallback HTTP polling if D-Bus not available
 # TASMOTA_IPS imported from local_config.py
+
+# =============================================================================
+# DVCC (Dynamic Voltage & Current Control) - Battery Protection
+# =============================================================================
+# These settings control automatic charge/discharge current limiting based on:
+# - Cell voltages (prevent over/under voltage)
+# - Cell imbalance (give balancers time to work)
+# - Temperatures (prevent charging below 0°C or above 50°C)
+# - SoC limits (extend battery life at extremes)
+#
+# When enabled, inverter-control will read battery data from D-Bus and
+# calculate safe CCL/DCL limits. These are published via MQTT for the dashboard
+# and can be used to set Victron DVCC limits if Victron's DVCC is enabled.
+
+# Enable DVCC calculation (requires D-Bus battery data from dbus-mqtt-battery)
+DVCC_ENABLED = True
+
+# DVCC Cell Voltage Thresholds (LiFePO4 typical values)
+DVCC_CELL_FULL_CURRENT = 3.40  # V - Below this: 100% charge current
+DVCC_CELL_START_LIMIT = 3.45  # V - Start reducing charge current
+DVCC_CELL_BALANCE_VOLTAGE = 3.50  # V - Aggressive reduction for balancing
+DVCC_CELL_NEAR_FULL = 3.55  # V - Minimal current (tail charge)
+DVCC_CELL_CUTOFF = 3.60  # V - Stop charging completely (BMS cutoff protection)
+
+# DVCC Maximum Currents
+DVCC_MAX_CHARGE_CURRENT = 100.0  # A - Max charge current at normal conditions
+DVCC_MAX_DISCHARGE_CURRENT = 120.0  # A - Max discharge current
+DVCC_MIN_CHARGE_CURRENT = 2.0  # A - Minimum tail charge current (for balancing)
+
+# DVCC Cell Imbalance Protection
+DVCC_IMBALANCE_START_LIMIT = 0.05  # V - Start reducing if delta > this
+DVCC_IMBALANCE_AGGRESSIVE = 0.10  # V - Aggressive reduction
+DVCC_IMBALANCE_CRITICAL = 0.20  # V - Minimal current only
+
+# DVCC Temperature Limits (°C) - LiFePO4 safe range
+DVCC_TEMP_FULL_CURRENT_MIN = 10  # °C - Full current above this temp
+DVCC_TEMP_FULL_CURRENT_MAX = 40  # °C - Full current below this temp
+DVCC_TEMP_STOP_CHARGE = 0  # °C - Stop charging below (lithium plating risk)
+DVCC_TEMP_STOP_CHARGE_HIGH = 50  # °C - Stop charging above
+DVCC_TEMP_DISCHARGE_MIN = -20  # °C - Stop discharging below
+DVCC_TEMP_DISCHARGE_REDUCED = -10  # °C - Reduced discharge below
+
+# DVCC SoC-based Current Reduction (optional, for battery longevity)
+DVCC_SOC_REDUCE_START = 95  # % - Start reducing charge current above this SoC
+DVCC_SOC_REDUCE_FACTOR = 0.5  # Factor at 100% SoC (0.5 = 50% of max current)
+DVCC_SOC_DISCHARGE_STOP = 5  # % - Stop discharging at this SoC
+DVCC_SOC_DISCHARGE_REDUCED = 15  # % - Reduce discharge below this SoC
+
+# DVCC Rate Limiting (smooth transitions)
+DVCC_CCL_CHANGE_RATE = 10.0  # Max CCL change per second (A/s)
+DVCC_DCL_CHANGE_RATE = 15.0  # Max DCL change per second (A/s)
+
+# DVCC Cell Max Voltage (for CVL calculation)
+DVCC_CELL_MAX_VOLTAGE = 3.65  # V - Max cell voltage for CVL
+DVCC_CELLS_PER_BMS = 4  # Cells per BMS module
 
 # =============================================================================
 # INVERTER STATES (VE.Bus)

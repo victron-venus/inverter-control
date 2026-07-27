@@ -8,8 +8,8 @@ Designed for Venus OS with minimal dependencies.
 
 import json
 import os
-import time
 import sys
+import time
 import traceback
 
 try:
@@ -17,8 +17,8 @@ try:
 
     USE_REQUESTS = True
 except ImportError:
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     USE_REQUESTS = False
 
@@ -43,7 +43,7 @@ def load_state():
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except (IOError, ValueError):
+    except (OSError, ValueError):
         return {}
 
 
@@ -52,7 +52,7 @@ def save_state(state):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f)
-    except IOError as e:
+    except OSError as e:
         print(f"Warning: Could not save state: {e}", file=sys.stderr)
 
 
@@ -119,7 +119,7 @@ def read_new_lines(filepath, position, inode):
                     break
             new_position = f.tell()
 
-    except (IOError, OSError) as e:
+    except OSError as e:
         print(f"Warning: Could not read {filepath}: {e}", file=sys.stderr)
 
     return lines, new_position, new_inode

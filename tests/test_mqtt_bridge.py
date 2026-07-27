@@ -1,10 +1,12 @@
 """
 Unit tests for MQTT Bridge
 """
-import sys
+
 import os
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -160,7 +162,7 @@ class TestMQTTBridge:
         bridge = mqtt_bridge.MQTTBridge()
         mock_msg = MagicMock()
         mock_msg.topic = "test/cmd/unknown"
-        mock_msg.payload = b'{}'
+        mock_msg.payload = b"{}"
 
         bridge._on_message(mock_client, None, mock_msg)
 
@@ -196,6 +198,7 @@ class TestMQTTBridge:
         call_args = mock_client.publish.call_args
         assert call_args[0][0] == "test/state"
         import json
+
         assert json.loads(call_args[0][1]) == state
         assert call_args[1]["qos"] == 0
         assert call_args[1]["retain"] is True

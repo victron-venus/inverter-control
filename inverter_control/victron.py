@@ -4,12 +4,13 @@ Victron D-Bus Interface
 Fast D-Bus access for grid control and monitoring
 """
 
-import subprocess
-import re
 import logging
+import re
+import subprocess
 import threading
 import time
-from typing import Optional, Dict, Any, Tuple
+from typing import Any
+
 from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
 logger = logging.getLogger("inverter-control")
@@ -31,7 +32,7 @@ class VictronDBus:
     RESCAN_INTERVAL_SECONDS = 300  # Rescan every 5 minutes regardless
 
     def __init__(self):
-        self._vebus_service: Optional[str] = None
+        self._vebus_service: str | None = None
         self._mppt_services: list = []
         self._consecutive_errors: int = 0
         self._last_scan_time: float = 0
@@ -92,14 +93,14 @@ class VictronDBus:
         return False
 
     @property
-    def vebus_service(self) -> Optional[str]:
+    def vebus_service(self) -> str | None:
         return self._vebus_service
 
     @property
     def mppt_services(self) -> list:
         return self._mppt_services
 
-    def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> Optional[str]:
+    def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> str | None:
         """Run subprocess with strict timeout and error handling"""
         try:
             # Use start_new_session to be able to kill the whole process group
@@ -119,7 +120,7 @@ class VictronDBus:
             logger.debug("D-Bus subprocess failed: %s", e)
         return None
 
-    def _dbus_get(self, service: str, path: str) -> Optional[str]:
+    def _dbus_get(self, service: str, path: str) -> str | None:
         """Get a single value from D-Bus (fast)"""
 
         with self._dbus_lock:
@@ -174,7 +175,7 @@ class VictronDBus:
             self._consecutive_errors += 1
             return False
 
-    def get_system_data(self) -> Dict[str, Any]:
+    def get_system_data(self) -> dict[str, Any]:
         """
         Get all system data in one D-Bus call (fastest method).
         Returns dict with grid, consumption, battery, and solar data.
@@ -233,7 +234,7 @@ class VictronDBus:
 
         return data
 
-    def get_inverter_state(self) -> Tuple[int, str]:
+    def get_inverter_state(self) -> tuple[int, str]:
         """Get inverter state code and description"""
         if not self._vebus_service:
             return 0, "Unknown"
@@ -281,7 +282,7 @@ class VictronDBus:
 
         return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16")
 
-    def get_mppt_data(self) -> Dict[str, Dict[str, float]]:
+    def get_mppt_data(self) -> dict[str, dict[str, float]]:
         """Get power and current from all MPPT chargers"""
         data = {}
 
@@ -325,7 +326,7 @@ class VictronDBus:
 
         return powers
 
-    def get_battery_soc(self) -> Optional[float]:
+    def get_battery_soc(self) -> float | None:
         """Get battery SoC from system"""
         val = self._dbus_get("com.victronenergy.system", "/Dc/Battery/Soc")
         if val:
@@ -361,7 +362,7 @@ class VictronDBus:
 
         return socs
 
-    def get_ess_mode(self) -> Dict[str, Any]:
+    def get_ess_mode(self) -> dict[str, Any]:
         """Get current ESS mode
 
         Returns dict with:
@@ -523,7 +524,7 @@ class VictronDBus:
 
 
 # Singleton instance
-_victron: Optional[VictronDBus] = None
+_victron: VictronDBus | None = None
 
 
 def get_victron() -> VictronDBus:
