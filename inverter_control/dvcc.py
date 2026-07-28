@@ -308,6 +308,78 @@ class DvccCalculator:
         factor = max(0.0, min(1.0, factor))
         return max(self._max_discharge_current * factor * 0.5, 0.0), f"soc_{soc:.0f}_low"
 
+    def _compute_ccl(
+        self,
+        max_cell: float | None,
+        cell_delta: float | None,
+        min_temp: float | None,
+        max_temp: float | None,
+        soc: float | None,
+    ) -> tuple[float, str]:
+        """Calculate CCL from all sources - take minimum (most restrictive)."""
+        ccl_values = [
+            self.calculate_ccl_from_cell_voltage(max_cell),
+            self.calculate_ccl_from_imbalance(cell_delta),
+            self.calculate_ccl_from_temperature(min_temp, max_temp),
+            self.calculate_ccl_from_soc(soc),
+        ]
+        return min(ccl_values, key=lambda x: x[0])
+
+    def _compute_dcl(
+        self,
+        min_cell: float | None,
+        min_temp: float | None,
+        max_temp: float | None,
+        soc: float | None,
+    ) -> tuple[float, str]:
+        """Calculate DCL from all sources - take minimum (most restrictive)."""
+        dcl_values = [
+            self.calculate_dcl_from_cell_voltage(min_cell),
+            self.calculate_dcl_from_temperature(min_temp, max_temp),
+            self.calculate_dcl_from_soc(soc),
+        ]
+        return min(dcl_values, key=lambda x: x[0])
+
+    def _rate_limit(
+        self, ccl: float, dcl: float, allow_charge: bool, allow_discharge: bool
+    ) -> tuple[float, float]:
+        """Apply rate limiting for smooth transitions (skip for hard safety cutoffs)."""
+        now = time.time()
+
+        if self._last_update_time is None:
+            # First call - initialize timestamp, no rate limiting
+            self._last_update_time = now
+            self._last_ccl = ccl
+            self._last_dcl = dcl
+            return ccl, dcl
+
+        dt = now - self._last_update_time
+        self._last_update_time = now
+
+        max_ccl_change = self.config.ccl_change_rate * dt
+        max_dcl_change = self.config.dcl_change_rate * dt
+
+        if not (ccl <= 0.0 or not allow_charge):
+            ccl = self._rate_limit_value(ccl, self._last_ccl, max_ccl_change)
+        # else: hard safety cutoff - ccl is already 0.0, apply immediately
+
+        if not (dcl <= 0.0 or not allow_discharge):
+            dcl = self._rate_limit_value(dcl, self._last_dcl, max_dcl_change)
+        # else: hard safety cutoff - dcl is already 0.0, apply immediately
+
+        self._last_ccl = ccl
+        self._last_dcl = dcl
+        return ccl, dcl
+
+    @staticmethod
+    def _rate_limit_value(value: float, last_value: float, max_change: float) -> float:
+        if value > last_value:
+            return min(value, last_value + max_change)
+        if value < last_value:
+            # Allow faster reduction for safety
+            return max(value, last_value - max_change * 2)
+        return value
+
     def calculate(self, data: dict[str, Any]) -> DvccLimits:
         """
         Calculate all DVCC parameters from battery data.

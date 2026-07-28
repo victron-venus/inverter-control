@@ -503,6 +503,66 @@ class InverterController:
         except Exception as e:
             logger.warning(f"minimize_charging error: {e}")
 
+    def _get_ev_state(self) -> dict[str, Any]:
+        if not ENABLE_EV:
+            return {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
+        return {
+            "ev_power": self.ha.get_vue_sensor("ev_charger", 0),
+            "car_soc": self.ha.get_sensor("car_soc", 0),
+            "ev_charging_kw": self.ha.get_sensor("ev_charging_power", 0),
+        }
+
+    def _get_water_state(self) -> dict[str, Any]:
+        if not ENABLE_WATER:
+            return {"water_level": 0, "water_valve": False, "pump_switch": False}
+        return {
+            "water_level": self.ha.get_sensor("water_level", 0),
+            "water_valve": self.ha.water_valve_on,
+            "pump_switch": self.ha.pump_switch_on,
+        }
+
+    def _get_ha_state(self) -> dict[str, Any]:
+        if not ENABLE_HA:
+            return {
+                "booleans": {},
+                "laundry_outlet": False,
+                "home_recliner": False,
+                "home_garage": False,
+                "ha_connected": False,
+                "ha_uptime": 0,
+            }
+        return {
+            "booleans": self.ha.get_all_booleans(),
+            "laundry_outlet": self.ha.laundry_outlet_on,
+            "home_recliner": self.ha.home_recliner_on,
+            "home_garage": self.ha.home_garage_on,
+            "ha_connected": self.ha.connected,
+            "ha_uptime": self.ha.uptime,
+        }
+
+    def _get_daily_stats(self) -> dict[str, Any]:
+        if not ENABLE_HA:
+            return {}
+        return {
+            "produced_today": self.ha.get_sensor("produced_today", 0),
+            "produced_dollars": self.ha.get_sensor("produced_dollars", 0),
+            "grid_kwh": self.ha.get_sensor("grid_kwh_today", 0),
+            "battery_in": self.ha.get_sensor("battery_in_today", 0),
+            "battery_out": self.ha.get_sensor("battery_out_today", 0),
+            "battery_in_yesterday": self.ha.get_sensor("battery_in_yesterday", 0),
+            "battery_out_yesterday": self.ha.get_sensor("battery_out_yesterday", 0),
+            "pv_total_daily": self.ha.get_sensor("pv_total_daily", 0),
+            "tasmota_daily": [
+                self.ha.get_sensor("tasmota_1_daily", 0),
+                self.ha.get_sensor("tasmota_2_daily", 0),
+            ],
+            "mppt_daily": [
+                self.ha.get_sensor("mppt_1_daily", 0),
+                self.ha.get_sensor("mppt_2_daily", 0),
+                self.ha.get_sensor("mppt_3_daily", 0),
+            ],
+        }
+
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
         self._cached_mppt_data = self.victron.get_mppt_data()
         self._cached_tasmota_powers = self.victron.get_tasmota_pv_power()
