@@ -48,3 +48,6 @@ release.txt
 postinstall.sh
 restart.sh
 PLAN.md
+
+# Coverage
+.coverage
