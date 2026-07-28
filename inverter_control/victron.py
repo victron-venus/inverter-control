@@ -4,12 +4,13 @@ Victron D-Bus Interface
 Fast D-Bus access for grid control and monitoring
 """
 
-import subprocess
-import re
 import logging
+import re
+import subprocess
 import threading
 import time
-from typing import Optional, Dict, Any, Tuple
+from typing import Any
+
 from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
 logger = logging.getLogger("inverter-control")
@@ -31,12 +32,15 @@ class VictronDBus:
     RESCAN_INTERVAL_SECONDS = 300  # Rescan every 5 minutes regardless
 
     def __init__(self):
-        self._vebus_service: Optional[str] = None
+        self._vebus_service: str | None = None
         self._mppt_services: list = []
         self._consecutive_errors: int = 0
         self._last_scan_time: float = 0
         self._last_success_time: float = 0
         self._dbus_lock = threading.Lock()
+        # Cache of discovered cell counts per chain service, so we don't probe
+        # up to 16 cells every cycle once the real count is known.
+        self._chain_cell_counts: dict[str, int] = {}
         self._discover_services()
 
     def _discover_services(self):
@@ -92,14 +96,14 @@ class VictronDBus:
         return False
 
     @property
-    def vebus_service(self) -> Optional[str]:
+    def vebus_service(self) -> str | None:
         return self._vebus_service
 
     @property
     def mppt_services(self) -> list:
         return self._mppt_services
 
-    def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> Optional[str]:
+    def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> str | None:
         """Run subprocess with strict timeout and error handling"""
         try:
             # Use start_new_session to be able to kill the whole process group
@@ -119,7 +123,7 @@ class VictronDBus:
             logger.debug("D-Bus subprocess failed: %s", e)
         return None
 
-    def _dbus_get(self, service: str, path: str) -> Optional[str]:
+    def _dbus_get(self, service: str, path: str) -> str | None:
         """Get a single value from D-Bus (fast)"""
 
         with self._dbus_lock:
@@ -174,7 +178,7 @@ class VictronDBus:
             self._consecutive_errors += 1
             return False
 
-    def get_system_data(self) -> Dict[str, Any]:
+    def get_system_data(self) -> dict[str, Any]:
         """
         Get all system data in one D-Bus call (fastest method).
         Returns dict with grid, consumption, battery, and solar data.
@@ -233,7 +237,7 @@ class VictronDBus:
 
         return data
 
-    def get_inverter_state(self) -> Tuple[int, str]:
+    def get_inverter_state(self) -> tuple[int, str]:
         """Get inverter state code and description"""
         if not self._vebus_service:
             return 0, "Unknown"
@@ -281,7 +285,7 @@ class VictronDBus:
 
         return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16")
 
-    def get_mppt_data(self) -> Dict[str, Dict[str, float]]:
+    def get_mppt_data(self) -> dict[str, dict[str, float]]:
         """Get power and current from all MPPT chargers"""
         data = {}
 
@@ -325,7 +329,7 @@ class VictronDBus:
 
         return powers
 
-    def get_battery_soc(self) -> Optional[float]:
+    def get_battery_soc(self) -> float | None:
         """Get battery SoC from system"""
         val = self._dbus_get("com.victronenergy.system", "/Dc/Battery/Soc")
         if val:
@@ -361,7 +365,7 @@ class VictronDBus:
 
         return socs
 
-    def get_ess_mode(self) -> Dict[str, Any]:
+    def get_ess_mode(self) -> dict[str, Any]:
         """Get current ESS mode
 
         Returns dict with:
@@ -502,6 +506,141 @@ class VictronDBus:
 
         return batteries
 
+    def _read_chain_cell_voltages(self, service: str, offset: int) -> list[tuple[float, int]]:
+        """Probe cell voltage paths for a chain, updating the cached cell count.
+
+        Once we know how many cells a chain actually reports, stop probing all
+        16 possible slots every cycle - just query the known-present cells
+        (plus one extra to detect growth). `offset` is the number of voltages
+        already collected from other chains, used to build a global cell id.
+        """
+        known_count = self._chain_cell_counts.get(service, 16)
+        max_cell_index = min(known_count + 1, 16)
+        discovered_count = 0
+        voltages = []
+
+        for i in range(1, max_cell_index + 1):
+            val = self._dbus_get(service, f"/Cell/{i}/Voltage")
+            if val is None:
+                break
+            discovered_count = i
+            try:
+                v = float(val)
+                if v > 0:
+                    voltages.append((v, offset + len(voltages)))
+            except (ValueError, TypeError):
+                pass  # Ignore invalid D-Bus values
+
+        # Only grow immediately; keep prior count on a transient miss so a
+        # single failed probe doesn't slow re-discovery of all cells.
+        if discovered_count > 0:
+            self._chain_cell_counts[service] = discovered_count
+
+        return voltages
+
+    def _read_chain_cell_temps(self, service: str) -> list[float]:
+        """Probe cell temperature paths for a chain (may be sparse / non-contiguous)."""
+        temps = []
+        for i in range(1, 17):
+            val = self._dbus_get(service, f"/Cell/{i}/Temperature")
+            if val is None:
+                continue
+            try:
+                t = float(val)
+                if -50 <= t <= 100:  # Sanity check
+                    temps.append(t)
+            except (ValueError, TypeError):
+                pass  # Ignore invalid temperature values
+        return temps
+
+    def _read_chain_soc(self, service: str) -> float | None:
+        soc_val = self._dbus_get(service, "/Soc")
+        if soc_val is None:
+            return None
+        try:
+            return float(soc_val)
+        except (ValueError, TypeError):
+            return None  # Ignore invalid SoC value
+
+    def _read_chain_allow_flag(self, service: str, path: str) -> bool | None:
+        val = self._dbus_get(service, path)
+        if val is None:
+            return None
+        try:
+            return int(float(val)) == 1
+        except (ValueError, TypeError):
+            return None  # Ignore invalid allow-flag value
+
+    def get_battery_cell_data(self) -> dict[str, Any]:
+        """Get detailed cell data from battery chains for DVCC calculation.
+
+        Returns dict with:
+        - max_cell: Highest cell voltage across all chains
+        - max_cell_id: Cell index of highest voltage
+        - min_cell: Lowest cell voltage across all chains
+        - min_cell_id: Cell index of lowest voltage
+        - max_temp: Highest cell temperature
+        - min_temp: Lowest cell temperature
+        - soc: Overall SoC
+        - allow_charge: Whether BMS allows charging
+        - allow_discharge: Whether BMS allows discharging
+        """
+        cell_services = [
+            "com.victronenergy.battery.dbus-mqtt-chain1",
+            "com.victronenergy.battery.dbus-mqtt-chain2",
+        ]
+
+        all_cell_voltages: list[tuple[float, int]] = []
+        all_cell_temps: list[float] = []
+        total_soc = 0.0
+        soc_count = 0
+        allow_charge = True
+        allow_discharge = True
+
+        for service in cell_services:
+            all_cell_voltages.extend(
+                self._read_chain_cell_voltages(service, len(all_cell_voltages))
+            )
+            all_cell_temps.extend(self._read_chain_cell_temps(service))
+
+            soc = self._read_chain_soc(service)
+            if soc is not None:
+                total_soc += soc
+                soc_count += 1
+
+            allow_c = self._read_chain_allow_flag(service, "/Info/AllowCharge")
+            if allow_c is not None:
+                allow_charge = allow_charge and allow_c
+
+            allow_d = self._read_chain_allow_flag(service, "/Info/AllowDischarge")
+            if allow_d is not None:
+                allow_discharge = allow_discharge and allow_d
+
+        result: dict[str, Any] = {
+            "max_cell": None,
+            "max_cell_id": None,
+            "min_cell": None,
+            "min_cell_id": None,
+            "max_temp": None,
+            "min_temp": None,
+            "soc": round(total_soc / soc_count, 1) if soc_count else None,
+            "allow_charge": allow_charge,
+            "allow_discharge": allow_discharge,
+        }
+
+        if all_cell_voltages:
+            all_cell_voltages.sort(key=lambda x: x[0], reverse=True)
+            result["max_cell"] = round(all_cell_voltages[0][0], 3)
+            result["max_cell_id"] = all_cell_voltages[0][1]
+            result["min_cell"] = round(all_cell_voltages[-1][0], 3)
+            result["min_cell_id"] = all_cell_voltages[-1][1]
+
+        if all_cell_temps:
+            result["max_temp"] = round(max(all_cell_temps), 1)
+            result["min_temp"] = round(min(all_cell_temps), 1)
+
+        return result
+
     def get_mppt_chargers(self) -> list:
         """Get detailed data for all MPPT chargers
 
@@ -523,7 +662,7 @@ class VictronDBus:
 
 
 # Singleton instance
-_victron: Optional[VictronDBus] = None
+_victron: VictronDBus | None = None
 
 
 def get_victron() -> VictronDBus:

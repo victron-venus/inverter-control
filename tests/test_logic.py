@@ -3,6 +3,7 @@ Unit tests for Inverter Control logic
 """
 
 import unittest
+
 from inverter_control.logic import SetpointCalculator, SystemState
 
 

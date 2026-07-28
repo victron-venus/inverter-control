@@ -5,16 +5,15 @@ Streams console output to connected clients on port 9999
 Uses threading for compatibility with synchronous main loop
 """
 
-import socket
 import logging
+import socket
 import threading
-from typing import Set
 from collections import deque
 
 logger = logging.getLogger("inverter-control")
 
 TCP_CONSOLE_PORT = 9999
-_clients: Set[socket.socket] = set()
+_clients: set[socket.socket] = set()
 _clients_lock = threading.Lock()
 _server_socket = None
 _server_thread = None
@@ -41,7 +40,7 @@ def _accept_clients():
             except Exception:
                 pass
 
-        except socket.timeout:
+        except TimeoutError:
             continue
         except Exception as e:
             if _running:

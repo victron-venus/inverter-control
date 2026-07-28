@@ -3,10 +3,10 @@ Inverter Control Logic
 Separated from I/O for stability and testability.
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger("inverter-control")
 
@@ -47,7 +47,7 @@ class SystemState:
 
     # Persistence
     previous_setpoint: int
-    filtered_gt: Optional[float] = None
+    filtered_gt: float | None = None
 
 
 @dataclass
@@ -63,7 +63,7 @@ class BaseStrategy(ABC):
     """Abstract base class for control strategies"""
 
     @abstractmethod
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         """
         Calculate setpoint and return (new_setpoint, flags)
         current_vanew: the setpoint calculated by previous (lower priority) strategies
@@ -92,7 +92,7 @@ class NormalStrategy(BaseStrategy):
         self.creep_accumulator = 0.0
         self.stable_count = 0
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         effective_gt = state.gt
         flags = ""
 
@@ -140,7 +140,7 @@ class OnlyChargingStrategy(BaseStrategy):
         self.efficiency = efficiency
         self.solar_offset = solar_offset
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         if not state.only_charging:
             return current_vanew, ""
 
@@ -159,7 +159,7 @@ class DoNotSupplyChargerStrategy(BaseStrategy):
         self.efficiency = efficiency
         self.solar_offset = solar_offset
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         if state.do_not_supply_charger and state.ev_power > 100:
             max_ac_output = max(0, int(state.mppt_total * self.efficiency) - self.solar_offset)
             min_setpoint = -max_ac_output
@@ -175,7 +175,7 @@ class LimitToEvStrategy(BaseStrategy):
         self.efficiency = efficiency
         self.reserve = reserve
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         if not state.limit_to_ev:
             return current_vanew, ""
 
@@ -191,7 +191,7 @@ class LimitToEvStrategy(BaseStrategy):
 class NoFeedStrategy(BaseStrategy):
     """Match Tasmota microinverter output exactly"""
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         if state.no_feed:
             return int(state.tasmota_total), "[NF] "
         return current_vanew, ""
@@ -200,7 +200,7 @@ class NoFeedStrategy(BaseStrategy):
 class HouseSupportStrategy(BaseStrategy):
     """Tasmota solar minus offset for house loads"""
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         if state.house_support:
             return int(state.tasmota_total - 300), "[HS] "
         return current_vanew, ""
@@ -209,7 +209,7 @@ class HouseSupportStrategy(BaseStrategy):
 class ChargeBatteryStrategy(BaseStrategy):
     """Force battery charging at maximum rate"""
 
-    def calculate(self, state: SystemState, current_vanew: int) -> Tuple[int, str]:
+    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
         if state.charge_battery:
             return 2200, "[CHG] "
         return current_vanew, ""
@@ -218,7 +218,7 @@ class ChargeBatteryStrategy(BaseStrategy):
 class SetpointCalculator:
     """Orchestrates strategies and applies safety limits"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self.ema_alpha = config.get("EMA_ALPHA", 0.3)
         self.power_limit_min = config.get("POWER_LIMIT_MIN", -2300)
@@ -231,7 +231,7 @@ class SetpointCalculator:
         self.d_brake_zone = config.get("D_BRAKE_ZONE", 100)
         self.d_threshold = config.get("D_THRESHOLD", 50)
         self.d_gain = config.get("D_GAIN", 0.3)
-        self.prev_effective_gt: Optional[float] = None
+        self.prev_effective_gt: float | None = None
 
         # Strategies in priority order (as in main.py)
         self.strategies = [
