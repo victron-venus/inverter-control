@@ -4,7 +4,7 @@ Handles formatting and terminal updates
 """
 
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
 
 try:
     from zoneinfo import ZoneInfo
@@ -12,12 +12,14 @@ except ImportError:
     from backports.zoneinfo import ZoneInfo
 
 from .config import (
-    TIMEZONE,
-    Colors as C,
-    ENABLE_EV,
-    ENABLE_WATER,
-    ENABLE_HA_LOADS,
     ENABLE_DISHWASHER,
+    ENABLE_EV,
+    ENABLE_HA_LOADS,
+    ENABLE_WATER,
+    TIMEZONE,
+)
+from .config import (
+    Colors as C,
 )
 
 
@@ -31,7 +33,7 @@ class ConsoleUI:
 
     def format_line(  # pylint: disable=too-many-arguments
         self,
-        sys_data: Dict[str, Any],
+        sys_data: dict[str, Any],
         setpoint: int,
         previous_setpoint: int,
         flags: str,
@@ -66,7 +68,7 @@ class ConsoleUI:
 
         return line
 
-    def _fmt_battery_section(self, sys_data: Dict[str, Any]) -> str:
+    def _fmt_battery_section(self, sys_data: dict[str, Any]) -> str:
         bp = sys_data.get("bp", 0)
         battery_socs = sys_data.get("battery_socs", [])
         soc1 = int(battery_socs[0]) if len(battery_socs) > 0 else 0
@@ -76,7 +78,7 @@ class ConsoleUI:
 
         return f"{C.YELLOW}[{inv_state_name}]{bp}W,{comp_v}%,{soc1}%,{soc2}%{C.RESET}"
 
-    def _fmt_solar_section(self, sys_data: Dict[str, Any]) -> str:
+    def _fmt_solar_section(self, sys_data: dict[str, Any]) -> str:
         mppt_data = sys_data.get("mppt_data", {})
         tasmota_powers = sys_data.get("tasmota_powers", [])
 
@@ -163,6 +165,5 @@ def fmt_appliance_time(t):
     if not t or t == "0":
         return ""
     t = str(t).lstrip("0:")
-    if t.endswith(":00"):
-        t = t[:-3]
+    t = t.removesuffix(":00")
     return t

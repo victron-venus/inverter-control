@@ -8,8 +8,8 @@ import os
 import re
 import socket
 import subprocess
-import time
 import sys
+import time
 
 # How long to run (seconds)
 DURATION = int(os.environ.get("KEEPALIVE_DURATION", "30"))

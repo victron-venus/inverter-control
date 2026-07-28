@@ -1,10 +1,12 @@
 """
 Unit tests for Home Assistant Client
 """
-import sys
+
 import os
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -21,9 +23,14 @@ class TestHomeAssistantClient:
             patch("inverter_control.homeassistant.HA_TOKEN", "test_token"),
             patch("inverter_control.homeassistant.HA_TIMEOUT", 2.0),
             patch("inverter_control.homeassistant.HA_POLL_INTERVAL", 1.5),
-            patch("inverter_control.homeassistant.HA_SENSORS", {"sensor1": "entity1", "sensor2": "entity2"}),
+            patch(
+                "inverter_control.homeassistant.HA_SENSORS",
+                {"sensor1": "entity1", "sensor2": "entity2"},
+            ),
             patch("inverter_control.homeassistant.HA_BOOLEANS", {"bool1": "entity_bool1"}),
-            patch("inverter_control.homeassistant.HA_BINARY_SENSORS", {"binary1": "entity_binary1"}),
+            patch(
+                "inverter_control.homeassistant.HA_BINARY_SENSORS", {"binary1": "entity_binary1"}
+            ),
             patch("inverter_control.homeassistant.HA_DUMP_LOADS", ["load1", "load2"]),
             patch("inverter_control.homeassistant.HA_WATER_VALVE", "valve1"),
             patch("inverter_control.homeassistant.HA_PUMP_SWITCH", "pump1"),
@@ -46,7 +53,7 @@ class TestHomeAssistantClient:
         """Cleanup"""
         for p in self.patches:
             p.stop()
-        if hasattr(self, 'client') and self.client._running:
+        if hasattr(self, "client") and self.client._running:
             self.client.stop()
 
     def test_init(self):
@@ -108,6 +115,7 @@ class TestHomeAssistantClient:
     def test_get_state_exception(self, mock_get):
         """Test getting entity state - exception"""
         import requests
+
         mock_get.side_effect = requests.exceptions.RequestException("Connection error")
 
         result = self.client._get_state("switch.test")
@@ -161,6 +169,7 @@ class TestHomeAssistantClient:
     def test_fetch_template_data_timeout(self, mock_post):
         """Test fetching template data - timeout"""
         import requests
+
         mock_post.side_effect = requests.exceptions.Timeout()
 
         with pytest.raises(homeassistant.HomeAssistantTimeoutError):
@@ -170,6 +179,7 @@ class TestHomeAssistantClient:
     def test_fetch_template_data_connection_error(self, mock_post):
         """Test fetching template data - connection error"""
         import requests
+
         mock_post.side_effect = requests.exceptions.ConnectionError()
 
         with pytest.raises(homeassistant.HomeAssistantConnectionError):
@@ -259,6 +269,7 @@ class TestHomeAssistantClient:
     def test_poll_all_failure(self, mock_fetch):
         """Test poll_all failure"""
         import requests
+
         mock_fetch.side_effect = requests.exceptions.ConnectionError()
 
         try:
@@ -359,6 +370,7 @@ class TestHomeAssistantClient:
     def test_uptime(self):
         """Test uptime property"""
         import time
+
         self.client._start_time = time.time() - 10
         assert self.client.uptime >= 10
 

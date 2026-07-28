@@ -172,7 +172,7 @@ HA_TOKEN = "your_long_lived_access_token"
 PORTAL_ID = "your_portal_id"
 
 # Tasmota device IPs
-TASMOTA_IPS = ['192.168.x.x', '192.168.x.x']
+TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
 
 # HA Sensors, VUE sensors, booleans, etc.
 # See site_config.example.py for full template
@@ -182,11 +182,11 @@ TASMOTA_IPS = ['192.168.x.x', '192.168.x.x']
 
 ```python
 # Power limits (protect outlet from overheating)
-POWER_LIMIT_MAX = 2250      # Max feed-in (W)
-POWER_LIMIT_MIN = -2300     # Max export (W)
+POWER_LIMIT_MAX = 2250  # Max feed-in (W)
+POWER_LIMIT_MIN = -2300  # Max export (W)
 
 # Control loop timing
-LOOP_INTERVAL = 0.33        # 3 times per second
+LOOP_INTERVAL = 0.33  # 3 times per second
 ```
 
 ## Optional Features
@@ -194,10 +194,10 @@ LOOP_INTERVAL = 0.33        # 3 times per second
 Features can be enabled/disabled in `config.py`. They auto-disable if `HA_TOKEN` is not configured:
 
 ```python
-ENABLE_EV = True           # EV charging monitoring (car SoC, charger power)
-ENABLE_WATER = True        # Water level, pump and valve control
-ENABLE_HA_LOADS = True     # Home Assistant loads monitoring (Vue sensors)
-ENABLE_HA = True           # Home Assistant integration entirely
+ENABLE_EV = True  # EV charging monitoring (car SoC, charger power)
+ENABLE_WATER = True  # Water level, pump and valve control
+ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
+ENABLE_HA = True  # Home Assistant integration entirely
 ```
 
 When disabled:
