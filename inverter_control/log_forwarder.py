@@ -12,14 +12,15 @@ import sys
 import time
 import traceback
 
+# Import urllib at module level for test patching
+import urllib.error
+import urllib.request
+
 try:
     import requests
 
     USE_REQUESTS = True
 except ImportError:
-    import urllib.error
-    import urllib.request
-
     USE_REQUESTS = False
 
 # Configuration

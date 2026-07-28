@@ -380,6 +380,147 @@ class TestHomeAssistantClient:
         self.client._connected = True
         assert self.client.connected is True
 
+    def test_start_already_running(self):
+        """Test start when already running"""
+        self.client.start()
+        thread_before = self.client._thread
+        # Starting again should not create new thread
+        self.client.start()
+        assert self.client._thread is thread_before
+
+    def test_uptime_after_start(self):
+        """Test uptime returns reasonable value after start"""
+        self.client.start()
+        import time
+        time.sleep(0.1)
+        assert self.client.uptime >= 0
+        self.client.stop()
+
+    def test_stop_no_thread(self):
+        """Test stop when no thread"""
+        self.client._thread = None
+        # Should not raise
+        self.client.stop()
+        assert self.client._running is False
+
+    def test_parse_numeric_various(self):
+        """Test _parse_numeric with various inputs"""
+        assert self.client._parse_numeric("100") == 100
+        assert self.client._parse_numeric("100.5") == 100.5
+        assert self.client._parse_numeric("-50") == -50
+        assert self.client._parse_numeric("unavailable") == 0
+        assert self.client._parse_numeric("") == 0
+        # Test fallback to direct float/int conversion
+        assert self.client._parse_numeric("  42  ") == 42
+
+    def test_parse_duration_various(self):
+        """Test _parse_duration with various inputs"""
+        assert self.client._parse_duration("01:30:00") == 90  # 1h 30m = 90m
+        assert self.client._parse_duration("45:30") == 46  # 45m 30s = 46m (rounded)
+        assert self.client._parse_duration("120") == 120  # numeric
+        assert self.client._parse_duration("unavailable") == 0
+        assert self.client._parse_duration(None) == 0
+
+    def test_get_duration_sensor(self):
+        """Test get_duration_sensor"""
+        self.client._sensors["test_duration"] = "01:30:00"
+        assert self.client.get_duration_sensor("test_duration") == 90
+        self.client._sensors["missing"] = None
+        assert self.client.get_duration_sensor("missing") == 0
+
+    def test_get_all_vue_sensors(self):
+        """Test get_all_vue_sensors"""
+        self.client._vue_sensors = {"vue1": 100, "vue2": 200}
+        result = self.client.get_all_vue_sensors()
+        assert result == {"vue1": 100, "vue2": 200}
+
+    def test_washer_power_on_property(self):
+        """Test washer_power_on property"""
+        self.client._washer_power = True
+        assert self.client.washer_power_on is True
+        self.client._washer_power = False
+        assert self.client.washer_power_on is False
+
+    def test_dryer_power_on_property(self):
+        """Test dryer_power_on property"""
+        self.client._dryer_power = True
+        assert self.client.dryer_power_on is True
+        self.client._dryer_power = False
+        assert self.client.dryer_power_on is False
+
+    def test_laundry_outlet_on_property(self):
+        """Test laundry_outlet_on property"""
+        self.client._laundry_outlet = True
+        assert self.client.laundry_outlet_on is True
+        self.client._laundry_outlet = False
+        assert self.client.laundry_outlet_on is False
+
+    def test_home_recliner_on_property(self):
+        """Test home_recliner_on property"""
+        self.client._home_recliner = True
+        assert self.client.home_recliner_on is True
+        self.client._home_recliner = False
+        assert self.client.home_recliner_on is False
+
+    def test_home_garage_on_property(self):
+        """Test home_garage_on property"""
+        self.client._home_garage = True
+        assert self.client.home_garage_on is True
+        self.client._home_garage = False
+        assert self.client.home_garage_on is False
+
+    def test_last_update_property(self):
+        """Test last_update property"""
+        assert self.client.last_update == 0
+        self.client._last_update = 12345
+        assert self.client.last_update == 12345
+
+    def test_last_error_property(self):
+        """Test last_error property"""
+        assert self.client.last_error == ""
+        self.client._last_error = "test error"
+        assert self.client.last_error == "test error"
+
+    def test_control_dump_loads_full(self):
+        """Test control_dump_loads with HA_DUMP_LOADS"""
+        with patch("inverter_control.homeassistant.HA_DUMP_LOADS", ["load1", "load2", "load3"]):
+            with patch.object(self.client, "turn_on", return_value=True) as mock_on:
+                with patch.object(self.client, "turn_off", return_value=True) as mock_off:
+                    # Turn on
+                    changed = self.client.control_dump_loads(turn_on=True)
+                    assert changed == 3
+                    assert mock_on.call_count == 3
+                    mock_on.reset_mock()
+                    # Turn off
+                    changed = self.client.control_dump_loads(turn_on=False)
+                    assert changed == 3
+                    assert mock_off.call_count == 3
+
+    def test_control_dump_loads_mixed_results(self):
+        """Test control_dump_loads with mixed results"""
+        with patch("inverter_control.homeassistant.HA_DUMP_LOADS", ["load1", "load2", "load3"]):
+            with patch.object(self.client, "turn_on", side_effect=[True, False, True]) as mock_on:
+                changed = self.client.control_dump_loads(turn_on=True)
+                assert changed == 2
+
+    def test_get_all_sensors(self):
+        """Test get_all_sensors"""
+        self.client._sensors = {"s1": 100, "s2": 200}
+        result = self.client.get_all_sensors()
+        assert result == {"s1": 100, "s2": 200}
+
+    def test_get_all_booleans(self):
+        """Test get_all_booleans"""
+        self.client._booleans = {"b1": True, "b2": False}
+        result = self.client.get_all_booleans()
+        assert result == {"b1": True, "b2": False}
+
+    def test_poll_all_success_path(self):
+        """Test _poll_all success path"""
+        with patch.object(self.client, "_fetch_template_data", return_value={"sensor1": "150"}):
+            self.client._poll_all()
+            assert self.client._sensors["sensor1"] == 150
+
 
 class TestGetHA:
     """Test get_ha singleton"""

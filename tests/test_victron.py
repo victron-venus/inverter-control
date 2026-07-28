@@ -449,6 +449,231 @@ class TestVictronDBus:
         assert chargers[0]["current"] == 5.0
         assert chargers[0]["power"] == 500.0
 
+    def test_read_chain_cell_voltages(self):
+        """Test reading chain cell voltages"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.side_effect = ["3.45", "3.46", "3.44", "3.47", None]
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            voltages = v._read_chain_cell_voltages("test.service", 0)
+
+        assert len(voltages) == 4
+        assert voltages[0][0] == 3.45
+        assert voltages[1][0] == 3.46
+
+    def test_read_chain_cell_voltages_invalid_value(self):
+        """Test reading chain cell voltages with invalid value"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.side_effect = ["3.45", "invalid", "3.44", None]
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            voltages = v._read_chain_cell_voltages("test.service", 0)
+
+        assert len(voltages) == 2
+        assert voltages[0][0] == 3.45
+        assert voltages[1][0] == 3.44
+
+    def test_read_chain_cell_voltages_zero_volt(self):
+        """Test reading chain cell voltages with zero volt (skipped)"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.side_effect = ["3.45", "0", "3.44", None]
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            voltages = v._read_chain_cell_voltages("test.service", 0)
+
+        assert len(voltages) == 2
+        assert voltages[0][0] == 3.45
+        assert voltages[1][0] == 3.44
+
+    def test_read_chain_cell_temps(self):
+        """Test reading chain cell temperatures"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            # Return temps for cells 1, 3, 5 (sparse)
+            def side_effect(service, path):
+                if "/Cell/1/Temperature" in path:
+                    return "25.5"
+                elif "/Cell/3/Temperature" in path:
+                    return "26.0"
+                elif "/Cell/5/Temperature" in path:
+                    return "24.8"
+                return None
+
+            mock_get.side_effect = side_effect
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            temps = v._read_chain_cell_temps("test.service")
+
+        assert len(temps) == 3
+        assert temps == [25.5, 26.0, 24.8]
+
+    def test_read_chain_cell_temps_invalid(self):
+        """Test reading chain cell temperatures with invalid values"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            # 16 values: invalid (out of range), valid, invalid format, rest None
+            side_effects = ["150", "25.5", "invalid"] + [None] * 13
+            mock_get.side_effect = side_effects
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            temps = v._read_chain_cell_temps("test.service")
+
+            # Only the valid temp (25.5) should be included
+            assert temps == [25.5]
+
+    def test_read_chain_soc(self):
+        """Test reading chain SoC"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = "85.5"
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            soc = v._read_chain_soc("test.service")
+
+        assert soc == 85.5
+
+    def test_read_chain_soc_none(self):
+        """Test reading chain SoC when None"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = None
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            soc = v._read_chain_soc("test.service")
+
+        assert soc is None
+
+    def test_read_chain_soc_invalid(self):
+        """Test reading chain SoC with invalid value"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = "invalid"
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            soc = v._read_chain_soc("test.service")
+
+        assert soc is None
+
+    def test_read_chain_allow_flag_true(self):
+        """Test reading chain allow flag - true"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = "1"
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            result = v._read_chain_allow_flag("test.service", "/Info/AllowCharge")
+
+        assert result is True
+
+    def test_read_chain_allow_flag_false(self):
+        """Test reading chain allow flag - false"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = "0"
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            result = v._read_chain_allow_flag("test.service", "/Info/AllowDischarge")
+
+        assert result is False
+
+    def test_read_chain_allow_flag_none(self):
+        """Test reading chain allow flag - None"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = None
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            result = v._read_chain_allow_flag("test.service", "/Info/AllowCharge")
+
+        assert result is None
+
+    def test_read_chain_allow_flag_invalid(self):
+        """Test reading chain allow flag - invalid value"""
+        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+            mock_get.return_value = "invalid"
+
+            victron._victron = None
+            v = victron.VictronDBus()
+            result = v._read_chain_allow_flag("test.service", "/Info/AllowCharge")
+
+        assert result is None
+
+    def test_get_battery_cell_data(self):
+        """Test getting battery cell data for DVCC"""
+        with patch("inverter_control.victron.VictronDBus._read_chain_cell_voltages") as mock_voltages:
+            with patch("inverter_control.victron.VictronDBus._read_chain_cell_temps") as mock_temps:
+                with patch("inverter_control.victron.VictronDBus._read_chain_soc") as mock_soc:
+                    with patch("inverter_control.victron.VictronDBus._read_chain_allow_flag") as mock_allow:
+                        # Chain 1: 4 cells, temps, soc=80, allow_charge=1, allow_discharge=1
+                        mock_voltages.side_effect = [
+                            [(3.45, 0), (3.46, 1), (3.44, 2), (3.47, 3)],
+                            [(3.50, 4), (3.48, 5)],  # Chain 2: 2 cells
+                        ]
+                        mock_temps.side_effect = [[25.5, 26.0], [24.8]]
+                        mock_soc.side_effect = [80.0, 75.0]
+                        mock_allow.side_effect = [True, True, True, True]  # charge1, discharge1, charge2, discharge2
+
+                        victron._victron = None
+                        v = victron.VictronDBus()
+                        result = v.get_battery_cell_data()
+
+        assert result["max_cell"] == 3.50
+        assert result["max_cell_id"] == 4
+        assert result["min_cell"] == 3.44
+        assert result["min_cell_id"] == 2
+        assert result["max_temp"] == 26.0
+        assert result["min_temp"] == 24.8
+        assert result["soc"] == 77.5
+        assert result["allow_charge"] is True
+        assert result["allow_discharge"] is True
+
+    def test_get_battery_cell_data_allow_false(self):
+        """Test getting battery cell data with allow flags false"""
+        with patch("inverter_control.victron.VictronDBus._read_chain_cell_voltages") as mock_voltages:
+            with patch("inverter_control.victron.VictronDBus._read_chain_cell_temps") as mock_temps:
+                with patch("inverter_control.victron.VictronDBus._read_chain_soc") as mock_soc:
+                    with patch("inverter_control.victron.VictronDBus._read_chain_allow_flag") as mock_allow:
+                        mock_voltages.side_effect = [
+                            [(3.45, 0), (3.46, 1)],
+                            [(3.50, 2), (3.48, 3)],
+                        ]
+                        mock_temps.side_effect = [[25.5], [24.8]]
+                        mock_soc.side_effect = [80.0, 75.0]
+                        mock_allow.side_effect = [False, True, True, False]  # charge1=F, discharge1=T, charge2=T, discharge2=F
+
+                        victron._victron = None
+                        v = victron.VictronDBus()
+                        result = v.get_battery_cell_data()
+
+        assert result["allow_charge"] is False
+        assert result["allow_discharge"] is False
+
+    def test_get_battery_cell_data_no_cells(self):
+        """Test getting battery cell data when no cells found"""
+        with patch("inverter_control.victron.VictronDBus._read_chain_cell_voltages") as mock_voltages:
+            with patch("inverter_control.victron.VictronDBus._read_chain_cell_temps") as mock_temps:
+                with patch("inverter_control.victron.VictronDBus._read_chain_soc") as mock_soc:
+                    with patch("inverter_control.victron.VictronDBus._read_chain_allow_flag") as mock_allow:
+                        mock_voltages.side_effect = [[], []]
+                        mock_temps.side_effect = [[], []]
+                        mock_soc.side_effect = [None, None]
+                        mock_allow.side_effect = [None, None, None, None]
+
+                        victron._victron = None
+                        v = victron.VictronDBus()
+                        result = v.get_battery_cell_data()
+
+        assert result["max_cell"] is None
+        assert result["min_cell"] is None
+        assert result["max_temp"] is None
+        assert result["min_temp"] is None
+        assert result["soc"] is None
+        assert result["allow_charge"] is True
+        assert result["allow_discharge"] is True
+
 
 class TestGetVictron:
     """Test get_victron singleton"""
