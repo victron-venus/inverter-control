@@ -446,7 +446,7 @@ class VictronDBus:
         if val:
             try:
                 f = float(val)
-                return f if not math.isnan(f) else 0.0
+                return f if math.isfinite(f) else 0.0
             except (ValueError, TypeError) as e:
                 logger.debug("D-Bus float read failed for %s/%s: %s", service, path, e)
         return 0.0
