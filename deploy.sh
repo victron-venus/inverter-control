@@ -62,11 +62,17 @@ scp -q "$SCRIPT_DIR/service/log-forwarder/run" "$SSH_HOST:$INSTALL_DIR/service/l
 ssh "$SSH_HOST" "chmod +x $INSTALL_DIR/service/log-forwarder/run"
 ssh "$SSH_HOST" "ln -sf $INSTALL_DIR/service/log-forwarder /service/ 2>/dev/null || true"
 
-# Copy secrets.py if exists
-if [[ -f "$SCRIPT_DIR/secrets.py" ]]; then
-    echo ">>> Copying secrets.py..."
-    scp -q "$SCRIPT_DIR/secrets.py" "$SSH_HOST:$INSTALL_DIR/"
-    scp -q "$SCRIPT_DIR/secrets.py" "$SSH_HOST:$SETUP_OPTIONS_DIR/"
+# Migrate old secrets.py to local_config.py if present
+ssh "$SSH_HOST" "if [ -f $INSTALL_DIR/secrets.py ] && [ ! -f $INSTALL_DIR/local_config.py ]; then
+    mv $INSTALL_DIR/secrets.py $INSTALL_DIR/local_config.py
+    echo 'Migrated secrets.py → local_config.py'
+fi"
+
+# Copy local_config.py if exists
+if [[ -f "$SCRIPT_DIR/local_config.py" ]]; then
+    echo ">>> Copying local_config.py..."
+    scp -q "$SCRIPT_DIR/local_config.py" "$SSH_HOST:$INSTALL_DIR/"
+    scp -q "$SCRIPT_DIR/local_config.py" "$SSH_HOST:$SETUP_OPTIONS_DIR/"
 fi
 
 # Copy version file
