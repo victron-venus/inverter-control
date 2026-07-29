@@ -6,10 +6,33 @@ Publishes state and subscribes to commands from remote dashboard
 
 import json
 import logging
+import math
 from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger("inverter-control")
+
+
+class SafeEncoder(json.JSONEncoder):
+    """JSON encoder that converts NaN/Inf to null instead of invalid literals."""
+    def default(self, obj):
+        return super().default(obj)
+
+    def encode(self, obj):
+        return super().encode(self._sanitize(obj))
+
+    def _sanitize(self, obj):
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+            return obj
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._sanitize(v) for v in obj]
+        if isinstance(obj, tuple):
+            return tuple(self._sanitize(v) for v in obj)
+        return obj
 
 # Try to import paho-mqtt (may not be available on Venus OS)
 try:
@@ -106,7 +129,7 @@ class MQTTBridge:
             return
 
         try:
-            self._client.publish(f"{self.prefix}/state", json.dumps(state), qos=0, retain=True)
+            self._client.publish(f"{self.prefix}/state", json.dumps(state, cls=SafeEncoder), qos=0, retain=True)
         except Exception as e:
             logger.debug(f"MQTT publish error: {e}")
 
