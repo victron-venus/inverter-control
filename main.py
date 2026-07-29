@@ -347,6 +347,12 @@ class InverterController:
         self._cached_tasmota_powers = []
         self._cached_battery_socs = []
         self._cached_inv_state = ""
+        self._cached_battery_cell_data = None
+        self._cached_batteries = []
+        self._cached_mppt_chargers = []
+        self._last_cell_data_time = 0.0
+        self._last_batteries_time = 0.0
+        self._last_chargers_time = 0.0
 
         # Dynamic settings (overridable)
         self.power_limit_min = POWER_LIMIT_MIN
@@ -503,6 +509,20 @@ class InverterController:
         except Exception as e:
             logger.warning(f"minimize_charging error: {e}")
 
+    def _get_cached_batteries(self) -> list:
+        now = time.time()
+        if now - self._last_batteries_time > 5:
+            self._cached_batteries = self.victron.get_all_batteries()
+            self._last_batteries_time = now
+        return self._cached_batteries
+
+    def _get_cached_mppt_chargers(self) -> list:
+        now = time.time()
+        if now - self._last_chargers_time > 5:
+            self._cached_mppt_chargers = self.victron.get_mppt_chargers()
+            self._last_chargers_time = now
+        return self._cached_mppt_chargers
+
     def _get_ev_state(self) -> dict[str, Any]:
         if not ENABLE_EV:
             return {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
@@ -589,8 +609,8 @@ class InverterController:
             "tasmota_individual": self._cached_tasmota_powers,
             "inverter_state": self._cached_inv_state,
             "battery_socs": self._cached_battery_socs,
-            "batteries": self.victron.get_all_batteries(),
-            "mppt_chargers": self.victron.get_mppt_chargers(),
+            "batteries": self._get_cached_batteries(),
+            "mppt_chargers": self._get_cached_mppt_chargers(),
             **self._get_ev_state(),
             **self._get_water_state(),
             **self._get_ha_state(),
@@ -629,8 +649,15 @@ class InverterController:
             self._watchdog.mark_dbus_update()
 
             if self.dvcc_calculator is not None:
-                battery_data = self.victron.get_battery_cell_data()
-                self.dvcc_limits = self.dvcc_calculator.calculate(battery_data)
+                now = time.time()
+                if now - self._last_cell_data_time > 30:
+                    battery_data = self.victron.get_battery_cell_data()
+                    self._cached_battery_cell_data = battery_data
+                    self._last_cell_data_time = now
+                if self._cached_battery_cell_data is not None:
+                    self.dvcc_limits = self.dvcc_calculator.calculate(
+                        self._cached_battery_cell_data
+                    )
             if self.manual_setpoint is not None:
                 setpoint = self.manual_setpoint
                 flags = "[MANUAL] "
