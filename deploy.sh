@@ -37,7 +37,7 @@ python3 -m py_compile \
     "$SCRIPT_DIR/inverter_control/console_server.py" \
     "$SCRIPT_DIR/inverter_control/console_ui.py" \
     "$SCRIPT_DIR/inverter_control/logic.py" \
-    "$SCRIPT_DIR/inverter_control/log-forwarder.py"
+    "$SCRIPT_DIR/inverter_control/log_forwarder.py"
 echo "    Syntax OK"
 
 # Create directories on remote
@@ -73,6 +73,18 @@ fi
 if [[ -f "$SCRIPT_DIR/version" ]]; then
     scp -q "$SCRIPT_DIR/version" "$SSH_HOST:$INSTALL_DIR/"
 fi
+
+# Clean up stale files from previous deployments
+echo ">>> Cleaning up stale files..."
+ssh "$SSH_HOST" "rm -f \\
+    $INSTALL_DIR/config.py \\
+    $INSTALL_DIR/homeassistant.py \\
+    $INSTALL_DIR/keepalive.py \\
+    $INSTALL_DIR/mqtt_bridge.py \\
+    $INSTALL_DIR/ui_config.py \\
+    $INSTALL_DIR/victron.py \\
+    $INSTALL_DIR/console_server.py \\
+    $INSTALL_DIR/inverter_control/log-forwarder.py"
 
 # Restart PackageManager to discover package
 echo ">>> Restarting PackageManager..."

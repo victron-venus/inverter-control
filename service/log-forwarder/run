@@ -1,4 +1,4 @@
 #!/bin/sh
 exec 2>&1
 cd /data/inverter-control
-exec python3 inverter_control/log-forwarder.py
+exec python3 inverter_control/log_forwarder.py
