@@ -4,17 +4,17 @@ Unit tests for DVCC (Dynamic Voltage and Current Control) calculator
 
 import unittest
 
-from inverter_control.dvcc import DvccCalculator, DvccConfig, create_dvcc_from_config
+from inverter_control.dvcc import DvccCalculator, create_dvcc_from_config
 
 
 class TestDvccCellVoltage(unittest.TestCase):
     def setUp(self):
-        self.config = DvccConfig(
-            max_charge_current=100.0,
-            max_discharge_current=120.0,
-            min_charge_current=2.0,
-        )
-        self.calc = DvccCalculator(self.config)
+        config = {
+            "DVCC_MAX_CHARGE_CURRENT": 100.0,
+            "DVCC_MAX_DISCHARGE_CURRENT": 120.0,
+            "DVCC_MIN_CHARGE_CURRENT": 2.0,
+        }
+        self.calc = DvccCalculator(config)
 
     def test_no_cell_data_returns_max_charge_current(self):
         ccl, reason = self.calc.calculate_ccl_from_cell_voltage(None)
@@ -37,13 +37,17 @@ class TestDvccCellVoltage(unittest.TestCase):
 
     def test_near_full_reduces_to_tail_charge(self):
         ccl, reason = self.calc.calculate_ccl_from_cell_voltage(3.55)
-        self.assertLessEqual(ccl, self.config.min_charge_current)
+        self.assertLessEqual(ccl, 2.0)
         self.assertIn("tail_charge", reason)
 
 
 class TestDvccImbalance(unittest.TestCase):
     def setUp(self):
-        self.calc = DvccCalculator(DvccConfig(max_charge_current=100.0, min_charge_current=2.0))
+        config = {
+            "DVCC_MAX_CHARGE_CURRENT": 100.0,
+            "DVCC_MIN_CHARGE_CURRENT": 2.0,
+        }
+        self.calc = DvccCalculator(config)
 
     def test_no_delta_returns_max(self):
         ccl, reason = self.calc.calculate_ccl_from_imbalance(None)
@@ -68,7 +72,11 @@ class TestDvccImbalance(unittest.TestCase):
 
 class TestDvccTemperature(unittest.TestCase):
     def setUp(self):
-        self.calc = DvccCalculator(DvccConfig(max_charge_current=100.0, min_charge_current=2.0))
+        config = {
+            "DVCC_MAX_CHARGE_CURRENT": 100.0,
+            "DVCC_MIN_CHARGE_CURRENT": 2.0,
+        }
+        self.calc = DvccCalculator(config)
 
     def test_no_temp_data_returns_max(self):
         ccl, reason = self.calc.calculate_ccl_from_temperature(None, None)
@@ -98,16 +106,15 @@ class TestDvccTemperature(unittest.TestCase):
 
 class TestDvccSoc(unittest.TestCase):
     def setUp(self):
-        self.calc = DvccCalculator(
-            DvccConfig(
-                max_charge_current=100.0,
-                max_discharge_current=120.0,
-                soc_reduce_start=95.0,
-                soc_reduce_factor=0.5,
-                soc_discharge_stop=5.0,
-                soc_discharge_reduced=10.0,
-            )
-        )
+        config = {
+            "DVCC_MAX_CHARGE_CURRENT": 100.0,
+            "DVCC_MAX_DISCHARGE_CURRENT": 120.0,
+            "DVCC_SOC_REDUCE_START": 95.0,
+            "DVCC_SOC_REDUCE_FACTOR": 0.5,
+            "DVCC_SOC_DISCHARGE_STOP": 5.0,
+            "DVCC_SOC_DISCHARGE_REDUCED": 10.0,
+        }
+        self.calc = DvccCalculator(config)
 
     def test_soc_below_threshold_full_current(self):
         ccl, reason = self.calc.calculate_ccl_from_soc(50.0)
@@ -132,45 +139,51 @@ class TestDvccSoc(unittest.TestCase):
 
 class TestDvccCalculate(unittest.TestCase):
     def setUp(self):
-        self.calc = DvccCalculator(
-            DvccConfig(max_charge_current=100.0, max_discharge_current=120.0)
-        )
+        config = {
+            "DVCC_MAX_CHARGE_CURRENT": 100.0,
+            "DVCC_MAX_DISCHARGE_CURRENT": 120.0,
+        }
+        self.calc = DvccCalculator(config)
 
     def test_bms_block_charge_forces_zero_ccl(self):
         result = self.calc.calculate({"allow_charge": False})
-        self.assertEqual(result.ccl, 0.0)
-        self.assertEqual(result.ccl_reason, "bms_blocked")
+        self.assertEqual(result["ccl"], 0.0)
+        self.assertEqual(result["ccl_reason"], "bms_blocked")
 
     def test_bms_block_discharge_forces_zero_dcl(self):
         result = self.calc.calculate({"allow_discharge": False})
-        self.assertEqual(result.dcl, 0.0)
-        self.assertEqual(result.dcl_reason, "bms_blocked")
+        self.assertEqual(result["dcl"], 0.0)
+        self.assertEqual(result["dcl_reason"], "bms_blocked")
 
     def test_bms_block_is_immediate_not_rate_limited(self):
         # Prime the calculator with a full-current baseline first.
         self.calc.calculate({})
         result = self.calc.calculate({"allow_charge": False, "allow_discharge": False})
         # Hard safety cutoffs must apply immediately regardless of change rate.
-        self.assertEqual(result.ccl, 0.0)
-        self.assertEqual(result.dcl, 0.0)
+        self.assertEqual(result["ccl"], 0.0)
+        self.assertEqual(result["dcl"], 0.0)
 
     def test_cell_overvoltage_cutoff_is_immediate_not_rate_limited(self):
         self.calc.calculate({"max_cell": 3.30})
         result = self.calc.calculate({"max_cell": 3.60})
         # Hard cutoff (0A) must not be rate limited even though ccl_change_rate
         # would otherwise only allow a small step down.
-        self.assertEqual(result.ccl, 0.0)
+        self.assertEqual(result["ccl"], 0.0)
 
     def test_first_call_does_not_apply_inflated_dt(self):
         # On the very first calculate() call there's no prior timestamp, so
         # rate limiting must not use an inflated/stale dt based on __init__ time.
         result = self.calc.calculate({"max_cell": 3.30})
-        self.assertEqual(result.ccl, 100.0)
+        self.assertEqual(result["ccl"], 100.0)
 
     def test_cvl_uses_cell_count_and_max_voltage(self):
-        calc = DvccCalculator(DvccConfig(cell_count=16, cell_max_voltage=3.65))
+        config = {
+            "DVCC_CELL_COUNT": 16,
+            "DVCC_CELL_MAX_VOLTAGE": 3.65,
+        }
+        calc = DvccCalculator(config)
         result = calc.calculate({})
-        self.assertAlmostEqual(result.cvl, 16 * 3.65, places=2)
+        self.assertAlmostEqual(result["cvl"], 16 * 3.65, places=2)
 
     def test_returns_diagnostic_fields(self):
         result = self.calc.calculate(
@@ -184,14 +197,14 @@ class TestDvccCalculate(unittest.TestCase):
                 "soc": 50.0,
             }
         )
-        self.assertEqual(result.max_cell_voltage, 3.30)
-        self.assertEqual(result.max_cell_id, 1)
-        self.assertEqual(result.min_cell_voltage, 3.28)
-        self.assertEqual(result.min_cell_id, 2)
-        self.assertAlmostEqual(result.cell_delta, 0.02, places=5)
-        self.assertEqual(result.min_temp, 20.0)
-        self.assertEqual(result.max_temp, 25.0)
-        self.assertEqual(result.soc, 50.0)
+        self.assertEqual(result["max_cell_voltage"], 3.30)
+        self.assertEqual(result["max_cell_id"], 1)
+        self.assertEqual(result["min_cell_voltage"], 3.28)
+        self.assertEqual(result["min_cell_id"], 2)
+        self.assertAlmostEqual(result["cell_delta"], 0.02, places=5)
+        self.assertEqual(result["min_temp"], 20.0)
+        self.assertEqual(result["max_temp"], 25.0)
+        self.assertEqual(result["soc"], 50.0)
 
 
 class TestCreateDvccFromConfig(unittest.TestCase):
@@ -224,32 +237,32 @@ class TestCreateDvccFromConfig(unittest.TestCase):
             "DVCC_SOC_DISCHARGE_REDUCED": 9.0,
         }
         calc = create_dvcc_from_config(config)
-        self.assertEqual(calc.config.cell_count, 8)
-        self.assertEqual(calc.config.max_charge_current, 50.0)
-        self.assertEqual(calc.config.max_discharge_current, 60.0)
-        self.assertEqual(calc.config.cell_full_current, 3.40)
-        self.assertEqual(calc.config.cell_near_full, 3.55)
-        self.assertEqual(calc.config.cell_cutoff, 3.60)
-        self.assertEqual(calc.config.min_charge_current, 1.0)
-        self.assertEqual(calc.config.imbalance_start, 0.05)
-        self.assertEqual(calc.config.imbalance_aggressive, 0.10)
-        self.assertEqual(calc.config.imbalance_critical, 0.20)
-        self.assertEqual(calc.config.temp_charge_min, 0.0)
-        self.assertEqual(calc.config.temp_charge_optimal, 10.0)
-        self.assertEqual(calc.config.temp_charge_limit, 40.0)
-        self.assertEqual(calc.config.temp_charge_stop, 50.0)
-        self.assertEqual(calc.config.temp_discharge_min, -20.0)
-        self.assertEqual(calc.config.temp_discharge_reduced, -10.0)
-        self.assertEqual(calc.config.soc_reduce_start, 90.0)
-        self.assertEqual(calc.config.soc_reduce_factor, 0.4)
-        self.assertEqual(calc.config.soc_discharge_stop, 4.0)
-        self.assertEqual(calc.config.soc_discharge_reduced, 9.0)
+        self.assertEqual(calc.cell_count, 8)
+        self.assertEqual(calc._max_charge_current, 50.0)
+        self.assertEqual(calc._max_discharge_current, 60.0)
+        self.assertEqual(calc.cell_full_current, 3.40)
+        self.assertEqual(calc.cell_near_full, 3.55)
+        self.assertEqual(calc.cell_cutoff, 3.60)
+        self.assertEqual(calc.min_charge_current, 1.0)
+        self.assertEqual(calc.imbalance_start, 0.05)
+        self.assertEqual(calc.imbalance_aggressive, 0.10)
+        self.assertEqual(calc.imbalance_critical, 0.20)
+        self.assertEqual(calc.temp_charge_min, 0.0)
+        self.assertEqual(calc.temp_charge_optimal, 10.0)
+        self.assertEqual(calc.temp_charge_limit, 40.0)
+        self.assertEqual(calc.temp_charge_stop, 50.0)
+        self.assertEqual(calc.temp_discharge_min, -20.0)
+        self.assertEqual(calc.temp_discharge_reduced, -10.0)
+        self.assertEqual(calc.soc_reduce_start, 90.0)
+        self.assertEqual(calc.soc_reduce_factor, 0.4)
+        self.assertEqual(calc.soc_discharge_stop, 4.0)
+        self.assertEqual(calc.soc_discharge_reduced, 9.0)
 
     def test_defaults_when_config_dict_empty(self):
         calc = create_dvcc_from_config({})
-        self.assertEqual(calc.config.cell_count, 16)
-        self.assertEqual(calc.config.max_charge_current, 100.0)
-        self.assertEqual(calc.config.max_discharge_current, 120.0)
+        self.assertEqual(calc.cell_count, 16)
+        self.assertEqual(calc._max_charge_current, 100.0)
+        self.assertEqual(calc._max_discharge_current, 120.0)
 
 
 if __name__ == "__main__":

@@ -258,26 +258,14 @@ class VictronDBus:
             return 0
 
         # Try specific device path first (faster)
-        val = self._dbus_get(self._vebus_service, "/Devices/0/Ac/Inverter/P")
-        if val:
-            try:
-                return int(float(val))
-            except (ValueError, TypeError) as e:
-                logger.debug("Inverter power parse failed: %s", e)
-        return 0
+        return int(self._get_float(self._vebus_service, "/Devices/0/Ac/Inverter/P"))
 
     def get_ac_in_power(self) -> int:
         """Get AC input power (from grid)"""
         if not self._vebus_service:
             return 0
 
-        val = self._dbus_get(self._vebus_service, "/Ac/ActiveIn/L1/P")
-        if val:
-            try:
-                return int(float(val))
-            except (ValueError, TypeError) as e:
-                logger.debug("AC input power parse failed: %s", e)
-        return 0
+        return int(self._get_float(self._vebus_service, "/Ac/ActiveIn/L1/P"))
 
     def set_grid_setpoint(self, watts: int) -> bool:
         """Set the grid power setpoint (Hub4/L1/AcPowerSetpoint)"""
