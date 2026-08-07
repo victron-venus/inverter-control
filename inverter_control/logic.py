@@ -4,9 +4,8 @@ Separated from I/O for stability and testability.
 """
 
 import logging
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger("inverter-control")
 
@@ -59,160 +58,168 @@ class ControlResult:
     filtered_gt: float
 
 
-class BaseStrategy(ABC):
-    """Abstract base class for control strategies"""
+# Strategy functions - each takes (state, current_vanew) -> (new_vanew, flags)
+# Ordered by priority (first = lowest priority / base strategy)
 
-    @abstractmethod
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        """
-        Calculate setpoint and return (new_setpoint, flags)
-        current_vanew: the setpoint calculated by previous (lower priority) strategies
-        """
+StrategyFn = Callable[[SystemState, int], tuple[int, str]]
 
 
-class NormalStrategy(BaseStrategy):
+def normal_strategy(
+    state: SystemState,
+    current_vanew: int,
+    *,
+    damping_factor: float,
+    deadband_low: int,
+    deadband_high: int,
+    creep_rate: float,
+    creep_max: float,
+    export_damping: float,
+    _state: dict,
+) -> tuple[int, str]:
     """Base strategy: Target grid zero with creep correction in deadband.
-    Asymmetric response: export (gt < 0) corrected more aggressively than import."""
+    Asymmetric response: export (gt < 0) corrected more aggressively than import.
+    """
+    effective_gt = state.gt
+    flags = ""
 
-    def __init__(  # pylint: disable=too-many-arguments
-        self,
-        damping_factor: float,
-        deadband_low: int,
-        deadband_high: int,
-        creep_rate: float = 0.5,
-        creep_max: float = 100.0,
-        export_damping: float = 1.0,
-    ):
-        self.damping_factor = damping_factor
-        self.deadband_low = deadband_low
-        self.deadband_high = deadband_high
-        self.creep_rate = creep_rate
-        self.creep_max = creep_max
-        self.export_damping = export_damping  # stronger damping for export
-        self.creep_accumulator = 0.0
-        self.stable_count = 0
+    # Tests can override deadband via _state dict
+    _deadband_low = _state.get("deadband_low", deadband_low)
+    _deadband_high = _state.get("deadband_high", deadband_high)
+    _creep_rate = _state.get("creep_rate", creep_rate)
+    _creep_max = _state.get("creep_max", creep_max)
 
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        effective_gt = state.gt
-        flags = ""
+    # Adjust Grid for EV Exclusion Mode
+    if state.do_not_supply_charger and state.ev_power > 100:
+        effective_gt = state.gt - state.ev_power
+        flags += f"[EV:{int(state.ev_power)}] "
 
-        # Step 4: Adjust Grid for EV Exclusion Mode
-        if state.do_not_supply_charger and state.ev_power > 100:
-            effective_gt = state.gt - state.ev_power
-            flags += f"[EV:{int(state.ev_power)}] "
+    # Target Grid Zero
+    smoothed_gt = state.filtered_gt if state.filtered_gt is not None else float(effective_gt)
 
-        # Step 5: Base Calculation - Target Grid Zero
-        smoothed_gt = state.filtered_gt if state.filtered_gt is not None else float(effective_gt)
-
-        if self.deadband_low < smoothed_gt < self.deadband_high:
-            self.stable_count += 1
-            # Creep: accumulate error to push toward zero
-            # Faster creep for export (we never want to export)
-            if smoothed_gt > 0:
-                self.creep_accumulator = min(
-                    self.creep_max, self.creep_accumulator + self.creep_rate
-                )
-            else:
-                # Export creep: 2x faster accumulation
-                self.creep_accumulator = max(
-                    -self.creep_max, self.creep_accumulator - self.creep_rate * 2
-                )
-            # Use stronger damping for export direction
-            damping = self.export_damping if smoothed_gt < 0 else self.damping_factor
-            creep_correction = int(self.creep_accumulator * damping)
-            vanew = state.previous_setpoint - creep_correction
-            flags += f"[~{int(self.creep_accumulator)}] "
+    if _deadband_low < smoothed_gt < _deadband_high:
+        _state["stable_count"] = _state.get("stable_count", 0) + 1
+        # Creep: accumulate error to push toward zero
+        # Faster creep for export (we never want to export)
+        if smoothed_gt > 0:
+            _state["creep_accumulator"] = min(
+                _creep_max, _state.get("creep_accumulator", 0.0) + _creep_rate
+            )
         else:
-            self.stable_count = 0
-            self.creep_accumulator = 0.0
-            # Asymmetric damping: export corrected more aggressively
-            damping = self.export_damping if smoothed_gt < 0 else self.damping_factor
-            correction = -smoothed_gt * damping
-            vanew = state.inv_power + correction
+            # Export creep: 2x faster accumulation
+            _state["creep_accumulator"] = max(
+                -_creep_max, _state.get("creep_accumulator", 0.0) - _creep_rate * 2
+            )
+        # Use stronger damping for export direction
+        damping = export_damping if smoothed_gt < 0 else damping_factor
+        creep_correction = int(_state["creep_accumulator"] * damping)
+        vanew = state.previous_setpoint - creep_correction
+        flags += f"[~{int(_state['creep_accumulator'])}] "
+    else:
+        _state["stable_count"] = 0
+        _state["creep_accumulator"] = 0.0
+        # Asymmetric damping: export corrected more aggressively
+        damping = export_damping if smoothed_gt < 0 else damping_factor
+        correction = -smoothed_gt * damping
+        vanew = state.inv_power + correction
 
-        return int(vanew), flags
+    return int(vanew), flags
 
 
-class OnlyChargingStrategy(BaseStrategy):
+def only_charging_strategy(
+    state: SystemState,
+    current_vanew: int,
+    *,
+    efficiency: float,
+    solar_offset: int,
+) -> tuple[int, str]:
     """Don't discharge battery - output only what MPPT produces"""
+    if not state.only_charging:
+        return current_vanew, ""
 
-    def __init__(self, efficiency: float, solar_offset: int):
-        self.efficiency = efficiency
-        self.solar_offset = solar_offset
+    max_ac_output = int(state.mppt_total * efficiency) - solar_offset
+    min_setpoint = -max(0, max_ac_output)
 
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        if not state.only_charging:
-            return current_vanew, ""
-
-        max_ac_output = int(state.mppt_total * self.efficiency) - self.solar_offset
-        min_setpoint = -max(0, max_ac_output)
-
-        if current_vanew < min_setpoint:
-            return min_setpoint, f"[OC:{max_ac_output}] "
-        return current_vanew, "[OC~] "
+    if current_vanew < min_setpoint:
+        return min_setpoint, f"[OC:{max_ac_output}] "
+    return current_vanew, "[OC~] "
 
 
-class DoNotSupplyChargerStrategy(BaseStrategy):
+def do_not_supply_charger_strategy(
+    state: SystemState,
+    current_vanew: int,
+    *,
+    efficiency: float,
+    solar_offset: int,
+) -> tuple[int, str]:
     """Don't let battery power the EV charger"""
-
-    def __init__(self, efficiency: float, solar_offset: int):
-        self.efficiency = efficiency
-        self.solar_offset = solar_offset
-
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        if state.do_not_supply_charger and state.ev_power > 100:
-            max_ac_output = max(0, int(state.mppt_total * self.efficiency) - self.solar_offset)
-            min_setpoint = -max_ac_output
-            if current_vanew < min_setpoint:
-                return min_setpoint, f"[NoEV:{max_ac_output}] "
-        return current_vanew, ""
+    if state.do_not_supply_charger and state.ev_power > 100:
+        max_ac_output = max(0, int(state.mppt_total * efficiency) - solar_offset)
+        min_setpoint = -max_ac_output
+        if current_vanew < min_setpoint:
+            return min_setpoint, f"[NoEV:{max_ac_output}] "
+    return current_vanew, ""
 
 
-class LimitToEvStrategy(BaseStrategy):
+def limit_to_ev_strategy(
+    state: SystemState,
+    current_vanew: int,
+    *,
+    efficiency: float,
+    reserve: int = 500,
+) -> tuple[int, str]:
     """Export most solar to grid when EV is charging, keep reserve for battery"""
-
-    def __init__(self, efficiency: float, reserve: int = 500):
-        self.efficiency = efficiency
-        self.reserve = reserve
-
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        if not state.limit_to_ev:
-            return current_vanew, ""
-
-        ev_charging_detected = state.garage_power > 1000 or state.ev_power > 1000
-        if ev_charging_detected:
-            ac_output = int(state.mppt_total * self.efficiency)
-            export_power = max(0, ac_output - self.reserve)
-            return -export_power, f"[LimEV:{ac_output}-{self.reserve}] "
-
+    if not state.limit_to_ev:
         return current_vanew, ""
 
+    ev_charging_detected = state.garage_power > 1000 or state.ev_power > 1000
+    if ev_charging_detected:
+        ac_output = int(state.mppt_total * efficiency)
+        export_power = max(0, ac_output - reserve)
+        return -export_power, f"[LimEV:{ac_output}-{reserve}] "
 
-class NoFeedStrategy(BaseStrategy):
+    return current_vanew, ""
+
+
+def no_feed_strategy(
+    state: SystemState,
+    current_vanew: int,
+) -> tuple[int, str]:
     """Match Tasmota microinverter output exactly"""
-
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        if state.no_feed:
-            return int(state.tasmota_total), "[NF] "
-        return current_vanew, ""
+    if state.no_feed:
+        return int(state.tasmota_total), "[NF] "
+    return current_vanew, ""
 
 
-class HouseSupportStrategy(BaseStrategy):
+def house_support_strategy(
+    state: SystemState,
+    current_vanew: int,
+) -> tuple[int, str]:
     """Tasmota solar minus offset for house loads"""
-
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        if state.house_support:
-            return int(state.tasmota_total - 300), "[HS] "
-        return current_vanew, ""
+    if state.house_support:
+        return int(state.tasmota_total - 300), "[HS] "
+    return current_vanew, ""
 
 
-class ChargeBatteryStrategy(BaseStrategy):
+def charge_battery_strategy(
+    state: SystemState,
+    current_vanew: int,
+) -> tuple[int, str]:
     """Force battery charging at maximum rate"""
+    if state.charge_battery:
+        return 2200, "[CHG] "
+    return current_vanew, ""
 
-    def calculate(self, state: SystemState, current_vanew: int) -> tuple[int, str]:
-        if state.charge_battery:
-            return 2200, "[CHG] "
-        return current_vanew, ""
+
+# Strategy list in priority order (first = lowest priority)
+STRATEGIES: list[StrategyFn] = [
+    normal_strategy,
+    only_charging_strategy,
+    do_not_supply_charger_strategy,
+    limit_to_ev_strategy,
+    no_feed_strategy,
+    house_support_strategy,
+    charge_battery_strategy,
+]
 
 
 class SetpointCalculator:
@@ -233,29 +240,57 @@ class SetpointCalculator:
         self.d_gain = config.get("D_GAIN", 0.3)
         self.prev_effective_gt: float | None = None
 
-        # Strategies in priority order (as in main.py)
-        self.strategies = [
-            NormalStrategy(
-                config.get("DAMPING_FACTOR", 0.7),
-                config.get("GRID_ZERO_DEADBAND_LOW", -50),
-                config.get("GRID_ZERO_DEADBAND_HIGH", 80),
-                config.get("CREEP_RATE", 0.5),
-                config.get("CREEP_MAX", 100.0),
-                config.get("EXPORT_DAMPING", 1.0),
-            ),
-            OnlyChargingStrategy(
-                config.get("INVERTER_EFFICIENCY", 0.94),
-                config.get("SOLAR_OUTPUT_OFFSET", 60),
-            ),
-            DoNotSupplyChargerStrategy(
-                config.get("INVERTER_EFFICIENCY", 0.94),
-                config.get("SOLAR_OUTPUT_OFFSET", 60),
-            ),
-            LimitToEvStrategy(config.get("INVERTER_EFFICIENCY", 0.94)),
-            NoFeedStrategy(),
-            HouseSupportStrategy(),
-            ChargeBatteryStrategy(),
-        ]
+        # Normal strategy state (creep accumulator, etc.)
+        self._normal_state: dict = {}
+
+    # Backwards compatibility for tests - expose normal strategy state
+    @property
+    def strategies(self):
+        class MockNormalStrategy:
+            def __init__(self, state):
+                self._state = state
+
+            @property
+            def creep_accumulator(self):
+                return self._state.get("creep_accumulator", 0.0)
+
+            @creep_accumulator.setter
+            def creep_accumulator(self, value):
+                self._state["creep_accumulator"] = value
+
+            @property
+            def stable_count(self):
+                return self._state.get("stable_count", 0)
+
+            @stable_count.setter
+            def stable_count(self, value):
+                self._state["stable_count"] = value
+
+            @property
+            def deadband_low(self):
+                return self._state.get("deadband_low", -50)
+
+            @deadband_low.setter
+            def deadband_low(self, value):
+                self._state["deadband_low"] = value
+
+            @property
+            def deadband_high(self):
+                return self._state.get("deadband_high", 80)
+
+            @deadband_high.setter
+            def deadband_high(self, value):
+                self._state["deadband_high"] = value
+
+            @property
+            def creep_rate(self):
+                return self._state.get("creep_rate", 0.5)
+
+            @property
+            def creep_max(self):
+                return self._state.get("creep_max", 100.0)
+
+        return [MockNormalStrategy(self._normal_state)]
 
     def _apply_burst_correction(
         self, raw_vanew: int, effective_gt: float, old_filtered_gt: float | None
@@ -298,8 +333,42 @@ class SetpointCalculator:
         # Run strategies
         raw_vanew = state.previous_setpoint
         total_flags = ""
-        for strategy in self.strategies:
-            raw_vanew, flags = strategy.calculate(state, raw_vanew)
+        for strategy in STRATEGIES:
+            # Pass config params via kwargs for each strategy
+            if strategy is normal_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    damping_factor=self.config.get("DAMPING_FACTOR", 0.7),
+                    deadband_low=self.config.get("GRID_ZERO_DEADBAND_LOW", -50),
+                    deadband_high=self.config.get("GRID_ZERO_DEADBAND_HIGH", 80),
+                    creep_rate=self.config.get("CREEP_RATE", 0.5),
+                    creep_max=self.config.get("CREEP_MAX", 100.0),
+                    export_damping=self.config.get("EXPORT_DAMPING", 1.0),
+                    _state=self._normal_state,
+                )
+            elif strategy is only_charging_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
+                    solar_offset=self.config.get("SOLAR_OUTPUT_OFFSET", 60),
+                )
+            elif strategy is do_not_supply_charger_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
+                    solar_offset=self.config.get("SOLAR_OUTPUT_OFFSET", 60),
+                )
+            elif strategy is limit_to_ev_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
+                )
+            else:
+                raw_vanew, flags = strategy(state, raw_vanew)
             total_flags += flags
 
         # Apply corrections
