@@ -52,3 +52,6 @@ PLAN.md
 # Coverage
 .coverage
 *.cover
+
+# Agent memory files (e.g. CLAUDE.md)
+C*E.md

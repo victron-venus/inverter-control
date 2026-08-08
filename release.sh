@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 # Bump version file, tag, push, GitHub release, then fetch so reruns see the new tag.
+#
+# Notes:
+#   - release.txt (non-empty) must contain the release notes; it is cleared after a
+#     successful release so the next release starts fresh.
+#   - The test suite MUST pass before anything is tagged (we shipped broken releases
+#     before; this is the safety gate).
+#   - The GitHub release is created here via `gh`, and the Publish Release Assets
+#     workflow may also create/update it on tag push (attaches the PackageManager
+#     archive). Both are tolerated: an existing release is treated as OK.
 
 set -euo pipefail
 
@@ -21,14 +30,34 @@ cd "$SCRIPT_DIR"
 echo ">>> git fetch origin --tags"
 git fetch origin --tags
 
-if ! git diff-index --quiet HEAD --; then
-    echo "Error: uncommitted changes. Commit or stash first."
+# Require a clean tree: no staged/unstaged changes AND no untracked files
+# (git diff-index alone misses untracked files).
+if ! git diff-index --quiet HEAD -- || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "Error: uncommitted or untracked files. Commit, stash, or add them to .gitignore first."
+    git status --short
     exit 1
 fi
+
+# Safety gate: never release broken code.
+echo ">>> Running test suite..."
+python3 -m pytest -q
+echo "    Tests OK"
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [[ "$BRANCH" != "main" ]]; then
     read -p "Not on main (on $BRANCH). Continue? [y/N] " -n 1 -r
+    echo
+    [[ ${REPLY:-} =~ ^[Yy]$ ]] || exit 1
+fi
+
+# Warn if local HEAD is not in sync with origin/main
+LOCAL_HEAD=$(git rev-parse HEAD)
+REMOTE_HEAD=$(git rev-parse origin/main 2>/dev/null || echo "")
+if [ -n "$REMOTE_HEAD" ] && [ "$LOCAL_HEAD" != "$REMOTE_HEAD" ]; then
+    echo "Warning: local HEAD differs from origin/main:"
+    echo "  local : $LOCAL_HEAD"
+    echo "  remote: $REMOTE_HEAD"
+    read -p "Continue anyway? [y/N] " -n 1 -r
     echo
     [[ ${REPLY:-} =~ ^[Yy]$ ]] || exit 1
 fi
@@ -102,10 +131,23 @@ git push origin "$BRANCH"
 git push origin "$NEW_TAG"
 
 echo ">>> gh release create"
-gh release create "$NEW_TAG" --title "$NEW_TAG" --notes-file "$NOTES_FILE"
+if ! gh release create "$NEW_TAG" --title "$NEW_TAG" --notes-file "$NOTES_FILE"; then
+    # The Publish Release Assets workflow may already have created the release
+    # on tag push. Tolerate that instead of aborting mid-script.
+    if gh release view "$NEW_TAG" >/dev/null 2>&1; then
+        echo "    Release $NEW_TAG already exists (created by CI or a prior run) — skipping."
+    else
+        echo "Error: could not create release $NEW_TAG"
+        exit 1
+    fi
+fi
 
 echo ">>> git fetch origin --tags && git pull --ff-only"
 git fetch origin --tags
 git pull --ff-only origin "$BRANCH"
+
+# Clear release notes so the next release starts fresh (the script requires a non-empty file).
+: > "$NOTES_FILE"
+echo ">>> Cleared release.txt — write fresh notes for the next release"
 
 echo ">>> Done: $NEW_TAG"

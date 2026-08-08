@@ -32,12 +32,10 @@ python3 -m py_compile \
     "$SCRIPT_DIR/inverter_control/victron.py" \
     "$SCRIPT_DIR/inverter_control/homeassistant.py" \
     "$SCRIPT_DIR/inverter_control/mqtt_bridge.py" \
-    "$SCRIPT_DIR/inverter_control/ui_config.py" \
-    "$SCRIPT_DIR/inverter_control/keepalive.py" \
+    "$SCRIPT_DIR/inverter_control/dvcc.py" \
     "$SCRIPT_DIR/inverter_control/console_server.py" \
     "$SCRIPT_DIR/inverter_control/console_ui.py" \
-    "$SCRIPT_DIR/inverter_control/logic.py" \
-    "$SCRIPT_DIR/inverter_control/log_forwarder.py"
+    "$SCRIPT_DIR/inverter_control/logic.py"
 echo "    Syntax OK"
 
 # Create directories on remote
