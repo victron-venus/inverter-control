@@ -27,8 +27,11 @@ fi
 
 cd "$SCRIPT_DIR"
 
-echo ">>> git fetch origin --tags"
-git fetch origin --tags
+# --force: local tags may point at stale objects (e.g. after repo history
+# imports) and a plain fetch would exit non-zero on "would clobber existing
+# tag", aborting the script under set -e. Remote tags are authoritative.
+echo ">>> git fetch origin --tags --force"
+git fetch origin --tags --force
 
 # Require a clean tree: no staged/unstaged changes AND no untracked files
 # (git diff-index alone misses untracked files).
