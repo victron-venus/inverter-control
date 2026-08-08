@@ -41,8 +41,6 @@ site_config.py
 local_config.py
 
 LOGIC_RUS.md
-
-commit.sh
 commit.txt
 release.sh
 release.txt
