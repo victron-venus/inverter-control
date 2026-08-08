@@ -21,6 +21,93 @@ DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
 
+# =============================================================================
+# BATTERY SOC CALCULATION (ported from HA template sensors)
+# =============================================================================
+# This replaces the HA-based corrected_battery_soc calculation for independence.
+# Source: HA template sensor "Corrected Battery SOC" + compensation_sensor_battery_voltage
+
+# Polynomial coefficients for voltage -> SOC conversion (5th degree, highest first)
+# From: sensor.compensation_sensor_battery_voltage coefficients attribute
+# SOC = c0*V^5 + c1*V^4 + c2*V^3 + c3*V^2 + c4*V + c5
+BATTERY_VOLTAGE_TO_SOC_COEFFS = (
+    0.004273352289848183,   # V^5
+    -1.1946101528489494,    # V^4
+    131.15278553768547,     # V^3
+    -7086.612266200085,     # V^2
+    188790.53434597014,     # V^1
+    -1986209.3055883816,    # V^0 (constant)
+)
+
+# Battery parameters for load correction (Coulomb counting approximation)
+# From: HA template sensor "Corrected Battery SOC"
+BATTERY_CAPACITY_CHARGE_AH = 280.0    # Ah when charging
+BATTERY_CAPACITY_DISCHARGE_AH = 180.0 # Ah when discharging
+BATTERY_ROUNDTRIP_EFFICIENCY = 0.95   # 95%
+
+
+def _voltage_to_soc(voltage: float) -> float:
+    """
+    Convert battery voltage to SOC using 5th-degree polynomial.
+    Coefficients from HA compensation_sensor_battery_voltage.
+    """
+    try:
+        v = float(voltage)
+        # Clamp to reasonable voltage range for LiFePO4 (16S ~ 48V nominal)
+        if v < 40.0 or v > 58.4:
+            return 0.0
+        # Horner's method for polynomial evaluation
+        soc = BATTERY_VOLTAGE_TO_SOC_COEFFS[0]
+        for coeff in BATTERY_VOLTAGE_TO_SOC_COEFFS[1:]:
+            soc = soc * v + coeff
+        return max(0.0, min(100.0, soc))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _apply_load_correction(base_soc: float, power_w: float) -> float:
+    """
+    Apply load correction to SOC based on battery power.
+    Replicates HA template logic:
+    - Discharging (power < 0): voltage sags, actual SOC higher than voltage indicates
+    - Charging (power > 0): voltage rises, actual SOC lower than voltage indicates
+    - Correction = (power / capacity) * 100 * (1 - efficiency)
+    """
+    try:
+        p = float(power_w)
+        soc = float(base_soc)
+
+        if p < 0:  # Discharging
+            capacity = BATTERY_CAPACITY_DISCHARGE_AH
+            correction = (abs(p) / capacity) * 100.0 * (1.0 - BATTERY_ROUNDTRIP_EFFICIENCY)
+            return min(soc + correction, 100.0)
+        elif p > 0:  # Charging
+            capacity = BATTERY_CAPACITY_CHARGE_AH
+            correction = (p / capacity) * 100.0 * (1.0 - BATTERY_ROUNDTRIP_EFFICIENCY)
+            return max(soc - correction, 0.0)
+        else:
+            return soc
+    except (ValueError, TypeError):
+        return base_soc
+
+
+def calculate_battery_soc_from_voltage(voltage: float, power_w: float) -> float:
+    """
+    Calculate corrected battery SOC from voltage and power.
+    This is the local replacement for HA's corrected_battery_soc sensor.
+
+    Args:
+        voltage: Battery voltage in volts (from D-Bus Dc/Battery/Voltage)
+        power_w: Battery power in watts (from D-Bus Dc/Battery/Power,
+                 positive=charging, negative=discharging)
+
+    Returns:
+        SOC percentage (0-100)
+    """
+    base_soc = _voltage_to_soc(voltage)
+    corrected_soc = _apply_load_correction(base_soc, power_w)
+    return round(corrected_soc, 2)
+
 
 class VictronDBus:
     """
@@ -251,6 +338,22 @@ class VictronDBus:
             except (ValueError, TypeError) as e:
                 logger.debug("Inverter state parse failed: %s", e)
         return 0, "Unknown"
+
+    def get_battery_soc_local(self) -> float:
+        """
+        Calculate battery SOC locally from D-Bus voltage and power.
+        Replaces HA corrected_battery_soc sensor for independence.
+        Returns SOC percentage (0-100).
+        """
+        from inverter_control.victron import calculate_battery_soc_from_voltage
+
+        # Get voltage and power from system D-Bus (already available in get_system_data)
+        # We call get_system_data to get fresh values
+        sys_data = self.get_system_data()
+        voltage = sys_data.get("bv", 0.0)
+        power = sys_data.get("bp", 0)
+
+        return calculate_battery_soc_from_voltage(voltage, power)
 
     def get_inverter_power(self) -> int:
         """Get current inverter AC output power"""

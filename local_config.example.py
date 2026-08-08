@@ -46,7 +46,7 @@ HA_SENSORS = {
     "battery_in_yesterday": "sensor.your_battery_in_yesterday",
     "battery_out_yesterday": "sensor.your_battery_out_yesterday",
     "grid_kwh_today": "sensor.your_grid_kwh_today",
-    "corrected_soc": "sensor.your_corrected_soc",
+    # corrected_soc removed - now calculated locally from D-Bus voltage + power
     "compensation_voltage": "sensor.your_compensation_voltage",
     "tasmota_1_daily": "sensor.your_tasmota_1_daily",
     "tasmota_2_daily": "sensor.your_tasmota_2_daily",
