@@ -1,9 +1,11 @@
 ## What's Changed
-* feat: Handle NaN/Inf in MQTT and D-Bus float values by @vmedvedev in #67
-* feat: add DVCC calculator for SoC & cell temperature dynamic curves by @vmedvedev in #65
-* feat: hardware watchdog failsafe for inverter-control by @vmedvedev in #63
-* test: expand pytest suite with mock D-Bus and mock MQTT by @vmedvedev in #64
-* refactor: rename site_config.py → local_config.py by @vmedvedev in #62
-* chore: code quality, CI updates, security fixes, docs
 
-**Full Changelog**: https://github.com/victron-venus/inverter-control/compare/v1.18.6...v1.18.7
+**Hotfix for v1.18.7/v1.18.8 — the released code crashed on startup.**
+
+- fix: re-add `import signal` in `main.py` (removed by #68; caused `NameError: name 'signal' is not defined` on every start)
+- fix: restore `HardwareWatchdog` / `WatchdogTimeoutError` classes in `main.py` (deleted by #68 but still referenced)
+- fix: point `get_ui_config` import at `config.py` and drop the removed `DvccLimits` symbol (dvcc `calculate()` now returns a dict)
+- fix: restore `inverter_control/log_forwarder.py` and `tests/test_log_forwarder.py` (standalone daemontools service, was wrongly deleted as "unused")
+- fix: update `deploy.sh` py_compile file list after the module deletions
+- chore: `release.sh` safety gates — tests must pass, clean tree includes untracked files, tolerates CI-created releases, clears `release.txt` after success
+- chore: gitignore agent memory files (`C*E.md`)
