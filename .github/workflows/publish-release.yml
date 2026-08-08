@@ -30,6 +30,7 @@ jobs:
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
     - name: Create PackageManager archive
+      id: archive
       run: |
         PKG_NAME="inverter-control"
         VERSION="${{ steps.version.outputs.VERSION }}"
