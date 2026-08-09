@@ -22,6 +22,14 @@
 [![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![Victron Community](https://img.shields.io/badge/Victron-Community-blue)](https://community.victronenergy.com/)
 
+[![GitHub Stars](https://img.shields.io/github/stars/victron-venus/inverter-control?style=social)](https://github.com/victron-venus/inverter-control/stargazers)
+
+---
+
+⭐ **If this project helps you, please star it!** Stars help others discover it and motivate continued development.
+
+---
+
 Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
 ---
@@ -175,8 +183,8 @@ inverter-control/              # Git repo root
 HA_URL = "http://YOUR_HA_IP:8123"
 HA_TOKEN = "your_long_lived_access_token"
 
-# Victron Portal ID (from VRM)
-PORTAL_ID = "your_portal_id"
+# Victron Portal ID (VRM) is auto-detected at runtime
+# (/sbin/get-unique-id, fallback: eth0 MAC) — nothing to configure
 
 # Tasmota device IPs
 TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
