@@ -4,6 +4,9 @@ Inverter Control Configuration
 All configurable parameters in one place
 """
 
+import os
+import subprocess
+
 # =============================================================================
 # LOCAL CONFIG (imported from local_config.py - not tracked by git)
 # =============================================================================
@@ -17,7 +20,6 @@ try:
         HA_TOKEN,
         HA_URL,
         HA_WATER_VALVE,
-        PORTAL_ID,
         TASMOTA_IPS,
         VUE_SENSORS,
     )
@@ -26,7 +28,6 @@ except ImportError:
     print("WARNING: local_config.py not found! Copy local_config.example.py to local_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     HA_TOKEN = "your_token_here"
-    PORTAL_ID = "your_portal_id"
     TASMOTA_IPS = []
     HA_SENSORS = {}
     VUE_SENSORS = {}
@@ -122,7 +123,42 @@ DRY_RUN = False  # Live mode - sending commands to Victron
 # VICTRON SYSTEM
 # =============================================================================
 
-# PORTAL_ID imported from local_config.py
+# =============================================================================
+# VICTRON PORTAL ID (auto-detected, no config needed)
+# =============================================================================
+
+
+def _detect_portal_id() -> str:
+    """Resolve the VRM Portal ID at runtime.
+
+    Order of resolution:
+      1. /sbin/get-unique-id (official Venus OS utility; reads /data/venus/uniqueid)
+      2. eth0 MAC address, colons stripped (the classic VRM Portal ID definition)
+      3. PORTAL_ID environment variable (override for unusual hardware)
+      4. Placeholder stub, so non-Venus systems (tests, local dev) still work
+    """
+    try:
+        portal_id = subprocess.check_output(
+            ["/sbin/get-unique-id"], text=True, timeout=5
+        ).strip()
+        if portal_id:
+            return portal_id
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        with open("/sys/class/net/eth0/address", encoding="utf-8") as f:
+            portal_id = f.read().strip().replace(":", "").lower()
+            if portal_id:
+                return portal_id
+    except OSError:
+        pass
+    portal_id = os.environ.get("PORTAL_ID")
+    if portal_id:
+        return portal_id
+    return "your_portal_id"
+
+
+PORTAL_ID = _detect_portal_id()
 
 # Power limits for outlet protection (Watts)
 POWER_LIMIT_MAX = 2250  # Maximum feed-in (positive = charging battery)

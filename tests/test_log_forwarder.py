@@ -176,7 +176,7 @@ class TestLogForwarder:
                 for i in range(200):
                     f.write(f"line {i}\n")
 
-            lines, pos, inode = log_forwarder.read_new_lines(many_lines_file, 0, None)
+            lines, _, _ = log_forwarder.read_new_lines(many_lines_file, 0, None)
             assert len(lines) == log_forwarder.BATCH_SIZE
         finally:
             if os.path.exists(many_lines_file):

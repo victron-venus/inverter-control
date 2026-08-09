@@ -60,7 +60,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pip install --only-binary :all: "pytest==8.4.1" "pytest-cov==6.2.1"
+          pip install --only-binary :all: "pytest==8.4.1" "pytest-cov==6.2.1" "requests>=2.31" "paho-mqtt>=2.0.0"
           PYTHONPATH=. pytest tests/ -v
 
   validate-secrets-template:
@@ -78,13 +78,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Validate site_config.example.py syntax
-        run: python -m py_compile site_config.example.py
+      - name: Validate local_config.example.py syntax
+        run: python -m py_compile local_config.example.py
 
-      - name: Check site_config.example.py has no real values
+      - name: Check local_config.example.py has no real values
         run: |
-          if grep -E '(token|password|secret|key)\s*=\s*["\x27][^"\x27]{8,}' site_config.example.py | grep -v 'your_'; then
-            echo "ERROR: site_config.example.py may contain real values"
+          if grep -E '(token|password|secret|key)\s*=\s*["\x27][^"\x27]{8,}' local_config.example.py | grep -v 'your_'; then
+            echo "ERROR: local_config.example.py may contain real values"
             exit 1
           fi
-          echo "OK: site_config.example.py looks like a template"
+          echo "OK: local_config.example.py looks like a template"

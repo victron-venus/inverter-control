@@ -17,7 +17,8 @@ HA_TOKEN = "your_long_lived_access_token_here"
 # VICTRON
 # =============================================================================
 
-PORTAL_ID = "your_portal_id"
+# PORTAL_ID (VRM Portal ID) is auto-detected at runtime from /sbin/get-unique-id
+# (fallback: eth0 MAC address). No need to configure it here.
 
 # =============================================================================
 # TASMOTA DEVICES
