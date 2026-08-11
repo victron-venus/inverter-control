@@ -14,7 +14,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.5.0"]
+dev = [
+    "ruff>=0.5.0",
+    "pytest==8.4.1",
+    "pytest-cov==6.2.1",
+]
+test = []
 
 [tool.pylint.messages_control]
 disable = [
@@ -66,5 +71,5 @@ ignore = [
     "TRY401",  # Redundant exception in logging.exception (existing pattern)
     "SIM117",  # Nested with statements (test files, micro-optimization)
     "RUF015",  # next(iter()) vs slice (test readability)
-    "PERF402", # list.append vs list comprehension (test readability)
+    "PERF402",  # list.append vs list comprehension (test readability)
 ]
