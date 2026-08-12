@@ -75,7 +75,7 @@ class TestInverterStates:
     def test_inverter_states_dict(self):
         """Test INVERTER_STATES contains expected keys"""
         expected_states = {
-            0: "Of",
+            0: "Off",
             1: "Low Power",
             2: "Fault",
             3: "Bulk",

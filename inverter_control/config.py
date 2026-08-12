@@ -289,7 +289,7 @@ DVCC_CELLS_PER_BMS = 4  # Cells per BMS module
 # =============================================================================
 
 INVERTER_STATES = {
-    0: "Of",
+    0: "Off",
     1: "Low Power",
     2: "Fault",
     3: "Bulk",
