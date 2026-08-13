@@ -54,3 +54,6 @@ PLAN.md
 
 # Agent memory files (e.g. CLAUDE.md)
 C*E.md
+
+# Agent MCP config (local, machine-specific)
+.mcp.json
