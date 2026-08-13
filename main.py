@@ -141,9 +141,13 @@ class HardwareWatchdog:
     """
     Hardware watchdog for Victron ESS setpoint safety.
 
-    Monitors telemetry freshness (D-Bus + MQTT). If no updates for timeout seconds,
-    forces ESS setpoint to 0W (pass-through/fallback mode) to prevent uncontrolled
-    grid export/import if the control loop stalls or crashes.
+    Monitors setpoint-write liveness (D-Bus + MQTT). If the control loop stops
+    writing grid setpoints for timeout seconds, forces ESS setpoint to 0W
+    (pass-through/fallback mode) to prevent uncontrolled grid export/import if
+    the control loop stalls or crashes.
+
+    Trigger is based on the actual setpoint writes, not telemetry reads, so a
+    slow-but-alive loop is never mistaken for a crash.
 
     Runs as a daemon thread checking heartbeat every second.
     """
@@ -163,6 +167,7 @@ class HardwareWatchdog:
         self._get_setpoint = get_setpoint
         self._last_dbus_update = 0.0
         self._last_mqtt_update = 0.0
+        self._last_setpoint_update = 0.0
         self._enabled = False
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -182,6 +187,11 @@ class HardwareWatchdog:
         with self._lock:
             self._last_mqtt_update = time.time()
 
+    def mark_setpoint_update(self):
+        """Call every time a grid setpoint is written to the inverter"""
+        with self._lock:
+            self._last_setpoint_update = time.time()
+
     def start(self):
         """Start the watchdog monitoring thread"""
         if self._enabled:
@@ -195,6 +205,7 @@ class HardwareWatchdog:
         now = time.time()
         self._last_dbus_update = now
         self._last_mqtt_update = now
+        self._last_setpoint_update = now
         self._thread = threading.Thread(target=self._run, name="hardware-watchdog", daemon=True)
         self._thread.start()
 
@@ -213,19 +224,26 @@ class HardwareWatchdog:
             self._check_heartbeat()
 
     def _check_heartbeat(self):
-        """Check if telemetry is stale and trigger failsafe if needed"""
+        """Check if the control loop is alive and trigger failsafe if not"""
+        # In dry-run no setpoints are written, so liveness cannot be judged
+        if self.dry_run:
+            return
         now = time.time()
         with self._lock:
+            setpoint_age = now - self._last_setpoint_update
             dbus_age = now - self._last_dbus_update
             mqtt_age = now - self._last_mqtt_update
 
-        # Trigger if BOTH D-Bus and MQTT are stale (control loop stopped)
-        stale = dbus_age > self.timeout_seconds and mqtt_age > self.timeout_seconds
+        # The loop is healthy as long as it keeps writing setpoints (even if
+        # slowly). Only force the failsafe when BOTH the setpoint writes and
+        # D-Bus telemetry have been silent for the full timeout, i.e. the
+        # control loop has genuinely stalled or crashed.
+        stale = setpoint_age > self.timeout_seconds and dbus_age > self.timeout_seconds
 
         if stale and not self._triggered:
             self._triggered = True
             self._apply_failsafe()
-        elif stale and self._triggered and not self.dry_run and not self._hardware_forced:
+        elif stale and self._triggered and not self._hardware_forced:
             self._apply_failsafe()
         elif not stale and self._triggered:
             self._recover_from_failsafe()
@@ -270,6 +288,7 @@ class HardwareWatchdog:
             "enabled": self._enabled,
             "triggered": self._triggered,
             "hardware_forced": self._hardware_forced,
+            "setpoint_age": round(time.time() - self._last_setpoint_update, 1),
             "dbus_age": round(time.time() - self._last_dbus_update, 1),
             "mqtt_age": round(time.time() - self._last_mqtt_update, 1),
             "timeout_seconds": self.timeout_seconds,
@@ -444,6 +463,10 @@ class InverterController:
         tasmota_powers = self.victron.get_tasmota_pv_power()
         tasmota_total = sum(tasmota_powers)
 
+        # Cache these reads so update_state doesn't re-query D-Bus this cycle
+        self._cached_mppt_data = mppt_data
+        self._cached_tasmota_powers = tasmota_powers
+
         state = SystemState(
             g1=sys_data["g1"],
             g2=sys_data["g2"],
@@ -502,14 +525,14 @@ class InverterController:
 
     def _get_cached_batteries(self) -> list:
         now = time.time()
-        if now - self._last_batteries_time > 5:
+        if now - self._last_batteries_time > 10:
             self._cached_batteries = self.victron.get_all_batteries()
             self._last_batteries_time = now
         return self._cached_batteries
 
     def _get_cached_mppt_chargers(self) -> list:
         now = time.time()
-        if now - self._last_chargers_time > 5:
+        if now - self._last_chargers_time > 10:
             self._cached_mppt_chargers = self.victron.get_mppt_chargers()
             self._last_chargers_time = now
         return self._cached_mppt_chargers
@@ -575,8 +598,7 @@ class InverterController:
         }
 
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
-        self._cached_mppt_data = self.victron.get_mppt_data()
-        self._cached_tasmota_powers = self.victron.get_tasmota_pv_power()
+        # mppt/tasmota data was already read this cycle in calculate_setpoint
         self._cached_battery_socs = self.victron.get_battery_chain_socs()
         _, self._cached_inv_state = self.victron.get_inverter_state()
 
@@ -610,7 +632,7 @@ class InverterController:
             "battery_power": sys_data.get("bp", 0),
             "battery_voltage": sys_data.get("bv", 0),
             "battery_current": sys_data.get("bc", 0),
-            "battery_soc": sys_data.get("soc", 0) or self.victron.get_battery_soc_local(),
+            "battery_soc": sys_data.get("soc", 0) or self.victron.get_battery_soc_local(sys_data),
             "daily_stats": self._get_daily_stats(),
             "limits": {"min": self.power_limit_min, "max": self.power_limit_max},
             "loop_interval": self.loop_interval,
@@ -661,6 +683,8 @@ class InverterController:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
             else:
                 self.victron.set_grid_setpoint(setpoint)
+                # Mark setpoint-write liveness for the hardware watchdog
+                self._watchdog.mark_setpoint_update()
 
             print(f"\033k{sys_data['gt']}\033\\", end="")
 

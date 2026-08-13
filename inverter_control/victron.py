@@ -126,6 +126,10 @@ class VictronDBus:
         self._last_scan_time: float = 0
         self._last_success_time: float = 0
         self._dbus_lock = threading.Lock()
+        # ESS mode rarely changes; cache it so the per-cycle dashboard read
+        # doesn't cost 2 D-Bus roundtrips every loop.
+        self._ess_mode_cache: dict[str, Any] | None = None
+        self._ess_mode_cache_time: float = 0.0
         # Cache of discovered cell counts per chain service, so we don't probe
         # up to 16 cells every cycle once the real count is known.
         self._chain_cell_counts: dict[str, int] = {}
@@ -339,17 +343,19 @@ class VictronDBus:
                 logger.debug("Inverter state parse failed: %s", e)
         return 0, "Unknown"
 
-    def get_battery_soc_local(self) -> float:
+    def get_battery_soc_local(self, sys_data: dict[str, Any] | None = None) -> float:
         """
         Calculate battery SOC locally from D-Bus voltage and power.
         Replaces HA corrected_battery_soc sensor for independence.
         Returns SOC percentage (0-100).
+
+        Pass the sys_data dict already fetched by get_system_data() in the
+        control loop to avoid an extra full D-Bus tree read every cycle.
         """
         from inverter_control.victron import calculate_battery_soc_from_voltage
 
-        # Get voltage and power from system D-Bus (already available in get_system_data)
-        # We call get_system_data to get fresh values
-        sys_data = self.get_system_data()
+        if sys_data is None:
+            sys_data = self.get_system_data()
         voltage = sys_data.get("bv", 0.0)
         power = sys_data.get("bp", 0)
 
@@ -466,6 +472,11 @@ class VictronDBus:
         - mode_name: Human readable name
         - is_external: True if External control mode
         """
+        now = time.time()
+        with self._dbus_lock:
+            if self._ess_mode_cache is not None and now - self._ess_mode_cache_time < 5.0:
+                return dict(self._ess_mode_cache)
+
         hub4_mode = 0
         bl_state = 0
 
@@ -503,12 +514,16 @@ class VictronDBus:
             mode_name = f"Unknown ({hub4_mode})"
             is_external = False
 
-        return {
+        result = {
             "hub4_mode": hub4_mode,
             "battery_life_state": bl_state,
             "mode_name": mode_name,
             "is_external": is_external,
         }
+        with self._dbus_lock:
+            self._ess_mode_cache = result
+            self._ess_mode_cache_time = now
+        return result
 
     def set_ess_mode(self, external: bool) -> bool:
         """Set ESS mode
@@ -520,16 +535,22 @@ class VictronDBus:
         """
         if external:
             # External control: Hub4Mode = 3
-            return self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32")
-        # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
-        success1 = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32")
-        success2 = self._dbus_set(
-            SETTINGS_SERVICE,
-            "/Settings/CGwacs/BatteryLife/State",
-            0,
-            "int32",
-        )
-        return success1 and success2
+            result = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32")
+        else:
+            # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
+            success1 = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32")
+            success2 = self._dbus_set(
+                SETTINGS_SERVICE,
+                "/Settings/CGwacs/BatteryLife/State",
+                0,
+                "int32",
+            )
+            result = success1 and success2
+        # Invalidate the ESS mode cache so the next read is fresh
+        with self._dbus_lock:
+            self._ess_mode_cache = None
+            self._ess_mode_cache_time = 0.0
+        return result
 
     def _get_float(self, service: str, path: str) -> float:
         """Read a D-Bus path and return its float value, or 0.0 on failure."""
