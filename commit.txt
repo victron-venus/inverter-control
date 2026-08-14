@@ -1,5 +1,8 @@
-Docs: Update README with consistent ecosystem cross-links
+chore: improve deployment, watchdog and logging
 
-- Synchronize Related Projects section across all repositories
-- Correct terraform-github-victron naming and links
-- Professionalize project descriptions for portfolio visibility
+- Reuse auto-approve workflow from venus-os-ci-toolkit
+- Add documentation for dbus-esphome-grid-sensor grid metering option
+- Enhance deploy.sh to handle log-forwarder and watchdog services
+- Add watchdog heartbeat file and force-exit timer in main.py
+- Switch log service to multilog for better rotation
+- Change watchdog to use svc -k for more reliable restarts

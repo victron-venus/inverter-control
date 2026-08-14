@@ -781,6 +781,9 @@ def _run_main_loop(controller, mqtt_bridge):
     # Use /run for runtime files (cleared on reboot, secure)
     heartbeat_dir = "/run/inverter-control"
     heartbeat_file = f"{heartbeat_dir}/heartbeat"
+    # Also mirror to /tmp for the external watchdog service
+    # (services/watchdog/run) which checks /tmp/inverter-control.heartbeat
+    watchdog_heartbeat_file = "/tmp/inverter-control.heartbeat"
 
     # Start the hardware watchdog just before entering the loop, so slow
     # startup work above doesn't get mistaken for a stalled control loop.
@@ -800,6 +803,8 @@ def _run_main_loop(controller, mqtt_bridge):
             # Write heartbeat for watchdog
             try:
                 with open(heartbeat_file, "w", encoding="utf-8") as f:
+                    f.write(str(int(time.time())))
+                with open(watchdog_heartbeat_file, "w", encoding="utf-8") as f:
                     f.write(str(int(time.time())))
             except OSError:
                 pass  # Ignore if heartbeat fails
@@ -868,6 +873,9 @@ def signal_handler(signum, frame):
     }
     sig_name = sig_names.get(signum, f"signal {signum}")
     logger.warning(f"Received {sig_name} - shutting down")
+    # Force-exit watchdog: if graceful shutdown blocks (e.g., full log pipe
+    # or stuck MQTT socket), make sure the supervisor can still restart us.
+    threading.Timer(10.0, os._exit, args=(0,)).start()
     sys.exit(0)
 
 

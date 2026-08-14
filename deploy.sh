@@ -60,6 +60,22 @@ scp -q "$SCRIPT_DIR/service/log-forwarder/run" "$SSH_HOST:$INSTALL_DIR/service/l
 ssh "$SSH_HOST" "chmod +x $INSTALL_DIR/service/log-forwarder/run"
 ssh "$SSH_HOST" "ln -sf $INSTALL_DIR/service/log-forwarder /service/ 2>/dev/null || true"
 
+# Copy main service
+echo ">>> Setting up inverter-control service..."
+ssh "$SSH_HOST" "mkdir -p $INSTALL_DIR/service/inverter-control/log"
+scp -q "$SCRIPT_DIR/services/inverter-control/run" "$SSH_HOST:$INSTALL_DIR/service/inverter-control/"
+scp -q "$SCRIPT_DIR/services/inverter-control/log/run" "$SSH_HOST:$INSTALL_DIR/service/inverter-control/log/"
+ssh "$SSH_HOST" "chmod +x $INSTALL_DIR/service/inverter-control/run $INSTALL_DIR/service/inverter-control/log/run"
+ssh "$SSH_HOST" "mkdir -p /var/log/inverter-control"
+ssh "$SSH_HOST" "ln -sf $INSTALL_DIR/service/inverter-control /service/ 2>/dev/null || true"
+
+# Copy watchdog service
+echo ">>> Setting up watchdog service..."
+ssh "$SSH_HOST" "mkdir -p $INSTALL_DIR/service/watchdog"
+scp -q "$SCRIPT_DIR/services/watchdog/run" "$SSH_HOST:$INSTALL_DIR/service/watchdog/"
+ssh "$SSH_HOST" "chmod +x $INSTALL_DIR/service/watchdog/run"
+ssh "$SSH_HOST" "ln -sf $INSTALL_DIR/service/watchdog /service/ 2>/dev/null || true"
+
 # Migrate old secrets.py to local_config.py if present
 ssh "$SSH_HOST" "if [ -f $INSTALL_DIR/secrets.py ] && [ ! -f $INSTALL_DIR/local_config.py ]; then
     mv $INSTALL_DIR/secrets.py $INSTALL_DIR/local_config.py
@@ -90,13 +106,31 @@ ssh "$SSH_HOST" "rm -f \\
     $INSTALL_DIR/console_server.py \\
     $INSTALL_DIR/inverter_control/log-forwarder.py"
 
+# Stop services BEFORE touching the log dir. Deleting /var/log/inverter-control
+# under a running multilog wedges it in a "unable to rename current" error loop
+# that stops it draining stdin; main.py's stdout pipe then fills and the control
+# loop deadlocks in pipe_write (heartbeat stops, dashboard goes stale).
+echo ">>> Stopping services..."
+ssh "$SSH_HOST" "svc -dk /service/inverter-control/log 2>/dev/null || true"
+ssh "$SSH_HOST" "svc -dk /service/inverter-control 2>/dev/null || true"
+ssh "$SSH_HOST" "svc -dk /service/log-forwarder 2>/dev/null || true"
+ssh "$SSH_HOST" "svc -dk /service/watchdog 2>/dev/null || true"
+sleep 1
+
+# Reset log dir for multilog (svlogd output from older Venus is incompatible)
+echo ">>> Preparing log directory..."
+ssh "$SSH_HOST" "rm -rf /var/log/inverter-control && mkdir -p /var/log/inverter-control"
+
 # Restart PackageManager to discover package
 echo ">>> Restarting PackageManager..."
 ssh "$SSH_HOST" "svc -t /service/PackageManager 2>/dev/null || true"
 
-# Restart service
-echo ">>> Restarting service..."
-ssh "$SSH_HOST" "svc -t /service/inverter-control 2>/dev/null || true"
+# Bring services back up (svc -d only marks them down; svc -u starts them)
+echo ">>> Restarting services..."
+ssh "$SSH_HOST" "svc -u /service/inverter-control/log 2>/dev/null || true"
+ssh "$SSH_HOST" "svc -u /service/inverter-control 2>/dev/null || true"
+ssh "$SSH_HOST" "svc -u /service/log-forwarder 2>/dev/null || true"
+ssh "$SSH_HOST" "svc -u /service/watchdog 2>/dev/null || true"
 
 # Wait and check status
 sleep 2

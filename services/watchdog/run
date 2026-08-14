@@ -106,7 +106,7 @@ check_service() {
         # Restart service
         log "INFO: restarting $service"
         record_restart "$service"
-        svc -t "$svc_dir" 2>/dev/null || true
+        svc -k "$svc_dir" 2>/dev/null || true
     fi
 }
 
