@@ -6,7 +6,7 @@ on:
       pr-author:
         description: 'PR author to auto-approve (comma-separated)'
         type: string
-        default: 'dependabot[bot],renovate[bot]'
+        default: 'dependabot[bot],renovate[bot],4alvit'
       required-reviews:
         description: 'Number of required approvals'
         type: string
@@ -20,16 +20,10 @@ on:
         required: true
 jobs:
   auto-approve:
-    name: Auto Approve
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Auto Approve
-        uses: hmarr/auto-approve-action@v4
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          pr-author: ${{ inputs.pr-author }}
-          required-reviews: ${{ inputs.required-reviews }}
-          pr-types: ${{ inputs.pr-types }}
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-approve.yml@875762362bb31b4899bf02fdf9e835188dc5eb80
+    with:
+      pr-author: ${{ inputs.pr-author }}
+      required-reviews: ${{ inputs.required-reviews }}
+      pr-types: ${{ inputs.pr-types }}
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
