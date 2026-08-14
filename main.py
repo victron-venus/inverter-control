@@ -781,9 +781,9 @@ def _run_main_loop(controller, mqtt_bridge):
     # Use /run for runtime files (cleared on reboot, secure)
     heartbeat_dir = "/run/inverter-control"
     heartbeat_file = f"{heartbeat_dir}/heartbeat"
-    # Also mirror to /tmp for the external watchdog service
-    # (services/watchdog/run) which checks /tmp/inverter-control.heartbeat
-    watchdog_heartbeat_file = "/tmp/inverter-control.heartbeat"
+    # Also mirror in the same directory for the external watchdog service
+    # (services/watchdog/run) which checks {heartbeat_dir}/inverter-control.heartbeat
+    watchdog_heartbeat_file = f"{heartbeat_dir}/inverter-control.heartbeat"
 
     # Start the hardware watchdog just before entering the loop, so slow
     # startup work above doesn't get mistaken for a stalled control loop.

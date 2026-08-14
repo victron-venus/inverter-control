@@ -21,7 +21,7 @@ WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-60}"
 WATCHDOG_MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-3}"
 WATCHDOG_WINDOW="${WATCHDOG_WINDOW:-300}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-/var/log/watchdog.log}"
-HB_DIR="/tmp"
+HB_DIR="/run/inverter-control"
 
 # Services to monitor: name -> heartbeat file
 SERVICES="${SERVICES:-inverter-control mqtt-battery tasmota-pv}"
