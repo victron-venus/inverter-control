@@ -34,7 +34,7 @@ jobs:
         with:
           timeout: 600
           interval: 10
-          check-names: |
+          match_pattern: |
             CI
             Python Security Scan
 
