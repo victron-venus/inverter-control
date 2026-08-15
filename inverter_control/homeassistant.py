@@ -33,6 +33,7 @@ from .config import (
     HA_WATER_VALVE,
     VUE_SENSORS,
 )
+from .dbus import VUESensorDBusClient
 
 logger = logging.getLogger("inverter-control")
 
@@ -101,6 +102,9 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._laundry_outlet: bool = False
         self._home_recliner: bool = False
         self._home_garage: bool = False
+
+        # D-Bus client for VUE sensors (if available)
+        self._vue_dbust_client = VUESensorDBusClient(VUE_SENSORS)
 
         # Connection status
         self._connected = False
@@ -241,13 +245,16 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             time.sleep(HA_POLL_INTERVAL)
 
     def _poll_all(self):
-        """Poll all entities from HA"""
+        """Poll all entities from HA and dbus for VUE sensors"""
         data = self._fetch_template_data()
 
         with self._lock:
             self._parse_sensors(data)
             self._parse_boolean_sensors(data)
             self._parse_switches(data)
+
+            # Update VUE sensors from dbus services if available
+            self._vue_dbust_client.update_all(self._vue_sensors)
 
     def _fetch_template_data(self) -> dict:
         """Fetch all entity data via template API"""
@@ -283,10 +290,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                     data[key] if key in duration_sensors else self._parse_numeric(data[key])
                 )
 
-        for key in VUE_SENSORS:
-            if key in data:
-                self._vue_sensors[key] = self._parse_numeric(data[key])
-
+        
     def _parse_boolean_sensors(self, data: dict):
         """Parse boolean and binary sensor states"""
         for key in HA_BOOLEANS:
@@ -339,8 +343,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             if key not in skip_sensors:
                 items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
-        for key, entity in VUE_SENSORS.items():
-            items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
         for key, entity in HA_BOOLEANS.items():
             items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')

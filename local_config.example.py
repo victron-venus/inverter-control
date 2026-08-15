@@ -58,15 +58,13 @@ HA_SENSORS = {
 }
 
 # =============================================================================
-# VUE POWER SENSORS
+# VUE POWER SENSORS (Deprecated - Auto-discovered via D-Bus acload services)
 # =============================================================================
+# Emporia Vue channels registered by dbus-emporia-vue (com.victronenergy.acload.*)
+# are automatically discovered on Venus OS D-Bus. No manual configuration needed.
+# Optional override mapping (key -> custom_name) if custom key names are desired:
 
-VUE_SENSORS = {
-    "garage": "sensor.your_garage",
-    "ev_charger": "sensor.your_ev_charger",
-    "fridge": "sensor.your_fridge",
-    # Add more circuits as needed
-}
+VUE_SENSORS = {}
 
 # =============================================================================
 # HOME ASSISTANT CONTROL ENTITIES

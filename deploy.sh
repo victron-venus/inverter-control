@@ -32,6 +32,7 @@ python3 -m py_compile \
     "$SCRIPT_DIR/inverter_control/victron.py" \
     "$SCRIPT_DIR/inverter_control/homeassistant.py" \
     "$SCRIPT_DIR/inverter_control/mqtt_bridge.py" \
+    "$SCRIPT_DIR/inverter_control/dbus.py" \
     "$SCRIPT_DIR/inverter_control/dvcc.py" \
     "$SCRIPT_DIR/inverter_control/console_server.py" \
     "$SCRIPT_DIR/inverter_control/console_ui.py" \
