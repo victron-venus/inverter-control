@@ -15,106 +15,108 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
+    - name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      with:
+        egress-policy: audit
 
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0  # Needed for changelog generation
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0  # Needed for changelog generation
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    - name: Get version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Create PackageManager archive
-        id: archive
-        run: |
-          PKG_NAME="inverter-control"
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          ARCHIVE="${PKG_NAME}-${VERSION}.tar.gz"
-          ARCHIVE_DIR="${PKG_NAME}"
+    - name: Create PackageManager archive
+      id: archive
+      run: |
+        PKG_NAME="inverter-control"
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        ARCHIVE="${PKG_NAME}-${VERSION}.tar.gz"
+        ARCHIVE_DIR="${PKG_NAME}"
 
-          # Create package directory
-          rm -rf "$ARCHIVE_DIR"
-          mkdir -p "$ARCHIVE_DIR"
+        # Create package directory
+        rm -rf "$ARCHIVE_DIR"
+        mkdir -p "$ARCHIVE_DIR"
 
-          # Copy files needed for PackageManager installation
-          cp main.py "$ARCHIVE_DIR/"
-          cp -r inverter_control "$ARCHIVE_DIR/"
-          cp version gitHubInfo setup "$ARCHIVE_DIR/" 2>/dev/null || true
+        # Copy files needed for PackageManager installation
+        cp main.py "$ARCHIVE_DIR/"
+        cp -r inverter_control "$ARCHIVE_DIR/"
+        cp version gitHubInfo setup "$ARCHIVE_DIR/" 2>/dev/null || true
 
-          # Create tarball
-          tar -czf "$ARCHIVE" "$ARCHIVE_DIR/"
+        # Create tarball
+        tar -czf "$ARCHIVE" "$ARCHIVE_DIR/"
 
-          echo "ARCHIVE=${ARCHIVE}" >> $GITHUB_OUTPUT
-          rm -rf "$ARCHIVE_DIR"
+        echo "ARCHIVE=${ARCHIVE}" >> $GITHUB_OUTPUT
+        rm -rf "$ARCHIVE_DIR"
 
-      - name: Update CHANGELOG.md
-        if: env.CHANGELOG == 'true'
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          TEMP_FILE=$(mktemp)
+    - name: Update CHANGELOG.md
+      if: env.CHANGELOG == 'true'
+      run: |
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        TEMP_FILE=$(mktemp)
 
-          # Get the tag date
-          TAG_DATE=$(git log -1 --format=%ci --date=short -- "${GITHUB_REF#refs/tags/}")
+        # Get the tag date
+        TAG_DATE=$(git log -1 --format=%ci --date=short -- "${GITHUB_REF#refs/tags/}")
 
-          # Create changelog entry header from release notes
+        # Create changelog entry header from release notes
+        {
+          echo "## [$VERSION] - $TAG_DATE"
+          echo ""
+          cat release.txt
+          echo ""
+        } > "$TEMP_FILE"
+
+        # Prepend to CHANGELOG.md if it exists
+        if [ -f CHANGELOG.md ]; then
+          # Skip existing header if already present
+          tail -n +6 CHANGELOG.md >> "$TEMP_FILE" 2>/dev/null || true
+        else
+          # Create new CHANGELOG.md from scratch
           {
-            echo "## [$VERSION] - $TAG_DATE"
+            echo "# Changelog"
             echo ""
-            cat release.txt
+            echo "All notable changes to this project will be documented in this file."
+            echo ""
+            echo "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),"
+            echo "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)."
             echo ""
           } > "$TEMP_FILE"
+          tail -n +1 CHANGELOG.md >> "$TEMP_FILE" 2>/dev/null || true
+        fi
 
-          # Prepend to CHANGELOG.md if it exists
-          if [ -f CHANGELOG.md ]; then
-            # Skip existing header if already present
-            tail -n +6 CHANGELOG.md >> "$TEMP_FILE" 2>/dev/null || true
-          else
-            # Create new CHANGELOG.md from scratch
-            {
-              echo "# Changelog"
-              echo ""
-              echo "All notable changes to this project will be documented in this file."
-              echo ""
-              echo "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),"
-              echo "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)."
-              echo ""
-            } > "$TEMP_FILE"
-            tail -n +1 CHANGELOG.md >> "$TEMP_FILE" 2>/dev/null || true
-          fi
+        mv "$TEMP_FILE" CHANGELOG.md
 
-          mv "$TEMP_FILE" CHANGELOG.md
+    - name: Detect Prerelease
+      id: detect
+      run: |
+        TAG="${GITHUB_REF#refs/tags/}"
+        if [[ "$TAG" =~ -(alpha|beta|rc)\.[0-9]+ || "$TAG" =~ - ]]; then
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
 
-      - name: Detect Prerelease
-        id: detect
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [[ "$TAG" =~ -(alpha|beta|rc)\.[0-9]+ || "$TAG" =~ - ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-          fi
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+      with:
+        body_path: release.txt
+        draft: false
+        prerelease: ${{ steps.detect.outputs.is_prerelease == 'true' }}
+        files: |
+          ${{ steps.archive.outputs.ARCHIVE }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub Release
-        uses: victron-venus/venus-os-ci-toolkit/.github/workflows/release.yml@98ef67a92a659c1b4633279961ed2bc704a506e2
-        with:
-          skip-checkout: true
-          body-file: release.txt
-          generate-notes: false
-          prerelease: ${{ steps.detect.outputs.is_prerelease == 'true' }}
-        secrets:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Commit updated CHANGELOG.md
-        if: env.CHANGELOG == 'true'
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add CHANGELOG.md
-          # Only commit if there are changes (file existed and was updated)
-          git diff --staged --quiet || git commit -m "docs: update CHANGELOG.md for ${{ steps.version.outputs.VERSION }}"
-          git push
+    - name: Commit updated CHANGELOG.md
+      if: env.CHANGELOG == 'true'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add CHANGELOG.md
+        # Only commit if there are changes (file existed and was updated)
+        git diff --staged --quiet || git commit -m "docs: update CHANGELOG.md for ${{ steps.version.outputs.VERSION }}"
+        git push
