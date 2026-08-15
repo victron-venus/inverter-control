@@ -6,7 +6,7 @@ on:
       pr-author:
         description: 'PR author to auto-approve (comma-separated)'
         type: string
-        default: 'dependabot[bot],renovate[bot]'
+        default: 'dependabot[bot],renovate[bot],4alvit'
       required-reviews:
         description: 'Number of required approvals'
         type: string

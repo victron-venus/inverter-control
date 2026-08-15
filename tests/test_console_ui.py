@@ -199,7 +199,7 @@ class TestConsoleUIEdgeCases:
         self.mock_ha.get_binary_sensor.return_value = False
         self.mock_ha.water_valve_on = False
         self.mock_ha.pump_switch_on = False
-        self.mock_victron.get_inverter_state.return_value = (0, "Of")
+        self.mock_victron.get_inverter_state.return_value = (0, "Off")
 
         self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron)
 

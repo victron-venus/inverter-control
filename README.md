@@ -407,6 +407,20 @@ Official Victron solutions like **VM-3P75CT** (3-phase CT meter):
   - Requires Ethernet cable to electrical panel (often in garage)
   - Reports instantaneous values which can make control loop less stable than averaged readings
 
+### dbus-esphome-grid-sensor
+
+ESP32-based CT sensor with D-Bus service that registers as a standard `com.victronenergy.grid` device in Venus OS.
+- **Pros**:
+  - ~$25 DIY cost
+  - Native D-Bus integration (no additional software needed)
+  - Open source, calibratable with known load
+  - ESPHome firmware (OTA updates, WiFi fallback, MQTT discovery)
+  - Docker deployment available for Venus OS
+- **Cons**:
+  - ±2-5% accuracy (suitable for grid-zero control)
+  - Requires ESP32 + CT sensor hardware assembly
+  - Single phase only (L1) - for split-phase you need two sensors or a 2CT version
+
 ### Practical Recommendation
 
 For most setups, **Shelly with CT clamp** offers the best balance:

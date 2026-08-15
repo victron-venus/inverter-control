@@ -1,2 +1,2 @@
 #!/bin/sh
-exec svlogd -tt /var/log/inverter-control
+exec multilog t s25000 n4 /var/log/inverter-control
