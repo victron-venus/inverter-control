@@ -232,7 +232,6 @@ class HardwareWatchdog:
         with self._lock:
             setpoint_age = now - self._last_setpoint_update
             dbus_age = now - self._last_dbus_update
-            mqtt_age = now - self._last_mqtt_update
 
         # The loop is healthy as long as it keeps writing setpoints (even if
         # slowly). Only force the failsafe when BOTH the setpoint writes and

@@ -1,11 +1,23 @@
 """D-Bus client for VUE sensors from dbus-emporia-vue service."""
 
+import importlib
 import logging
 import re
 import subprocess
 from typing import Any
 
 logger = logging.getLogger("inverter-control")
+
+
+def _import_dbus() -> tuple[Any, Any] | tuple[None, None]:
+    """Return the BusType and MessageBus classes from the first available library."""
+    for library in ("dbus_fast", "dbus_next"):
+        try:
+            module = importlib.import_module(library)
+            return module.BusType, module.MessageBus
+        except (ImportError, AttributeError):
+            continue
+    return None, None
 
 
 class VUESensorDBusClient:
@@ -30,41 +42,14 @@ class VUESensorDBusClient:
         for key, expected_name in self._vue_sensor_mapping.items():
             if str(expected_name) == custom_name:
                 return key
-        slug = re.sub(r'[^a-zA-Z0-9_]', '', custom_name.lower().replace(' ', '_'))
+        slug = re.sub(r'\W', '', custom_name.lower().replace(' ', '_'))
         return slug or "acload"
 
     def _setup_dbus(self) -> None:
         """Set up D-Bus connection or service mapping."""
-        # Try dbus-fast / dbus-next first
-        try:
-            from dbus_fast import BusType, MessageBus
-        except ImportError:
-            try:
-                from dbus_next import BusType, MessageBus
-            except ImportError:
-                BusType = None
-                MessageBus = None
-
-        if MessageBus is not None:
-            try:
-                self._bus = MessageBus(BusType.SYSTEM).connect()
-                service_names = self._bus.list_names()
-                prefix = "com.victronenergy.acload."
-                acload_names = [name for name in service_names if name.startswith(prefix)]
-                for service_name in acload_names:
-                    try:
-                        introspection = self._bus.introspect(service_name, "/")
-                        proxy = self._bus.get_proxy_object(service_name, "/", introspection)
-                        props = proxy.get_interface("org.freedesktop.DBus.Properties")
-                        custom_name = props.Get("com.victronenergy.BusItem", "/CustomName")
-                        custom_name_str = str(getattr(custom_name, "value", custom_name))
-                        key = self._key_for_custom_name(custom_name_str)
-                        self._vue_proxies[key] = props
-                    except Exception as e:
-                        logger.warning(f"Failed to process service {service_name}: {e}")
-            except Exception as e:
-                logger.warning(f"Failed to connect via dbus_fast/next: {e}")
-                self._bus = None
+        bus_type, message_bus = _import_dbus()
+        if message_bus is not None:
+            self._connect_dbus(bus_type, message_bus)
 
         # Fallback to dbus-send CLI tool (native on Victron Venus OS) if proxies empty
         if not self._vue_proxies:
@@ -76,6 +61,28 @@ class VUESensorDBusClient:
             logger.info(f"D-Bus VUE client initialized with {count} sensors")
         else:
             logger.warning("No VUE sensor services or proxies could be created")
+
+    def _connect_dbus(self, bus_type: Any, message_bus: Any) -> None:
+        """Connect via dbus_fast/dbus_next and populate service proxies."""
+        try:
+            self._bus = message_bus(bus_type.SYSTEM).connect()
+            service_names = self._bus.list_names()
+            prefix = "com.victronenergy.acload."
+            acload_names = [name for name in service_names if name.startswith(prefix)]
+            for service_name in acload_names:
+                try:
+                    introspection = self._bus.introspect(service_name, "/")
+                    proxy = self._bus.get_proxy_object(service_name, "/", introspection)
+                    props = proxy.get_interface("org.freedesktop.DBus.Properties")
+                    custom_name = props.Get("com.victronenergy.BusItem", "/CustomName")
+                    custom_name_str = str(getattr(custom_name, "value", custom_name))
+                    key = self._key_for_custom_name(custom_name_str)
+                    self._vue_proxies[key] = props
+                except Exception as e:
+                    logger.warning(f"Failed to process service {service_name}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to connect via dbus_fast/next: {e}")
+            self._bus = None
 
     def _setup_dbus_send(self) -> None:
         """Discover acload services using dbus-send CLI tool."""

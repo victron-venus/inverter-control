@@ -100,7 +100,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: victron-venus/venus-os-ci-toolkit/.github/workflows/release.yml@main
+        uses: victron-venus/venus-os-ci-toolkit/.github/workflows/release.yml@98ef67a92a659c1b4633279961ed2bc704a506e2
         with:
           skip-checkout: true
           body-file: release.txt
