@@ -35,8 +35,8 @@ jobs:
           timeout: 600
           interval: 10
           match_pattern: |
-            CI
             Python Security Scan
+            Dependency Review
 
       - name: Auto-merge PR
         if: steps.wait-for-checks.outputs.status == 'success'
