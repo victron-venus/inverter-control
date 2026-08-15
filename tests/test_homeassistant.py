@@ -254,9 +254,10 @@ class TestHomeAssistantClient:
             "bool1": "on",
             "binary1": "off",
             "water_valve": "on",
-            "vue1": "200",
         }
-        self.client._poll_all()
+        with patch.object(self.client._vue_dbust_client, "update_all") as mock_vue:
+            mock_vue.side_effect = lambda vue_dict: vue_dict.update({"vue1": 200})
+            self.client._poll_all()
         # _connected is set by _poll_loop, not _poll_all
         # Check that data was parsed correctly
         assert self.client._sensors["sensor1"] == 150
