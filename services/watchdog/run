@@ -52,7 +52,9 @@ record_restart() {
     local service="$1"
     local dir="$HB_DIR/.watchdog_restarts"
     mkdir -p "$dir"
-    touch "$dir/${service}_$(date +%s).time"
+    # Write the epoch into the file (get_restart_count reads it back) so the
+    # restart-window accounting actually works instead of reading empty files.
+    echo "$(date +%s)" > "$dir/${service}_$(date +%s).time"
 }
 
 disable_service() {
