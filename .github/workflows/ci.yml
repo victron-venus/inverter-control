@@ -16,8 +16,6 @@ jobs:
     with:
       python-version: '3.11'
       run-type-check: false
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   validate-secrets-template:
     name: Validate Secrets Template

@@ -15,10 +15,7 @@ on:
         description: 'PR types to auto-approve (comma-separated: dependencies, all)'
         type: string
         default: 'dependencies'
-    secrets:
-      GITHUB_TOKEN:
-        required: true
-jobs:
+    jobs:
   auto-approve:
     name: Auto Approve
     runs-on: ubuntu-latest

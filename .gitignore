@@ -39,6 +39,7 @@ config.local.py
 # Site config (contains API keys, tokens, IPs)
 site_config.py
 local_config.py
+HA_SENSORS.md
 
 LOGIC_RUS.md
 commit.txt

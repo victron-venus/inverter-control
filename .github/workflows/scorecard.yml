@@ -12,8 +12,6 @@ permissions:
   security-events: write
   # Needed for GitHub OIDC token
   id-token: write
-  # Needed for checkout and scorecard action
-  sources: read
 
 jobs:
   scorecard:
@@ -21,5 +19,3 @@ jobs:
     uses: victron-venus/venus-os-ci-toolkit/.github/workflows/scorecard.yml@875762362bb31b4899bf02fdf9e835188dc5eb80
     with:
       working-directory: .
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
