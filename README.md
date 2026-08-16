@@ -104,8 +104,11 @@ This Python application controls a Victron inverter to maintain zero grid feed-i
 
 ```mermaid
 flowchart TD
-    Solar["Solar Panel"] -->|"DC"| MPPT["Inline MPPT\nInverter"]
-    MPPT -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
+    Solar1["Solar Panels\n(Standard)"] -->|"DC"| MPPT1["Victron MPPT\nControllers"]
+    MPPT1 -.->|"D-Bus\nTelemetry"| Script["This Script\non Cerbo GX"]
+
+    Solar2["Solar Panels\n(Tasmota)"] -->|"DC"| MPPT2["Inline MPPT\nInverter"]
+    MPPT2 -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
     Tasmota -->|"AC"| Grid["AC Grid"]
 
     Battery["Battery 48V"] <-->|"DC"| Inverter["Victron\nInverter"]
@@ -113,10 +116,10 @@ flowchart TD
     Grid -->|"AC L1"| Loads1["Loads L1"]
     Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
 
-    Tasmota -.->|"HTTP\npolling"| Script["This Script\non Cerbo GX"]
+    Tasmota -.->|"D-Bus\n(dbustasmota-pv)"| Script
     HA["Home Assistant"] -.->|"HTTP\npolling"| Script
 
-    Script -->|"D-Bus"| Inverter
+    Script -->|"D-Bus\nSetpoint"| Inverter
     Script -->|"MQTT"| Dashboard["Remote\nDashboard"]
 ```
 
