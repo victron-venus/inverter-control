@@ -314,25 +314,29 @@ class VictronDBus:
                 timeout=0.5,
             )
             if output:
-                mppt_data = {"w": 0.0, "a": 0.0}
-                # Parse power - simplified regex to avoid backtracking
-                match = re.search(r"Yield/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
-                if match:
-                    try:
-                        mppt_data["w"] = float(match.group(1))
-                    except (ValueError, TypeError):
-                        pass
-                # Parse current - simplified regex to avoid backtracking
-                match = re.search(r"Dc/0/Current[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
-                if match:
-                    try:
-                        mppt_data["a"] = float(match.group(1))
-                    except (ValueError, TypeError):
-                        pass
-                data[f"mppt{i}"] = mppt_data
+                data[f"mppt{i}"] = self._parse_mppt_output(output)
 
         self._cached_mppt_data = data
         self._last_mppt_time = time.time()
+
+    def _parse_mppt_output(self, output: str) -> dict[str, float]:
+        """Parse MPPT power and current from tree query output"""
+        mppt_data = {"w": 0.0, "a": 0.0}
+        # Parse power - simplified regex to avoid backtracking
+        match = re.search(r"Yield/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
+        if match:
+            try:
+                mppt_data["w"] = float(match.group(1))
+            except (ValueError, TypeError):
+                logger.debug("MPPT power parse failed: %s", match.group(1))
+        # Parse current - simplified regex to avoid backtracking
+        match = re.search(r"Dc/0/Current[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
+        if match:
+            try:
+                mppt_data["a"] = float(match.group(1))
+            except (ValueError, TypeError):
+                logger.debug("MPPT current parse failed: %s", match.group(1))
+        return mppt_data
 
     def _poll_tasmota_power(self):
         """Poll Tasmota PV power"""
@@ -355,6 +359,7 @@ class VictronDBus:
                     try:
                         powers.append(float(match.group(1)))
                     except (ValueError, TypeError):
+                        logger.debug("Tasmota power parse failed: %s", match.group(1))
                         powers.append(0.0)
                 else:
                     powers.append(0.0)
@@ -389,6 +394,7 @@ class VictronDBus:
                     try:
                         socs.append(float(match.group(1)))
                     except (ValueError, TypeError):
+                        logger.debug("Battery chain SoC parse failed: %s", match.group(1))
                         socs.append(0.0)
                 else:
                     socs.append(0.0)
