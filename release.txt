@@ -1,0 +1,53 @@
+## v1.19.1 — Aggressive Grid Smoothing with Home Load
+
+### New Feature: Grid Smoothing with Home Load
+Blends a derived grid estimate (Vue home_total − PV production) with the instantaneous CT meter for dramatically more stable setpoints.
+
+**Config options:**
+- `ENABLE_GRID_SMOOTHING_WITH_HOME` (default: `False`) — Enable blending
+- `GRID_SMOOTHING_HOME_WEIGHT` (default: `0.7`) — Weight for derived grid (0.0–1.0, higher = more stable)
+- `GRID_SMOOTHING_DERIVED_ALPHA` (default: `0.1`) — EMA alpha for derived grid smoothing
+
+**How it works:**
+```
+pv_total = MPPT DC power + Tasmota AC power
+derived_gt = home_total (Vue via HA cloud) - pv_total
+effective_gt = weight * derived_gt + (1 - weight) * instantaneous_ct
+```
+
+The derived grid is EMA-smoothed before blending. Home total from Vue (via HA cloud, ~1s latency) is rock-stable; blending at 0.7 weight gives stability of cloud data with responsiveness of local CT. Bash scripts using this approach historically produced the most economical setpoints.
+
+**Requirements:**
+- `ENABLE_HA_LOADS = True`
+- `HA_SENSORS` must include Vue total house consumption sensor
+
+---
+
+## v1.19.0 — Background D-Bus Polling + Async MQTT
+
+### Performance (Cerbo GX / RPi 3)
+- **Background 5 Hz polling thread** caches full D-Bus service trees via single `dbus-send --print-reply /` calls
+- **Eliminates ~9 subprocess calls per 3 Hz control cycle**
+- **Control loop latency: 200–300 ms → 10–20 ms**
+- Hot-path methods now read instantly from cache (< 1 ms):
+  - `get_system_data()`, `get_mppt_data()`, `get_tasmota_pv_power()`
+  - `get_battery_chain_socs()`, `get_inverter_state()`
+  - `get_inverter_power()`, `get_ac_in_power()`
+  - `get_all_batteries()`, `get_mppt_chargers()`, `get_ess_mode()`
+
+### Async MQTT Publish
+- `publish_state()` / `publish_console()` now non-blocking via background queue
+- Control loop never stalls on MQTT broker latency
+- Added `flush()` method for tests
+
+### Code Quality
+- Cognitive complexity: all functions < 15 (was up to 17)
+- Empty `except:` → `logger.debug()` with context
+- Regex patterns simplified to avoid catastrophic backtracking
+- `GET_VALUE_METHOD` constant replaces 6 duplicate literals
+- `_parse_mppt_output()` extracted (3-line helper)
+
+### Tests
+- 4 new caching tests in `test_caching.py` (TTL, cache hits, expiry, call counts)
+- 186 non-D-Bus unit tests pass
+- Lint clean on modified files
