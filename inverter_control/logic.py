@@ -4,8 +4,9 @@ Separated from I/O for stability and testability.
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger("inverter-control")
 
@@ -44,8 +45,12 @@ class SystemState:
     do_not_supply_charger: bool
     limit_to_ev: bool
 
-    # Persistence
+    # Persistence (required fields before optional ones)
     previous_setpoint: int
+
+    # Home grid smoothing (optional, when ENABLE_GRID_SMOOTHING_WITH_HOME)
+    home_total: float = 0.0  # Total house consumption from Vue
+    derived_gt: float | None = None  # Grid derived from home_total - production
     filtered_gt: float | None = None
 
 
@@ -322,6 +327,22 @@ class SetpointCalculator:
         if state.do_not_supply_charger and state.ev_power > 100:
             effective_gt = state.gt - state.ev_power
 
+        # Grid smoothing with Home total (derived_gt = home_total - pv_total)
+        # Blend instantaneous CT with derived grid for stability
+        if state.derived_gt is not None:
+            smoothing_weight = self.config.get("GRID_SMOOTHING_HOME_WEIGHT", 0.7)
+            derived_alpha = self.config.get("GRID_SMOOTHING_DERIVED_ALPHA", 0.1)
+            old_derived_gt = state.derived_gt
+            # EMA smooth the derived value itself
+            state.derived_gt = (
+                derived_alpha * state.derived_gt + (1 - derived_alpha) * old_derived_gt
+            ) if old_derived_gt is not None else float(state.derived_gt)
+            # Blend: weight * derived + (1-weight) * instantaneous
+            effective_gt = (
+                smoothing_weight * state.derived_gt
+                + (1 - smoothing_weight) * effective_gt
+            )
+
         old_filtered_gt = state.filtered_gt
         new_filtered_gt = (
             float(effective_gt)
@@ -347,14 +368,7 @@ class SetpointCalculator:
                     export_damping=self.config.get("EXPORT_DAMPING", 1.0),
                     _state=self._normal_state,
                 )
-            elif strategy is only_charging_strategy:
-                raw_vanew, flags = strategy(
-                    state,
-                    raw_vanew,
-                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
-                    solar_offset=self.config.get("SOLAR_OUTPUT_OFFSET", 60),
-                )
-            elif strategy is do_not_supply_charger_strategy:
+            elif strategy is only_charging_strategy or strategy is do_not_supply_charger_strategy:
                 raw_vanew, flags = strategy(
                     state,
                     raw_vanew,

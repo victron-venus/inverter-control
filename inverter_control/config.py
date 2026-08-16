@@ -175,6 +175,13 @@ DAMPING_FACTOR = 0.7  # Damping for import correction (0.0-1.0)
 EMA_ALPHA = 0.3  # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
 SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
+# Aggressive Grid Smoothing with Home Load (Vue via HA cloud)
+# Uses "home_total" (total house consumption from Vue) + known production
+# to derive a stable grid estimate. Blends with instantaneous CT meter.
+ENABLE_GRID_SMOOTHING_WITH_HOME = False  # Enable derived grid blending
+GRID_SMOOTHING_HOME_WEIGHT = 0.7  # Weight for derived grid (0.0-1.0, higher = more stable)
+GRID_SMOOTHING_DERIVED_ALPHA = 0.1  # EMA alpha for derived grid (slower = smoother)
+
 # Export asymmetry — export to grid is undesirable, correct more aggressively
 EXPORT_DAMPING = 1.0  # Full correction for export (no damping)
 

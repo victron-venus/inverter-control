@@ -54,6 +54,7 @@ from inverter_control.config import (
     DVCC_TEMP_STOP_CHARGE_HIGH,
     EMA_ALPHA,
     ENABLE_EV,
+    ENABLE_GRID_SMOOTHING_WITH_HOME,
     ENABLE_HA,
     ENABLE_HA_LOADS,
     ENABLE_WATER,
@@ -466,6 +467,17 @@ class InverterController:
         self._cached_mppt_data = mppt_data
         self._cached_tasmota_powers = tasmota_powers
 
+        # Grid smoothing with Home total (Vue via HA cloud)
+        # derived_gt = home_total - pv_total (negative = export, positive = import)
+        # Blend with instantaneous CT meter for stable control
+        home_total = 0.0
+        derived_gt = None
+        if ENABLE_GRID_SMOOTHING_WITH_HOME:
+            home_total = self.ha.get_sensor("home_total", 0)
+            if home_total > 0:
+                pv_total = mppt_total + tasmota_total
+                derived_gt = home_total - pv_total
+
         state = SystemState(
             g1=sys_data["g1"],
             g2=sys_data["g2"],
@@ -479,6 +491,7 @@ class InverterController:
             pv_total=mppt_total + tasmota_total,
             ev_power=self.ha.get_vue_sensor("ev_charger", 0),
             garage_power=self.ha.get_vue_sensor("garage", 0),
+            home_total=home_total,
             only_charging=self.ha.get_boolean("only_charging"),
             no_feed=self.ha.get_boolean("no_feed"),
             house_support=self.ha.get_boolean("house_support"),
@@ -487,6 +500,7 @@ class InverterController:
             limit_to_ev=self.ha.get_boolean("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
             filtered_gt=self.filtered_gt,
+            derived_gt=derived_gt,
         )
 
         # Perform calculation
