@@ -73,3 +73,8 @@ ignore = [
     "RUF015",  # next(iter()) vs slice (test readability)
     "PERF402",  # list.append vs list comprehension (test readability)
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+]
