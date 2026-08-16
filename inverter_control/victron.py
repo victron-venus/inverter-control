@@ -233,7 +233,6 @@ class VictronDBus:
 
     def _poll_all(self):
         """Poll all D-Bus data in one pass"""
-        now = time.time()
 
         # Poll system data (tree query)
         self._poll_system_data()
