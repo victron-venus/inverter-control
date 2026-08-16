@@ -193,6 +193,8 @@ class TestMQTTBridge:
 
         state = {"gt": 100, "setpoint": 500}
         bridge.publish_state(state)
+        # Flush the async queue
+        bridge.flush()
 
         mock_client.publish.assert_called_once()
         call_args = mock_client.publish.call_args
@@ -228,8 +230,10 @@ class TestMQTTBridge:
         bridge._connected = True
 
         bridge.publish_console("test line")
+        # Flush the async queue
+        bridge.flush()
 
-        mock_client.publish.assert_called_once_with("test/console", "test line", qos=0)
+        mock_client.publish.assert_called_once_with("test/console", "test line", qos=0, retain=False)
 
 
 class TestGetMqttBridge:

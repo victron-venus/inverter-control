@@ -7,6 +7,8 @@ Publishes state and subscribes to commands from remote dashboard
 import json
 import logging
 import math
+import queue
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -45,7 +47,7 @@ except ImportError:
 
 
 class MQTTBridge:
-    """Publishes state to MQTT, receives commands"""
+    """Publishes state to MQTT, receives commands - async via background thread"""
 
     def __init__(self, broker: str = "localhost", port: int = 1883, prefix: str = "inverter"):
         self.broker = broker
@@ -54,6 +56,11 @@ class MQTTBridge:
         self._client: mqtt.Client | None = None
         self._connected = False
         self._callbacks: dict[str, Callable] = {}
+
+        # Async publish queue
+        self._publish_queue: queue.Queue[tuple[str, str, int, bool]] = queue.Queue(maxsize=100)
+        self._publish_thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
 
         if not MQTT_AVAILABLE:
             return
@@ -71,6 +78,10 @@ class MQTTBridge:
         try:
             self._client.connect_async(self.broker, self.port, 60)
             self._client.loop_start()
+            # Start async publish thread
+            self._stop_event.clear()
+            self._publish_thread = threading.Thread(target=self._publish_loop, daemon=True, name="MQTTPublish")
+            self._publish_thread.start()
             logger.info(f"MQTT connecting to {self.broker}:{self.port}")
             return True
         except Exception as e:
@@ -79,9 +90,25 @@ class MQTTBridge:
 
     def disconnect(self):
         """Disconnect from MQTT broker"""
+        self._stop_event.set()
+        if self._publish_thread and self._publish_thread.is_alive():
+            self._publish_thread.join(timeout=1.0)
         if self._client:
             self._client.loop_stop()
             self._client.disconnect()
+
+    def _publish_loop(self):
+        """Background thread to drain publish queue"""
+        while not self._stop_event.is_set():
+            try:
+                topic, payload, qos, retain = self._publish_queue.get(timeout=0.1)
+                if self._client and self._connected:
+                    self._client.publish(topic, payload, qos=qos, retain=retain)
+                self._publish_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.debug(f"MQTT publish loop error: {e}")
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):  # pylint: disable=too-many-arguments,unused-argument
         """Connected to broker"""
@@ -123,25 +150,43 @@ class MQTTBridge:
         """Register callback for command"""
         self._callbacks[command] = callback
 
+    def _ensure_publish_thread(self):
+        """Start publish thread if not running (lazy init for tests)"""
+        if self._publish_thread is None or not self._publish_thread.is_alive():
+            self._stop_event.clear()
+            self._publish_thread = threading.Thread(target=self._publish_loop, daemon=True, name="MQTTPublish")
+            self._publish_thread.start()
+
     def publish_state(self, state: dict[str, Any]):
-        """Publish current state"""
-        if not self._client or not self._connected:
+        """Publish current state (async, non-blocking)"""
+        if not self._connected:
             return
 
         try:
-            self._client.publish(f"{self.prefix}/state", json.dumps(state, cls=SafeEncoder), qos=0, retain=True)
+            payload = json.dumps(state, cls=SafeEncoder)
+            self._ensure_publish_thread()
+            self._publish_queue.put_nowait((f"{self.prefix}/state", payload, 0, True))
+        except queue.Full:
+            logger.debug("MQTT publish queue full, dropping state update")
         except Exception as e:
-            logger.debug(f"MQTT publish error: {e}")
+            logger.debug(f"MQTT publish queue error: {e}")
 
     def publish_console(self, line: str):
-        """Publish console line"""
-        if not self._client or not self._connected:
+        """Publish console line (async, non-blocking)"""
+        if not self._connected:
             return
 
         try:
-            self._client.publish(f"{self.prefix}/console", line, qos=0)
+            self._ensure_publish_thread()
+            self._publish_queue.put_nowait((f"{self.prefix}/console", line, 0, False))
+        except queue.Full:
+            pass  # Drop console lines silently when queue full
         except Exception as e:
-            logger.debug(f"MQTT console publish error: {e}")
+            logger.debug(f"MQTT console queue error: {e}")
+
+    def flush(self):
+        """Wait for publish queue to empty (for testing)"""
+        self._publish_queue.join()
 
     @property
     def connected(self) -> bool:
