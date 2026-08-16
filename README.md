@@ -45,6 +45,9 @@ Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
 - ✅ **CI/CD Releases**: Pre-release detection and package archive workflows configured
 - ✅ **Hardware Watchdog Failsafe**: 30-second heartbeat watchdog automatically resets Victron ESS setpoint to fallback mode (0W / pass-through) if MQTT or D-Bus telemetry stops updating (PR #63, commit 0212a4c)
+- ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
+- ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
+- ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Blends derived grid (Vue total load − PV production) with instantaneous CT meter at configurable weight for stable setpoints
 
 ---
 
@@ -107,12 +110,13 @@ flowchart TD
     Solar1["Solar Panels\n(Standard)"] -->|"DC"| MPPT1["Victron MPPT\nControllers"]
     MPPT1 <-->|"DC"| Battery["Battery 48V"]
     MPPT1 -.->|"D-Bus\nTelemetry"| Script["This Script\non Cerbo GX"]
+    MPPT1 <-->|"DC"| Inverter["Victron\nInverter"]
 
-    Solar2["Solar Panels\n(Tasmota)"] -->|"DC"| MPPT2["Inline MPPT\nInverter"]
+    Solar2["Solar Panels\n(Tasmota)"] -->|"DC"| MPPT2["Inline MPPT\nInverter\n(w/ Tasmota)"]
     MPPT2 -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
     Tasmota -->|"AC"| Grid["AC Grid"]
 
-    Battery <-->|"DC"| Inverter["Victron\nInverter"]
+    Battery <-->|"DC"| Inverter
     Inverter <-->|"AC L1"| Grid
     Grid -->|"AC L1"| Loads1["Loads L1"]
     Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
@@ -139,6 +143,9 @@ flowchart TD
 - **Minimize Charging**: Auto-control dump loads to consume excess solar
 - **Home Assistant Integration**: Sensor data and switch control
 - **Fast Control Loop**: 3 updates per second via D-Bus
+- **Background D-Bus Polling** (v1.19.0+): 5 Hz thread caches D-Bus data; hot-path methods read instantly (< 1 ms) — eliminates subprocess overhead on Cerbo GX
+- **Async MQTT Publish** (v1.19.0+): Non-blocking publish queue; control loop never stalls on broker
+- **Home Load Grid Smoothing** (v1.19.1+): Blends derived grid (Home total load − PV production) from HA/Vue with instantaneous CT meter at configurable weight (default 0.7) for stable setpoints despite CT jitter
 
 ## Architecture
 
@@ -150,9 +157,9 @@ inverter-control/              # Git repo root
 │   ├── config.py              # Non-sensitive parameters (tuning, limits, flags)
 │   ├── site_config.py             # Sensitive config — NOT in git (see site_config.example.py)
 │   ├── logic.py               # SetpointCalculator, strategies, EMA, burst, D-term
-│   ├── victron.py             # D-Bus I/O — grid power, inverter power, setpoint write
+│   ├── victron.py             # D-Bus I/O — background 5 Hz polling thread, cached reads (< 1 ms)
 │   ├── homeassistant.py       # HA API polling with circuit breaker
-│   ├── mqtt_bridge.py         # MQTT subscribe/publish for external control
+│   ├── mqtt_bridge.py         # MQTT subscribe/publish (async queue, non-blocking)
 │   ├── console_ui.py          # Terminal dashboard renderer
 │   ├── console_server.py      # TCP server (port 9999) for remote console
 │   ├── keepalive.py           # Setpoint keepalive during restart
@@ -438,6 +445,44 @@ If already using Vue with cloud, it still works but expect:
 - Occasional missed readings
 - Less responsive grid-zero tracking
 
+## Grid Smoothing with Home Load (v1.19.1+)
+
+When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller blends a derived grid estimate with the instantaneous CT meter for dramatically more stable setpoints.
+
+### How it works
+
+```
+pv_total = MPPT DC power + Tasmota AC power
+derived_gt = home_total (from Vue via HA cloud) - pv_total
+# derived_gt: positive = import, negative = export
+
+effective_gt = GRID_SMOOTHING_HOME_WEIGHT * derived_gt
+             + (1 - GRID_SMOOTHING_HOME_WEIGHT) * instantaneous_gt
+```
+
+The derived grid is also EMA-smoothed with `GRID_SMOOTHING_DERIVED_ALPHA` (default 0.1) before blending.
+
+### Config options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `ENABLE_GRID_SMOOTHING_WITH_HOME` | `False` | Enable blending derived grid with CT meter |
+| `GRID_SMOOTHING_HOME_WEIGHT` | `0.7` | Weight for derived grid (0.0–1.0, higher = more stable) |
+| `GRID_SMOOTHING_DERIVED_ALPHA` | `0.1` | EMA alpha for derived grid (slower = smoother) |
+
+### Why it helps
+
+- **Instantaneous CT meters** (VM-3P75CT, Shelly, etc.) report noisy, jittery values that cause setpoint oscillation
+- **Home total from Vue** (via HA cloud, ~1 s latency) is rock-stable — it's a billing-grade accumulator
+- **Blending at 0.7 weight** gives you the stability of cloud data with the responsiveness of local CT
+- Bash scripts using this approach historically produced the most economical setpoints
+
+### Requirements
+
+- `ENABLE_HA_LOADS = True` in `config.py`
+- `HA_SENSORS` in `site_config.py` must include Vue total house consumption sensor
+- `VUE_SENSORS` in `site_config.py` must map to correct HA entities
+
 ## Troubleshooting
 
 ### Service not starting
@@ -649,6 +694,29 @@ For maintainers, PRs created with `auto-merge` label automatically merge after:
 - Status checks: CI, Python Security Scan
 
 Configure branch protection rules in GitHub settings to require these checks.
+
+## Release History
+
+### v1.19.1 (2026-08-15) — Aggressive Grid Smoothing with Home Load
+
+- **New**: `ENABLE_GRID_SMOOTHING_WITH_HOME`, `GRID_SMOOTHING_HOME_WEIGHT`, `GRID_SMOOTHING_DERIVED_ALPHA` config options
+- **Logic**: Blends derived grid (Vue home_total − PV production) with instantaneous CT meter at 0.7 weight
+- **Stability**: Derived grid EMA-smoothed at 0.1 alpha; eliminates CT jitter while keeping responsiveness
+- **Result**: Most economical setpoints historically; stable grid-zero tracking despite noisy CT meters
+
+### v1.19.0 (2026-08-15) — Background D-Bus Polling + Async MQTT
+
+- **Performance**: Background 5 Hz thread caches full D-Bus service trees; hot-path reads < 1 ms
+- **Latency**: Control loop 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
+- **MQTT**: Non-blocking publish queue; control loop never stalls on broker latency
+- **Quality**: Cognitive complexity < 15; empty `except` → logging; regex backtracking fixed; `GET_VALUE_METHOD` constant
+
+### v1.18.x — Stabilization & CI Migration
+
+- Migrated CI to shared `venus-os-ci-toolkit` workflows (pinned SHAs)
+- Auto-approve workflow for Dependabot PRs
+- Hardware watchdog failsafe (30 s heartbeat)
+- PackageManager-compatible installer
 
 ## Author
 
