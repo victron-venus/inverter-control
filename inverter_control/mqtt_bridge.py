@@ -184,7 +184,7 @@ class MQTTBridge:
         except Exception as e:
             logger.debug(f"MQTT console queue error: {e}")
 
-    def flush(self, timeout: float = 1.0):
+    def flush(self):
         """Wait for publish queue to empty (for testing)"""
         self._publish_queue.join()
 

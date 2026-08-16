@@ -20,6 +20,7 @@ logger = logging.getLogger("inverter-control")
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
+GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 
 # =============================================================================
 # BATTERY SOC CALCULATION (ported from HA template sensors)
@@ -263,7 +264,7 @@ class VictronDBus:
                 "--print-reply",
                 "--dest=com.victronenergy.system",
                 "/",
-                "com.victronenergy.BusItem.GetValue",
+                GET_VALUE_METHOD,
             ],
             timeout=0.5,
         )
@@ -272,19 +273,20 @@ class VictronDBus:
 
     def _parse_system_data(self, output: str):
         """Parse system data from tree query output"""
+        # Simplified patterns to avoid regex backtracking
         patterns = {
-            "g1": r"Ac/Grid/L1/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "g2": r"Ac/Grid/L2/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "t1": r"Ac/Consumption/L1/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "t2": r"Ac/Consumption/L2/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "bv": r"Dc/Battery/Voltage.*?\n.*?variant\s+\S+\s+([\d.]+)",
-            "bc": r"Dc/Battery/Current.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "bp": r"Dc/Battery/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "pv_total": r"Dc/Pv/Power.*?\n.*?variant\s+\S+\s+([\d.]+)",
+            "g1": r"Ac/Grid/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+            "g2": r"Ac/Grid/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+            "t1": r"Ac/Consumption/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+            "t2": r"Ac/Consumption/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+            "bv": r"Dc/Battery/Voltage[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
+            "bc": r"Dc/Battery/Current[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+            "bp": r"Dc/Battery/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+            "pv_total": r"Dc/Pv/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
         }
 
         for key, pattern in patterns.items():
-            match = re.search(pattern, output, re.DOTALL)
+            match = re.search(pattern, output)
             if match:
                 try:
                     val = float(match.group(1))
@@ -307,21 +309,21 @@ class VictronDBus:
                     "--print-reply",
                     f"--dest={service}",
                     "/",
-                    "com.victronenergy.BusItem.GetValue",
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.5,
             )
             if output:
                 mppt_data = {"w": 0.0, "a": 0.0}
-                # Parse power
-                match = re.search(r"Yield/Power.*?\n.*?variant\s+\S+\s+([\d.]+)", output, re.DOTALL)
+                # Parse power - simplified regex to avoid backtracking
+                match = re.search(r"Yield/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
                 if match:
                     try:
                         mppt_data["w"] = float(match.group(1))
                     except (ValueError, TypeError):
                         pass
-                # Parse current
-                match = re.search(r"Dc/0/Current.*?\n.*?variant\s+\S+\s+([\d.]+)", output, re.DOTALL)
+                # Parse current - simplified regex to avoid backtracking
+                match = re.search(r"Dc/0/Current[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
                 if match:
                     try:
                         mppt_data["a"] = float(match.group(1))
@@ -343,12 +345,12 @@ class VictronDBus:
                     "--print-reply",
                     f"--dest={service}",
                     "/",
-                    "com.victronenergy.BusItem.GetValue",
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
             if output:
-                match = re.search(r"Ac/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)", output, re.DOTALL)
+                match = re.search(r"Ac/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)", output)
                 if match:
                     try:
                         powers.append(float(match.group(1)))
@@ -377,12 +379,12 @@ class VictronDBus:
                     "--print-reply",
                     f"--dest={service}",
                     "/",
-                    "com.victronenergy.BusItem.GetValue",
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
             if output:
-                match = re.search(r"Soc.*?\n.*?variant\s+\S+\s+([\d.]+)", output, re.DOTALL)
+                match = re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
@@ -469,7 +471,7 @@ class VictronDBus:
                     "--print-reply=literal",
                     f"--dest={service}",
                     path,
-                    "com.victronenergy.BusItem.GetValue",
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
@@ -539,7 +541,7 @@ class VictronDBus:
                 "--print-reply",
                 "--dest=com.victronenergy.system",
                 "/",
-                "com.victronenergy.BusItem.GetValue",
+                GET_VALUE_METHOD,
             ],
             timeout=0.5,
         )
