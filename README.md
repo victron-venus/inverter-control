@@ -105,13 +105,14 @@ This Python application controls a Victron inverter to maintain zero grid feed-i
 ```mermaid
 flowchart TD
     Solar1["Solar Panels\n(Standard)"] -->|"DC"| MPPT1["Victron MPPT\nControllers"]
+    MPPT1 <-->|"DC"| Battery["Battery 48V"]
     MPPT1 -.->|"D-Bus\nTelemetry"| Script["This Script\non Cerbo GX"]
 
     Solar2["Solar Panels\n(Tasmota)"] -->|"DC"| MPPT2["Inline MPPT\nInverter"]
     MPPT2 -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
     Tasmota -->|"AC"| Grid["AC Grid"]
 
-    Battery["Battery 48V"] <-->|"DC"| Inverter["Victron\nInverter"]
+    Battery <-->|"DC"| Inverter["Victron\nInverter"]
     Inverter <-->|"AC L1"| Grid
     Grid -->|"AC L1"| Loads1["Loads L1"]
     Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
