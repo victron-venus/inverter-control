@@ -1009,55 +1009,66 @@ class VictronDBus:
         """Get detailed cell data from battery chains for DVCC calculation.
 
         Returns dict with:
-        - max_cell: Highest cell voltage across all chains
-        - max_cell_id: Cell index of highest voltage
-        - min_cell: Lowest cell voltage across all chains
-        - min_cell_id: Cell index of lowest voltage
-        - max_temp: Highest cell temperature
-        - min_temp: Lowest cell temperature
+        - max_cell, max_cell_id, min_cell, min_cell_id: Cell voltage extremes
+        - max_temp, min_temp: Temperature extremes
         - soc: Overall SoC
-        - allow_charge: Whether BMS allows charging
-        - allow_discharge: Whether BMS allows discharging
-
-        Fast path: returns the background-polled cache (one tree query per
-        chain at 5Hz cadence, refreshed every 30s). Falls back to live
-        per-path D-Bus reads only when the cache is stale (e.g. dry-run).
+        - allow_charge, allow_discharge: BMS flags
         """
-        if (
-            self._cached_battery_cell_data
-            and time.time() - self._last_battery_cell_data_time < CELL_DATA_POLL_INTERVAL + 10
-        ):
-            voltages: list[tuple[float, int]] = []
-            temps: list[float] = []
-            total_soc = 0.0
-            soc_count = 0
-            allow_charge = True
-            allow_discharge = True
-            for service in BATTERY_CELL_SERVICES:
-                entry = self._cached_battery_cell_data.get(service)
-                if not entry:
-                    continue
-                for v in entry.get("voltages", []):
-                    if v > 0:
-                        voltages.append((v, len(voltages)))
-                temps.extend(entry.get("temps", []))
-                soc = entry.get("soc")
-                if soc is not None:
-                    total_soc += soc
-                    soc_count += 1
-                if entry.get("allow_charge") is not None:
-                    allow_charge = allow_charge and entry["allow_charge"]
-                if entry.get("allow_discharge") is not None:
-                    allow_discharge = allow_discharge and entry["allow_discharge"]
-            if voltages or temps or soc_count:
-                return self._build_cell_result(
-                    voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
-                )
-
+        self._maybe_refresh_cell_cache()
+        cached = self._build_from_cache()
+        if cached:
+            return cached
         return self._get_battery_cell_data_live()
+
+    def _maybe_refresh_cell_cache(self) -> None:
+        """Refresh cache if stale (called before reading)."""
+        if time.time() - self._last_battery_cell_data_time >= CELL_DATA_POLL_INTERVAL:
+            self._poll_battery_cell_data_tree()
+
+    def _build_from_cache(self) -> dict[str, Any] | None:
+        """Build result from cached data. Returns None if cache empty/invalid."""
+        if not self._cached_battery_cell_data:
+            return None
+
+        voltages: list[tuple[float, int]] = []
+        temps: list[float] = []
+        total_soc = 0.0
+        soc_count = 0
+        allow_charge = True
+        allow_discharge = True
+
+        for service in BATTERY_CELL_SERVICES:
+            entry = self._cached_battery_cell_data.get(service)
+            if not entry:
+                continue
+            for v in entry.get("voltages", []):
+                if v > 0:
+                    voltages.append((v, len(voltages)))
+            temps.extend(entry.get("temps", []))
+            soc = entry.get("soc")
+            if soc is not None:
+                total_soc += soc
+                soc_count += 1
+            if entry.get("allow_charge") is not None:
+                allow_charge = allow_charge and entry["allow_charge"]
+            if entry.get("allow_discharge") is not None:
+                allow_discharge = allow_discharge and entry["allow_discharge"]
+
+        if not (voltages or temps or soc_count):
+            return None
+
+        return self._build_cell_result(
+            voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
+        )
 
     def _get_battery_cell_data_live(self) -> dict[str, Any]:
         """Legacy live per-path D-Bus read (fallback when cache is stale)."""
+        return self._build_cell_result(
+            *self._collect_live_cell_data()
+        )
+
+    def _collect_live_cell_data(self) -> tuple:
+        """Collect all live cell data from battery chains."""
         all_cell_voltages: list[tuple[float, int]] = []
         all_cell_temps: list[float] = []
         total_soc = 0.0
@@ -1084,8 +1095,9 @@ class VictronDBus:
             if allow_d is not None:
                 allow_discharge = allow_discharge and allow_d
 
-        return self._build_cell_result(
-            all_cell_voltages, all_cell_temps, total_soc, soc_count, allow_charge, allow_discharge
+        return (
+            all_cell_voltages, all_cell_temps, total_soc, soc_count,
+            allow_charge, allow_discharge
         )
 
     @staticmethod
