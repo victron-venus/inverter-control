@@ -173,8 +173,7 @@ class TestLogForwarder:
         many_lines_file = tempfile.NamedTemporaryFile(delete=False).name
         try:
             with open(many_lines_file, "w") as f:
-                for i in range(200):
-                    f.write(f"line {i}\n")
+                f.writelines(f"line {i}\n" for i in range(200))
 
             lines, _, _ = log_forwarder.read_new_lines(many_lines_file, 0, None)
             assert len(lines) == log_forwarder.BATCH_SIZE
