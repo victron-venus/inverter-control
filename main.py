@@ -501,13 +501,13 @@ class InverterController:
         self._cached_mppt_data = mppt_data
         self._cached_tasmota_powers = tasmota_powers
 
-        # Grid smoothing with Home total (Vue via HA cloud)
+        # Grid smoothing with Home total (Vue via D-Bus)
         # derived_gt = home_total - pv_total (negative = export, positive = import)
         # Blend with instantaneous CT meter for stable control
         home_total = 0.0
         derived_gt = None
         if ENABLE_GRID_SMOOTHING_WITH_HOME:
-            home_total = self.ha.get_sensor("home_total", 0)
+            home_total = self.ha.get_vue_sensor("total", 0)
             if home_total > 0:
                 pv_total = mppt_total + tasmota_total
                 derived_gt = home_total - pv_total

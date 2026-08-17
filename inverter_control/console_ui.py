@@ -48,7 +48,7 @@ class ConsoleUI:
 
         # Grid/Usage section
         net_usage = int(self.ha.get_sensor("net_usage", gt))
-        home_total = int(self.ha.get_sensor("home_total", tt))
+        home_total = int(self.ha.get_vue_sensor("total", tt))
         smooth_str = f"[{int(filtered_gt)}]" if abs(gt - filtered_gt) > 10 else ""
 
         grid_str = f"{C.GREEN}g:{gt}{smooth_str}({g1}+{g2}){net_usage}{C.RESET}"

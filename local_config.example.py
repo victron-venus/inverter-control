@@ -29,9 +29,10 @@ TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
 # =============================================================================
 # HOME ASSISTANT SENSORS
 # =============================================================================
+# Note: "home_total" removed - now read from Vue D-Bus (com.victronenergy.acload.Total)
+# via HomeAssistantClient.get_vue_sensor("total")
 
 HA_SENSORS = {
-    "home_total": "sensor.your_home_total_power",
     "net_usage": "sensor.your_net_usage",
     "car_soc": "sensor.your_car_soc",
     "ev_charging_power": "sensor.your_ev_charging_power",
