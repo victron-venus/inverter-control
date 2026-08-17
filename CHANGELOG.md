@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-08-16
+
+### Fixed
+- **BrokenPipeError crash**: `print()` to multilog pipe could raise EPIPE after service restart; wrapped stdout/stderr in `_BrokenPipeSafeStream` that swallows EPIPE, keeping the control loop alive
+- **Watchdog not restarting services**: `svc -k` only kills the process; runit never auto-restarts — added `svc -u` after the kill so the service actually comes back
+- **Stale orphan processes on update**: when a service dir inode changes, svscan spawns a new supervise but the old one is never killed; they linger with `(deleted)` cwd and corrupt log pipes. New update.sh step removes symlinks, then kills all supervises + run processes under the install tree before replacing files
+
+### Changed
+- **Background battery cell data polling**: replaced ~72 per-cell `dbus-send` subprocess calls with a single tree query per chain (~55 ms); cached in background poller, control loop reads cache — eliminates the 5 s cycle watchdog timeouts that were happening every 30 s
+- Watchdog disable backoff (600 s default) with sticky marker so it stops hammering a stale service and flooding the log
+- Watchdog `VERSION` bumped to 1.1.0
+
+### Added
+- 4 unit tests for battery cell data cache (tree poller parsing, throttle, cache hit, stale fallback)
+
 ## [1.19.1] - 2026-08-15
 
 ### Added
