@@ -37,6 +37,34 @@ for svc in /service/inverter-control/log /service/inverter-control /service/log-
 done
 sleep 1
 
+# 1c. Reap stale daemontools supervise processes left behind by earlier
+#     updates. Every time a service dir under $INSTALL_DIR/service is replaced
+#     the inode changes, so svscan spawns a NEW supervise and the old one is
+#     never killed - they linger forever with "(deleted)" cwd. Several
+#     supervisors on one service corrupt runit state (broken log pipes that
+#     crash print() with EPIPE, and down services that svc -u cannot bring up).
+#     The same inode churn also orphans the run processes themselves (main.py
+#     / log_forwarder.py, cwd == $INSTALL_DIR): when a supervise dies, svc -dk
+#     can no longer reach its child, so it keeps running the old code and
+#     hammering D-Bus next to the new instance. Drop the /service symlinks
+#     first so svscan does not respawn supervisors while we replace the dirs
+#     below, then kill anything whose cwd lives under our install tree. Fresh
+#     supervisors are spawned in step 6.
+rm -f /service/inverter-control /service/log-forwarder /service/watchdog
+sleep 2
+for pid in /proc/[0-9]*; do
+    cwd=$(readlink "$pid/cwd" 2>/dev/null) || continue
+    case "$cwd" in
+        "$INSTALL_DIR/service/"*)
+            kill -9 "${pid##*/}" 2>/dev/null || true
+            ;;
+        "$INSTALL_DIR")
+            kill -9 "${pid##*/}" 2>/dev/null || true
+            ;;
+    esac
+done
+sleep 1
+
 mkdir -p "$INSTALL_DIR"
 sep "installing from $SRC_DIR into $INSTALL_DIR"
 
@@ -95,6 +123,10 @@ fi
 ln -sf "$INSTALL_DIR/service/inverter-control" /service/
 ln -sf "$INSTALL_DIR/service/log-forwarder" /service/
 ln -sf "$INSTALL_DIR/service/watchdog" /service/
+
+# 6b. Give svscan a moment to spawn fresh supervisors for the new symlinks
+#     before we try to bring the services up, so svc -u lands on a live one.
+sleep 3
 
 # 7. Let PackageManager rediscover the package (version/gitHubInfo changed).
 svc -t /service/PackageManager 2>/dev/null || true

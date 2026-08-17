@@ -11,16 +11,18 @@
 #   WATCHDOG_MAX_RESTARTS - restarts before disable (default: 3)
 #   WATCHDOG_WINDOW   - time window in seconds for restart count (default: 300)
 #   WATCHDOG_LOG       - log file (default: /var/log/watchdog.log)
+#   WATCHDOG_DISABLE_BACKOFF - seconds to back off after disabling a service (default: 600)
 
 set -euo pipefail
 
 NAME="watchdog"
-VERSION="1.0.0"
+VERSION="1.1.0"
 WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
 WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-60}"
 WATCHDOG_MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-3}"
 WATCHDOG_WINDOW="${WATCHDOG_WINDOW:-300}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-/var/log/watchdog.log}"
+WATCHDOG_DISABLE_BACKOFF="${WATCHDOG_DISABLE_BACKOFF:-600}"
 HB_DIR="/run/inverter-control"
 
 # Services to monitor: name -> heartbeat file
@@ -61,7 +63,10 @@ disable_service() {
     local service="$1"
     local svc_dir="/service/${service}"
 
-    log "WARN: $service exceeded max restarts ($WATCHDOG_MAX_RESTARTS in ${WATCHDOG_WINDOW}s), disabling"
+    log "WARN: $service exceeded max restarts ($WATCHDOG_MAX_RESTARTS in ${WATCHDOG_WINDOW}s), disabling for ${WATCHDOG_DISABLE_BACKOFF}s"
+    # Marker makes the disable sticky for a backoff window so we stop hammering
+    # the stale service (and flooding the log) while it recovers.
+    echo "$(date +%s)" > "$HB_DIR/.watchdog_disabled_${service}"
     if [ -d "$svc_dir" ]; then
         svc -d "$svc_dir" 2>/dev/null || true
     fi
@@ -91,6 +96,19 @@ check_service() {
 
     local now
     now=$(date +%s)
+
+    # While a service is disabled, back off and leave it alone so it can
+    # recover (or the operator can intervene) without the log being flooded.
+    local disabled_file="$HB_DIR/.watchdog_disabled_${service}"
+    if [ -f "$disabled_file" ]; then
+        local disabled_at
+        disabled_at=$(cat "$disabled_file" 2>/dev/null) || disabled_at=0
+        if [ $(( now - disabled_at )) -lt "$WATCHDOG_DISABLE_BACKOFF" ]; then
+            return 0
+        fi
+        rm -f "$disabled_file"
+    fi
+
     local age=$((now - hb_time))
 
     if [ "$age" -gt "$WATCHDOG_TIMEOUT" ]; then
@@ -105,10 +123,12 @@ check_service() {
             return 1
         fi
 
-        # Restart service
+        # Restart service. NOTE: svc -k only KILLS the process; runit never
+        # auto-restarts, so we must follow with svc -u to bring it back up.
         log "INFO: restarting $service"
         record_restart "$service"
         svc -k "$svc_dir" 2>/dev/null || true
+        svc -u "$svc_dir" 2>/dev/null || true
     fi
 }
 

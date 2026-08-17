@@ -22,6 +22,17 @@ SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 
+# Battery chains with per-cell data, polled as full tree queries in the
+# background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
+# (as get_battery_cell_data used to) is ~72 subprocess calls per cycle which
+# blows the 5s cycle watchdog on a slow RPi.
+BATTERY_CELL_SERVICES = [
+    "com.victronenergy.battery.dbus-mqtt-chain1",
+    "com.victronenergy.battery.dbus-mqtt-chain2",
+]
+# How often the background poller refreshes the cell-data cache.
+CELL_DATA_POLL_INTERVAL = 30
+
 # =============================================================================
 # BATTERY SOC CALCULATION (ported from HA template sensors)
 # =============================================================================
@@ -134,6 +145,10 @@ class VictronDBus:
         # Cache of discovered cell counts per chain service, so we don't probe
         # up to 16 cells every cycle once the real count is known.
         self._chain_cell_counts: dict[str, int] = {}
+        # Cache for detailed battery chain cell data (DVCC), refreshed in the
+        # background so the control loop never blocks on per-cell dbus calls.
+        self._cached_battery_cell_data: dict[str, Any] = {}
+        self._last_battery_cell_data_time: float = 0.0
         # Cache for MPPT data to reduce D-Bus calls
         self._cached_mppt_data: dict[str, dict[str, float]] = {}
         self._last_mppt_time: float = 0.0
@@ -248,6 +263,9 @@ class VictronDBus:
 
         # Poll battery chain SoCs
         self._poll_battery_chain_socs()
+
+        # Poll battery chain cell data (throttled to every 30s)
+        self._poll_battery_cell_data_tree()
 
         # Poll inverter state
         self._poll_inverter_state()
@@ -403,6 +421,86 @@ class VictronDBus:
 
         self._cached_battery_chain_socs = socs
         self._last_battery_chain_soc_time = time.time()
+
+    def _poll_battery_cell_data_tree(self):
+        """Poll battery chain cell data via one tree query per chain.
+
+        A single dbus-send on the service root returns every Cell/N/Voltage,
+        Soc and Info/* flag in one call (~55ms) instead of dozens of
+        per-path subprocess calls. Runs at CELL_DATA_POLL_INTERVAL in the
+        background; get_battery_cell_data() then reads the cache.
+
+        Parsing deliberately mirrors the old per-path probe (cells 1..16,
+        stopping at the first gap) so DVCC behaviour is unchanged.
+        """
+        if time.time() - self._last_battery_cell_data_time < CELL_DATA_POLL_INTERVAL:
+            return
+
+        for service in BATTERY_CELL_SERVICES:
+            output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply",
+                    f"--dest={service}",
+                    "/",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.5,
+            )
+            if not output:
+                continue
+
+            chain_voltages = []
+            known_count = self._chain_cell_counts.get(service, 16)
+            for i in range(1, min(known_count + 1, 16) + 1):
+                match = re.search(
+                    rf'string "Cell/{i}/Voltage"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+                    output,
+                )
+                if not match:
+                    break
+                chain_voltages.append(float(match.group(1)))
+            if chain_voltages:
+                self._chain_cell_counts[service] = len(chain_voltages)
+
+            chain_temps = []
+            for i in range(1, 17):
+                match = re.search(
+                    rf'string "Cell/{i}/Temperature"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+                    output,
+                )
+                if match:
+                    chain_temps.append(float(match.group(1)))
+
+            soc_match = re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
+            chain_soc = float(soc_match.group(1)) if soc_match else None
+
+            allow_c = self._tree_bool(output, "Info/AllowCharge")
+            allow_d = self._tree_bool(output, "Info/AllowDischarge")
+
+            result = self._cached_battery_cell_data.setdefault(service, {})
+            result["voltages"] = chain_voltages
+            result["temps"] = chain_temps
+            result["soc"] = chain_soc
+            result["allow_charge"] = allow_c
+            result["allow_discharge"] = allow_d
+
+        self._last_battery_cell_data_time = time.time()
+
+    @staticmethod
+    def _tree_bool(output: str, path: str) -> bool | None:
+        """Parse a 0/1 variant value for a path from a tree query reply."""
+        match = re.search(
+            rf'string "{re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+            output,
+        )
+        if not match:
+            return None
+        try:
+            return int(float(match.group(1))) == 1
+        except (ValueError, TypeError):
+            return None
 
     def _poll_inverter_state(self):
         """Poll inverter state"""
@@ -920,12 +1018,46 @@ class VictronDBus:
         - soc: Overall SoC
         - allow_charge: Whether BMS allows charging
         - allow_discharge: Whether BMS allows discharging
-        """
-        cell_services = [
-            "com.victronenergy.battery.dbus-mqtt-chain1",
-            "com.victronenergy.battery.dbus-mqtt-chain2",
-        ]
 
+        Fast path: returns the background-polled cache (one tree query per
+        chain at 5Hz cadence, refreshed every 30s). Falls back to live
+        per-path D-Bus reads only when the cache is stale (e.g. dry-run).
+        """
+        if (
+            self._cached_battery_cell_data
+            and time.time() - self._last_battery_cell_data_time < CELL_DATA_POLL_INTERVAL + 10
+        ):
+            voltages: list[tuple[float, int]] = []
+            temps: list[float] = []
+            total_soc = 0.0
+            soc_count = 0
+            allow_charge = True
+            allow_discharge = True
+            for service in BATTERY_CELL_SERVICES:
+                entry = self._cached_battery_cell_data.get(service)
+                if not entry:
+                    continue
+                for v in entry.get("voltages", []):
+                    if v > 0:
+                        voltages.append((v, len(voltages)))
+                temps.extend(entry.get("temps", []))
+                soc = entry.get("soc")
+                if soc is not None:
+                    total_soc += soc
+                    soc_count += 1
+                if entry.get("allow_charge") is not None:
+                    allow_charge = allow_charge and entry["allow_charge"]
+                if entry.get("allow_discharge") is not None:
+                    allow_discharge = allow_discharge and entry["allow_discharge"]
+            if voltages or temps or soc_count:
+                return self._build_cell_result(
+                    voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
+                )
+
+        return self._get_battery_cell_data_live()
+
+    def _get_battery_cell_data_live(self) -> dict[str, Any]:
+        """Legacy live per-path D-Bus read (fallback when cache is stale)."""
         all_cell_voltages: list[tuple[float, int]] = []
         all_cell_temps: list[float] = []
         total_soc = 0.0
@@ -933,7 +1065,7 @@ class VictronDBus:
         allow_charge = True
         allow_discharge = True
 
-        for service in cell_services:
+        for service in BATTERY_CELL_SERVICES:
             all_cell_voltages.extend(
                 self._read_chain_cell_voltages(service, len(all_cell_voltages))
             )
@@ -952,6 +1084,19 @@ class VictronDBus:
             if allow_d is not None:
                 allow_discharge = allow_discharge and allow_d
 
+        return self._build_cell_result(
+            all_cell_voltages, all_cell_temps, total_soc, soc_count, allow_charge, allow_discharge
+        )
+
+    @staticmethod
+    def _build_cell_result(
+        all_cell_voltages: list[tuple[float, int]],
+        all_cell_temps: list[float],
+        total_soc: float,
+        soc_count: int,
+        allow_charge: bool,
+        allow_discharge: bool,
+    ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "max_cell": None,
             "max_cell_id": None,
