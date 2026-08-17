@@ -137,7 +137,7 @@ class _BrokenPipeSafeStream:
         try:
             self._stream.flush()
         except BrokenPipeError:
-            pass
+            pass  # Ignore broken pipe when log service restarts
 
     def __getattr__(self, name):
         return getattr(self._stream, name)

@@ -61,6 +61,9 @@ for pid in /proc/[0-9]*; do
         "$INSTALL_DIR")
             kill -9 "${pid##*/}" 2>/dev/null || true
             ;;
+        *)
+            # Ignore processes outside our install tree
+            ;;
     esac
 done
 sleep 1
