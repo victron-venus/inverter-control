@@ -1,32 +1,23 @@
-name: 'Auto Approve'
-description: 'Auto-approve Dependabot and Renovate PRs'
+name: 'Auto Approve PRs'
+description: 'Auto-approve Dependabot, Renovate, and 4alvit PRs'
+
 on:
-  workflow_call:
-    inputs:
-      pr-author:
-        description: 'PR author to auto-approve (comma-separated)'
-        type: string
-        default: 'dependabot[bot],renovate[bot],4alvit'
-      required-reviews:
-        description: 'Number of required approvals'
-        type: string
-        default: '1'
-      pr-types:
-        description: 'PR types to auto-approve (comma-separated: dependencies, all)'
-        type: string
-        default: 'dependencies'
-    jobs:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
   auto-approve:
     name: Auto Approve
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Auto Approve
-        uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          pr-author: ${{ inputs.pr-author }}
-          required-reviews: ${{ inputs.required-reviews }}
-          pr-types: ${{ inputs.pr-types }}
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-approve-reusable.yml@main
+    # Pin to specific SHA for supply-chain security:
+    # uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-approve-reusable.yml@875762362bb31b4899bf02fdf9e835188dc5eb80
+    with:
+      pr-author: 'dependabot[bot],renovate[bot],4alvit'
+      required-reviews: '0'
+      pr-types: 'all'
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
