@@ -5,6 +5,7 @@ Unit tests for Victron D-Bus Interface
 import os
 import subprocess
 import sys
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -673,6 +674,82 @@ class TestVictronDBus:
         assert result["soc"] is None
         assert result["allow_charge"] is True
         assert result["allow_discharge"] is True
+
+    def test_poll_battery_cell_data_tree(self):
+        """Test background tree-query poller parses cell data correctly"""
+        sample_output = (
+            '            string "Cell/1/Voltage"\n'
+            '            variant                double 3.45\n'
+            '            string "Cell/2/Voltage"\n'
+            '            variant                double 3.46\n'
+            '            string "Cell/3/Voltage"\n'
+            '            variant                double 3.44\n'
+            '            string "Soc"\n'
+            '            variant                double 85.5\n'
+            '            string "Info/AllowCharge"\n'
+            '            variant                double 1\n'
+        )
+        v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
+        v._safe_subprocess = MagicMock(return_value=sample_output)
+        v._cached_battery_cell_data = {}
+        v._chain_cell_counts = {}
+        v._last_battery_cell_data_time = 0.0
+
+        v._poll_battery_cell_data_tree()
+
+        entry = v._cached_battery_cell_data["com.victronenergy.battery.dbus-mqtt-chain1"]
+        assert entry["voltages"] == [3.45, 3.46, 3.44]
+        assert entry["soc"] == 85.5
+        assert entry["allow_charge"] is True
+        assert entry["allow_discharge"] is None
+        assert v._chain_cell_counts["com.victronenergy.battery.dbus-mqtt-chain1"] == 3
+
+    def test_poll_battery_cell_data_tree_throttled(self):
+        """Test the tree poller is throttled to CELL_DATA_POLL_INTERVAL"""
+        v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
+        v._safe_subprocess = MagicMock()
+        v._cached_battery_cell_data = {}
+        v._chain_cell_counts = {}
+        v._last_battery_cell_data_time = time.time()
+
+        v._poll_battery_cell_data_tree()
+
+        v._safe_subprocess.assert_not_called()
+
+    def test_get_battery_cell_data_uses_cache(self):
+        """Test get_battery_cell_data returns cached tree data without D-Bus calls"""
+        v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
+        v._cached_battery_cell_data = {
+            "com.victronenergy.battery.dbus-mqtt-chain1": {
+                "voltages": [3.45, 3.46],
+                "temps": [25.5],
+                "soc": 85.0,
+                "allow_charge": True,
+                "allow_discharge": True,
+            },
+        }
+        v._last_battery_cell_data_time = time.time()
+        v._get_battery_cell_data_live = MagicMock(return_value={"max_cell": 99.0})
+
+        result = v.get_battery_cell_data()
+
+        v._get_battery_cell_data_live.assert_not_called()
+        assert result["max_cell"] == 3.46
+        assert result["min_cell"] == 3.45
+        assert result["max_temp"] == 25.5
+        assert result["soc"] == 85.0
+
+    def test_get_battery_cell_data_stale_cache_falls_back(self):
+        """Test stale/empty cache falls back to the live D-Bus read"""
+        v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
+        v._cached_battery_cell_data = {}
+        v._last_battery_cell_data_time = 0.0
+        v._get_battery_cell_data_live = MagicMock(return_value={"max_cell": 3.5})
+
+        result = v.get_battery_cell_data()
+
+        v._get_battery_cell_data_live.assert_called_once()
+        assert result["max_cell"] == 3.5
 
 
 class TestGetVictron:

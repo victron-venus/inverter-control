@@ -116,6 +116,40 @@ except Exception as log_err:
     print(f"Warning: Could not create log file: {log_err}", file=sys.stderr)
 
 
+class _BrokenPipeSafeStream:
+    """Wrap stdout/stderr so a closed log pipe (EPIPE) never crashes the loop.
+
+    Venus OS runs us under daemontools with stdout piped to multilog. If that
+    pipe breaks (e.g. the log service is restarted), a plain print() raises
+    BrokenPipeError which previously killed the control cycle mid-run.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, data: str) -> int:
+        try:
+            return self._stream.write(data)
+        except BrokenPipeError:
+            return len(data)
+
+    def flush(self) -> None:
+        try:
+            self._stream.flush()
+        except BrokenPipeError:
+            pass  # Ignore broken pipe when log service restarts
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+# Install the safe wrappers before any application code calls print().
+if sys.stdout is not None:
+    sys.stdout = _BrokenPipeSafeStream(sys.stdout)
+if sys.stderr is not None:
+    sys.stderr = _BrokenPipeSafeStream(sys.stderr)
+
+
 def log_exception(msg: str):
     """Log exception with full traceback"""
     logger.error(f"{msg}\n{traceback.format_exc()}")
