@@ -1184,6 +1184,39 @@ class VictronDBus:
             )
         return chargers
 
+    def get_mppt_daily_yields(self) -> list[float]:
+        """Get daily yield (kWh) for each MPPT charger from D-Bus"""
+        yields = []
+        for service in self._mppt_services:
+            # /Yield/User = daily yield in kWh
+            yield_kwh = self._get_float(service, "/Yield/User")
+            yields.append(yield_kwh)
+        return yields
+
+    def get_pv_inverter_daily_yields(self) -> list[float]:
+        """Get daily yield (kWh) for each Tasmota PV inverter from D-Bus"""
+        yields = []
+        for service in TASMOTA_DBUS_SERVICES:
+            # /Ac/Energy/Forward = energy produced in kWh
+            yield_kwh = self._get_float(service, "/Ac/Energy/Forward")
+            yields.append(yield_kwh)
+        return yields
+
+    def get_battery_daily_energy(self) -> tuple[float, float]:
+        """Get battery daily charge/discharge energy (kWh) from system D-Bus
+
+        Returns (charge_kwh, discharge_kwh)
+        """
+        charge = self._get_float("com.victronenergy.system", "/History/Daily/0/ChargeEnergy")
+        discharge = self._get_float("com.victronenergy.system", "/History/Daily/0/DischargeEnergy")
+        return charge, discharge
+
+    def get_total_solar_yield_today(self) -> float:
+        """Get total solar production today (kWh) from all sources"""
+        mppt_yields = self.get_mppt_daily_yields()
+        pv_yields = self.get_pv_inverter_daily_yields()
+        return sum(mppt_yields) + sum(pv_yields)
+
 
 # Singleton instance
 _victron: VictronDBus | None = None

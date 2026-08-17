@@ -73,7 +73,17 @@ class ConsoleUI:
         battery_socs = sys_data.get("battery_socs", [])
         soc1 = int(battery_socs[0]) if len(battery_socs) > 0 else 0
         soc2 = int(battery_socs[1]) if len(battery_socs) > 1 else 0
-        comp_v = int(self.ha.get_sensor("compensation_voltage", 0))
+        # Calculate compensation voltage locally from D-Bus (was HA sensor)
+        # Approximation: voltage sag/rise under load as % of nominal
+        bv = sys_data.get("bv", 48.0)
+        bc = sys_data.get("bc", 0.0)
+        comp_v = 0
+        if bv > 0 and bc != 0:
+            # Internal resistance estimate * current / nominal voltage * 100
+            # Typical LiFePO4 IR ~ 0.01-0.02 ohm per cell * 16 cells = 0.16-0.32 ohm
+            ir_est = 0.24  # ohm
+            comp_v = int(abs(bc * ir_est) / bv * 100)
+            comp_v = min(comp_v, 100)
         _, inv_state_name = self.victron.get_inverter_state()
 
         return f"{C.YELLOW}[{inv_state_name}]{bp}W,{comp_v}%,{soc1}%,{soc2}%{C.RESET}"
@@ -144,19 +154,16 @@ class ConsoleUI:
         return "".join(parts)
 
     def update_terminal_title(self):
-        """Update terminal title with daily stats"""
+        """Update terminal title with daily stats from D-Bus"""
         self.title_update_counter += 1
         if self.title_update_counter < 10:
             return
         self.title_update_counter = 0
 
-        produced = self.ha.get_sensor("produced_today", 0)
-        dollars = self.ha.get_sensor("produced_dollars", 0)
-        grid_kwh = self.ha.get_sensor("grid_kwh_today", 0)
-        bin_kwh = self.ha.get_sensor("battery_in_today", 0)
-        bout_kwh = self.ha.get_sensor("battery_out_today", 0)
+        produced = self.victron.get_total_solar_yield_today()
+        bin_kwh, bout_kwh = self.victron.get_battery_daily_energy()
 
-        title = f"{produced}kW(${dollars})[G:{grid_kwh}kW] B.I:{bin_kwh}kWh,O:{bout_kwh}kWh"
+        title = f"{produced:.1f}kWh B.I:{bin_kwh:.1f}kWh O:{bout_kwh:.1f}kWh"
         print(f"\033]2;{title}\007", end="", flush=True)
 
 

@@ -106,13 +106,15 @@ class TestConsoleUI:
         sys_data = {
             "bp": 1000,
             "battery_socs": [85.5, 90.0],
+            "bv": 50.0,
+            "bc": 50.0,  # 50A discharge -> voltage sag -> comp_v ~ 24%
         }
 
         battery_section = self.ui._fmt_battery_section(sys_data)
 
         assert "Inverting" in battery_section  # inverter state
         assert "1000W" in battery_section
-        assert "48%" in battery_section  # compensation voltage
+        assert "24%" in battery_section  # compensation voltage (local calc)
         assert "85%" in battery_section  # soc1 truncated (int(85.5) = 85)
         assert "90%" in battery_section  # soc2 truncated
 
@@ -174,6 +176,10 @@ class TestConsoleUI:
 
     def test_update_terminal_title(self):
         """Test terminal title update"""
+        # Mock new D-Bus methods
+        self.mock_victron.get_total_solar_yield_today.return_value = 12.5
+        self.mock_victron.get_battery_daily_energy.return_value = (3.2, 4.8)
+
         # Should not print until 10th call
         for i in range(9):
             self.ui.update_terminal_title()
@@ -184,8 +190,9 @@ class TestConsoleUI:
             mock_print.assert_called_once()
             # Check title format
             call_args = mock_print.call_args[0][0]
-            assert "kW" in call_args
-            assert "kWh" in call_args
+            assert "12.5kWh" in call_args
+            assert "3.2kWh" in call_args
+            assert "4.8kWh" in call_args
 
 
 class TestConsoleUIEdgeCases:

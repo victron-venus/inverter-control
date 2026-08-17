@@ -31,6 +31,8 @@ TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
 # =============================================================================
 # Note: "home_total" removed - now read from Vue D-Bus (com.victronenergy.acload.Total)
 # via HomeAssistantClient.get_vue_sensor("total")
+# Note: produced_today, battery_in/out_today, tasmota_*_daily, mppt_*_daily,
+# pv_total_daily, compensation_voltage removed - now read from D-Bus
 
 HA_SENSORS = {
     "net_usage": "sensor.your_net_usage",
@@ -41,21 +43,10 @@ HA_SENSORS = {
     "washer_time": "sensor.your_washer_time",
     "dryer_time": "sensor.your_dryer_time",
     "dishwasher_duration": "sensor.your_dishwasher_duration",
-    "produced_today": "sensor.your_produced_today",
     "produced_dollars": "sensor.your_produced_dollars",
-    "battery_in_today": "sensor.your_battery_in_today",
-    "battery_out_today": "sensor.your_battery_out_today",
     "battery_in_yesterday": "sensor.your_battery_in_yesterday",
     "battery_out_yesterday": "sensor.your_battery_out_yesterday",
     "grid_kwh_today": "sensor.your_grid_kwh_today",
-    # corrected_soc removed - now calculated locally from D-Bus voltage + power
-    "compensation_voltage": "sensor.your_compensation_voltage",
-    "tasmota_1_daily": "sensor.your_tasmota_1_daily",
-    "tasmota_2_daily": "sensor.your_tasmota_2_daily",
-    "pv_total_daily": "sensor.your_pv_total_daily",
-    "mppt_1_daily": "sensor.your_mppt_1_daily",
-    "mppt_2_daily": "sensor.your_mppt_2_daily",
-    "mppt_3_daily": "sensor.your_mppt_3_daily",
 }
 
 # =============================================================================

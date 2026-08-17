@@ -622,26 +622,23 @@ class InverterController:
         }
 
     def _get_daily_stats(self) -> dict[str, Any]:
-        if not ENABLE_HA:
-            return {}
+        # All daily stats now from D-Bus (no HA dependency)
+        battery_in, battery_out = self.victron.get_battery_daily_energy()
+        mppt_daily = self.victron.get_mppt_daily_yields()
+        tasmota_daily = self.victron.get_pv_inverter_daily_yields()
+        produced_today = sum(mppt_daily) + sum(tasmota_daily)
+
         return {
-            "produced_today": self.ha.get_sensor("produced_today", 0),
-            "produced_dollars": self.ha.get_sensor("produced_dollars", 0),
-            "grid_kwh": self.ha.get_sensor("grid_kwh_today", 0),
-            "battery_in": self.ha.get_sensor("battery_in_today", 0),
-            "battery_out": self.ha.get_sensor("battery_out_today", 0),
-            "battery_in_yesterday": self.ha.get_sensor("battery_in_yesterday", 0),
-            "battery_out_yesterday": self.ha.get_sensor("battery_out_yesterday", 0),
-            "pv_total_daily": self.ha.get_sensor("pv_total_daily", 0),
-            "tasmota_daily": [
-                self.ha.get_sensor("tasmota_1_daily", 0),
-                self.ha.get_sensor("tasmota_2_daily", 0),
-            ],
-            "mppt_daily": [
-                self.ha.get_sensor("mppt_1_daily", 0),
-                self.ha.get_sensor("mppt_2_daily", 0),
-                self.ha.get_sensor("mppt_3_daily", 0),
-            ],
+            "produced_today": produced_today,
+            "produced_dollars": 0.0,  # No HA - compute locally if needed
+            "grid_kwh": 0.0,  # No D-Bus equivalent yet
+            "battery_in": battery_in,
+            "battery_out": battery_out,
+            "battery_in_yesterday": 0.0,  # No D-Bus equivalent
+            "battery_out_yesterday": 0.0,  # No D-Bus equivalent
+            "pv_total_daily": produced_today,
+            "tasmota_daily": tasmota_daily,
+            "mppt_daily": mppt_daily,
         }
 
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
