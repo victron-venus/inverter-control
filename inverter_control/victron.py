@@ -20,6 +20,7 @@ logger = logging.getLogger("inverter-control")
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
+SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 
 # Battery chains with per-cell data, polled as full tree queries in the
@@ -280,7 +281,7 @@ class VictronDBus:
                 "dbus-send",
                 "--system",
                 "--print-reply",
-                "--dest=com.victronenergy.system",
+                f"--dest={SYSTEM_SERVICE}",
                 "/",
                 GET_VALUE_METHOD,
             ],
@@ -652,7 +653,7 @@ class VictronDBus:
                 "dbus-send",
                 "--system",
                 "--print-reply",
-                "--dest=com.victronenergy.system",
+                f"--dest={SYSTEM_SERVICE}",
                 "/",
                 GET_VALUE_METHOD,
             ],
@@ -1207,8 +1208,8 @@ class VictronDBus:
 
         Returns (charge_kwh, discharge_kwh)
         """
-        charge = self._get_float("com.victronenergy.system", "/History/Daily/0/ChargeEnergy")
-        discharge = self._get_float("com.victronenergy.system", "/History/Daily/0/DischargeEnergy")
+        charge = self._get_float(SYSTEM_SERVICE, "/History/Daily/0/ChargeEnergy")
+        discharge = self._get_float(SYSTEM_SERVICE, "/History/Daily/0/DischargeEnergy")
         return charge, discharge
 
     def get_total_solar_yield_today(self) -> float:
