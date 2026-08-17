@@ -671,7 +671,7 @@ class InverterController:
             **self._get_ev_state(),
             **self._get_water_state(),
             **self._get_ha_state(),
-            "loads": self.ha.get_all_vue_sensors() if ENABLE_HA_LOADS else {},
+            "loads": self.victron.get_acload_powers() if ENABLE_HA_LOADS else {},
             "ess_mode": self.victron.get_ess_mode(),
             "battery_power": sys_data.get("bp", 0),
             "battery_voltage": sys_data.get("bv", 0),

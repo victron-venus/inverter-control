@@ -162,6 +162,10 @@ class VictronDBus:
         # Cache for inverter state
         self._cached_inverter_state: tuple[int, str] = (0, "Unknown")
         self._last_inverter_state_time: float = 0.0
+        # Cache for acload (Emporia Vue) power channels
+        self._acload_services: list = []
+        self._cached_acload_powers: dict[str, float] = {}
+        self._last_acload_time: float = 0.0
 
         # Background polling thread (like HA does)
         self._poll_thread: threading.Thread | None = None
@@ -173,7 +177,7 @@ class VictronDBus:
         self._discover_services()
 
     def _discover_services(self):
-        """Discover VE.Bus and MPPT services"""
+        """Discover VE.Bus, MPPT, and acload services"""
 
         self._last_scan_time = time.time()
         old_vebus = self._vebus_service
@@ -186,20 +190,27 @@ class VictronDBus:
 
             self._vebus_service = None
             self._mppt_services = []
+            self._acload_services = []
 
             for line in lines:
                 if "com.victronenergy.vebus" in line:
                     self._vebus_service = line.strip()
                 elif "com.victronenergy.solarcharger" in line:
                     self._mppt_services.append(line.strip())
+                elif "com.victronenergy.acload" in line:
+                    self._acload_services.append(line.strip())
 
             self._mppt_services.sort()
+            self._acload_services.sort()
 
             # Log if service changed
             if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
                 print(f"  [D-Bus] VE.Bus service changed: {old_vebus} -> {self._vebus_service}")
             elif not old_vebus and self._vebus_service:
                 print(f"  [D-Bus] VE.Bus service found: {self._vebus_service}")
+
+            if self._acload_services:
+                print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
 
             self._consecutive_errors = 0
 
@@ -261,6 +272,10 @@ class VictronDBus:
         # Poll Tasmota PV power
         if TASMOTA_DBUS_SERVICES:
             self._poll_tasmota_power()
+
+        # Poll acload (Emporia Vue) power channels
+        if self._acload_services:
+            self._poll_acload_power()
 
         # Poll battery chain SoCs
         self._poll_battery_chain_socs()
@@ -387,6 +402,37 @@ class VictronDBus:
 
         self._cached_tasmota_powers = powers
         self._last_tasmota_time = time.time()
+
+    def _poll_acload_power(self):
+        """Poll Emporia Vue power channels (acload services)"""
+        powers = {}
+        for service in self._acload_services:
+            output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply",
+                    f"--dest={service}",
+                    "/",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.3,
+            )
+            if output:
+                # Extract CustomName and Ac/Power from tree query
+                name_match = re.search(r'string "CustomName"[^\n]*\n[^\n]*variant\s+\S+\s+"([^"]+)"', output)
+                power_match = re.search(r"Ac/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)", output)
+                if name_match and power_match:
+                    try:
+                        name = name_match.group(1).strip()
+                        power = float(power_match.group(1))
+                        # Use CustomName as key, lowercase with underscores
+                        key = name.lower().replace(" ", "_")
+                        powers[key] = power
+                    except (ValueError, TypeError) as e:
+                        logger.debug("acload parse failed: %s", e)
+        self._cached_acload_powers = powers
+        self._last_acload_time = time.time()
 
     def _poll_battery_chain_socs(self):
         """Poll battery chain SoCs"""
@@ -767,6 +813,16 @@ class VictronDBus:
 
         # Background polling keeps this fresh
         return self._cached_tasmota_powers
+
+    def get_acload_powers(self) -> dict[str, float]:
+        """Get power from Emporia Vue channels (acload services) - instant from background cache"""
+        # Return cached data if fresh (background poll updates every 0.2s)
+        now = time.time()
+        if now - self._last_acload_time < 0.5:  # TTL 0.5 seconds
+            return self._cached_acload_powers
+
+        # Background polling keeps this fresh
+        return self._cached_acload_powers
 
     def get_battery_soc(self) -> float | None:
         """Get battery SoC from system"""
