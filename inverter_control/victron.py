@@ -407,30 +407,49 @@ class VictronDBus:
         """Poll Emporia Vue power channels (acload services)"""
         powers = {}
         for service in self._acload_services:
-            output = self._safe_subprocess(
+            # Query CustomName
+            name_output = self._safe_subprocess(
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply",
+                    "--print-reply=literal",
                     f"--dest={service}",
-                    "/",
+                    "/CustomName",
                     GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
-            if output:
-                # Extract CustomName and Ac/Power from tree query
-                name_match = re.search(r'string "CustomName"[^\n]*\n[^\n]*variant\s+\S+\s+"([^"]+)"', output)
-                power_match = re.search(r"Ac/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)", output)
-                if name_match and power_match:
-                    try:
-                        name = name_match.group(1).strip()
-                        power = float(power_match.group(1))
-                        # Use CustomName as key, lowercase with underscores
-                        key = name.lower().replace(" ", "_")
-                        powers[key] = power
-                    except (ValueError, TypeError) as e:
-                        logger.debug("acload parse failed: %s", e)
+            if not name_output:
+                continue
+            name_match = re.search(r'variant\s+(\S.*)', name_output.strip())
+            if not name_match:
+                continue
+
+            # Query Ac/Power
+            power_output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply=literal",
+                    f"--dest={service}",
+                    "/Ac/Power",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.3,
+            )
+            if not power_output:
+                continue
+            power_match = re.search(r'(?:double|int32|variant\s+(?:double|int32))\s+([-\d.]+)', power_output)
+            if not power_match:
+                continue
+
+            try:
+                name = name_match.group(1).strip()
+                power = float(power_match.group(1))
+                key = name.lower().replace(" ", "_")
+                powers[key] = power
+            except (ValueError, TypeError) as e:
+                logger.debug("acload parse failed: %s", e)
         self._cached_acload_powers = powers
         self._last_acload_time = time.time()
 
