@@ -25,3 +25,5 @@ jobs:
           pr-author: 'dependabot[bot],renovate[bot],4alvit'
           required-reviews: '0'
           pr-types: 'all'
+        secrets:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
