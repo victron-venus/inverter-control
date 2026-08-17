@@ -423,16 +423,7 @@ class VictronDBus:
         self._last_battery_chain_soc_time = time.time()
 
     def _poll_battery_cell_data_tree(self):
-        """Poll battery chain cell data via one tree query per chain.
-
-        A single dbus-send on the service root returns every Cell/N/Voltage,
-        Soc and Info/* flag in one call (~55ms) instead of dozens of
-        per-path subprocess calls. Runs at CELL_DATA_POLL_INTERVAL in the
-        background; get_battery_cell_data() then reads the cache.
-
-        Parsing deliberately mirrors the old per-path probe (cells 1..16,
-        stopping at the first gap) so DVCC behaviour is unchanged.
-        """
+        """Poll battery chain cell data via one tree query per chain."""
         if time.time() - self._last_battery_cell_data_time < CELL_DATA_POLL_INTERVAL:
             return
 
@@ -451,42 +442,60 @@ class VictronDBus:
             if not output:
                 continue
 
-            chain_voltages = []
-            known_count = self._chain_cell_counts.get(service, 16)
-            for i in range(1, min(known_count + 1, 16) + 1):
-                match = re.search(
-                    rf'string "Cell/{i}/Voltage"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
-                    output,
-                )
-                if not match:
-                    break
-                chain_voltages.append(float(match.group(1)))
-            if chain_voltages:
-                self._chain_cell_counts[service] = len(chain_voltages)
-
-            chain_temps = []
-            for i in range(1, 17):
-                match = re.search(
-                    rf'string "Cell/{i}/Temperature"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
-                    output,
-                )
-                if match:
-                    chain_temps.append(float(match.group(1)))
-
-            soc_match = re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
-            chain_soc = float(soc_match.group(1)) if soc_match else None
-
-            allow_c = self._tree_bool(output, "Info/AllowCharge")
-            allow_d = self._tree_bool(output, "Info/AllowDischarge")
-
-            result = self._cached_battery_cell_data.setdefault(service, {})
-            result["voltages"] = chain_voltages
-            result["temps"] = chain_temps
-            result["soc"] = chain_soc
-            result["allow_charge"] = allow_c
-            result["allow_discharge"] = allow_d
+            self._parse_and_cache_chain_data(service, output)
 
         self._last_battery_cell_data_time = time.time()
+
+    def _parse_and_cache_chain_data(self, service: str, output: str) -> None:
+        """Parse tree query output and cache chain data."""
+        chain_voltages = self._parse_chain_voltages(service, output)
+        if chain_voltages:
+            self._chain_cell_counts[service] = len(chain_voltages)
+
+        chain_temps = self._parse_chain_temps(output)
+        chain_soc = self._parse_chain_soc(output)
+        allow_c = self._tree_bool(output, "Info/AllowCharge")
+        allow_d = self._tree_bool(output, "Info/AllowDischarge")
+
+        result = self._cached_battery_cell_data.setdefault(service, {})
+        result["voltages"] = chain_voltages
+        result["temps"] = chain_temps
+        result["soc"] = chain_soc
+        result["allow_charge"] = allow_c
+        result["allow_discharge"] = allow_d
+
+    def _parse_chain_voltages(self, service: str, output: str) -> list[float]:
+        """Parse cell voltages from tree output, stopping at first gap."""
+        chain_voltages = []
+        known_count = self._chain_cell_counts.get(service, 16)
+        max_cell = min(known_count + 1, 16)
+
+        for i in range(1, max_cell + 1):
+            match = re.search(
+                rf'string "Cell/{i}/Voltage"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+                output,
+            )
+            if not match:
+                break
+            chain_voltages.append(float(match.group(1)))
+        return chain_voltages
+
+    def _parse_chain_temps(self, output: str) -> list[float]:
+        """Parse cell temperatures from tree output (may be sparse)."""
+        chain_temps = []
+        for i in range(1, 17):
+            match = re.search(
+                rf'string "Cell/{i}/Temperature"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+                output,
+            )
+            if match:
+                chain_temps.append(float(match.group(1)))
+        return chain_temps
+
+    def _parse_chain_soc(self, output: str) -> float | None:
+        """Parse chain SoC from tree output."""
+        soc_match = re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
+        return float(soc_match.group(1)) if soc_match else None
 
     @staticmethod
     def _tree_bool(output: str, path: str) -> bool | None:
