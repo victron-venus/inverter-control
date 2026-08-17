@@ -1039,6 +1039,17 @@ class VictronDBus:
         if not self._cached_battery_cell_data:
             return None
 
+        voltages, temps, total_soc, soc_count, allow_charge, allow_discharge = self._aggregate_cached_chains()
+
+        if not (voltages or temps or soc_count):
+            return None
+
+        return self._build_cell_result(
+            voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
+        )
+
+    def _aggregate_cached_chains(self) -> tuple:
+        """Aggregate data from all cached battery chains."""
         voltages: list[tuple[float, int]] = []
         temps: list[float] = []
         total_soc = 0.0
@@ -1050,31 +1061,34 @@ class VictronDBus:
             entry = self._cached_battery_cell_data.get(service)
             if not entry:
                 continue
-            for v in entry.get("voltages", []):
-                if v > 0:
-                    voltages.append((v, len(voltages)))
-            temps.extend(entry.get("temps", []))
-            soc = entry.get("soc")
-            if soc is not None:
-                total_soc += soc
-                soc_count += 1
-            if entry.get("allow_charge") is not None:
-                allow_charge = allow_charge and entry["allow_charge"]
-            if entry.get("allow_discharge") is not None:
-                allow_discharge = allow_discharge and entry["allow_discharge"]
+            self._accumulate_chain_data(entry, voltages, temps, total_soc, soc_count, allow_charge, allow_discharge)
 
-        if not (voltages or temps or soc_count):
-            return None
+        return voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
 
-        return self._build_cell_result(
-            voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
-        )
+    def _accumulate_chain_data(self, entry: dict, voltages: list, temps: list,
+                               total_soc: float, soc_count: int,
+                               allow_charge: bool, allow_discharge: bool) -> tuple:
+        """Accumulate single chain's data into aggregate."""
+        for v in entry.get("voltages", []):
+            if v > 0:
+                voltages.append((v, len(voltages)))
+        temps.extend(entry.get("temps", []))
+
+        soc = entry.get("soc")
+        if soc is not None:
+            total_soc += soc
+            soc_count += 1
+
+        if entry.get("allow_charge") is not None:
+            allow_charge = allow_charge and entry["allow_charge"]
+        if entry.get("allow_discharge") is not None:
+            allow_discharge = allow_discharge and entry["allow_discharge"]
+
+        return voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
 
     def _get_battery_cell_data_live(self) -> dict[str, Any]:
         """Legacy live per-path D-Bus read (fallback when cache is stale)."""
-        return self._build_cell_result(
-            *self._collect_live_cell_data()
-        )
+        return self._build_cell_result(*self._collect_live_cell_data())
 
     def _collect_live_cell_data(self) -> tuple:
         """Collect all live cell data from battery chains."""
@@ -1091,23 +1105,31 @@ class VictronDBus:
             )
             all_cell_temps.extend(self._read_chain_cell_temps(service))
 
-            soc = self._read_chain_soc(service)
-            if soc is not None:
-                total_soc += soc
-                soc_count += 1
-
-            allow_c = self._read_chain_allow_flag(service, "/Info/AllowCharge")
-            if allow_c is not None:
-                allow_charge = allow_charge and allow_c
-
-            allow_d = self._read_chain_allow_flag(service, "/Info/AllowDischarge")
-            if allow_d is not None:
-                allow_discharge = allow_discharge and allow_d
+            self._accumulate_live_chain_data(service, total_soc, soc_count, allow_charge, allow_discharge)
 
         return (
             all_cell_voltages, all_cell_temps, total_soc, soc_count,
             allow_charge, allow_discharge
         )
+
+    def _accumulate_live_chain_data(self, service: str,
+                                    total_soc: float, soc_count: int,
+                                    allow_charge: bool, allow_discharge: bool) -> tuple:
+        """Accumulate live chain SOC and allow flags."""
+        soc = self._read_chain_soc(service)
+        if soc is not None:
+            total_soc += soc
+            soc_count += 1
+
+        allow_c = self._read_chain_allow_flag(service, "/Info/AllowCharge")
+        if allow_c is not None:
+            allow_charge = allow_charge and allow_c
+
+        allow_d = self._read_chain_allow_flag(service, "/Info/AllowDischarge")
+        if allow_d is not None:
+            allow_discharge = allow_discharge and allow_d
+
+        return total_soc, soc_count, allow_charge, allow_discharge
 
     @staticmethod
     def _build_cell_result(
