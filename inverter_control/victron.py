@@ -16,7 +16,7 @@ from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 
 logger = logging.getLogger("inverter-control")
 
-# D-Bus path constants (duplicated across methods)
+# D-Bus path constants
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
@@ -26,6 +26,44 @@ PRINT_REPLY_LITERAL = "--print-reply=literal"
 TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
 AC_POWER_PATH = "/Ac/Power"
 VARIANT_VALUE_PATTERN = r"variant\s+\S+\s+([\d.]+)"
+
+# System data regex patterns - shared between background poll and sync fallback
+SYSTEM_DATA_PATTERNS = {
+    "g1": r"Ac/Grid/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+    "g2": r"Ac/Grid/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+    "t1": r"Ac/Consumption/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+    "t2": r"Ac/Consumption/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+    "bv": r"Dc/Battery/Voltage[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
+    "bc": r"Dc/Battery/Current[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+    "bp": r"Dc/Battery/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
+    "pv_total": r"Dc/Pv/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
+}
+
+
+def _parse_system_data_output(output: str) -> dict[str, Any]:
+    """Parse system data tree output using shared patterns. Returns dict with g1,g2,gt,t1,t2,tt,bv,bc,bp,pv_total."""
+    data: dict[str, Any] = {
+        "g1": 0,
+        "g2": 0,
+        "t1": 0,
+        "t2": 0,
+        "bv": 0.0,
+        "bc": 0.0,
+        "bp": 0,
+        "pv_total": 0,
+    }
+    for key, pattern in SYSTEM_DATA_PATTERNS.items():
+        match = re.search(pattern, output)
+        if match:
+            try:
+                val = float(match.group(1))
+                data[key] = int(val) if key not in ("bv", "bc") else val
+            except (ValueError, TypeError) as e:
+                logger.debug("System data parse failed for %s: %s", key, e)
+    data["gt"] = data["g1"] + data["g2"]
+    data["tt"] = data["t1"] + data["t2"]
+    return data
+
 
 # Battery chains with per-cell data, polled as full tree queries in the
 # background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
@@ -315,30 +353,9 @@ class VictronDBus:
             self._parse_system_data(output)
 
     def _parse_system_data(self, output: str):
-        """Parse system data from tree query output"""
-        # Simplified patterns to avoid regex backtracking
-        patterns = {
-            "g1": r"Ac/Grid/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-            "g2": r"Ac/Grid/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-            "t1": r"Ac/Consumption/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-            "t2": r"Ac/Consumption/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-            "bv": r"Dc/Battery/Voltage[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
-            "bc": r"Dc/Battery/Current[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-            "bp": r"Dc/Battery/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-            "pv_total": r"Dc/Pv/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
-        }
-
-        for key, pattern in patterns.items():
-            match = re.search(pattern, output)
-            if match:
-                try:
-                    val = float(match.group(1))
-                    self._system_data[key] = int(val) if key not in ("bv", "bc") else val
-                except (ValueError, TypeError) as e:
-                    logger.debug("System data parse failed for %s: %s", key, e)
-
-        self._system_data["gt"] = self._system_data.get("g1", 0) + self._system_data.get("g2", 0)
-        self._system_data["tt"] = self._system_data.get("t1", 0) + self._system_data.get("t2", 0)
+        """Parse system data from tree query output using shared parser"""
+        parsed = _parse_system_data_output(output)
+        self._system_data.update(parsed)
         self._system_data["_last_update"] = time.time()
 
     def _poll_mppt_data_tree(self):
@@ -753,28 +770,8 @@ class VictronDBus:
         if not output:
             return data
 
-        patterns = {
-            "g1": r"Ac/Grid/L1/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "g2": r"Ac/Grid/L2/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "t1": r"Ac/Consumption/L1/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "t2": r"Ac/Consumption/L2/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "bv": r"Dc/Battery/Voltage.*?\n.*?variant\s+\S+\s+([\d.]+)",
-            "bc": r"Dc/Battery/Current.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "bp": r"Dc/Battery/Power.*?\n.*?variant\s+\S+\s+(\-?[\d.]+)",
-            "pv_total": r"Dc/Pv/Power.*?\n.*?variant\s+\S+\s+([\d.]+)",
-        }
-
-        for key, pattern in patterns.items():
-            match = re.search(pattern, output, re.DOTALL)
-            if match:
-                try:
-                    val = float(match.group(1))
-                    data[key] = int(val) if key not in ("bv", "bc") else val
-                except (ValueError, TypeError) as e:
-                    logger.debug("D-Bus system data parse failed for %s: %s", key, e)
-
-        data["gt"] = data["g1"] + data["g2"]
-        data["tt"] = data["t1"] + data["t2"]
+        parsed = _parse_system_data_output(output)
+        data.update(parsed)
         return data
 
     def get_inverter_state(self) -> tuple[int, str]:
