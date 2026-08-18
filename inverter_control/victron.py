@@ -319,24 +319,28 @@ class VictronDBus:
         self._cached_mppt_data = data
         self._last_mppt_time = time.time()
 
-    def _poll_tasmota_power(self):
-        """Poll Tasmota PV power"""
+    def _query_pv_powers(self, path: str = "/", reply_mode: str = "--print-reply") -> list:
+        """Query all PV inverter services for power (shared by poll and fallback)."""
         powers = []
         for service in self._pv_inverter_services:
             output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply",
+                    reply_mode,
                     f"--dest={service}",
-                    "/",
+                    path,
                     GET_VALUE_METHOD,
                 ],
                 service=service,
                 timeout=0.3,
             )
             powers.append(extract_power_from_tree(output))
-        self._cached_pv_powers = powers
+        return powers
+
+    def _poll_tasmota_power(self):
+        """Poll Tasmota PV power"""
+        self._cached_pv_powers = self._query_pv_powers()
         self._last_pv_time = time.time()
 
     def _query_acload_powers(self) -> dict[str, float]:
@@ -378,29 +382,33 @@ class VictronDBus:
         self._cached_acload_powers = self._query_acload_powers()
         self._last_acload_time = time.time()
 
-    def _poll_battery_chain_socs(self):
-        """Poll battery chain SoCs"""
+    def _query_battery_chain_socs(
+        self, path: str = "/", reply_mode: str = "--print-reply",
+        soc_regex: re.Pattern | None = None,
+    ) -> list[float]:
+        """Query all battery chain services for SoC (shared by poll and fallback)."""
+        if soc_regex is None:
+            soc_regex = re.compile(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)")
         battery_services = [
             BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
-
         socs = []
         for service in battery_services:
             output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply",
+                    reply_mode,
                     f"--dest={service}",
-                    "/",
+                    path,
                     GET_VALUE_METHOD,
                 ],
                 service=service,
                 timeout=0.3,
             )
             if output:
-                match = re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
+                match = soc_regex.search(output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
@@ -411,8 +419,11 @@ class VictronDBus:
                     socs.append(0.0)
             else:
                 socs.append(0.0)
+        return socs
 
-        self._cached_battery_chain_socs = socs
+    def _poll_battery_chain_socs(self):
+        """Poll battery chain SoCs"""
+        self._cached_battery_chain_socs = self._query_battery_chain_socs()
         self._last_battery_chain_soc_time = time.time()
 
     def _poll_battery_cell_data_tree(self):
@@ -505,6 +516,12 @@ class VictronDBus:
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _parse_inverter_state_code(raw: str) -> tuple[int, str]:
+        """Parse inverter state code from raw D-Bus output."""
+        code = int(raw.strip())
+        return code, INVERTER_STATES.get(code, f"? ({code})")
+
     def _poll_inverter_state(self):
         """Poll inverter state (uses _safe_subprocess directly to avoid lock contention)"""
         if not self._vebus_service:
@@ -526,8 +543,7 @@ class VictronDBus:
         )
         if output:
             try:
-                code = int(output.strip())
-                result = (code, INVERTER_STATES.get(code, f"? ({code})"))
+                result = self._parse_inverter_state_code(output)
                 self._cached_inverter_state = result
                 self._consecutive_errors = 0
             except (ValueError, TypeError) as e:
@@ -891,21 +907,7 @@ class VictronDBus:
         if now - self._last_pv_time < 0.5:  # TTL 0.5 seconds
             return self._cached_pv_powers
 
-        powers = []
-        for service in self._pv_inverter_services:
-            output = self._safe_subprocess_tracked(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    AC_POWER_PATH,
-                    GET_VALUE_METHOD,
-                ],
-                service=service,
-                timeout=0.3,
-            )
-            powers.append(extract_power_from_tree(output))
+        powers = self._query_pv_powers(path=AC_POWER_PATH, reply_mode=PRINT_REPLY_LITERAL)
         self._cached_pv_powers = powers
         self._last_pv_time = time.time()
         return powers
@@ -937,37 +939,11 @@ class VictronDBus:
         if now - self._last_battery_chain_soc_time < 2.0:  # TTL 2 seconds
             return self._cached_battery_chain_socs
 
-        battery_services = [
-            BATTERY_CHAIN_1,
-            "com.victronenergy.battery.mqtt_chain2",
-        ]
-        socs = []
-        for service in battery_services:
-            output = self._safe_subprocess_tracked(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    "/Soc",
-                    GET_VALUE_METHOD,
-                ],
-                service=service,
-                timeout=0.3,
-            )
-            if output:
-                match = VARIANT_RE.search(output)
-                if match:
-                    try:
-                        socs.append(float(match.group(1)))
-                    except (ValueError, TypeError):
-                        logger.debug("Battery chain SoC parse failed: %s", match.group(1))
-                        socs.append(0.0)
-                else:
-                    socs.append(0.0)
-            else:
-                socs.append(0.0)
-
+        socs = self._query_battery_chain_socs(
+            path="/Soc",
+            reply_mode=PRINT_REPLY_LITERAL,
+            soc_regex=VARIANT_RE,
+        )
         self._cached_battery_chain_socs = socs
         self._last_battery_chain_soc_time = time.time()
         return socs
