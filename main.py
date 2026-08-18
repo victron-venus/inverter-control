@@ -65,6 +65,7 @@ from inverter_control.config import (
     LOOP_INTERVAL,
     MQTT_SLIM_EXCLUDE_KEYS,
     MQTT_SLIM_STATE,
+    NO_FEED_SLEEP_INTERVAL,
     POWER_LIMIT_MAX,
     POWER_LIMIT_MIN,
     SETPOINT_DELTA_LIMIT,
@@ -750,7 +751,7 @@ class InverterController:
 
             try:
                 if self.ha.get_boolean("no_feed"):
-                    time.sleep(2)
+                    time.sleep(NO_FEED_SLEEP_INTERVAL)
             except Exception:
                 pass  # Best effort - ignore HA lookup failures for this optional delay
             return True

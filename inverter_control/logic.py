@@ -247,6 +247,8 @@ class SetpointCalculator:
 
         # Normal strategy state (creep accumulator, etc.)
         self._normal_state: dict = {}
+        # EMA-smoothed derived_gt (persists across calculate() calls)
+        self._filtered_derived_gt: float | None = None
 
     # Backwards compatibility for tests - expose normal strategy state
     @property
@@ -332,16 +334,19 @@ class SetpointCalculator:
         if state.derived_gt is not None:
             smoothing_weight = self.config.get("GRID_SMOOTHING_HOME_WEIGHT", 0.7)
             derived_alpha = self.config.get("GRID_SMOOTHING_DERIVED_ALPHA", 0.1)
-            old_derived_gt = state.derived_gt
-            # EMA smooth the derived value itself
-            state.derived_gt = (
-                (derived_alpha * state.derived_gt + (1 - derived_alpha) * old_derived_gt)
-                if old_derived_gt is not None
-                else float(state.derived_gt)
-            )
+            raw_derived = float(state.derived_gt)
+            # EMA smooth the derived value across cycles
+            if self._filtered_derived_gt is None:
+                self._filtered_derived_gt = raw_derived
+            else:
+                self._filtered_derived_gt = (
+                    derived_alpha * raw_derived
+                    + (1 - derived_alpha) * self._filtered_derived_gt
+                )
             # Blend: weight * derived + (1-weight) * instantaneous
             effective_gt = (
-                smoothing_weight * state.derived_gt + (1 - smoothing_weight) * effective_gt
+                smoothing_weight * self._filtered_derived_gt
+                + (1 - smoothing_weight) * effective_gt
             )
 
         old_filtered_gt = state.filtered_gt

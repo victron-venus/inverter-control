@@ -4,6 +4,7 @@ Inverter Control Configuration
 All configurable parameters in one place
 """
 
+import functools
 import os
 import subprocess
 
@@ -130,6 +131,7 @@ DRY_RUN = False  # Live mode - sending commands to Victron
 # =============================================================================
 
 
+@functools.lru_cache(maxsize=1)
 def _detect_portal_id() -> str:
     """Resolve the VRM Portal ID at runtime.
 
@@ -158,6 +160,7 @@ def _detect_portal_id() -> str:
     return "your_portal_id"
 
 
+# Lazy: first access triggers detection (cached for subsequent calls)
 PORTAL_ID = _detect_portal_id()
 
 # Power limits for outlet protection (Watts)
@@ -167,6 +170,7 @@ POWER_LIMIT_MIN = -2300  # Maximum export (negative = discharging to grid)
 # Control loop timing
 LOOP_INTERVAL = 0.33  # seconds (3 times per second)
 HA_POLL_INTERVAL = 1.5  # seconds for Home Assistant polling
+NO_FEED_SLEEP_INTERVAL = 1.0  # seconds to sleep in no_feed mode (slows loop to ~1 Hz)
 
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)

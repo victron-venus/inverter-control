@@ -153,6 +153,7 @@ class TestPortalId:
 
     def test_stub_when_no_venus_utilities(self):
         """Test placeholder stub is returned on non-Venus systems"""
+        config._detect_portal_id.cache_clear()
         with (
             patch("subprocess.check_output", side_effect=OSError),
             patch("builtins.open", side_effect=OSError),
@@ -162,6 +163,7 @@ class TestPortalId:
 
     def test_env_var_override(self):
         """Test PORTAL_ID environment variable override"""
+        config._detect_portal_id.cache_clear()
         with (
             patch("subprocess.check_output", side_effect=OSError),
             patch("builtins.open", side_effect=OSError),
@@ -171,6 +173,7 @@ class TestPortalId:
 
     def test_eth0_mac_fallback(self):
         """Test eth0 MAC address is used when get-unique-id is missing"""
+        config._detect_portal_id.cache_clear()
         with (
             patch("subprocess.check_output", side_effect=OSError),
             patch("builtins.open", mock_open(read_data="b8:27:eb:ea:1e:ce\n")),
@@ -179,6 +182,7 @@ class TestPortalId:
 
     def test_get_unique_id_primary(self):
         """Test /sbin/get-unique-id is used first"""
+        config._detect_portal_id.cache_clear()
         with (
             patch("subprocess.check_output", return_value="cafebabe1234\n"),
             patch("builtins.open", mock_open(read_data="b8:27:eb:ea:1e:ce\n")),

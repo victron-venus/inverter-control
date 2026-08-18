@@ -13,6 +13,9 @@ from typing import Any
 import requests
 import urllib3
 
+# Pre-compiled regex for _parse_numeric (called ~10x per 1.5s poll cycle)
+_NUMERIC_RE = re.compile(r"^([+-]?\d+\.?\d*)")
+
 from .config import (
     ENABLE_DISHWASHER,
     ENABLE_DRYER,
@@ -170,7 +173,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             return default
         try:
             s = str(value).strip()
-            m = re.match(r"^([+-]?\d+\.?\d*)", s)
+            m = _NUMERIC_RE.match(s)
             if m:
                 num = float(m.group(1))
                 return int(num) if num == int(num) else num
