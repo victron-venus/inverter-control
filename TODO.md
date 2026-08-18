@@ -116,7 +116,7 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 **Files:** `tests/test_watchdog.py`
 **Effort:** S
 
-### T6: Coverage target > 80%
+### T6: Coverage target > 80% ✅
 **Problem:** Current coverage unknown (`.coverage` file exists but no report).
 **Fix:** `pytest --cov=inverter_control --cov-report=term-missing`, establish baseline, add missing lines.
 **Files:** `pyproject.toml` (pytest config)
