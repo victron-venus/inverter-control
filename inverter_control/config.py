@@ -4,6 +4,7 @@ Inverter Control Configuration
 All configurable parameters in one place
 """
 
+import functools
 import os
 import subprocess
 
@@ -37,10 +38,12 @@ except ImportError:
     HA_PUMP_SWITCH = ""
     HA_BINARY_SENSORS = {}
 
+
 def _import_local_config(name: str, default=""):
     """Import a variable from local_config with a fallback default."""
     try:
         from local_config import vars as local_vars
+
         return getattr(local_vars, name, default)
     except (ImportError, AttributeError):
         return default
@@ -128,6 +131,7 @@ DRY_RUN = False  # Live mode - sending commands to Victron
 # =============================================================================
 
 
+@functools.lru_cache(maxsize=1)
 def _detect_portal_id() -> str:
     """Resolve the VRM Portal ID at runtime.
 
@@ -138,9 +142,7 @@ def _detect_portal_id() -> str:
       4. Placeholder stub, so non-Venus systems (tests, local dev) still work
     """
     try:
-        portal_id = subprocess.check_output(
-            ["/sbin/get-unique-id"], text=True, timeout=5
-        ).strip()
+        portal_id = subprocess.check_output(["/sbin/get-unique-id"], text=True, timeout=5).strip()
         if portal_id:
             return portal_id
     except (OSError, subprocess.SubprocessError):
@@ -158,6 +160,7 @@ def _detect_portal_id() -> str:
     return "your_portal_id"
 
 
+# Lazy: first access triggers detection (cached for subsequent calls)
 PORTAL_ID = _detect_portal_id()
 
 # Power limits for outlet protection (Watts)
@@ -167,6 +170,7 @@ POWER_LIMIT_MIN = -2300  # Maximum export (negative = discharging to grid)
 # Control loop timing
 LOOP_INTERVAL = 0.33  # seconds (3 times per second)
 HA_POLL_INTERVAL = 1.5  # seconds for Home Assistant polling
+NO_FEED_SLEEP_INTERVAL = 1.0  # seconds to sleep in no_feed mode (slows loop to ~1 Hz)
 
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
@@ -329,6 +333,29 @@ class Colors:
     RESET = "\033[0m"
     BOLD = "\033[1m"
 
+
+# =============================================================================
+# EXPORTED KEYS - used by SetpointCalculator
+# =============================================================================
+EXPORTED_KEYS = [
+    "BURST_GAIN",
+    "BURST_THRESHOLD",
+    "CREEP_MAX",
+    "CREEP_RATE",
+    "D_BRAKE_ZONE",
+    "D_GAIN",
+    "D_THRESHOLD",
+    "DAMPING_FACTOR",
+    "EMA_ALPHA",
+    "EXPORT_DAMPING",
+    "GRID_ZERO_DEADBAND_HIGH",
+    "GRID_ZERO_DEADBAND_LOW",
+    "INVERTER_EFFICIENCY",
+    "POWER_LIMIT_MAX",
+    "POWER_LIMIT_MIN",
+    "SETPOINT_DELTA_LIMIT",
+    "SOLAR_OUTPUT_OFFSET",
+]
 
 # =============================================================================
 # STARTUP CONFIG VALIDATION

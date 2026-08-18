@@ -255,7 +255,7 @@ class TestHomeAssistantClient:
             "binary1": "off",
             "water_valve": "on",
         }
-        with patch.object(self.client._vue_dbust_client, "update_all") as mock_vue:
+        with patch.object(self.client._vue_dbus_client, "update_all") as mock_vue:
             mock_vue.side_effect = lambda vue_dict: vue_dict.update({"vue1": 200})
             self.client._poll_all()
         # _connected is set by _poll_loop, not _poll_all
@@ -393,6 +393,7 @@ class TestHomeAssistantClient:
         """Test uptime returns reasonable value after start"""
         self.client.start()
         import time
+
         time.sleep(0.1)
         assert self.client.uptime >= 0
         self.client.stop()

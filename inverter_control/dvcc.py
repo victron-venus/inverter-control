@@ -121,7 +121,9 @@ class DvccCalculator:
             ccl, reason = min_cc + (max_cc * 0.20 - min_cc) * factor, f"balancing_{v:.3f}V"
         # Start limiting - gradual reduction
         elif v >= self.cell_start_limit:
-            factor = 1.0 - (v - self.cell_start_limit) / (self.cell_balance_voltage - self.cell_start_limit)
+            factor = 1.0 - (v - self.cell_start_limit) / (
+                self.cell_balance_voltage - self.cell_start_limit
+            )
             ccl, reason = max_cc * (0.20 + 0.80 * factor), f"reducing_{v:.3f}V"
         # Below start limit - full current (but above full_current threshold)
         elif v >= self.cell_full_current:
@@ -173,7 +175,9 @@ class DvccCalculator:
             ccl, reason = 0.0, f"too_hot_{temp:.1f}C"
         # Cold but chargeable - reduce current
         elif temp < self.temp_charge_reduced:
-            factor = (temp - self.temp_charge_min) / (self.temp_charge_reduced - self.temp_charge_min)
+            factor = (temp - self.temp_charge_min) / (
+                self.temp_charge_reduced - self.temp_charge_min
+            )
             factor = max(0.0, min(1.0, factor))
             ccl, reason = (
                 max(self._max_charge_current * factor * 0.5, self.min_charge_current),
@@ -191,7 +195,9 @@ class DvccCalculator:
             )
         # Hot - reduce linearly
         elif temp > self.temp_charge_limit:
-            factor = 1.0 - (temp - self.temp_charge_limit) / (self.temp_charge_stop - self.temp_charge_limit)
+            factor = 1.0 - (temp - self.temp_charge_limit) / (
+                self.temp_charge_stop - self.temp_charge_limit
+            )
             factor = max(0.0, min(1.0, factor))
             ccl, reason = self._max_charge_current * max(0.2, factor), f"hot_{temp:.1f}C"
         else:

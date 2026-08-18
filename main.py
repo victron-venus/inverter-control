@@ -65,6 +65,7 @@ from inverter_control.config import (
     LOOP_INTERVAL,
     MQTT_SLIM_EXCLUDE_KEYS,
     MQTT_SLIM_STATE,
+    NO_FEED_SLEEP_INTERVAL,
     POWER_LIMIT_MAX,
     POWER_LIMIT_MIN,
     SETPOINT_DELTA_LIMIT,
@@ -354,25 +355,9 @@ class InverterController:
         self.ui_config = get_ui_config()
 
         # Initialize Logic and UI components
-        config_dict = {
-            "EMA_ALPHA": EMA_ALPHA,
-            "POWER_LIMIT_MIN": POWER_LIMIT_MIN,
-            "POWER_LIMIT_MAX": POWER_LIMIT_MAX,
-            "SETPOINT_DELTA_LIMIT": SETPOINT_DELTA_LIMIT,
-            "DAMPING_FACTOR": DAMPING_FACTOR,
-            "GRID_ZERO_DEADBAND_LOW": GRID_ZERO_DEADBAND_LOW,
-            "GRID_ZERO_DEADBAND_HIGH": GRID_ZERO_DEADBAND_HIGH,
-            "INVERTER_EFFICIENCY": INVERTER_EFFICIENCY,
-            "SOLAR_OUTPUT_OFFSET": SOLAR_OUTPUT_OFFSET,
-            "CREEP_RATE": CREEP_RATE,
-            "CREEP_MAX": CREEP_MAX,
-            "EXPORT_DAMPING": EXPORT_DAMPING,
-            "BURST_THRESHOLD": BURST_THRESHOLD,
-            "BURST_GAIN": BURST_GAIN,
-            "D_BRAKE_ZONE": D_BRAKE_ZONE,
-            "D_THRESHOLD": D_THRESHOLD,
-            "D_GAIN": D_GAIN,
-        }
+        from inverter_control.config import EXPORTED_KEYS  # pylint: disable=import-outside-toplevel
+
+        config_dict = {k: globals()[k] for k in EXPORTED_KEYS}
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron)
 
@@ -405,9 +390,11 @@ class InverterController:
 
         # DVCC Calculator for dynamic battery current limits (SoC & Cell Temp curves)
         if DVCC_ENABLED:
+            cell_counts = self.victron.get_cell_counts()
+            total_cells = sum(cell_counts.values()) if cell_counts else 16
             self.dvcc_calculator = create_dvcc_from_config(
                 {
-                    "DVCC_CELL_COUNT": 16,  # Will be updated from actual battery data
+                    "DVCC_CELL_COUNT": total_cells,
                     "DVCC_MAX_CHARGE_CURRENT": DVCC_MAX_CHARGE_CURRENT,
                     "DVCC_MAX_DISCHARGE_CURRENT": DVCC_MAX_DISCHARGE_CURRENT,
                     "DVCC_CELL_MAX_VOLTAGE": DVCC_CELL_MAX_VOLTAGE,
@@ -750,7 +737,7 @@ class InverterController:
 
             try:
                 if self.ha.get_boolean("no_feed"):
-                    time.sleep(2)
+                    time.sleep(NO_FEED_SLEEP_INTERVAL)
             except Exception:
                 pass  # Best effort - ignore HA lookup failures for this optional delay
             return True
@@ -800,20 +787,39 @@ def _setup_mqtt_bridge(controller):
     bridge.connect()
     bridge.register_callback("toggle", lambda p: controller.ha.toggle_entity(p.get("entity", "")))
     bridge.register_callback("press", lambda p: controller.ha.press_button(p.get("entity", "")))
-    bridge.register_callback(
-        "setpoint",
-        lambda p: controller.set_manual_setpoint(int(p.get("value", 0))),
-    )
+
+    def _safe_setpoint(p):
+        try:
+            val = int(p.get("value", 0))
+        except (ValueError, TypeError) as e:
+            logger.warning("MQTT setpoint rejected: %s", e)
+            return
+        controller.set_manual_setpoint(val)
+
+    bridge.register_callback("setpoint", _safe_setpoint)
     bridge.register_callback("dry_run", lambda p: controller.toggle_dry_run())
-    bridge.register_callback(
-        "limits",
-        lambda p: controller.set_power_limits(p.get("min", -2300), p.get("max", 2250)),
-    )
+
+    def _safe_limits(p):
+        try:
+            lo = int(p.get("min", -2300))
+            hi = int(p.get("max", 2250))
+        except (ValueError, TypeError) as e:
+            logger.warning("MQTT limits rejected: %s", e)
+            return
+        controller.set_power_limits(lo, hi)
+
+    bridge.register_callback("limits", _safe_limits)
     bridge.register_callback("ess_mode", lambda p: controller.toggle_ess_mode())
-    bridge.register_callback(
-        "loop_interval",
-        lambda p: controller.set_loop_interval(float(p.get("interval", 0.33))),
-    )
+
+    def _safe_loop_interval(p):
+        try:
+            val = float(p.get("interval", 0.33))
+        except (ValueError, TypeError) as e:
+            logger.warning("MQTT loop_interval rejected: %s", e)
+            return
+        controller.set_loop_interval(val)
+
+    bridge.register_callback("loop_interval", _safe_loop_interval)
     print(f"  MQTT bridge: {MQTT_BROKER}:{MQTT_PORT} (topic: {MQTT_TOPIC_PREFIX}/)")
     return bridge
 

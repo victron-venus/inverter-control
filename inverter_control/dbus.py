@@ -4,6 +4,7 @@ import importlib
 import logging
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 logger = logging.getLogger("inverter-control")
@@ -42,7 +43,7 @@ class VUESensorDBusClient:
         for key, expected_name in self._vue_sensor_mapping.items():
             if str(expected_name) == custom_name:
                 return key
-        slug = re.sub(r'\W', '', custom_name.lower().replace(' ', '_'))
+        slug = re.sub(r"\W", "", custom_name.lower().replace(" ", "_"))
         return slug or "acload"
 
     def _setup_dbus(self) -> None:
@@ -142,8 +143,11 @@ class VUESensorDBusClient:
             except Exception as e:
                 logger.warning(f"Failed to update VUE sensor {key} from D-Bus proxy: {e}")
 
-        # 2. Update from dbus-send services
-        for key, service in self._vue_services.items():
+        # 2. Update from dbus-send services (parallel)
+        if not self._vue_services:
+            return
+
+        def _query_power(key: str, service: str) -> tuple[str, float | None]:
             try:
                 cmd = [
                     "dbus-send",
@@ -155,8 +159,20 @@ class VUESensorDBusClient:
                 ]
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
                 if res.returncode == 0:
-                    m = re.search(r'(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)', res.stdout)
+                    m = re.search(
+                        r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)", res.stdout
+                    )
                     if m:
-                        vue_sensors[key] = float(m.group(1))
+                        return key, float(m.group(1))
             except Exception as e:
                 logger.warning(f"Failed to update VUE sensor {key} via dbus-send: {e}")
+            return key, None
+
+        with ThreadPoolExecutor(max_workers=len(self._vue_services)) as pool:
+            futures = [
+                pool.submit(_query_power, key, svc) for key, svc in self._vue_services.items()
+            ]
+            for future in as_completed(futures):
+                key, value = future.result()
+                if value is not None:
+                    vue_sensors[key] = value

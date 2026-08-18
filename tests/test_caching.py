@@ -20,7 +20,7 @@ def test_mppt_data_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
     v._mppt_services = ["service1", "service2"]
 
     call_count = 0
@@ -63,13 +63,20 @@ def test_mppt_data_caching():
 
         # Verify caching behavior
         # First call: 2 services * 2 calls each (power + current) = 4 subprocess calls
-        assert first_call_count == 4, f"Expected 4 calls on first invocation, got {first_call_count}"
+        assert first_call_count == 4, (
+            f"Expected 4 calls on first invocation, got {first_call_count}"
+        )
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 4, f"Expected 4 calls total after second invocation (cached), got {second_call_count}"
+        assert second_call_count == 4, (
+            f"Expected 4 calls total after second invocation (cached), got {second_call_count}"
+        )
         # Third call: after TTL expiry, should make new calls
-        assert third_call_count == 8, f"Expected 8 calls total after third invocation (cache expired), got {third_call_count}"
+        assert third_call_count == 8, (
+            f"Expected 8 calls total after third invocation (cache expired), got {third_call_count}"
+        )
 
         print("✓ MPPT data caching test passed")
+
 
 def test_tasmota_pv_power_caching():
     """Test that get_tasmota_pv_power caches results"""
@@ -77,7 +84,7 @@ def test_tasmota_pv_power_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
 
     call_count = 0
 
@@ -89,9 +96,23 @@ def test_tasmota_pv_power_caching():
         call_count += 1
         m = MagicMock()
         m.returncode = 0
-        if args[0] == ["dbus-send", "--system", "--print-reply=literal", f"--dest={service1}", "/Ac/Power", "com.victronenergy.BusItem.GetValue"]:
+        if args[0] == [
+            "dbus-send",
+            "--system",
+            "--print-reply=literal",
+            f"--dest={service1}",
+            "/Ac/Power",
+            "com.victronenergy.BusItem.GetValue",
+        ]:
             m.stdout = "variant       double 1200.0\n"
-        elif args[0] == ["dbus-send", "--system", "--print-reply=literal", f"--dest={service2}", "/Ac/Power", "com.victronenergy.BusItem.GetValue"]:
+        elif args[0] == [
+            "dbus-send",
+            "--system",
+            "--print-reply=literal",
+            f"--dest={service2}",
+            "/Ac/Power",
+            "com.victronenergy.BusItem.GetValue",
+        ]:
             m.stdout = "variant       double 800.0\n"
         else:
             m.stdout = ""
@@ -119,13 +140,20 @@ def test_tasmota_pv_power_caching():
 
         # Verify caching behavior
         # First call: 2 services * 1 call each = 2 subprocess calls
-        assert first_call_count == 2, f"Expected 2 calls on first invocation, got {first_call_count}"
+        assert first_call_count == 2, (
+            f"Expected 2 calls on first invocation, got {first_call_count}"
+        )
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 2, f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
+        assert second_call_count == 2, (
+            f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
+        )
         # Third call: after TTL expiry, should make new calls
-        assert third_call_count == 4, f"Expected 4 calls total after third invocation (cache expired), got {third_call_count}"
+        assert third_call_count == 4, (
+            f"Expected 4 calls total after third invocation (cache expired), got {third_call_count}"
+        )
 
         print("✓ Tasmota PV power caching test passed")
+
 
 def test_battery_chain_socs_caching():
     """Test that get_battery_chain_socs caches results"""
@@ -133,7 +161,7 @@ def test_battery_chain_socs_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
 
     call_count = 0
 
@@ -173,13 +201,20 @@ def test_battery_chain_socs_caching():
 
         # Verify caching behavior
         # First call: 2 services * 1 call each = 2 subprocess calls
-        assert first_call_count == 2, f"Expected 2 calls on first invocation, got {first_call_count}"
+        assert first_call_count == 2, (
+            f"Expected 2 calls on first invocation, got {first_call_count}"
+        )
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 2, f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
+        assert second_call_count == 2, (
+            f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
+        )
         # Third call: after TTL expiry, should make new calls
-        assert third_call_count == 4, f"Expected 4 calls total after third invocation (cache expired), got {third_call_count}"
+        assert third_call_count == 4, (
+            f"Expected 4 calls total after third invocation (cache expired), got {third_call_count}"
+        )
 
         print("✓ Battery chain SoC caching test passed")
+
 
 def test_inverter_state_caching():
     """Test that get_inverter_state caches results"""
@@ -187,7 +222,7 @@ def test_inverter_state_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
     v._vebus_service = "test.service"
 
     call_count = 0
@@ -197,7 +232,14 @@ def test_inverter_state_caching():
         call_count += 1
         m = MagicMock()
         m.returncode = 0
-        if args[0] == ["dbus-send", "--system", "--print-reply=literal", "--dest=test.service", "/State", "com.victronenergy.BusItem.GetValue"]:
+        if args[0] == [
+            "dbus-send",
+            "--system",
+            "--print-reply=literal",
+            "--dest=test.service",
+            "/State",
+            "com.victronenergy.BusItem.GetValue",
+        ]:
             m.stdout = "variant       int32 9\n"
         else:
             m.stdout = ""
@@ -227,11 +269,16 @@ def test_inverter_state_caching():
         # First call: 1 subprocess call
         assert first_call_count == 1, f"Expected 1 call on first invocation, got {first_call_count}"
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 1, f"Expected 1 call total after second invocation (cached), got {second_call_count}"
+        assert second_call_count == 1, (
+            f"Expected 1 call total after second invocation (cached), got {second_call_count}"
+        )
         # Third call: after TTL expiry, should make new call
-        assert third_call_count == 2, f"Expected 2 calls total after third invocation (cache expired), got {third_call_count}"
+        assert third_call_count == 2, (
+            f"Expected 2 calls total after third invocation (cache expired), got {third_call_count}"
+        )
 
         print("✓ Inverter state caching test passed")
+
 
 if __name__ == "__main__":
     print("Running caching tests...\n")

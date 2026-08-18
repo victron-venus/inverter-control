@@ -233,7 +233,9 @@ class TestMQTTBridge:
         # Flush the async queue
         bridge.flush()
 
-        mock_client.publish.assert_called_once_with("test/console", "test line", qos=0, retain=False)
+        mock_client.publish.assert_called_once_with(
+            "test/console", "test line", qos=0, retain=False
+        )
 
 
 class TestGetMqttBridge:

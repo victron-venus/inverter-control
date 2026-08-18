@@ -153,28 +153,40 @@ class TestPortalId:
 
     def test_stub_when_no_venus_utilities(self):
         """Test placeholder stub is returned on non-Venus systems"""
-        with patch("subprocess.check_output", side_effect=OSError), \
-             patch("builtins.open", side_effect=OSError), \
-             patch.dict(os.environ, {}, clear=True):
+        config._detect_portal_id.cache_clear()
+        with (
+            patch("subprocess.check_output", side_effect=OSError),
+            patch("builtins.open", side_effect=OSError),
+            patch.dict(os.environ, {}, clear=True),
+        ):
             assert config._detect_portal_id() == "your_portal_id"
 
     def test_env_var_override(self):
         """Test PORTAL_ID environment variable override"""
-        with patch("subprocess.check_output", side_effect=OSError), \
-             patch("builtins.open", side_effect=OSError), \
-             patch.dict(os.environ, {"PORTAL_ID": "abcdef012345"}):
+        config._detect_portal_id.cache_clear()
+        with (
+            patch("subprocess.check_output", side_effect=OSError),
+            patch("builtins.open", side_effect=OSError),
+            patch.dict(os.environ, {"PORTAL_ID": "abcdef012345"}),
+        ):
             assert config._detect_portal_id() == "abcdef012345"
 
     def test_eth0_mac_fallback(self):
         """Test eth0 MAC address is used when get-unique-id is missing"""
-        with patch("subprocess.check_output", side_effect=OSError), \
-             patch("builtins.open", mock_open(read_data="b8:27:eb:ea:1e:ce\n")):
+        config._detect_portal_id.cache_clear()
+        with (
+            patch("subprocess.check_output", side_effect=OSError),
+            patch("builtins.open", mock_open(read_data="b8:27:eb:ea:1e:ce\n")),
+        ):
             assert config._detect_portal_id() == "b827ebea1ece"
 
     def test_get_unique_id_primary(self):
         """Test /sbin/get-unique-id is used first"""
-        with patch("subprocess.check_output", return_value="cafebabe1234\n"), \
-             patch("builtins.open", mock_open(read_data="b8:27:eb:ea:1e:ce\n")):
+        config._detect_portal_id.cache_clear()
+        with (
+            patch("subprocess.check_output", return_value="cafebabe1234\n"),
+            patch("builtins.open", mock_open(read_data="b8:27:eb:ea:1e:ce\n")),
+        ):
             assert config._detect_portal_id() == "cafebabe1234"
 
 
