@@ -160,8 +160,8 @@ class TestLogForwarder:
 
         # Read again from same position
         _lines2, _pos2, _inode2 = log_forwarder.read_new_lines(self.temp_log_file, pos1, inode1)
-        assert len(lines2) >= 1
-        assert any("appended line" in line for line in lines2)
+        assert len(_lines2) >= 1
+        assert any("appended line" in line for line in _lines2)
 
     def test_read_new_lines_nonexistent_file(self):
         """Test reading from nonexistent file."""
@@ -172,11 +172,11 @@ class TestLogForwarder:
 
     def test_read_new_lines_batch_limit(self):
         """Test batch size limit."""
-        many_lines_file = tempfile.NamedTemporaryFile(delete=False).name
-        try:
-            with open(many_lines_file, "w") as f:
-                f.writelines(f"line {i}\n" for i in range(200))
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+            f.writelines(f"line {i}\n" for i in range(200))
+            many_lines_file = f.name
 
+        try:
             lines, _, _ = log_forwarder.read_new_lines(many_lines_file, 0, None)
             assert len(lines) == log_forwarder.BATCH_SIZE
         finally:
