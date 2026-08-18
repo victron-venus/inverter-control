@@ -142,7 +142,7 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 
 ## 5. Architecture
 
-### A1: Split main.py
+### A1: Split main.py ✅
 **Problem:** 950 lines — controller, watchdog, CLI, signal handling, MQTT setup, console server in one file.
 **Fix:**
 - `inverter_control/controller.py` — `InverterController` class
@@ -151,13 +151,12 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 **Files:** `main.py` → 3 files
 **Effort:** L
 
-### A2: Split victron.py
+### A2: Split victron.py ✅
 **Problem:** 1536 lines — polling, caching, parsing, SOC calculation, cell data, tree queries in one file.
 **Fix:**
-- `inverter_control/victron_dbus.py` — `VictronDBus` class (polling + caching)
+- `inverter_control/victron.py` — `VictronDBus` class (polling + caching + cell logic)
 - `inverter_control/victron_parse.py` — tree output parsers, SOC calculation
-- `inverter_control/victron_cell.py` — cell voltage/temperature logic
-**Files:** `inverter_control/victron.py` → 3 files
+**Files:** `inverter_control/victron.py` → 2 files (cell logic stayed in VictronDBus due to tight instance state coupling)
 **Effort:** L
 
 ---
@@ -170,6 +169,6 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 | Code Quality (Q1–Q6) | 6 | 1M + 5S |
 | Testing (T1–T6) | 6 | 1L + 1M + 4S |
 | Security (S1–S2) | 2 | 2S |
-| Architecture (A1–A2) | 2 | 2L |
+| Architecture (A1–A2) | 2 | 2L ✅ |
 
 **Recommended order:** P1 → Q1 → T1 → P4/P5/S1 (quick wins) → P2/P3 → Q2–Q6 → T2–T6 → A1 → A2

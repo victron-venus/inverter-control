@@ -1,5 +1,5 @@
 """
-Unit tests for InverterController in main.py
+Unit tests for InverterController in controller.py
 """
 
 import os
@@ -11,35 +11,37 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inverter_control.logic import SystemState
 
+_MOD = "inverter_control.controller"
+
 
 def _make_controller(**overrides):
     """Build an InverterController with all subsystems mocked."""
-    with patch("main.get_victron") as mock_get_victron, patch(
-        "main.get_ha"
-    ) as mock_get_ha, patch("main.ConsoleUI") as mock_console_cls, patch(
-        "main.SetpointCalculator"
+    with patch(f"{_MOD}.get_victron") as mock_get_victron, patch(
+        f"{_MOD}.get_ha"
+    ) as mock_get_ha, patch(f"{_MOD}.ConsoleUI") as mock_console_cls, patch(
+        f"{_MOD}.SetpointCalculator"
     ) as mock_calc_cls, patch(
         "inverter_control.config.get_ui_config", return_value={}
     ), patch(
-        "main.DRY_RUN", False
+        f"{_MOD}.DRY_RUN", False
     ), patch(
-        "main.LOOP_INTERVAL", 0.33
+        f"{_MOD}.LOOP_INTERVAL", 0.33
     ), patch(
-        "main.POWER_LIMIT_MIN", -2300
+        f"{_MOD}.POWER_LIMIT_MIN", -2300
     ), patch(
-        "main.POWER_LIMIT_MAX", 2250
+        f"{_MOD}.POWER_LIMIT_MAX", 2250
     ), patch(
-        "main.DVCC_ENABLED", False
+        f"{_MOD}.DVCC_ENABLED", False
     ), patch(
-        "main.ENABLE_GRID_SMOOTHING_WITH_HOME", False
+        f"{_MOD}.ENABLE_GRID_SMOOTHING_WITH_HOME", False
     ), patch(
-        "main.ENABLE_EV", True
+        f"{_MOD}.ENABLE_EV", True
     ), patch(
-        "main.ENABLE_WATER", True
+        f"{_MOD}.ENABLE_WATER", True
     ), patch(
-        "main.ENABLE_HA", True
+        f"{_MOD}.ENABLE_HA", True
     ), patch(
-        "main.ENABLE_HA_LOADS", False
+        f"{_MOD}.ENABLE_HA_LOADS", False
     ):
 
         mock_victron = MagicMock()
@@ -56,7 +58,7 @@ def _make_controller(**overrides):
         mock_calc.power_limit_min = -2300
         mock_calc.power_limit_max = 2250
 
-        from main import InverterController
+        from inverter_control.controller import InverterController
 
         controller = InverterController(dry_run=overrides.get("dry_run", False))
         controller.victron = mock_victron
@@ -84,7 +86,7 @@ class TestInverterControllerInit(unittest.TestCase):
 
     def test_init_creates_watchdog(self):
         controller, _, _, _ = _make_controller()
-        from main import HardwareWatchdog
+        from inverter_control.watchdog import HardwareWatchdog
 
         assert isinstance(controller._watchdog, HardwareWatchdog)
 
@@ -403,7 +405,7 @@ class TestGetEvState(unittest.TestCase):
         assert state["ev_charging_kw"] == 7.2
 
     def test_returns_zeros_when_disabled(self):
-        with patch("main.ENABLE_EV", False):
+        with patch(f"{_MOD}.ENABLE_EV", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_ev_state()
             assert state == {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
@@ -425,7 +427,7 @@ class TestGetWaterState(unittest.TestCase):
         assert state["pump_switch"] is False
 
     def test_returns_zeros_when_disabled(self):
-        with patch("main.ENABLE_WATER", False):
+        with patch(f"{_MOD}.ENABLE_WATER", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_water_state()
             assert state == {"water_level": 0, "water_valve": False, "pump_switch": False}
@@ -453,7 +455,7 @@ class TestGetHaState(unittest.TestCase):
         assert state["ha_uptime"] == 3600
 
     def test_returns_zeros_when_disabled(self):
-        with patch("main.ENABLE_HA", False):
+        with patch(f"{_MOD}.ENABLE_HA", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_ha_state()
             assert state["booleans"] == {}

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, ".")
 
-from main import HardwareWatchdog
+from inverter_control.watchdog import HardwareWatchdog
 
 
 def wait_until(condition, timeout=2.0, interval=0.01):
