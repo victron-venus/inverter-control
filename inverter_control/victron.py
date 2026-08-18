@@ -655,11 +655,8 @@ class VictronDBus:
 
     def _service_healthy(self, service: str) -> bool:
         """Check if a D-Bus service is healthy (not in backoff period)."""
-        now = time.time()
         backoff_until = self._service_backoff_until.get(service, 0.0)
-        if now < backoff_until:
-            return False
-        return True
+        return time.time() >= backoff_until
 
     def _record_service_success(self, service: str) -> None:
         """Record a successful D-Bus response for a service."""
