@@ -4,13 +4,11 @@ Unit tests for InverterController in main.py
 
 import os
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from inverter_control import victron as victron_mod
 from inverter_control.logic import SystemState
 
 
