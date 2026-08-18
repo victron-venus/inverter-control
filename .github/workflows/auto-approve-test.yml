@@ -1,0 +1,21 @@
+name: 'Auto Approve PRs Test'
+description: 'Test auto-approve without reusable workflow'
+
+"on":
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  auto-approve:
+    name: Auto Approve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto Approve
+        uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          review-message: 'Auto-approved by CI'
