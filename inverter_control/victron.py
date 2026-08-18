@@ -40,8 +40,8 @@ AC_POWER_PATH = "/Ac/Power"
 # (as get_battery_cell_data used to) is ~72 subprocess calls per cycle which
 # blows the 5s cycle watchdog on a slow RPi.
 BATTERY_CELL_SERVICES = [
-    "com.victronenergy.battery.dbus-mqtt-chain1",
-    "com.victronenergy.battery.dbus-mqtt-chain2",
+    "com.victronenergy.battery.mqtt_chain1",
+    "com.victronenergy.battery.mqtt_chain2",
 ]
 # How often the background poller refreshes the cell-data cache.
 CELL_DATA_POLL_INTERVAL = 30
@@ -97,6 +97,11 @@ class VictronDBus:
         self._cached_battery_daily_energy: tuple[float, float] = (0.0, 0.0)
         self._last_daily_yields_time: float = 0.0
         self._last_battery_daily_energy_time: float = 0.0
+        # Cache for get_all_batteries() and get_mppt_chargers() - avoid 15+ D-Bus calls per cycle
+        self._cached_all_batteries: list = []
+        self._last_all_batteries_time: float = 0.0
+        self._cached_mppt_chargers: list = []
+        self._last_mppt_chargers_time: float = 0.0
         # Midnight tracker for Tasmota daily yield calculation
         self._tasmota_midnight_kwh: list[float] = []
         self._tasmota_midnight_date: int = 0
@@ -990,10 +995,15 @@ class VictronDBus:
         return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
 
     def get_all_batteries(self) -> list:
-        """Get detailed data for all battery chains including SmartShunt"""
+        """Get detailed data for all battery chains including SmartShunt.
+        Cached for 2s to avoid 15+ D-Bus calls per cycle."""
+        now = time.time()
+        if self._cached_all_batteries and now - self._last_all_batteries_time < 2.0:
+            return self._cached_all_batteries
+
         battery_services = [
-            ("com.victronenergy.battery.dbus-mqtt-chain1", "JBD Chain 1"),
-            ("com.victronenergy.battery.dbus-mqtt-chain2", "JBD Chain 2"),
+            ("com.victronenergy.battery.mqtt_chain1", "JBD Chain 1"),
+            ("com.victronenergy.battery.mqtt_chain2", "JBD Chain 2"),
             ("com.victronenergy.battery.virtual_chain", "Virtual Battery"),
         ]
 
@@ -1023,6 +1033,8 @@ class VictronDBus:
                 }
             )
 
+        self._cached_all_batteries = batteries
+        self._last_all_batteries_time = now
         return batteries
 
     def _read_chain_cell_voltages(self, service: str, offset: int) -> list[tuple[float, int]]:
@@ -1251,7 +1263,12 @@ class VictronDBus:
         return result
 
     def get_mppt_chargers(self) -> list:
-        """Get detailed data for all MPPT chargers"""
+        """Get detailed data for all MPPT chargers.
+        Cached for 2s to avoid D-Bus calls per cycle."""
+        now = time.time()
+        if self._cached_mppt_chargers and now - self._last_mppt_chargers_time < 2.0:
+            return self._cached_mppt_chargers
+
         chargers = []
         for i, service in enumerate(self._mppt_services):
             parts = service.split(":")
@@ -1264,6 +1281,9 @@ class VictronDBus:
                     "power": self._get_float(service, "/Yield/Power"),
                 }
             )
+
+        self._cached_mppt_chargers = chargers
+        self._last_mppt_chargers_time = now
         return chargers
 
     def get_mppt_daily_yields(self) -> list[float]:

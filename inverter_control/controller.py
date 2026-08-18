@@ -46,6 +46,8 @@ from inverter_control.config import (
     NO_FEED_SLEEP_INTERVAL,
     POWER_LIMIT_MAX,
     POWER_LIMIT_MIN,
+    WEBHOOK_SERVER_HOST,
+    WEBHOOK_SERVER_PORT,
 )
 from inverter_control.config import (
     Colors as C,
@@ -57,6 +59,7 @@ from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.victron import get_victron
 from inverter_control.watchdog import HardwareWatchdog, WatchdogTimeoutError
+from inverter_control.webhook_server import get_webhook_server
 
 logger = logging.getLogger("inverter-control")
 
@@ -114,6 +117,10 @@ class InverterController:
 
         self.loop_count = 0
         self.state: dict[str, Any] = {}
+
+        # Pre-charge state (triggered by solar-forecast webhook)
+        self._pre_charge_requested = False
+        self._pre_charge_horizon_hours = 6
 
         # Cached D-Bus data
         self._cached_mppt_data = {}
@@ -182,6 +189,14 @@ class InverterController:
             get_setpoint=lambda: self.previous_setpoint,
         )
 
+        # Webhook server for pre-charge triggers from solar-forecast
+        self._webhook_server = get_webhook_server(
+            host=WEBHOOK_SERVER_HOST,
+            port=WEBHOOK_SERVER_PORT,
+            pre_charge_callback=self._handle_pre_charge_webhook,
+        )
+        self._webhook_server.start()
+
     def set_loop_interval(self, interval: float) -> float:
         self.loop_interval = max(0.1, min(5.0, interval))
         logger.info(f"Loop interval changed to {self.loop_interval}s")
@@ -211,6 +226,31 @@ class InverterController:
             logger.info(f"ESS Mode changed to {new_mode['mode_name']}")
             return new_mode
         return current
+
+    def _handle_pre_charge_webhook(self, payload: dict) -> bool:
+        """Handle pre-charge webhook from solar-forecast-langgraph.
+
+        Sets internal flag to trigger pre-charge on next control cycle.
+        The charge_battery strategy in logic.py will handle the actual
+        setpoint calculation (forces ~2200W charging).
+        """
+        try:
+            forecast_wh = payload.get("forecast_energy_wh", 0)
+            threshold_wh = payload.get("threshold_wh", 0)
+            horizon_hours = payload.get("horizon_hours", 6)
+            logger.info(
+                f"Pre-charge webhook: forecast={forecast_wh:.0f}Wh "
+                f"threshold={threshold_wh:.0f}Wh horizon={horizon_hours}h"
+            )
+            # Set pre-charge flag - this will be picked up in run_cycle
+            # by setting the HA boolean 'charge_battery' or by overriding
+            # the state.charge_battery flag directly
+            self._pre_charge_requested = True
+            self._pre_charge_horizon_hours = horizon_hours
+            return True
+        except Exception as e:
+            logger.exception("Error handling pre-charge webhook")
+            return False
 
     def get_state(self) -> dict[str, Any]:
         return self.state
@@ -243,6 +283,13 @@ class InverterController:
                 pv_total = mppt_total + tasmota_total
                 derived_gt = home_total - pv_total
 
+        # Handle pre-charge request from solar forecast webhook
+        charge_battery = self.ha.get_boolean("charge_battery")
+        if self._pre_charge_requested:
+            charge_battery = True
+            self._pre_charge_requested = False  # One-shot
+            logger.info("Pre-charge triggered by solar forecast")
+
         state = SystemState(
             g1=sys_data["g1"],
             g2=sys_data["g2"],
@@ -260,7 +307,7 @@ class InverterController:
             only_charging=self.ha.get_boolean("only_charging"),
             no_feed=self.ha.get_boolean("no_feed"),
             house_support=self.ha.get_boolean("house_support"),
-            charge_battery=self.ha.get_boolean("charge_battery"),
+            charge_battery=charge_battery,
             do_not_supply_charger=self.ha.get_boolean("do_not_supply_charger"),
             limit_to_ev=self.ha.get_boolean("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
