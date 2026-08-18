@@ -558,12 +558,12 @@ class TestHouseSupportStrategy(unittest.TestCase):
 
     def test_house_support_small_tasmota(self):
         state = self._state(house_support=True, tasmota_total=200)
-        result, flags = house_support_strategy(state, -500)
+        result, _flags = house_support_strategy(state, -500)
         assert result == -100
 
     def test_house_support_zero_tasmota(self):
         state = self._state(house_support=True, tasmota_total=0)
-        result, flags = house_support_strategy(state, -500)
+        result, _flags = house_support_strategy(state, -500)
         assert result == -300
 
 
@@ -591,7 +591,7 @@ class TestLimitToEvStrategy(unittest.TestCase):
 
     def test_limit_to_ev_active_garage_power(self):
         state = self._state(limit_to_ev=True, garage_power=2000, mppt_total=1500)
-        result, flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
+        result, _flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
         # ac_output=1500, export=1500-500=1000
         assert result == -1000
 
@@ -609,13 +609,13 @@ class TestLimitToEvStrategy(unittest.TestCase):
 
     def test_limit_to_ev_zero_solar(self):
         state = self._state(limit_to_ev=True, ev_power=3000, mppt_total=0)
-        result, flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
+        result, _flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
         # ac_output=0, export=0-500=-500, max(0,-500)=0
         assert result == 0
 
     def test_limit_to_ev_with_efficiency(self):
         state = self._state(limit_to_ev=True, ev_power=3000, mppt_total=2000)
-        result, flags = limit_to_ev_strategy(state, 0, efficiency=0.94)
+        result, _flags = limit_to_ev_strategy(state, 0, efficiency=0.94)
         # ac_output=int(2000*0.94)=1880, export=1880-500=1380
         assert result == -1380
 
