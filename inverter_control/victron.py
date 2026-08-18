@@ -22,6 +22,8 @@ SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
 SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
+PRINT_REPLY_LITERAL = "--print-reply=literal"
+TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
 
 # Battery chains with per-cell data, polled as full tree queries in the
 # background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
@@ -417,7 +419,7 @@ class VictronDBus:
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply=literal",
+                    PRINT_REPLY_LITERAL,
                     f"--dest={service}",
                     "/CustomName",
                     GET_VALUE_METHOD,
@@ -435,7 +437,7 @@ class VictronDBus:
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply=literal",
+                    PRINT_REPLY_LITERAL,
                     f"--dest={service}",
                     "/Ac/Power",
                     GET_VALUE_METHOD,
@@ -654,7 +656,7 @@ class VictronDBus:
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply=literal",
+                    PRINT_REPLY_LITERAL,
                     f"--dest={service}",
                     path,
                     GET_VALUE_METHOD,
