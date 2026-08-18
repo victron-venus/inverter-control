@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inverter_control import victron
-from inverter_control.config import TASMOTA_DBUS_SERVICES
 
 
 def test_mppt_data_caching():
@@ -85,11 +84,16 @@ def test_tasmota_pv_power_caching():
     # Reset singleton
     victron._victron = None
     v = victron.VictronDBus(test_mode=True)
+    # Mock discovered Tasmota services
+    v._tasmota_pv_services = [
+        "com.victronenergy.pvinverter.tasmota_120",
+        "com.victronenergy.pvinverter.tasmota_121",
+    ]
 
     call_count = 0
 
-    service1 = TASMOTA_DBUS_SERVICES[0]
-    service2 = TASMOTA_DBUS_SERVICES[1]
+    service1 = v._tasmota_pv_services[0]
+    service2 = v._tasmota_pv_services[1]
 
     def side_effect(*args, **kwargs):
         nonlocal call_count

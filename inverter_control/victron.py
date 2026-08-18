@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
+from .config import INVERTER_STATES
 from .victron_parse import (
     VARIANT_RE,
     calculate_battery_soc_from_voltage,
@@ -90,6 +90,8 @@ class VictronDBus:
         self._acload_services: list = []
         self._cached_acload_powers: dict[str, float] = {}
         self._last_acload_time: float = 0.0
+        # Cache for discovered Tasmota PV inverter services
+        self._tasmota_pv_services: list = []
         # Cache for daily yields (MPPT + Tasmota) and battery daily energy
         self._cached_mppt_daily_yields: list[float] = []
         self._cached_tasmota_daily_yields: list[float] = []
@@ -118,7 +120,7 @@ class VictronDBus:
         self._discover_services()
 
     def _discover_services(self):
-        """Discover VE.Bus, MPPT, and acload services"""
+        """Discover VE.Bus, MPPT, acload, and Tasmota PV inverter services"""
 
         self._last_scan_time = time.time()
         old_vebus = self._vebus_service
@@ -132,6 +134,7 @@ class VictronDBus:
             self._vebus_service = None
             self._mppt_services = []
             self._acload_services = []
+            self._tasmota_pv_services = []
 
             for line in lines:
                 if "com.victronenergy.vebus" in line:
@@ -140,9 +143,12 @@ class VictronDBus:
                     self._mppt_services.append(line.strip())
                 elif "com.victronenergy.acload" in line:
                     self._acload_services.append(line.strip())
+                elif "com.victronenergy.pvinverter." in line:
+                    self._tasmota_pv_services.append(line.strip())
 
             self._mppt_services.sort()
             self._acload_services.sort()
+            self._tasmota_pv_services.sort()
 
             # Log if service changed
             if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
@@ -152,6 +158,9 @@ class VictronDBus:
 
             if self._acload_services:
                 print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
+
+            if self._tasmota_pv_services:
+                print(f"  [D-Bus] PV inverters found: {self._tasmota_pv_services}")
 
             self._consecutive_errors = 0
 
@@ -213,7 +222,7 @@ class VictronDBus:
             self._poll_mppt_data_tree()
 
         # Poll Tasmota PV power
-        if TASMOTA_DBUS_SERVICES:
+        if self._tasmota_pv_services:
             self._poll_tasmota_power()
 
         # Poll acload (Emporia Vue) power channels
@@ -290,7 +299,7 @@ class VictronDBus:
     def _poll_tasmota_power(self):
         """Poll Tasmota PV power"""
         powers = []
-        for service in TASMOTA_DBUS_SERVICES:
+        for service in self._tasmota_pv_services:
             output = self._safe_subprocess(
                 [
                     "dbus-send",
@@ -519,7 +528,7 @@ class VictronDBus:
         # Tasmota daily yields (lifetime - midnight reference)
         tasmota_yields = []
         today = time.localtime().tm_yday
-        for i, service in enumerate(TASMOTA_DBUS_SERVICES):
+        for i, service in enumerate(self._tasmota_pv_services):
             lifetime_kwh = self._get_float(service, TASMOTA_ENERGY_FORWARD_PATH)
             if lifetime_kwh <= 0:
                 tasmota_yields.append(0.0)
@@ -528,14 +537,14 @@ class VictronDBus:
             # Initialize midnight tracker on first use
             if not self._tasmota_midnight_kwh or len(self._tasmota_midnight_kwh) <= i:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in self._tasmota_pv_services
                 ]
                 self._tasmota_midnight_date = today
 
             # Reset midnight reference on new day
             if today != self._tasmota_midnight_date:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in self._tasmota_pv_services
                 ]
                 self._tasmota_midnight_date = today
 
@@ -788,7 +797,7 @@ class VictronDBus:
             return self._cached_tasmota_powers
 
         powers = []
-        for service in TASMOTA_DBUS_SERVICES:
+        for service in self._tasmota_pv_services:
             output = self._safe_subprocess(
                 [
                     "dbus-send",
