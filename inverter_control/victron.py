@@ -829,8 +829,58 @@ class VictronDBus:
         if now - self._last_mppt_time < 0.5:  # TTL 0.5 seconds
             return self._cached_mppt_data
 
-        # Background polling keeps this fresh, fallback rarely needed
-        return self._cached_mppt_data
+        # Background polling keeps this fresh, fallback to synchronous call if stale
+        if not self._mppt_services:
+            return {}
+
+        data = {}
+        for i, service in enumerate(self._mppt_services):
+            # Query power
+            power_output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/Yield/Power",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.5,
+            )
+            # Query current
+            current_output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/Dc/0/Current",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.5,
+            )
+
+            mppt_data = {"w": 0.0, "a": 0.0}
+            if power_output:
+                match = re.search(r"variant\s+\S+\s+([\d.]+)", power_output)
+                if match:
+                    try:
+                        mppt_data["w"] = float(match.group(1))
+                    except (ValueError, TypeError):
+                        logger.debug("MPPT power parse failed: %s", match.group(1))
+            if current_output:
+                match = re.search(r"variant\s+\S+\s+([\d.]+)", current_output)
+                if match:
+                    try:
+                        mppt_data["a"] = float(match.group(1))
+                    except (ValueError, TypeError):
+                        logger.debug("MPPT current parse failed: %s", match.group(1))
+
+            data[f"mppt{i}"] = mppt_data
+
+        self._cached_mppt_data = data
+        self._last_mppt_time = time.time()
+        return data
 
     def get_tasmota_pv_power(self) -> list:
         """Get power from Tasmota PV inverters via D-Bus - instant from background cache"""
@@ -839,8 +889,36 @@ class VictronDBus:
         if now - self._last_tasmota_time < 0.5:  # TTL 0.5 seconds
             return self._cached_tasmota_powers
 
-        # Background polling keeps this fresh
-        return self._cached_tasmota_powers
+        # Background polling keeps this fresh, fallback to synchronous call if stale
+        powers = []
+        for service in TASMOTA_DBUS_SERVICES:
+            output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/Ac/Power",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.3,
+            )
+            if output:
+                match = re.search(r"variant\s+\S+\s+(\-?[\d.]+)", output)
+                if match:
+                    try:
+                        powers.append(float(match.group(1)))
+                    except (ValueError, TypeError):
+                        logger.debug("Tasmota power parse failed: %s", match.group(1))
+                        powers.append(0.0)
+                else:
+                    powers.append(0.0)
+            else:
+                powers.append(0.0)
+
+        self._cached_tasmota_powers = powers
+        self._last_tasmota_time = time.time()
+        return powers
 
     def get_acload_powers(self) -> dict[str, float]:
         """Get power from Emporia Vue channels (acload services) - instant from background cache"""
@@ -849,8 +927,57 @@ class VictronDBus:
         if now - self._last_acload_time < 0.5:  # TTL 0.5 seconds
             return self._cached_acload_powers
 
-        # Background polling keeps this fresh
-        return self._cached_acload_powers
+        # Background polling keeps this fresh, fallback to synchronous call if stale
+        powers = {}
+        for service in self._acload_services:
+            # Query CustomName
+            name_output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/CustomName",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.3,
+            )
+            if not name_output:
+                continue
+            name_match = re.search(r"variant\s+(\S.*)", name_output.strip())
+            if not name_match:
+                continue
+
+            # Query Ac/Power
+            power_output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/Ac/Power",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.3,
+            )
+            if not power_output:
+                continue
+            power_match = re.search(
+                r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d.]+)", power_output
+            )
+            if not power_match:
+                continue
+
+            try:
+                name = name_match.group(1).strip()
+                power = float(power_match.group(1))
+                key = name.lower().replace(" ", "_")
+                powers[key] = power
+            except (ValueError, TypeError) as e:
+                logger.debug("acload parse failed: %s", e)
+        self._cached_acload_powers = powers
+        self._last_acload_time = time.time()
+        return powers
 
     def get_battery_soc(self) -> float | None:
         """Get battery SoC from system"""
@@ -874,8 +1001,40 @@ class VictronDBus:
         if now - self._last_battery_chain_soc_time < 2.0:  # TTL 2 seconds
             return self._cached_battery_chain_socs
 
-        # Background polling keeps this fresh
-        return self._cached_battery_chain_socs
+        # Background polling keeps this fresh, fallback to synchronous call if stale
+        battery_services = [
+            "com.victronenergy.battery.mqtt_chain1",
+            "com.victronenergy.battery.mqtt_chain2",
+        ]
+        socs = []
+        for service in battery_services:
+            output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/Soc",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.3,
+            )
+            if output:
+                match = re.search(r"variant\s+\S+\s+([\d.]+)", output)
+                if match:
+                    try:
+                        socs.append(float(match.group(1)))
+                    except (ValueError, TypeError):
+                        logger.debug("Battery chain SoC parse failed: %s", match.group(1))
+                        socs.append(0.0)
+                else:
+                    socs.append(0.0)
+            else:
+                socs.append(0.0)
+
+        self._cached_battery_chain_socs = socs
+        self._last_battery_chain_soc_time = time.time()
+        return socs
 
     def get_ess_mode(self) -> dict[str, Any]:
         """Get current ESS mode

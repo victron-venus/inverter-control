@@ -20,7 +20,7 @@ def test_mppt_data_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
     v._mppt_services = ["service1", "service2"]
 
     call_count = 0
@@ -84,7 +84,7 @@ def test_tasmota_pv_power_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
 
     call_count = 0
 
@@ -161,7 +161,7 @@ def test_battery_chain_socs_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
 
     call_count = 0
 
@@ -222,7 +222,7 @@ def test_inverter_state_caching():
 
     # Reset singleton
     victron._victron = None
-    v = victron.VictronDBus()
+    v = victron.VictronDBus(test_mode=True)
     v._vebus_service = "test.service"
 
     call_count = 0
