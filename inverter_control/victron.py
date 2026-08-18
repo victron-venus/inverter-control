@@ -132,7 +132,7 @@ class VictronDBus:
     RESCAN_ERROR_THRESHOLD = 5  # Rescan after N consecutive errors
     RESCAN_INTERVAL_SECONDS = 300  # Rescan every 5 minutes regardless
 
-    def __init__(self):
+    def __init__(self, test_mode: bool = False):
         self._vebus_service: str | None = None
         self._mppt_services: list = []
         self._consecutive_errors: int = 0
@@ -167,12 +167,15 @@ class VictronDBus:
         self._cached_acload_powers: dict[str, float] = {}
         self._last_acload_time: float = 0.0
 
-        # Background polling thread (like HA does)
+        self._test_mode = test_mode
+
+        # Background polling thread (like HA does) - skip in test mode
         self._poll_thread: threading.Thread | None = None
         self._poll_stop_event = threading.Event()
         self._poll_interval = 0.2  # Poll at 5Hz, faster than control loop (3Hz)
         self._system_data: dict[str, Any] = {}  # Populated by background polling
-        self._start_background_polling()
+        if not test_mode:
+            self._start_background_polling()
 
         self._discover_services()
 
@@ -1137,7 +1140,9 @@ class VictronDBus:
             entry = self._cached_battery_cell_data.get(service)
             if not entry:
                 continue
-            self._accumulate_chain_data(entry, voltages, temps, total_soc, soc_count, allow_charge, allow_discharge)
+            voltages, temps, total_soc, soc_count, allow_charge, allow_discharge = self._accumulate_chain_data(
+                entry, voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
+            )
 
         return voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
 
@@ -1181,7 +1186,9 @@ class VictronDBus:
             )
             all_cell_temps.extend(self._read_chain_cell_temps(service))
 
-            self._accumulate_live_chain_data(service, total_soc, soc_count, allow_charge, allow_discharge)
+            total_soc, soc_count, allow_charge, allow_discharge = self._accumulate_live_chain_data(
+                service, total_soc, soc_count, allow_charge, allow_discharge
+            )
 
         return (
             all_cell_voltages, all_cell_temps, total_soc, soc_count,
@@ -1264,18 +1271,45 @@ class VictronDBus:
         """Get daily yield (kWh) for each MPPT charger from D-Bus"""
         yields = []
         for service in self._mppt_services:
-            # /Yield/User = daily yield in kWh
-            yield_kwh = self._get_float(service, "/Yield/User")
+            # /History/Daily/0/Yield = today's yield in kWh
+            yield_kwh = self._get_float(service, "/History/Daily/0/Yield")
             yields.append(yield_kwh)
         return yields
 
     def get_pv_inverter_daily_yields(self) -> list[float]:
-        """Get daily yield (kWh) for each Tasmota PV inverter from D-Bus"""
+        """Get daily yield (kWh) for each Tasmota PV inverter from D-Bus.
+
+        Tasmota inverters only expose lifetime energy (/Ac/Energy/Forward).
+        We track daily yield by storing the lifetime value at midnight and
+        computing the difference.
+        """
         yields = []
-        for service in TASMOTA_DBUS_SERVICES:
-            # /Ac/Energy/Forward = energy produced in kWh
-            yield_kwh = self._get_float(service, "/Ac/Energy/Forward")
-            yields.append(yield_kwh)
+        for i, service in enumerate(TASMOTA_DBUS_SERVICES):
+            lifetime_kwh = self._get_float(service, "/Ac/Energy/Forward")
+            if lifetime_kwh <= 0:
+                yields.append(0.0)
+                continue
+
+            # Initialize midnight tracker on first use
+            if not hasattr(self, "_tasmota_midnight_kwh"):
+                self._tasmota_midnight_kwh = [
+                    self._get_float(s, "/Ac/Energy/Forward") for s in TASMOTA_DBUS_SERVICES
+                ]
+                self._tasmota_midnight_date = time.localtime().tm_yday
+
+            # Check if date changed (new day)
+            today = time.localtime().tm_yday
+            if today != self._tasmota_midnight_date:
+                # New day - update midnight reference to current lifetime
+                self._tasmota_midnight_kwh = [
+                    self._get_float(s, "/Ac/Energy/Forward")
+                    for s in TASMOTA_DBUS_SERVICES
+                ]
+                self._tasmota_midnight_date = today
+
+            # Daily yield = current lifetime - lifetime at midnight
+            daily_yield = lifetime_kwh - self._tasmota_midnight_kwh[i]
+            yields.append(max(0.0, daily_yield))
         return yields
 
     def get_battery_daily_energy(self) -> tuple[float, float]:
@@ -1298,9 +1332,19 @@ class VictronDBus:
 _victron: VictronDBus | None = None
 
 
-def get_victron() -> VictronDBus:
+def get_victron(test_mode: bool = False) -> VictronDBus:
     """Get or create Victron D-Bus interface"""
     global _victron  # pylint: disable=global-statement
     if _victron is None:
-        _victron = VictronDBus()
+        _victron = VictronDBus(test_mode=test_mode)
     return _victron
+
+
+def reset_victron_for_testing() -> None:
+    """Reset singleton for testing purposes"""
+    global _victron  # pylint: disable=global-statement
+    if _victron is not None:
+        _victron._poll_stop_event.set()
+        if _victron._poll_thread:
+            _victron._poll_thread.join(timeout=1.0)
+    _victron = None

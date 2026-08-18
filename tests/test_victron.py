@@ -20,11 +20,11 @@ class TestVictronDBus:
 
     def setup_method(self):
         """Reset singleton"""
-        victron._victron = None
+        victron.reset_victron_for_testing()
 
     def teardown_method(self):
         """Reset singleton"""
-        victron._victron = None
+        victron.reset_victron_for_testing()
 
     @patch("inverter_control.victron.subprocess.run")
     def test_init_discover_services(self, mock_run):
@@ -38,7 +38,7 @@ class TestVictronDBus:
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        v = victron.VictronDBus()
+        v = victron.get_victron(test_mode=True)
 
         assert v.vebus_service == "com.victronenergy.vebus.ttyUSB2"
         assert len(v.mppt_services) == 2
@@ -52,7 +52,7 @@ class TestVictronDBus:
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        v = victron.VictronDBus()
+        v = victron.get_victron(test_mode=True)
         assert v.vebus_service is None
         assert len(v.mppt_services) == 1
 
@@ -61,7 +61,7 @@ class TestVictronDBus:
         """Test discovery handles errors"""
         mock_run.side_effect = Exception("D-Bus error")
 
-        v = victron.VictronDBus()
+        v = victron.get_victron(test_mode=True)
         assert v.vebus_service is None
         assert v.mppt_services == []
 
@@ -73,8 +73,8 @@ class TestVictronDBus:
             mock_result.stdout = "variant       int32 -500\n"
             mock_run.return_value = mock_result
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._vebus_service = "test.service"
             result = v._dbus_get("test.service", "/Some/Path")
 
@@ -85,8 +85,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired("dbus-send", 0.3)
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._dbus_get("test.service", "/Some/Path")
 
         assert result is None
@@ -99,8 +99,8 @@ class TestVictronDBus:
             mock_result.stdout = ""
             mock_run.return_value = mock_result
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._dbus_get("test.service", "/Some/Path")
 
         assert result is None
@@ -112,8 +112,8 @@ class TestVictronDBus:
             mock_result.returncode = 0
             mock_run.return_value = mock_result
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._vebus_service = "test.service"
             result = v._dbus_set("test.service", "/Path", 100)
 
@@ -124,8 +124,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.subprocess.run") as mock_run:
             mock_run.side_effect = Exception("D-Bus error")
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._dbus_set("test.service", "/Path", 100)
 
         assert result is False
@@ -147,8 +147,8 @@ class TestVictronDBus:
             )
             mock_run.return_value = mock_result
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             data = v.get_system_data()
 
         assert data["g1"] == 500
@@ -167,8 +167,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.subprocess.run") as mock_run:
             mock_run.return_value = None
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             data = v.get_system_data()
 
         assert data["gt"] == 0
@@ -179,8 +179,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "9"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._vebus_service = "test.service"
             code, name = v.get_inverter_state()
 
@@ -192,8 +192,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "999"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._vebus_service = "test.service"
             code, name = v.get_inverter_state()
 
@@ -202,8 +202,8 @@ class TestVictronDBus:
 
     def test_get_inverter_state_no_service(self):
         """Test getting inverter state with no service"""
-        victron._victron = None
-        v = victron.VictronDBus()
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
         v._vebus_service = None
         code, name = v.get_inverter_state()
 
@@ -212,13 +212,10 @@ class TestVictronDBus:
 
     def test_get_inverter_power(self):
         """Test getting inverter power"""
-        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
-            mock_get.return_value = "1234"
-
-            victron._victron = None
-            v = victron.VictronDBus()
-            v._vebus_service = "test.service"
-            power = v.get_inverter_power()
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
+        v._system_data["inv_power"] = 1234
+        power = v.get_inverter_power()
 
         assert power == 1234
 
@@ -227,8 +224,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = None
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._vebus_service = "test.service"
             power = v.get_inverter_power()
 
@@ -236,13 +233,10 @@ class TestVictronDBus:
 
     def test_get_ac_in_power(self):
         """Test getting AC input power"""
-        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
-            mock_get.return_value = "500"
-
-            victron._victron = None
-            v = victron.VictronDBus()
-            v._vebus_service = "test.service"
-            power = v.get_ac_in_power()
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
+        v._system_data["gt"] = 500
+        power = v.get_ac_in_power()
 
         assert power == 500
 
@@ -251,8 +245,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_set") as mock_set:
             mock_set.return_value = True
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._vebus_service = "test.service"
             result = v.set_grid_setpoint(500)
 
@@ -261,25 +255,14 @@ class TestVictronDBus:
 
     def test_get_mppt_data(self):
         """Test getting MPPT data"""
-        call_count = [0]
-
-        def side_effect(*args, **kwargs):
-            call_count[0] += 1
-            m = MagicMock()
-            m.returncode = 0
-            if "/Yield/Power" in args[0]:
-                m.stdout = "variant       double 500.0\n"
-            elif "/Dc/0/Current" in args[0]:
-                m.stdout = "variant       double 10.5\n"
-            else:
-                m.stdout = ""
-            return m
-
-        with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
-            victron._victron = None
-            v = victron.VictronDBus()
-            v._mppt_services = ["service1", "service2"]
-            data = v.get_mppt_data()
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
+        v._cached_mppt_data = {
+            "mppt0": {"w": 500.0, "a": 10.5},
+            "mppt1": {"w": 300.0, "a": 6.2},
+        }
+        v._last_mppt_time = time.time()
+        data = v.get_mppt_data()
 
         assert "mppt0" in data
         assert "mppt1" in data
@@ -288,12 +271,11 @@ class TestVictronDBus:
 
     def test_get_tasmota_pv_power(self):
         """Test getting Tasmota PV power"""
-        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
-            mock_get.side_effect = ["1200", "800"]
-
-            victron._victron = None
-            v = victron.VictronDBus()
-            powers = v.get_tasmota_pv_power()
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
+        v._cached_tasmota_powers = [1200.0, 800.0]
+        v._last_tasmota_time = time.time()
+        powers = v.get_tasmota_pv_power()
 
         assert powers == [1200.0, 800.0]
 
@@ -302,20 +284,19 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "85.5"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             soc = v.get_battery_soc()
 
         assert soc == 85.5
 
     def test_get_battery_chain_socs(self):
         """Test getting battery chain SoCs"""
-        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
-            mock_get.side_effect = ["75.0", "80.0"]
-
-            victron._victron = None
-            v = victron.VictronDBus()
-            socs = v.get_battery_chain_socs()
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
+        v._cached_battery_chain_socs = [75.0, 80.0]
+        v._last_battery_chain_soc_time = time.time()
+        socs = v.get_battery_chain_socs()
 
         assert socs == [75.0, 80.0]
 
@@ -324,8 +305,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.side_effect = ["3", "0"]
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             mode = v.get_ess_mode()
 
         assert mode["hub4_mode"] == 3
@@ -337,8 +318,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.side_effect = ["1", "0"]
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             mode = v.get_ess_mode()
 
         assert mode["hub4_mode"] == 1
@@ -350,8 +331,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.side_effect = ["1", "9"]
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             mode = v.get_ess_mode()
 
         assert mode["mode_name"] == "Keep batteries charged"
@@ -361,8 +342,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_set") as mock_set:
             mock_set.return_value = True
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v.set_ess_mode(external=True)
 
         assert result is True
@@ -378,8 +359,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_set") as mock_set:
             mock_set.return_value = True
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v.set_ess_mode(external=False)
 
         assert result is True
@@ -410,8 +391,8 @@ class TestVictronDBus:
 
             mock_get.side_effect = side_effect
             with patch("inverter_control.victron.VictronDBus._dbus_get", side_effect=side_effect):
-                victron._victron = None
-                v = victron.VictronDBus()
+                victron.reset_victron_for_testing()
+                v = victron.get_victron(test_mode=True)
                 batteries = v.get_all_batteries()
 
         assert len(batteries) == 3
@@ -440,8 +421,8 @@ class TestVictronDBus:
             return m
 
         with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             v._mppt_services = ["service1", "service2"]
             chargers = v.get_mppt_chargers()
 
@@ -455,8 +436,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.side_effect = ["3.45", "3.46", "3.44", "3.47", None]
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             voltages = v._read_chain_cell_voltages("test.service", 0)
 
         assert len(voltages) == 4
@@ -468,8 +449,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.side_effect = ["3.45", "invalid", "3.44", None]
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             voltages = v._read_chain_cell_voltages("test.service", 0)
 
         assert len(voltages) == 2
@@ -481,8 +462,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.side_effect = ["3.45", "0", "3.44", None]
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             voltages = v._read_chain_cell_voltages("test.service", 0)
 
         assert len(voltages) == 2
@@ -504,8 +485,8 @@ class TestVictronDBus:
 
             mock_get.side_effect = side_effect
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             temps = v._read_chain_cell_temps("test.service")
 
         assert len(temps) == 3
@@ -518,8 +499,8 @@ class TestVictronDBus:
             side_effects = ["150", "25.5", "invalid"] + [None] * 13
             mock_get.side_effect = side_effects
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             temps = v._read_chain_cell_temps("test.service")
 
             # Only the valid temp (25.5) should be included
@@ -530,8 +511,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "85.5"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             soc = v._read_chain_soc("test.service")
 
         assert soc == 85.5
@@ -541,8 +522,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = None
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             soc = v._read_chain_soc("test.service")
 
         assert soc is None
@@ -552,8 +533,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "invalid"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             soc = v._read_chain_soc("test.service")
 
         assert soc is None
@@ -563,8 +544,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "1"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._read_chain_allow_flag("test.service", "/Info/AllowCharge")
 
         assert result is True
@@ -574,8 +555,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "0"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._read_chain_allow_flag("test.service", "/Info/AllowDischarge")
 
         assert result is False
@@ -585,8 +566,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = None
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._read_chain_allow_flag("test.service", "/Info/AllowCharge")
 
         assert result is None
@@ -596,8 +577,8 @@ class TestVictronDBus:
         with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
             mock_get.return_value = "invalid"
 
-            victron._victron = None
-            v = victron.VictronDBus()
+            victron.reset_victron_for_testing()
+            v = victron.get_victron(test_mode=True)
             result = v._read_chain_allow_flag("test.service", "/Info/AllowCharge")
 
         assert result is None
@@ -617,8 +598,8 @@ class TestVictronDBus:
                         mock_soc.side_effect = [80.0, 75.0]
                         mock_allow.side_effect = [True, True, True, True]  # charge1, discharge1, charge2, discharge2
 
-                        victron._victron = None
-                        v = victron.VictronDBus()
+                        victron.reset_victron_for_testing()
+                        v = victron.get_victron(test_mode=True)
                         result = v.get_battery_cell_data()
 
         assert result["max_cell"] == 3.50
@@ -645,8 +626,8 @@ class TestVictronDBus:
                         mock_soc.side_effect = [80.0, 75.0]
                         mock_allow.side_effect = [False, True, True, False]  # charge1=F, discharge1=T, charge2=T, discharge2=F
 
-                        victron._victron = None
-                        v = victron.VictronDBus()
+                        victron.reset_victron_for_testing()
+                        v = victron.get_victron(test_mode=True)
                         result = v.get_battery_cell_data()
 
         assert result["allow_charge"] is False
@@ -663,8 +644,8 @@ class TestVictronDBus:
                         mock_soc.side_effect = [None, None]
                         mock_allow.side_effect = [None, None, None, None]
 
-                        victron._victron = None
-                        v = victron.VictronDBus()
+                        victron.reset_victron_for_testing()
+                        v = victron.get_victron(test_mode=True)
                         result = v.get_battery_cell_data()
 
         assert result["max_cell"] is None
@@ -756,10 +737,10 @@ class TestGetVictron:
     """Test get_victron singleton"""
 
     def setup_method(self):
-        victron._victron = None
+        victron.reset_victron_for_testing()
 
     def teardown_method(self):
-        victron._victron = None
+        victron.reset_victron_for_testing()
 
     @patch("inverter_control.victron.subprocess.run")
     def test_get_victron_singleton(self, mock_run):
