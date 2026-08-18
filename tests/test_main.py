@@ -478,7 +478,8 @@ class TestGetEvState(unittest.TestCase):
             "ev_charging_power": 7.2,
         }.get(k, d)
 
-        state = controller._get_ev_state()
+        with patch(f"{_MOD}.ENABLE_EV", True):
+            state = controller._get_ev_state()
 
         assert state["ev_power"] == 1500
         assert state["car_soc"] == 85
@@ -500,7 +501,8 @@ class TestGetWaterState(unittest.TestCase):
         mock_ha.water_valve_on = True
         mock_ha.pump_switch_on = False
 
-        state = controller._get_water_state()
+        with patch(f"{_MOD}.ENABLE_WATER", True):
+            state = controller._get_water_state()
 
         assert state["water_level"] == 45
         assert state["water_valve"] is True
@@ -525,7 +527,8 @@ class TestGetHaState(unittest.TestCase):
         mock_ha.connected = True
         mock_ha.uptime = 3600
 
-        state = controller._get_ha_state()
+        with patch(f"{_MOD}.ENABLE_HA", True):
+            state = controller._get_ha_state()
 
         assert state["booleans"] == {"only_charging": True}
         assert state["laundry_outlet"] is True
