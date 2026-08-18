@@ -1101,6 +1101,14 @@ class VictronDBus:
         self._last_battery_chain_soc_time = time.time()
         return socs
 
+    def get_cell_counts(self) -> dict[str, int]:
+        """Get discovered cell counts per battery chain service.
+
+        Returns a copy of _chain_cell_counts, mapping service name to cell count.
+        Used by DVCC to set accurate cell count instead of hardcoded 16.
+        """
+        return dict(self._chain_cell_counts)
+
     def get_ess_mode(self) -> dict[str, Any]:
         """Get current ESS mode
 

@@ -58,25 +58,25 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 **Files:** `inverter_control/victron.py`
 **Effort:** S
 
-### Q3: Auto-generate config dict
+### Q3: Auto-generate config dict ✅
 **Problem:** `main.py` lines 357–375 — 24 constants manually mapped to a dict. Fragile: add a constant to `config.py`, forget to add to `main.py`.
 **Fix:** `config.__all__` list or `config._EXPORTED_KEYS` with dict comprehension.
 **Files:** `main.py`, `inverter_control/config.py`
 **Effort:** S
 
-### Q4: Fix typo `_vue_dbust_client`
+### Q4: Fix typo `_vue_dbust_client` ✅
 **Problem:** `homeassistant.py:107` — `_vue_dbust_client` (missing 's'). Consistent usage but confusing for readers.
 **Fix:** Rename to `_vue_dbus_client` everywhere.
 **Files:** `inverter_control/homeassistant.py`
 **Effort:** S
 
-### Q5: Dynamic DVCC_CELL_COUNT
+### Q5: Dynamic DVCC_CELL_COUNT ✅
 **Problem:** `main.py` line 410 — `DVCC_CELL_COUNT: 16` hardcoded. `VictronDBus` discovers actual cell counts per chain but never propagates this to the DVCC calculator.
 **Fix:** Pass `len(cells)` from `get_battery_cell_data()` into DVCC.
 **Files:** `main.py`, `inverter_control/dvcc.py`, `inverter_control/victron.py`
 **Effort:** M
 
-### Q6: Clean orphan files, move test_caching.py
+### Q6: Clean orphan files, move test_caching.py ✅
 **Problem:** 12 orphan `.py,cover` files in `inverter_control/`. `test_caching.py` lives at repo root instead of `tests/`.
 **Fix:** `find . -name '*.py,cover' -delete`, move `test_caching.py` → `tests/test_caching.py`.
 **Files:** `test_caching.py`, `inverter_control/*.py,cover`
@@ -126,13 +126,13 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 
 ## 4. Security
 
-### S1: MQTT input validation
+### S1: MQTT input validation ✅
 **Problem:** MQTT command callbacks in `main.py` — `int(p.get("value", 0))` without validation. Non-numeric payload throws.
 **Fix:** Validate type and range before conversion. Log rejected commands.
 **Files:** `main.py` (MQTT callbacks)
 **Effort:** S
 
-### S2: Fix .gitignore pattern
+### S2: Fix .gitignore pattern ✅
 **Problem:** `C*E.md` overly broad — could match `CODE_OF_CONDUCT.md` (already tracked).
 **Fix:** Replace with explicit `CLAUDE.md` and `SECURITY.md` entries.
 **Files:** `.gitignore`

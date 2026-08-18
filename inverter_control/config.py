@@ -335,6 +335,29 @@ class Colors:
 
 
 # =============================================================================
+# EXPORTED KEYS - used by SetpointCalculator
+# =============================================================================
+EXPORTED_KEYS = [
+    "BURST_GAIN",
+    "BURST_THRESHOLD",
+    "CREEP_MAX",
+    "CREEP_RATE",
+    "D_BRAKE_ZONE",
+    "D_GAIN",
+    "D_THRESHOLD",
+    "DAMPING_FACTOR",
+    "EMA_ALPHA",
+    "EXPORT_DAMPING",
+    "GRID_ZERO_DEADBAND_HIGH",
+    "GRID_ZERO_DEADBAND_LOW",
+    "INVERTER_EFFICIENCY",
+    "POWER_LIMIT_MAX",
+    "POWER_LIMIT_MIN",
+    "SETPOINT_DELTA_LIMIT",
+    "SOLAR_OUTPUT_OFFSET",
+]
+
+# =============================================================================
 # STARTUP CONFIG VALIDATION
 # =============================================================================
 # Catch type mismatches early (e.g. HA_TOKEN = 123 instead of str)

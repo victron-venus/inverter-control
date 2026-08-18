@@ -107,7 +107,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._home_garage: bool = False
 
         # D-Bus client for VUE sensors (if available)
-        self._vue_dbust_client = VUESensorDBusClient(VUE_SENSORS)
+        self._vue_dbus_client = VUESensorDBusClient(VUE_SENSORS)
 
         # Connection status
         self._connected = False
@@ -257,7 +257,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             self._parse_switches(data)
 
             # Update VUE sensors from dbus services if available
-            self._vue_dbust_client.update_all(self._vue_sensors)
+            self._vue_dbus_client.update_all(self._vue_sensors)
 
     def _fetch_template_data(self) -> dict:
         """Fetch all entity data via template API"""
