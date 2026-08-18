@@ -248,7 +248,7 @@ class InverterController:
             self._pre_charge_requested = True
             self._pre_charge_horizon_hours = horizon_hours
             return True
-        except Exception as e:
+        except Exception:
             logger.exception("Error handling pre-charge webhook")
             return False
 

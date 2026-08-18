@@ -121,8 +121,8 @@ class WebhookServer:
             self._thread = threading.Thread(target=self._run, daemon=True, name="WebhookServer")
             self._thread.start()
             logger.info(f"Webhook server started on {self.host}:{self.port}")
-        except Exception as e:
-            logger.error(f"Failed to start webhook server: {e}")
+        except Exception:
+            logger.exception("Failed to start webhook server")
             self._running = False
 
     def _run(self):

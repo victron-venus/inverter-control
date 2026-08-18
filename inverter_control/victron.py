@@ -39,10 +39,9 @@ AC_POWER_PATH = "/Ac/Power"
 # background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
 # (as get_battery_cell_data used to) is ~72 subprocess calls per cycle which
 # blows the 5s cycle watchdog on a slow RPi.
-BATTERY_CELL_SERVICES = [
-    "com.victronenergy.battery.mqtt_chain1",
-    "com.victronenergy.battery.mqtt_chain2",
-]
+BATTERY_CHAIN_1 = "com.victronenergy.battery.mqtt_chain1"
+BATTERY_CHAIN_2 = "com.victronenergy.battery.mqtt_chain2"
+BATTERY_CELL_SERVICES = [BATTERY_CHAIN_1, BATTERY_CHAIN_2]
 # How often the background poller refreshes the cell-data cache.
 CELL_DATA_POLL_INTERVAL = 30
 
@@ -343,7 +342,7 @@ class VictronDBus:
     def _poll_battery_chain_socs(self):
         """Poll battery chain SoCs"""
         battery_services = [
-            "com.victronenergy.battery.mqtt_chain1",
+            BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
         import re as _re
@@ -861,7 +860,7 @@ class VictronDBus:
             return self._cached_battery_chain_socs
 
         battery_services = [
-            "com.victronenergy.battery.mqtt_chain1",
+            BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
         socs = []
@@ -1002,7 +1001,7 @@ class VictronDBus:
             return self._cached_all_batteries
 
         battery_services = [
-            ("com.victronenergy.battery.mqtt_chain1", "JBD Chain 1"),
+            (BATTERY_CHAIN_1, "JBD Chain 1"),
             ("com.victronenergy.battery.mqtt_chain2", "JBD Chain 2"),
             ("com.victronenergy.battery.virtual_chain", "Virtual Battery"),
         ]
