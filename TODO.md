@@ -110,7 +110,7 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 **Files:** `tests/test_logic.py`
 **Effort:** S
 
-### T5: Watchdog concurrency tests
+### T5: Watchdog concurrency tests ✅
 **Problem:** Only 4 tests for a safety-critical component. No race condition or thread safety tests.
 **Fix:** Test rapid `mark_active`/`mark_stalled` calls, thread safety, `_pre_forced_*` state restoration.
 **Files:** `tests/test_watchdog.py`
