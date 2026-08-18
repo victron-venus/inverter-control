@@ -362,6 +362,20 @@ class VictronDBus:
         self._cached_mppt_data = data
         self._last_mppt_time = time.time()
 
+    @staticmethod
+    def _parse_variant_value(output: str | None) -> float:
+        """Parse a variant value from D-Bus output, return 0.0 on failure"""
+        if not output:
+            return 0.0
+        match = re.search(VARIANT_VALUE_PATTERN, output)
+        if not match:
+            return 0.0
+        try:
+            return float(match.group(1))
+        except (ValueError, TypeError):
+            logger.debug("D-Bus value parse failed: %s", match.group(1))
+            return 0.0
+
     def _parse_mppt_output(self, output: str) -> dict[str, float]:
         """Parse MPPT power and current from tree query output"""
         mppt_data = {"w": 0.0, "a": 0.0}
@@ -824,6 +838,35 @@ class VictronDBus:
 
         return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16")
 
+    def _query_mppt_sync(self, service: str) -> dict[str, float]:
+        """Synchronously query a single MPPT for power and current"""
+        power_output = self._safe_subprocess(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={service}",
+                "/Yield/Power",
+                GET_VALUE_METHOD,
+            ],
+            timeout=0.5,
+        )
+        current_output = self._safe_subprocess(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={service}",
+                "/Dc/0/Current",
+                GET_VALUE_METHOD,
+            ],
+            timeout=0.5,
+        )
+        return {
+            "w": self._parse_variant_value(power_output),
+            "a": self._parse_variant_value(current_output),
+        }
+
     def get_mppt_data(self) -> dict[str, dict[str, float]]:
         """Get power and current from all MPPT chargers - instant from background cache"""
         # Return cached data if fresh (background poll updates every 0.2s)
@@ -835,50 +878,10 @@ class VictronDBus:
         if not self._mppt_services:
             return {}
 
-        data = {}
-        for i, service in enumerate(self._mppt_services):
-            # Query power
-            power_output = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    "/Yield/Power",
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.5,
-            )
-            # Query current
-            current_output = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    "/Dc/0/Current",
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.5,
-            )
-
-            mppt_data = {"w": 0.0, "a": 0.0}
-            if power_output:
-                match = re.search(VARIANT_VALUE_PATTERN, power_output)
-                if match:
-                    try:
-                        mppt_data["w"] = float(match.group(1))
-                    except (ValueError, TypeError):
-                        logger.debug("MPPT power parse failed: %s", match.group(1))
-            if current_output:
-                match = re.search(VARIANT_VALUE_PATTERN, current_output)
-                if match:
-                    try:
-                        mppt_data["a"] = float(match.group(1))
-                    except (ValueError, TypeError):
-                        logger.debug("MPPT current parse failed: %s", match.group(1))
-
-            data[f"mppt{i}"] = mppt_data
+        data = {
+            f"mppt{i}": self._query_mppt_sync(service)
+            for i, service in enumerate(self._mppt_services)
+        }
 
         self._cached_mppt_data = data
         self._last_mppt_time = time.time()
