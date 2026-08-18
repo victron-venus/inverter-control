@@ -78,22 +78,22 @@ def test_mppt_data_caching():
 
 
 def test_tasmota_pv_power_caching():
-    """Test that get_tasmota_pv_power caches results"""
+    """Test that get_pv_power caches results"""
     print("Testing Tasmota PV power caching...")
 
     # Reset singleton
     victron._victron = None
     v = victron.VictronDBus(test_mode=True)
     # Mock discovered Tasmota services
-    v._tasmota_pv_services = [
+    v._pv_inverter_services = [
         "com.victronenergy.pvinverter.tasmota_120",
         "com.victronenergy.pvinverter.tasmota_121",
     ]
 
     call_count = 0
 
-    service1 = v._tasmota_pv_services[0]
-    service2 = v._tasmota_pv_services[1]
+    service1 = v._pv_inverter_services[0]
+    service2 = v._pv_inverter_services[1]
 
     def side_effect(*args, **kwargs):
         nonlocal call_count
@@ -124,18 +124,18 @@ def test_tasmota_pv_power_caching():
 
     with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
         # First call - should trigger actual D-Bus calls
-        powers1 = v.get_tasmota_pv_power()
+        powers1 = v.get_pv_power()
         first_call_count = call_count
 
         # Second call immediately after - should use cache
-        powers2 = v.get_tasmota_pv_power()
+        powers2 = v.get_pv_power()
         second_call_count = call_count
 
         # Wait a bit to see if cache expires (TTL is 0.5 seconds)
         time.sleep(0.6)
 
         # Third call after cache should expire - should trigger new D-Bus calls
-        powers3 = v.get_tasmota_pv_power()
+        powers3 = v.get_pv_power()
         third_call_count = call_count
 
         # Verify data consistency

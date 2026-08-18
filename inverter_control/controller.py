@@ -124,7 +124,7 @@ class InverterController:
 
         # Cached D-Bus data
         self._cached_mppt_data = {}
-        self._cached_tasmota_powers = []
+        self._cached_pv_powers = []
         self._cached_battery_socs = []
         self._cached_inv_state = ""
         self._cached_battery_cell_data = None
@@ -265,12 +265,12 @@ class InverterController:
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
         mppt_total = sum(m["w"] for m in mppt_data.values())
-        tasmota_powers = self.victron.get_tasmota_pv_power()
+        tasmota_powers = self.victron.get_pv_power()
         tasmota_total = sum(tasmota_powers)
 
         # Cache these reads so update_state doesn't re-query D-Bus this cycle
         self._cached_mppt_data = mppt_data
-        self._cached_tasmota_powers = tasmota_powers
+        self._cached_pv_powers = tasmota_powers
 
         # Grid smoothing with Home total (Vue via D-Bus)
         # derived_gt = home_total - pv_total (negative = export, positive = import)
@@ -426,7 +426,7 @@ class InverterController:
 
         # Inject cached data into sys_data for console UI use
         sys_data["mppt_data"] = self._cached_mppt_data
-        sys_data["tasmota_powers"] = self._cached_tasmota_powers
+        sys_data["tasmota_powers"] = self._cached_pv_powers
         sys_data["battery_socs"] = self._cached_battery_socs
 
         # Full state for web UI
@@ -436,12 +436,12 @@ class InverterController:
             "filtered_gt": self.filtered_gt,
             "dry_run": self.dry_run,
             "mppt_total": sum(m["w"] for m in self._cached_mppt_data.values()),
-            "tasmota_total": sum(self._cached_tasmota_powers),
+            "tasmota_total": sum(self._cached_pv_powers),
             "solar_total": sum(m["w"] for m in self._cached_mppt_data.values())
-            + sum(self._cached_tasmota_powers),
+            + sum(self._cached_pv_powers),
             "mppt_data": self._cached_mppt_data,
             "mppt_individual": [m["w"] for m in self._cached_mppt_data.values()],
-            "tasmota_individual": self._cached_tasmota_powers,
+            "tasmota_individual": self._cached_pv_powers,
             "inverter_state": self._cached_inv_state,
             "battery_socs": self._cached_battery_socs,
             "batteries": self._get_cached_batteries(),
@@ -513,7 +513,7 @@ class InverterController:
             # Inject cached data for console UI
             sys_data["battery_socs"] = self._cached_battery_socs
             sys_data["mppt_data"] = self._cached_mppt_data
-            sys_data["tasmota_powers"] = self._cached_tasmota_powers
+            sys_data["tasmota_powers"] = self._cached_pv_powers
 
             filtered_display = self.filtered_gt if self.filtered_gt is not None else sys_data["gt"]
             line = self.console.format_line(

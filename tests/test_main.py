@@ -90,7 +90,7 @@ class TestCalculateSetpoint(unittest.TestCase):
     def test_returns_tuple_of_int_and_str(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_mppt_data.return_value = {"mppt0": {"w": 100.0, "a": 2.0}}
-        mock_victron.get_tasmota_pv_power.return_value = [50.0]
+        mock_victron.get_pv_power.return_value = [50.0]
         mock_victron.get_inverter_power.return_value = -500
         mock_ha.get_vue_sensor.return_value = 0
         mock_ha.get_boolean.return_value = False
@@ -116,7 +116,7 @@ class TestCalculateSetpoint(unittest.TestCase):
     def test_builds_system_state_and_calls_calculator(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_mppt_data.return_value = {"mppt0": {"w": 500.0, "a": 10.0}}
-        mock_victron.get_tasmota_pv_power.return_value = [300.0]
+        mock_victron.get_pv_power.return_value = [300.0]
         mock_victron.get_inverter_power.return_value = -800
         mock_ha.get_vue_sensor.return_value = 100
         mock_ha.get_boolean.return_value = False
@@ -154,7 +154,7 @@ class TestCalculateSetpoint(unittest.TestCase):
     def test_updates_filtered_gt_from_result(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_mppt_data.return_value = {}
-        mock_victron.get_tasmota_pv_power.return_value = []
+        mock_victron.get_pv_power.return_value = []
         mock_victron.get_inverter_power.return_value = 0
         mock_ha.get_vue_sensor.return_value = 0
         mock_ha.get_boolean.return_value = False
@@ -180,7 +180,7 @@ class TestCalculateSetpoint(unittest.TestCase):
     def test_caches_mppt_and_tasmota_data(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_mppt_data.return_value = {"mppt0": {"w": 100.0, "a": 2.0}}
-        mock_victron.get_tasmota_pv_power.return_value = [200.0]
+        mock_victron.get_pv_power.return_value = [200.0]
         mock_victron.get_inverter_power.return_value = 0
         mock_ha.get_vue_sensor.return_value = 0
         mock_ha.get_boolean.return_value = False
@@ -202,7 +202,7 @@ class TestCalculateSetpoint(unittest.TestCase):
         )
 
         assert controller._cached_mppt_data == {"mppt0": {"w": 100.0, "a": 2.0}}
-        assert controller._cached_tasmota_powers == [200.0]
+        assert controller._cached_pv_powers == [200.0]
 
 
 class TestUpdateState(unittest.TestCase):
@@ -233,7 +233,7 @@ class TestUpdateState(unittest.TestCase):
         mock_ha.home_garage_on = False
 
         controller._cached_mppt_data = {"mppt0": {"w": 500.0, "a": 10.0}}
-        controller._cached_tasmota_powers = [300.0]
+        controller._cached_pv_powers = [300.0]
         controller.filtered_gt = 25.0
         controller.previous_setpoint = -500
 
@@ -281,7 +281,7 @@ class TestUpdateState(unittest.TestCase):
         mock_ha.get_boolean.return_value = False
 
         controller._cached_mppt_data = {"mppt0": {"w": 100.0, "a": 2.0}}
-        controller._cached_tasmota_powers = [50.0]
+        controller._cached_pv_powers = [50.0]
 
         sys_data = {
             "g1": 0,
@@ -320,7 +320,7 @@ class TestRunCycle(unittest.TestCase):
             "soc": 80,
         }
         mock_victron.get_mppt_data.return_value = {}
-        mock_victron.get_tasmota_pv_power.return_value = []
+        mock_victron.get_pv_power.return_value = []
         mock_victron.get_inverter_power.return_value = 0
         mock_victron.get_inverter_state.return_value = (9, "Inverting")
         mock_victron.get_battery_chain_socs.return_value = []
@@ -357,7 +357,7 @@ class TestRunCycle(unittest.TestCase):
         }
         mock_victron.get_system_data.return_value = sys_data
         mock_victron.get_mppt_data.return_value = {}
-        mock_victron.get_tasmota_pv_power.return_value = []
+        mock_victron.get_pv_power.return_value = []
         mock_victron.get_inverter_power.return_value = 0
         mock_victron.get_inverter_state.return_value = (9, "Inverting")
         mock_victron.get_battery_chain_socs.return_value = []
@@ -397,7 +397,7 @@ class TestRunCycle(unittest.TestCase):
             "soc": 0,
         }
         mock_victron.get_mppt_data.return_value = {}
-        mock_victron.get_tasmota_pv_power.return_value = []
+        mock_victron.get_pv_power.return_value = []
         mock_victron.get_inverter_power.return_value = 0
         mock_victron.get_inverter_state.return_value = (0, "Unknown")
         mock_victron.get_battery_chain_socs.return_value = []

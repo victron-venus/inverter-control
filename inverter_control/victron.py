@@ -6,6 +6,7 @@ Fast D-Bus access for grid control and monitoring
 
 import logging
 import math
+import re
 import subprocess
 import threading
 import time
@@ -55,6 +56,13 @@ class VictronDBus:
     # Auto-rescan thresholds
     RESCAN_ERROR_THRESHOLD = 5  # Rescan after N consecutive errors
     RESCAN_INTERVAL_SECONDS = 300  # Rescan every 5 minutes regardless
+    RESCAN_COOLDOWN_SECONDS = 60  # Minimum time between error-triggered rescans
+
+    # Service health tracking: after N consecutive timeouts, back off
+    SERVICE_FAIL_THRESHOLD = 3  # Consecutive failures before backing off
+    SERVICE_BACKOFF_BASE = 10.0  # Initial backoff: 10s
+    SERVICE_BACKOFF_MAX = 300.0  # Max backoff: 5 minutes
+    SERVICE_PROBE_INTERVAL = 30.0  # How often to probe backed-off services
 
     def __init__(self, test_mode: bool = False):
         self._vebus_service: str | None = None
@@ -62,6 +70,7 @@ class VictronDBus:
         self._consecutive_errors: int = 0
         self._last_scan_time: float = 0
         self._last_success_time: float = 0
+        self._last_rescan_time: float = 0  # Cooldown tracker for error-triggered rescans
         self._dbus_lock = threading.Lock()
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
         # doesn't cost 2 D-Bus roundtrips every loop.
@@ -78,8 +87,8 @@ class VictronDBus:
         self._cached_mppt_data: dict[str, dict[str, float]] = {}
         self._last_mppt_time: float = 0.0
         # Cache for Tasmota PV power
-        self._cached_tasmota_powers: list = []
-        self._last_tasmota_time: float = 0.0
+        self._cached_pv_powers: list = []
+        self._last_pv_time: float = 0.0
         # Cache for battery chain SoC
         self._cached_battery_chain_socs: list = []
         self._last_battery_chain_soc_time: float = 0.0
@@ -91,7 +100,7 @@ class VictronDBus:
         self._cached_acload_powers: dict[str, float] = {}
         self._last_acload_time: float = 0.0
         # Cache for discovered Tasmota PV inverter services
-        self._tasmota_pv_services: list = []
+        self._pv_inverter_services: list = []
         # Cache for daily yields (MPPT + Tasmota) and battery daily energy
         self._cached_mppt_daily_yields: list[float] = []
         self._cached_tasmota_daily_yields: list[float] = []
@@ -104,8 +113,12 @@ class VictronDBus:
         self._cached_mppt_chargers: list = []
         self._last_mppt_chargers_time: float = 0.0
         # Midnight tracker for Tasmota daily yield calculation
-        self._tasmota_midnight_kwh: list[float] = []
-        self._tasmota_midnight_date: int = 0
+        self._pv_midnight_kwh: list[float] = []
+        self._pv_midnight_date: int = 0
+        # Service health tracking: detect unresponsive D-Bus services
+        # and back off to avoid 4+ second freezes from sequential timeouts.
+        self._service_consecutive_fails: dict[str, int] = {}
+        self._service_backoff_until: dict[str, float] = {}
 
         self._test_mode = test_mode
 
@@ -134,7 +147,7 @@ class VictronDBus:
             self._vebus_service = None
             self._mppt_services = []
             self._acload_services = []
-            self._tasmota_pv_services = []
+            self._pv_inverter_services = []
 
             for line in lines:
                 if "com.victronenergy.vebus" in line:
@@ -144,11 +157,11 @@ class VictronDBus:
                 elif "com.victronenergy.acload" in line:
                     self._acload_services.append(line.strip())
                 elif "com.victronenergy.pvinverter." in line:
-                    self._tasmota_pv_services.append(line.strip())
+                    self._pv_inverter_services.append(line.strip())
 
             self._mppt_services.sort()
             self._acload_services.sort()
-            self._tasmota_pv_services.sort()
+            self._pv_inverter_services.sort()
 
             # Log if service changed
             if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
@@ -159,8 +172,8 @@ class VictronDBus:
             if self._acload_services:
                 print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
 
-            if self._tasmota_pv_services:
-                print(f"  [D-Bus] PV inverters found: {self._tasmota_pv_services}")
+            if self._pv_inverter_services:
+                print(f"  [D-Bus] PV inverters found: {self._pv_inverter_services}")
 
             self._consecutive_errors = 0
 
@@ -168,13 +181,19 @@ class VictronDBus:
             logger.debug("D-Bus service discovery failed: %s", e)
 
     def _check_rescan_needed(self) -> bool:
-        """Check if D-Bus rescan is needed and perform it if so"""
+        """Check if D-Bus rescan is needed and perform it if so.
+        IMPORTANT: This must NOT be called while holding _dbus_lock,
+        as _discover_services() runs a blocking subprocess (dbus -y)
+        that would prevent the main control loop from acquiring the lock."""
 
         now = time.time()
 
-        # Rescan if too many consecutive errors
+        # Rescan if too many consecutive errors (with cooldown to prevent storm)
         if self._consecutive_errors >= self.RESCAN_ERROR_THRESHOLD:
+            if now - self._last_rescan_time < self.RESCAN_COOLDOWN_SECONDS:
+                return False  # Too soon for another error-triggered rescan
             print(f"  [D-Bus] Rescanning after {self._consecutive_errors} errors...")
+            self._last_rescan_time = now
             self._discover_services()
             return True
 
@@ -202,6 +221,8 @@ class VictronDBus:
         while not self._poll_stop_event.is_set():
             start = time.monotonic()
             try:
+                # Check for rescan OUTSIDE the lock to avoid blocking main thread
+                self._check_rescan_needed()
                 self._poll_all()
             except Exception as e:
                 logger.debug("Background poll error: %s", e)
@@ -222,7 +243,7 @@ class VictronDBus:
             self._poll_mppt_data_tree()
 
         # Poll Tasmota PV power
-        if self._tasmota_pv_services:
+        if self._pv_inverter_services:
             self._poll_tasmota_power()
 
         # Poll acload (Emporia Vue) power channels
@@ -247,7 +268,7 @@ class VictronDBus:
 
     def _poll_system_data(self):
         """Poll system data using tree query"""
-        output = self._safe_subprocess(
+        output = self._safe_subprocess_tracked(
             [
                 "dbus-send",
                 "--system",
@@ -256,6 +277,7 @@ class VictronDBus:
                 "/",
                 GET_VALUE_METHOD,
             ],
+            service=SYSTEM_SERVICE,
             timeout=0.5,
         )
         if output:
@@ -272,7 +294,7 @@ class VictronDBus:
         data = {}
 
         def _query_mppt(idx: int, service: str) -> tuple[int, dict[str, float]]:
-            output = self._safe_subprocess(
+            output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
@@ -281,6 +303,7 @@ class VictronDBus:
                     "/",
                     GET_VALUE_METHOD,
                 ],
+                service=service,
                 timeout=0.5,
             )
             return idx, parse_mppt_output(output) if output else {"w": 0.0, "a": 0.0}
@@ -296,30 +319,35 @@ class VictronDBus:
         self._cached_mppt_data = data
         self._last_mppt_time = time.time()
 
-    def _poll_tasmota_power(self):
-        """Poll Tasmota PV power"""
+    def _query_pv_powers(self, path: str = "/", reply_mode: str = "--print-reply") -> list:
+        """Query all PV inverter services for power (shared by poll and fallback)."""
         powers = []
-        for service in self._tasmota_pv_services:
-            output = self._safe_subprocess(
+        for service in self._pv_inverter_services:
+            output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply",
+                    reply_mode,
                     f"--dest={service}",
-                    "/",
+                    path,
                     GET_VALUE_METHOD,
                 ],
+                service=service,
                 timeout=0.3,
             )
             powers.append(extract_power_from_tree(output))
-        self._cached_tasmota_powers = powers
-        self._last_tasmota_time = time.time()
+        return powers
 
-    def _poll_acload_power(self):
-        """Poll Emporia Vue power channels (acload services)"""
+    def _poll_tasmota_power(self):
+        """Poll Tasmota PV power"""
+        self._cached_pv_powers = self._query_pv_powers()
+        self._last_pv_time = time.time()
+
+    def _query_acload_powers(self) -> dict[str, float]:
+        """Query all acload services for name+power (shared by poll and fallback)."""
         powers = {}
         for service in self._acload_services:
-            name_output = self._safe_subprocess(
+            name_output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
@@ -328,9 +356,10 @@ class VictronDBus:
                     "/CustomName",
                     GET_VALUE_METHOD,
                 ],
+                service=service,
                 timeout=0.3,
             )
-            power_output = self._safe_subprocess(
+            power_output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
@@ -339,38 +368,47 @@ class VictronDBus:
                     AC_POWER_PATH,
                     GET_VALUE_METHOD,
                 ],
+                service=service,
                 timeout=0.3,
             )
             result = extract_acload_name_power((name_output, power_output))
             if result:
                 key, power = result
                 powers[key] = power
-        self._cached_acload_powers = powers
+        return powers
+
+    def _poll_acload_power(self):
+        """Poll Emporia Vue power channels (acload services)"""
+        self._cached_acload_powers = self._query_acload_powers()
         self._last_acload_time = time.time()
 
-    def _poll_battery_chain_socs(self):
-        """Poll battery chain SoCs"""
+    def _query_battery_chain_socs(
+        self, path: str = "/", reply_mode: str = "--print-reply",
+        soc_regex: re.Pattern | None = None,
+    ) -> list[float]:
+        """Query all battery chain services for SoC (shared by poll and fallback)."""
+        if soc_regex is None:
+            soc_regex = re.compile(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)")
         battery_services = [
             BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
-        import re as _re
-
         socs = []
         for service in battery_services:
-            output = self._safe_subprocess(
+            output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
-                    "--print-reply",
+                    reply_mode,
                     f"--dest={service}",
-                    "/",
+                    path,
                     GET_VALUE_METHOD,
                 ],
+                service=service,
                 timeout=0.3,
             )
             if output:
-                match = _re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
+                match = soc_regex.search(output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
@@ -381,8 +419,11 @@ class VictronDBus:
                     socs.append(0.0)
             else:
                 socs.append(0.0)
+        return socs
 
-        self._cached_battery_chain_socs = socs
+    def _poll_battery_chain_socs(self):
+        """Poll battery chain SoCs"""
+        self._cached_battery_chain_socs = self._query_battery_chain_socs()
         self._last_battery_chain_soc_time = time.time()
 
     def _poll_battery_cell_data_tree(self):
@@ -391,7 +432,7 @@ class VictronDBus:
             return
 
         for service in BATTERY_CELL_SERVICES:
-            output = self._safe_subprocess(
+            output = self._safe_subprocess_tracked(
                 [
                     "dbus-send",
                     "--system",
@@ -400,6 +441,7 @@ class VictronDBus:
                     "/",
                     GET_VALUE_METHOD,
                 ],
+                service=service,
                 timeout=0.5,
             )
             if not output:
@@ -429,14 +471,12 @@ class VictronDBus:
 
     def _parse_chain_voltages(self, service: str, output: str) -> list[float]:
         """Parse cell voltages from tree output, stopping at first gap."""
-        import re as _re
-
         chain_voltages = []
         known_count = self._chain_cell_counts.get(service, 16)
         max_cell = min(known_count + 1, 16)
 
         for i in range(1, max_cell + 1):
-            match = _re.search(
+            match = re.search(
                 rf'string "Cell/{i}/Voltage"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
                 output,
             )
@@ -447,11 +487,9 @@ class VictronDBus:
 
     def _parse_chain_temps(self, output: str) -> list[float]:
         """Parse cell temperatures from tree output (may be sparse)."""
-        import re as _re
-
         chain_temps = []
         for i in range(1, 17):
-            match = _re.search(
+            match = re.search(
                 rf'string "Cell/{i}/Temperature"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
                 output,
             )
@@ -461,18 +499,14 @@ class VictronDBus:
 
     def _parse_chain_soc(self, output: str) -> float | None:
         """Parse chain SoC from tree output."""
-        import re as _re
-
-        soc_match = _re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
+        soc_match = re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
         return float(soc_match.group(1)) if soc_match else None
 
     @staticmethod
     def _tree_bool(output: str, path: str) -> bool | None:
         """Parse a 0/1 variant value for a path from a tree query reply."""
-        import re as _re
-
-        match = _re.search(
-            rf'string "{_re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+        match = re.search(
+            rf'string "{re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
             output,
         )
         if not match:
@@ -482,36 +516,72 @@ class VictronDBus:
         except (ValueError, TypeError):
             return None
 
+    @staticmethod
+    def _parse_inverter_state_code(raw: str) -> tuple[int, str]:
+        """Parse inverter state code from raw D-Bus output."""
+        code = int(raw.strip())
+        return code, INVERTER_STATES.get(code, f"? ({code})")
+
     def _poll_inverter_state(self):
-        """Poll inverter state"""
+        """Poll inverter state (uses _safe_subprocess directly to avoid lock contention)"""
         if not self._vebus_service:
             self._cached_inverter_state = (0, "Unknown")
             self._last_inverter_state_time = time.time()
             return
 
-        val = self._dbus_get(self._vebus_service, "/State")
-        if val:
+        output = self._safe_subprocess_tracked(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={self._vebus_service}",
+                "/State",
+                GET_VALUE_METHOD,
+            ],
+            service=self._vebus_service,
+            timeout=0.3,
+        )
+        if output:
             try:
-                code = int(val)
-                result = (code, INVERTER_STATES.get(code, f"? ({code})"))
+                result = self._parse_inverter_state_code(output)
                 self._cached_inverter_state = result
+                self._consecutive_errors = 0
             except (ValueError, TypeError) as e:
                 logger.debug("Inverter state parse failed: %s", e)
+                self._consecutive_errors += 1
+        else:
+            self._consecutive_errors += 1
 
         self._last_inverter_state_time = time.time()
 
     def _poll_inverter_power(self):
-        """Poll inverter power"""
+        """Poll inverter power (uses _safe_subprocess directly to avoid lock contention)"""
         if not self._vebus_service:
             return
 
-        val = self._dbus_get(self._vebus_service, "/Devices/0/Ac/Inverter/P")
-        if val:
+        output = self._safe_subprocess_tracked(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={self._vebus_service}",
+                "/Devices/0/Ac/Inverter/P",
+                GET_VALUE_METHOD,
+            ],
+            service=self._vebus_service,
+            timeout=0.3,
+        )
+        if output:
             try:
-                # Store in system data for fast access
-                self._system_data["inv_power"] = int(float(val))
+                parts = output.strip().split()
+                if parts:
+                    self._system_data["inv_power"] = int(float(parts[-1]))
+                    self._consecutive_errors = 0
             except (ValueError, TypeError) as e:
                 logger.debug("Inverter power parse failed: %s", e)
+                self._consecutive_errors += 1
+        else:
+            self._consecutive_errors += 1
 
     def _poll_daily_yields(self):
         """Poll daily yields for MPPT chargers and Tasmota inverters (throttled to 5s)"""
@@ -519,38 +589,38 @@ class VictronDBus:
         if now - self._last_daily_yields_time < 5.0:
             return
 
-        # MPPT daily yields
+        # MPPT daily yields (no lock - background thread)
         mppt_yields = []
         for service in self._mppt_services:
-            mppt_yields.append(self._get_float(service, "/History/Daily/0/Yield"))
+            mppt_yields.append(self._get_float_nolock(service, "/History/Daily/0/Yield"))
         self._cached_mppt_daily_yields = mppt_yields
 
         # Tasmota daily yields (lifetime - midnight reference)
         tasmota_yields = []
         today = time.localtime().tm_yday
-        for i, service in enumerate(self._tasmota_pv_services):
-            lifetime_kwh = self._get_float(service, TASMOTA_ENERGY_FORWARD_PATH)
+        for i, service in enumerate(self._pv_inverter_services):
+            lifetime_kwh = self._get_float_nolock(service, TASMOTA_ENERGY_FORWARD_PATH)
             if lifetime_kwh <= 0:
                 tasmota_yields.append(0.0)
                 continue
 
             # Initialize midnight tracker on first use
-            if not self._tasmota_midnight_kwh or len(self._tasmota_midnight_kwh) <= i:
-                self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
-                    for s in self._tasmota_pv_services
+            if not self._pv_midnight_kwh or len(self._pv_midnight_kwh) <= i:
+                self._pv_midnight_kwh = [
+                    self._get_float_nolock(s, TASMOTA_ENERGY_FORWARD_PATH)
+                    for s in self._pv_inverter_services
                 ]
-                self._tasmota_midnight_date = today
+                self._pv_midnight_date = today
 
             # Reset midnight reference on new day
-            if today != self._tasmota_midnight_date:
-                self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
-                    for s in self._tasmota_pv_services
+            if today != self._pv_midnight_date:
+                self._pv_midnight_kwh = [
+                    self._get_float_nolock(s, TASMOTA_ENERGY_FORWARD_PATH)
+                    for s in self._pv_inverter_services
                 ]
-                self._tasmota_midnight_date = today
+                self._pv_midnight_date = today
 
-            daily_yield = lifetime_kwh - self._tasmota_midnight_kwh[i]
+            daily_yield = lifetime_kwh - self._pv_midnight_kwh[i]
             tasmota_yields.append(max(0.0, daily_yield))
 
         self._cached_tasmota_daily_yields = tasmota_yields
@@ -562,8 +632,8 @@ class VictronDBus:
         if now - self._last_battery_daily_energy_time < 5.0:
             return
 
-        charge = self._get_float(SYSTEM_SERVICE, "/History/Daily/0/ChargeEnergy")
-        discharge = self._get_float(SYSTEM_SERVICE, "/History/Daily/0/DischargeEnergy")
+        charge = self._get_float_nolock(SYSTEM_SERVICE, "/History/Daily/0/ChargeEnergy")
+        discharge = self._get_float_nolock(SYSTEM_SERVICE, "/History/Daily/0/DischargeEnergy")
         self._cached_battery_daily_energy = (charge, discharge)
         self._last_battery_daily_energy_time = now
 
@@ -595,13 +665,52 @@ class VictronDBus:
             logger.debug("D-Bus subprocess failed: %s", e)
         return None
 
+    def _service_healthy(self, service: str) -> bool:
+        """Check if a D-Bus service is healthy (not in backoff period)."""
+        backoff_until = self._service_backoff_until.get(service, 0.0)
+        return time.time() >= backoff_until
+
+    def _record_service_success(self, service: str) -> None:
+        """Record a successful D-Bus response for a service."""
+        self._service_consecutive_fails[service] = 0
+        self._service_backoff_until[service] = 0.0
+
+    def _record_service_failure(self, service: str) -> None:
+        """Record a timeout/failure for a service, applying exponential backoff."""
+        fails = self._service_consecutive_fails.get(service, 0) + 1
+        self._service_consecutive_fails[service] = fails
+        if fails >= self.SERVICE_FAIL_THRESHOLD:
+            backoff = min(
+                self.SERVICE_BACKOFF_BASE * (2 ** (fails - self.SERVICE_FAIL_THRESHOLD)),
+                self.SERVICE_BACKOFF_MAX,
+            )
+            self._service_backoff_until[service] = time.time() + backoff
+            logger.warning(
+                "D-Bus service %s unresponsive (%d failures), backing off %.0fs",
+                service,
+                fails,
+                backoff,
+            )
+
+    def _safe_subprocess_tracked(self, cmd: list, service: str, timeout: float = 0.3) -> str | None:
+        """Run subprocess with service health tracking (for background poll).
+        Returns None immediately if service is in backoff period."""
+        if not self._service_healthy(service):
+            return None
+        result = self._safe_subprocess(cmd, timeout=timeout)
+        if result is not None:
+            self._record_service_success(service)
+        else:
+            self._record_service_failure(service)
+        return result
+
     def _dbus_get(self, service: str, path: str) -> str | None:
-        """Get a single value from D-Bus (fast)"""
+        """Get a single value from D-Bus.
+        Skips known-unresponsive services to avoid blocking the caller."""
+        if not self._service_healthy(service):
+            return None
 
         with self._dbus_lock:
-            # Check if rescan needed before operation
-            self._check_rescan_needed()
-
             result = self._safe_subprocess(
                 [
                     "dbus-send",
@@ -618,18 +727,18 @@ class VictronDBus:
                 if parts:
                     self._consecutive_errors = 0
                     self._last_success_time = time.time()
+                    self._record_service_success(service)
                     return parts[-1]
 
             # Track error
             self._consecutive_errors += 1
+            self._record_service_failure(service)
             return None
 
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
         """Set a value on D-Bus"""
 
         with self._dbus_lock:
-            self._check_rescan_needed()
-
             result = self._safe_subprocess(
                 [
                     "dbus-send",
@@ -693,20 +802,17 @@ class VictronDBus:
 
     def get_inverter_state(self) -> tuple[int, str]:
         """Get inverter state code and description - instant from background cache"""
-        # Return cached data if fresh
         now = time.time()
         if now - self._last_inverter_state_time < 2.0:  # TTL 2 seconds
             return self._cached_inverter_state
 
-        # Background thread keeps this updated, but fallback to sync call if stale
         if not self._vebus_service:
             return 0, "Unknown"
 
         val = self._dbus_get(self._vebus_service, "/State")
         if val:
             try:
-                code = int(val)
-                result = (code, INVERTER_STATES.get(code, f"? ({code})"))
+                result = self._parse_inverter_state_code(val)
                 self._cached_inverter_state = result
                 self._last_inverter_state_time = now
                 return result
@@ -792,28 +898,15 @@ class VictronDBus:
         self._last_mppt_time = time.time()
         return data
 
-    def get_tasmota_pv_power(self) -> list:
-        """Get power from Tasmota PV inverters via D-Bus - instant from background cache"""
+    def get_pv_power(self) -> list:
+        """Get power from PV inverters (Tasmota, ESPHome, etc.) via D-Bus - instant from background cache"""
         now = time.time()
-        if now - self._last_tasmota_time < 0.5:  # TTL 0.5 seconds
-            return self._cached_tasmota_powers
+        if now - self._last_pv_time < 0.5:  # TTL 0.5 seconds
+            return self._cached_pv_powers
 
-        powers = []
-        for service in self._tasmota_pv_services:
-            output = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    AC_POWER_PATH,
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.3,
-            )
-            powers.append(extract_power_from_tree(output))
-        self._cached_tasmota_powers = powers
-        self._last_tasmota_time = time.time()
+        powers = self._query_pv_powers(path=AC_POWER_PATH, reply_mode=PRINT_REPLY_LITERAL)
+        self._cached_pv_powers = powers
+        self._last_pv_time = time.time()
         return powers
 
     def get_acload_powers(self) -> dict[str, float]:
@@ -822,34 +915,7 @@ class VictronDBus:
         if now - self._last_acload_time < 0.5:  # TTL 0.5 seconds
             return self._cached_acload_powers
 
-        powers = {}
-        for service in self._acload_services:
-            name_output = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    "/CustomName",
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.3,
-            )
-            power_output = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    AC_POWER_PATH,
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.3,
-            )
-            result = extract_acload_name_power((name_output, power_output))
-            if result:
-                key, power = result
-                powers[key] = power
+        powers = self._query_acload_powers()
         self._cached_acload_powers = powers
         self._last_acload_time = time.time()
         return powers
@@ -870,36 +936,11 @@ class VictronDBus:
         if now - self._last_battery_chain_soc_time < 2.0:  # TTL 2 seconds
             return self._cached_battery_chain_socs
 
-        battery_services = [
-            BATTERY_CHAIN_1,
-            "com.victronenergy.battery.mqtt_chain2",
-        ]
-        socs = []
-        for service in battery_services:
-            output = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    "/Soc",
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.3,
-            )
-            if output:
-                match = VARIANT_RE.search(output)
-                if match:
-                    try:
-                        socs.append(float(match.group(1)))
-                    except (ValueError, TypeError):
-                        logger.debug("Battery chain SoC parse failed: %s", match.group(1))
-                        socs.append(0.0)
-                else:
-                    socs.append(0.0)
-            else:
-                socs.append(0.0)
-
+        socs = self._query_battery_chain_socs(
+            path="/Soc",
+            reply_mode=PRINT_REPLY_LITERAL,
+            soc_regex=VARIANT_RE,
+        )
         self._cached_battery_chain_socs = socs
         self._last_battery_chain_soc_time = time.time()
         return socs
@@ -976,6 +1017,15 @@ class VictronDBus:
             self._ess_mode_cache_time = 0.0
         return result
 
+    @staticmethod
+    def _parse_float_or_zero(raw: str) -> float:
+        """Parse a float from raw output, returning 0.0 on failure or non-finite."""
+        try:
+            f = float(raw)
+            return f if math.isfinite(f) else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
     def _get_float(self, service: str, path: str) -> float:
         """Read a D-Bus path and return its float value, or 0.0 on failure."""
         val = self._dbus_get(service, path)
@@ -986,6 +1036,22 @@ class VictronDBus:
             except (ValueError, TypeError) as e:
                 logger.debug("D-Bus float read failed for %s/%s: %s", service, path, e)
         return 0.0
+
+    def _get_float_nolock(self, service: str, path: str) -> float:
+        """Read a D-Bus path using _safe_subprocess_tracked (no lock, for background thread)."""
+        output = self._safe_subprocess_tracked(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={service}",
+                path,
+                GET_VALUE_METHOD,
+            ],
+            service=service,
+            timeout=0.3,
+        )
+        return self._parse_float_or_zero(output.strip()) if output else 0.0
 
     @staticmethod
     def _battery_state(current: float) -> str:
@@ -1006,22 +1072,31 @@ class VictronDBus:
 
     def get_all_batteries(self) -> list:
         """Get detailed data for all battery chains including SmartShunt.
-        Cached for 2s to avoid 15+ D-Bus calls per cycle."""
+        Cached for 2s, queries services in parallel to avoid 4+ second freezes."""
         now = time.time()
         if self._cached_all_batteries and now - self._last_all_batteries_time < 2.0:
             return self._cached_all_batteries
 
         battery_services = [
             (BATTERY_CHAIN_1, "JBD Chain 1"),
-            ("com.victronenergy.battery.mqtt_chain2", "JBD Chain 2"),
+            (BATTERY_CHAIN_2, "JBD Chain 2"),
             ("com.victronenergy.battery.virtual_chain", "Virtual Battery"),
         ]
 
-        batteries = []
-        for service, name in battery_services:
+        def _query_battery(service: str, name: str) -> dict[str, Any]:
+            if not self._service_healthy(service):
+                return {
+                    "name": name,
+                    "voltage": 0.0,
+                    "current": 0.0,
+                    "power": 0,
+                    "soc": 0.0,
+                    "state": "Unknown",
+                    "time_to_go": "",
+                    "time_to_go_sec": None,
+                }
             current = self._get_float(service, DC_CURRENT_PATH)
             state = self._battery_state(current)
-
             ttg_sec = None
             ttg_raw = self._dbus_get(service, "/TimeToGo")
             if ttg_raw is not None:
@@ -1029,19 +1104,20 @@ class VictronDBus:
                     ttg_sec = max(0, int(float(ttg_raw)))
                 except (TypeError, ValueError):
                     pass
+            return {
+                "name": name,
+                "voltage": self._get_float(service, "/Dc/0/Voltage"),
+                "current": current,
+                "power": self._get_float(service, "/Dc/0/Power"),
+                "soc": self._get_float(service, "/Soc"),
+                "state": state,
+                "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
+                "time_to_go_sec": ttg_sec,
+            }
 
-            batteries.append(
-                {
-                    "name": name,
-                    "voltage": self._get_float(service, "/Dc/0/Voltage"),
-                    "current": current,
-                    "power": self._get_float(service, "/Dc/0/Power"),
-                    "soc": self._get_float(service, "/Soc"),
-                    "state": state,
-                    "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
-                    "time_to_go_sec": ttg_sec,
-                }
-            )
+        with ThreadPoolExecutor(max_workers=len(battery_services)) as pool:
+            futures = [pool.submit(_query_battery, svc, name) for svc, name in battery_services]
+            batteries = [f.result() for f in futures]
 
         self._cached_all_batteries = batteries
         self._last_all_batteries_time = now
@@ -1110,11 +1186,15 @@ class VictronDBus:
         cached = self._build_from_cache()
         if cached:
             return cached
+        if getattr(self, "_poll_thread", None) and self._poll_thread.is_alive():
+            return {}
         return self._get_battery_cell_data_live()
 
     def _maybe_refresh_cell_cache(self) -> None:
-        """Refresh cache if stale (called before reading)."""
+        """Refresh cache if stale. Non-blocking: skips if background thread will handle it."""
         if time.time() - self._last_battery_cell_data_time >= CELL_DATA_POLL_INTERVAL:
+            if getattr(self, "_poll_thread", None) and self._poll_thread.is_alive():
+                return
             self._poll_battery_cell_data_tree()
 
     def _build_from_cache(self) -> dict[str, Any] | None:
@@ -1274,23 +1354,27 @@ class VictronDBus:
 
     def get_mppt_chargers(self) -> list:
         """Get detailed data for all MPPT chargers.
-        Cached for 2s to avoid D-Bus calls per cycle."""
+        Cached for 2s, queries services in parallel."""
         now = time.time()
         if self._cached_mppt_chargers and now - self._last_mppt_chargers_time < 2.0:
             return self._cached_mppt_chargers
 
-        chargers = []
-        for i, service in enumerate(self._mppt_services):
+        def _query_mppt_charger(i: int, service: str) -> dict[str, Any]:
             parts = service.split(":")
             name = f"MPPT-{parts[1]}" if len(parts) > 1 else f"MPPT-{i}"
-            chargers.append(
-                {
-                    "name": name,
-                    "pv_voltage": self._get_float(service, "/Pv/V"),
-                    "current": self._get_float(service, DC_CURRENT_PATH),
-                    "power": self._get_float(service, "/Yield/Power"),
-                }
-            )
+            return {
+                "name": name,
+                "pv_voltage": self._get_float(service, "/Pv/V"),
+                "current": self._get_float(service, DC_CURRENT_PATH),
+                "power": self._get_float(service, "/Yield/Power"),
+            }
+
+        with ThreadPoolExecutor(max_workers=len(self._mppt_services)) as pool:
+            futures = [
+                pool.submit(_query_mppt_charger, i, svc)
+                for i, svc in enumerate(self._mppt_services)
+            ]
+            chargers = [f.result() for f in futures]
 
         self._cached_mppt_chargers = chargers
         self._last_mppt_chargers_time = now
