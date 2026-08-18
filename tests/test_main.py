@@ -178,7 +178,7 @@ class TestUpdateState(unittest.TestCase):
     """Test InverterController.update_state()"""
 
     def test_assembles_state_dict(self):
-        controller, mock_victron, mock_ha, mock_calc = _make_controller()
+        controller, mock_victron, mock_ha, _mock_calc = _make_controller()
         mock_victron.get_battery_chain_socs.return_value = [80.0, 75.0]
         mock_victron.get_inverter_state.return_value = (9, "Inverting")
         mock_victron.get_ess_mode.return_value = {"is_external": True, "mode_name": "External"}
@@ -350,7 +350,7 @@ class TestRunCycle(unittest.TestCase):
         assert w._last_setpoint_update >= pre_sp
 
     def test_returns_false_on_keyboard_interrupt(self):
-        controller, mock_victron, _, mock_calc = _make_controller()
+        controller, mock_victron, _, _mock_calc = _make_controller()
         mock_victron.get_system_data.side_effect = KeyboardInterrupt
 
         assert controller.run_cycle() is False
@@ -394,7 +394,7 @@ class TestGetEvState(unittest.TestCase):
     """Test InverterController._get_ev_state()"""
 
     def test_returns_ev_data_when_enabled(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
+        controller, _mock_victron, mock_ha, _ = _make_controller()
         mock_ha.get_vue_sensor.return_value = 1500
         mock_ha.get_sensor.side_effect = lambda k, d=0: {"car_soc": 85, "ev_charging_power": 7.2}.get(k, d)
 
@@ -415,7 +415,7 @@ class TestGetWaterState(unittest.TestCase):
     """Test InverterController._get_water_state()"""
 
     def test_returns_water_data_when_enabled(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
+        controller, _mock_victron, mock_ha, _ = _make_controller()
         mock_ha.get_sensor.side_effect = lambda k, d=0: {"water_level": 45}.get(k, d)
         mock_ha.water_valve_on = True
         mock_ha.pump_switch_on = False
@@ -437,7 +437,7 @@ class TestGetHaState(unittest.TestCase):
     """Test InverterController._get_ha_state()"""
 
     def test_returns_ha_data_when_enabled(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
+        controller, _mock_victron, mock_ha, _ = _make_controller()
         mock_ha.get_all_booleans.return_value = {"only_charging": True}
         mock_ha.laundry_outlet_on = True
         mock_ha.home_recliner_on = False

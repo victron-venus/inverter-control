@@ -662,13 +662,13 @@ class TestDoNotSupplyChargerStrategy(unittest.TestCase):
 
     def test_active_zero_solar(self):
         state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=0)
-        result, flags = do_not_supply_charger_strategy(state, -1000, efficiency=1.0, solar_offset=0)
+        result, _flags = do_not_supply_charger_strategy(state, -1000, efficiency=1.0, solar_offset=0)
         # max_ac_output = max(0, 0-0) = 0, min_setpoint = 0
         assert result == 0
 
     def test_with_solar_offset(self):
         state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=2000)
-        result, flags = do_not_supply_charger_strategy(state, -2500, efficiency=1.0, solar_offset=60)
+        result, _flags = do_not_supply_charger_strategy(state, -2500, efficiency=1.0, solar_offset=60)
         # max_ac_output = max(0, 2000-60) = 1940
         assert result == -1940
 
