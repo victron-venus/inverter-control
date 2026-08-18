@@ -24,6 +24,8 @@ SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
 TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
+AC_POWER_PATH = "/Ac/Power"
+VARIANT_VALUE_PATTERN = r"variant\s+\S+\s+([\d.]+)"
 
 # Battery chains with per-cell data, polled as full tree queries in the
 # background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
@@ -439,7 +441,7 @@ class VictronDBus:
                     "--system",
                     PRINT_REPLY_LITERAL,
                     f"--dest={service}",
-                    "/Ac/Power",
+                    AC_POWER_PATH,
                     GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
@@ -862,14 +864,14 @@ class VictronDBus:
 
             mppt_data = {"w": 0.0, "a": 0.0}
             if power_output:
-                match = re.search(r"variant\s+\S+\s+([\d.]+)", power_output)
+                match = re.search(VARIANT_VALUE_PATTERN, power_output)
                 if match:
                     try:
                         mppt_data["w"] = float(match.group(1))
                     except (ValueError, TypeError):
                         logger.debug("MPPT power parse failed: %s", match.group(1))
             if current_output:
-                match = re.search(r"variant\s+\S+\s+([\d.]+)", current_output)
+                match = re.search(VARIANT_VALUE_PATTERN, current_output)
                 if match:
                     try:
                         mppt_data["a"] = float(match.group(1))
@@ -898,7 +900,7 @@ class VictronDBus:
                     "--system",
                     PRINT_REPLY_LITERAL,
                     f"--dest={service}",
-                    "/Ac/Power",
+                    AC_POWER_PATH,
                     GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
@@ -955,7 +957,7 @@ class VictronDBus:
                     "--system",
                     PRINT_REPLY_LITERAL,
                     f"--dest={service}",
-                    "/Ac/Power",
+                    AC_POWER_PATH,
                     GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
@@ -1020,7 +1022,7 @@ class VictronDBus:
                 timeout=0.3,
             )
             if output:
-                match = re.search(r"variant\s+\S+\s+([\d.]+)", output)
+                match = re.search(VARIANT_VALUE_PATTERN, output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
