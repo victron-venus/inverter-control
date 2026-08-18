@@ -290,7 +290,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                     data[key] if key in duration_sensors else self._parse_numeric(data[key])
                 )
 
-        
     def _parse_boolean_sensors(self, data: dict):
         """Parse boolean and binary sensor states"""
         for key in HA_BOOLEANS:
@@ -342,7 +341,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         for key, entity in HA_SENSORS.items():
             if key not in skip_sensors:
                 items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
-
 
         for key, entity in HA_BOOLEANS.items():
             items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')

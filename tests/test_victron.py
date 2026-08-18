@@ -585,10 +585,14 @@ class TestVictronDBus:
 
     def test_get_battery_cell_data(self):
         """Test getting battery cell data for DVCC"""
-        with patch("inverter_control.victron.VictronDBus._read_chain_cell_voltages") as mock_voltages:
+        with patch(
+            "inverter_control.victron.VictronDBus._read_chain_cell_voltages"
+        ) as mock_voltages:
             with patch("inverter_control.victron.VictronDBus._read_chain_cell_temps") as mock_temps:
                 with patch("inverter_control.victron.VictronDBus._read_chain_soc") as mock_soc:
-                    with patch("inverter_control.victron.VictronDBus._read_chain_allow_flag") as mock_allow:
+                    with patch(
+                        "inverter_control.victron.VictronDBus._read_chain_allow_flag"
+                    ) as mock_allow:
                         # Chain 1: 4 cells, temps, soc=80, allow_charge=1, allow_discharge=1
                         mock_voltages.side_effect = [
                             [(3.45, 0), (3.46, 1), (3.44, 2), (3.47, 3)],
@@ -596,7 +600,12 @@ class TestVictronDBus:
                         ]
                         mock_temps.side_effect = [[25.5, 26.0], [24.8]]
                         mock_soc.side_effect = [80.0, 75.0]
-                        mock_allow.side_effect = [True, True, True, True]  # charge1, discharge1, charge2, discharge2
+                        mock_allow.side_effect = [
+                            True,
+                            True,
+                            True,
+                            True,
+                        ]  # charge1, discharge1, charge2, discharge2
 
                         victron.reset_victron_for_testing()
                         v = victron.get_victron(test_mode=True)
@@ -614,17 +623,26 @@ class TestVictronDBus:
 
     def test_get_battery_cell_data_allow_false(self):
         """Test getting battery cell data with allow flags false"""
-        with patch("inverter_control.victron.VictronDBus._read_chain_cell_voltages") as mock_voltages:
+        with patch(
+            "inverter_control.victron.VictronDBus._read_chain_cell_voltages"
+        ) as mock_voltages:
             with patch("inverter_control.victron.VictronDBus._read_chain_cell_temps") as mock_temps:
                 with patch("inverter_control.victron.VictronDBus._read_chain_soc") as mock_soc:
-                    with patch("inverter_control.victron.VictronDBus._read_chain_allow_flag") as mock_allow:
+                    with patch(
+                        "inverter_control.victron.VictronDBus._read_chain_allow_flag"
+                    ) as mock_allow:
                         mock_voltages.side_effect = [
                             [(3.45, 0), (3.46, 1)],
                             [(3.50, 2), (3.48, 3)],
                         ]
                         mock_temps.side_effect = [[25.5], [24.8]]
                         mock_soc.side_effect = [80.0, 75.0]
-                        mock_allow.side_effect = [False, True, True, False]  # charge1=F, discharge1=T, charge2=T, discharge2=F
+                        mock_allow.side_effect = [
+                            False,
+                            True,
+                            True,
+                            False,
+                        ]  # charge1=F, discharge1=T, charge2=T, discharge2=F
 
                         victron.reset_victron_for_testing()
                         v = victron.get_victron(test_mode=True)
@@ -635,10 +653,14 @@ class TestVictronDBus:
 
     def test_get_battery_cell_data_no_cells(self):
         """Test getting battery cell data when no cells found"""
-        with patch("inverter_control.victron.VictronDBus._read_chain_cell_voltages") as mock_voltages:
+        with patch(
+            "inverter_control.victron.VictronDBus._read_chain_cell_voltages"
+        ) as mock_voltages:
             with patch("inverter_control.victron.VictronDBus._read_chain_cell_temps") as mock_temps:
                 with patch("inverter_control.victron.VictronDBus._read_chain_soc") as mock_soc:
-                    with patch("inverter_control.victron.VictronDBus._read_chain_allow_flag") as mock_allow:
+                    with patch(
+                        "inverter_control.victron.VictronDBus._read_chain_allow_flag"
+                    ) as mock_allow:
                         mock_voltages.side_effect = [[], []]
                         mock_temps.side_effect = [[], []]
                         mock_soc.side_effect = [None, None]
@@ -660,15 +682,15 @@ class TestVictronDBus:
         """Test background tree-query poller parses cell data correctly"""
         sample_output = (
             '            string "Cell/1/Voltage"\n'
-            '            variant                double 3.45\n'
+            "            variant                double 3.45\n"
             '            string "Cell/2/Voltage"\n'
-            '            variant                double 3.46\n'
+            "            variant                double 3.46\n"
             '            string "Cell/3/Voltage"\n'
-            '            variant                double 3.44\n'
+            "            variant                double 3.44\n"
             '            string "Soc"\n'
-            '            variant                double 85.5\n'
+            "            variant                double 85.5\n"
             '            string "Info/AllowCharge"\n'
-            '            variant                double 1\n'
+            "            variant                double 1\n"
         )
         v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
         v._safe_subprocess = MagicMock(return_value=sample_output)

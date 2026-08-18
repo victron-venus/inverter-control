@@ -393,6 +393,7 @@ class TestHomeAssistantClient:
         """Test uptime returns reasonable value after start"""
         self.client.start()
         import time
+
         time.sleep(0.1)
         assert self.client.uptime >= 0
         self.client.stop()

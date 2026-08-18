@@ -37,10 +37,12 @@ except ImportError:
     HA_PUMP_SWITCH = ""
     HA_BINARY_SENSORS = {}
 
+
 def _import_local_config(name: str, default=""):
     """Import a variable from local_config with a fallback default."""
     try:
         from local_config import vars as local_vars
+
         return getattr(local_vars, name, default)
     except (ImportError, AttributeError):
         return default
@@ -138,9 +140,7 @@ def _detect_portal_id() -> str:
       4. Placeholder stub, so non-Venus systems (tests, local dev) still work
     """
     try:
-        portal_id = subprocess.check_output(
-            ["/sbin/get-unique-id"], text=True, timeout=5
-        ).strip()
+        portal_id = subprocess.check_output(["/sbin/get-unique-id"], text=True, timeout=5).strip()
         if portal_id:
             return portal_id
     except (OSError, subprocess.SubprocessError):

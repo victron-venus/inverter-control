@@ -42,7 +42,7 @@ class VUESensorDBusClient:
         for key, expected_name in self._vue_sensor_mapping.items():
             if str(expected_name) == custom_name:
                 return key
-        slug = re.sub(r'\W', '', custom_name.lower().replace(' ', '_'))
+        slug = re.sub(r"\W", "", custom_name.lower().replace(" ", "_"))
         return slug or "acload"
 
     def _setup_dbus(self) -> None:
@@ -155,7 +155,9 @@ class VUESensorDBusClient:
                 ]
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
                 if res.returncode == 0:
-                    m = re.search(r'(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)', res.stdout)
+                    m = re.search(
+                        r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)", res.stdout
+                    )
                     if m:
                         vue_sensors[key] = float(m.group(1))
             except Exception as e:

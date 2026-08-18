@@ -335,12 +335,13 @@ class SetpointCalculator:
             old_derived_gt = state.derived_gt
             # EMA smooth the derived value itself
             state.derived_gt = (
-                derived_alpha * state.derived_gt + (1 - derived_alpha) * old_derived_gt
-            ) if old_derived_gt is not None else float(state.derived_gt)
+                (derived_alpha * state.derived_gt + (1 - derived_alpha) * old_derived_gt)
+                if old_derived_gt is not None
+                else float(state.derived_gt)
+            )
             # Blend: weight * derived + (1-weight) * instantaneous
             effective_gt = (
-                smoothing_weight * state.derived_gt
-                + (1 - smoothing_weight) * effective_gt
+                smoothing_weight * state.derived_gt + (1 - smoothing_weight) * effective_gt
             )
 
         old_filtered_gt = state.filtered_gt

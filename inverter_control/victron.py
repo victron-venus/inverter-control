@@ -44,19 +44,19 @@ CELL_DATA_POLL_INTERVAL = 30
 # From: sensor.compensation_sensor_battery_voltage coefficients attribute
 # SOC = c0*V^5 + c1*V^4 + c2*V^3 + c3*V^2 + c4*V + c5
 BATTERY_VOLTAGE_TO_SOC_COEFFS = (
-    0.004273352289848183,   # V^5
-    -1.1946101528489494,    # V^4
-    131.15278553768547,     # V^3
-    -7086.612266200085,     # V^2
-    188790.53434597014,     # V^1
-    -1986209.3055883816,    # V^0 (constant)
+    0.004273352289848183,  # V^5
+    -1.1946101528489494,  # V^4
+    131.15278553768547,  # V^3
+    -7086.612266200085,  # V^2
+    188790.53434597014,  # V^1
+    -1986209.3055883816,  # V^0 (constant)
 )
 
 # Battery parameters for load correction (Coulomb counting approximation)
 # From: HA template sensor "Corrected Battery SOC"
-BATTERY_CAPACITY_CHARGE_AH = 280.0    # Ah when charging
-BATTERY_CAPACITY_DISCHARGE_AH = 180.0 # Ah when discharging
-BATTERY_ROUNDTRIP_EFFICIENCY = 0.95   # 95%
+BATTERY_CAPACITY_CHARGE_AH = 280.0  # Ah when charging
+BATTERY_CAPACITY_DISCHARGE_AH = 180.0  # Ah when discharging
+BATTERY_ROUNDTRIP_EFFICIENCY = 0.95  # 95%
 
 
 def _voltage_to_soc(voltage: float) -> float:
@@ -244,7 +244,9 @@ class VictronDBus:
             return
 
         self._poll_stop_event.clear()
-        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True, name="VictronDBusPoll")
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="VictronDBusPoll"
+        )
         self._poll_thread.start()
         logger.debug("Background D-Bus polling started")
 
@@ -424,7 +426,7 @@ class VictronDBus:
             )
             if not name_output:
                 continue
-            name_match = re.search(r'variant\s+(\S.*)', name_output.strip())
+            name_match = re.search(r"variant\s+(\S.*)", name_output.strip())
             if not name_match:
                 continue
 
@@ -442,7 +444,9 @@ class VictronDBus:
             )
             if not power_output:
                 continue
-            power_match = re.search(r'(?:double|int32|variant\s+(?:double|int32))\s+([-\d.]+)', power_output)
+            power_match = re.search(
+                r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d.]+)", power_output
+            )
             if not power_match:
                 continue
 
@@ -1118,7 +1122,9 @@ class VictronDBus:
         if not self._cached_battery_cell_data:
             return None
 
-        voltages, temps, total_soc, soc_count, allow_charge, allow_discharge = self._aggregate_cached_chains()
+        voltages, temps, total_soc, soc_count, allow_charge, allow_discharge = (
+            self._aggregate_cached_chains()
+        )
 
         if not (voltages or temps or soc_count):
             return None
@@ -1140,15 +1146,24 @@ class VictronDBus:
             entry = self._cached_battery_cell_data.get(service)
             if not entry:
                 continue
-            voltages, temps, total_soc, soc_count, allow_charge, allow_discharge = self._accumulate_chain_data(
-                entry, voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
+            voltages, temps, total_soc, soc_count, allow_charge, allow_discharge = (
+                self._accumulate_chain_data(
+                    entry, voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
+                )
             )
 
         return voltages, temps, total_soc, soc_count, allow_charge, allow_discharge
 
-    def _accumulate_chain_data(self, entry: dict, voltages: list, temps: list,
-                               total_soc: float, soc_count: int,
-                               allow_charge: bool, allow_discharge: bool) -> tuple:
+    def _accumulate_chain_data(
+        self,
+        entry: dict,
+        voltages: list,
+        temps: list,
+        total_soc: float,
+        soc_count: int,
+        allow_charge: bool,
+        allow_discharge: bool,
+    ) -> tuple:
         """Accumulate single chain's data into aggregate."""
         for v in entry.get("voltages", []):
             if v > 0:
@@ -1191,13 +1206,22 @@ class VictronDBus:
             )
 
         return (
-            all_cell_voltages, all_cell_temps, total_soc, soc_count,
-            allow_charge, allow_discharge
+            all_cell_voltages,
+            all_cell_temps,
+            total_soc,
+            soc_count,
+            allow_charge,
+            allow_discharge,
         )
 
-    def _accumulate_live_chain_data(self, service: str,
-                                    total_soc: float, soc_count: int,
-                                    allow_charge: bool, allow_discharge: bool) -> tuple:
+    def _accumulate_live_chain_data(
+        self,
+        service: str,
+        total_soc: float,
+        soc_count: int,
+        allow_charge: bool,
+        allow_discharge: bool,
+    ) -> tuple:
         """Accumulate live chain SOC and allow flags."""
         soc = self._read_chain_soc(service)
         if soc is not None:
@@ -1302,8 +1326,7 @@ class VictronDBus:
             if today != self._tasmota_midnight_date:
                 # New day - update midnight reference to current lifetime
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, "/Ac/Energy/Forward")
-                    for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, "/Ac/Energy/Forward") for s in TASMOTA_DBUS_SERVICES
                 ]
                 self._tasmota_midnight_date = today
 

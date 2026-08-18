@@ -17,6 +17,7 @@ logger = logging.getLogger("inverter-control")
 
 class SafeEncoder(json.JSONEncoder):
     """JSON encoder that converts NaN/Inf to null instead of invalid literals."""
+
     def default(self, obj):
         return super().default(obj)
 
@@ -35,6 +36,7 @@ class SafeEncoder(json.JSONEncoder):
         if isinstance(obj, tuple):
             return tuple(self._sanitize(v) for v in obj)
         return obj
+
 
 # Try to import paho-mqtt (may not be available on Venus OS)
 try:
@@ -80,7 +82,9 @@ class MQTTBridge:
             self._client.loop_start()
             # Start async publish thread
             self._stop_event.clear()
-            self._publish_thread = threading.Thread(target=self._publish_loop, daemon=True, name="MQTTPublish")
+            self._publish_thread = threading.Thread(
+                target=self._publish_loop, daemon=True, name="MQTTPublish"
+            )
             self._publish_thread.start()
             logger.info(f"MQTT connecting to {self.broker}:{self.port}")
             return True
@@ -154,7 +158,9 @@ class MQTTBridge:
         """Start publish thread if not running (lazy init for tests)"""
         if self._publish_thread is None or not self._publish_thread.is_alive():
             self._stop_event.clear()
-            self._publish_thread = threading.Thread(target=self._publish_loop, daemon=True, name="MQTTPublish")
+            self._publish_thread = threading.Thread(
+                target=self._publish_loop, daemon=True, name="MQTTPublish"
+            )
             self._publish_thread.start()
 
     def publish_state(self, state: dict[str, Any]):
