@@ -450,9 +450,7 @@ class VictronDBus:
         """Parse chain SoC from tree output."""
         import re as _re
 
-        soc_match = _re.search(
-            r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output
-        )
+        soc_match = _re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
         return float(soc_match.group(1)) if soc_match else None
 
     @staticmethod

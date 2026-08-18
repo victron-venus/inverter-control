@@ -6,6 +6,7 @@ import time
 import traceback
 from typing import Any
 
+import inverter_control.config as _config
 from inverter_control.config import (
     DRY_RUN,
     DVCC_CCL_CHANGE_RATE,
@@ -45,9 +46,10 @@ from inverter_control.config import (
     NO_FEED_SLEEP_INTERVAL,
     POWER_LIMIT_MAX,
     POWER_LIMIT_MIN,
+)
+from inverter_control.config import (
     Colors as C,
 )
-import inverter_control.config as _config
 from inverter_control.console_server import broadcast_line
 from inverter_control.console_ui import ConsoleUI
 from inverter_control.dvcc import create_dvcc_from_config
