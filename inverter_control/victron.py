@@ -38,10 +38,17 @@ _VARIANT_STR_RE = re.compile(r"variant\s+(\S.*)")
 
 
 def _extract_power_from_tree(output: str | None) -> float:
-    """Extract Ac/Power value from a D-Bus tree query output."""
+    """Extract Ac/Power value from a D-Bus output.
+
+    Handles both tree query format (with path) and literal format (variant only).
+    """
     if not output:
         return 0.0
+    # Try tree query format first (has Ac/Power in path)
     match = _TASMOTA_POWER_RE.search(output)
+    if not match:
+        # Fallback: literal format (just variant value)
+        match = _VARIANT_RE.search(output)
     if match:
         try:
             return float(match.group(1))
@@ -53,7 +60,9 @@ def _extract_power_from_tree(output: str | None) -> float:
 _ACLOAD_POWER_RE = re.compile(r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d.]+)")
 
 
-def _extract_acload_name_power(service_output: tuple[str | None, str | None]) -> tuple[str, float] | None:
+def _extract_acload_name_power(
+    service_output: tuple[str | None, str | None],
+) -> tuple[str, float] | None:
     """Extract (key, power) from CustomName + Ac/Power D-Bus outputs. Returns None on failure."""
     name_output, power_output = service_output
     if not name_output or not power_output:
@@ -70,6 +79,7 @@ def _extract_acload_name_power(service_output: tuple[str | None, str | None]) ->
     except (ValueError, TypeError) as e:
         logger.debug("acload parse failed: %s", e)
         return None
+
 
 # System data regex patterns - shared between background poll and sync fallback
 SYSTEM_DATA_PATTERNS = {
@@ -435,8 +445,7 @@ class VictronDBus:
 
         with ThreadPoolExecutor(max_workers=len(self._mppt_services)) as pool:
             futures = [
-                pool.submit(_query_mppt, i, svc)
-                for i, svc in enumerate(self._mppt_services)
+                pool.submit(_query_mppt, i, svc) for i, svc in enumerate(self._mppt_services)
             ]
             for future in as_completed(futures):
                 idx, mppt_data = future.result()
@@ -501,15 +510,23 @@ class VictronDBus:
         for service in self._acload_services:
             name_output = self._safe_subprocess(
                 [
-                    "dbus-send", "--system", PRINT_REPLY_LITERAL,
-                    f"--dest={service}", "/CustomName", GET_VALUE_METHOD,
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/CustomName",
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
             power_output = self._safe_subprocess(
                 [
-                    "dbus-send", "--system", PRINT_REPLY_LITERAL,
-                    f"--dest={service}", AC_POWER_PATH, GET_VALUE_METHOD,
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    AC_POWER_PATH,
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
@@ -699,16 +716,14 @@ class VictronDBus:
             # Initialize midnight tracker on first use
             if not self._tasmota_midnight_kwh or len(self._tasmota_midnight_kwh) <= i:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
-                    for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
                 ]
                 self._tasmota_midnight_date = today
 
             # Reset midnight reference on new day
             if today != self._tasmota_midnight_date:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
-                    for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
                 ]
                 self._tasmota_midnight_date = today
 
@@ -1001,15 +1016,23 @@ class VictronDBus:
         for service in self._acload_services:
             name_output = self._safe_subprocess(
                 [
-                    "dbus-send", "--system", PRINT_REPLY_LITERAL,
-                    f"--dest={service}", "/CustomName", GET_VALUE_METHOD,
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    "/CustomName",
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )
             power_output = self._safe_subprocess(
                 [
-                    "dbus-send", "--system", PRINT_REPLY_LITERAL,
-                    f"--dest={service}", AC_POWER_PATH, GET_VALUE_METHOD,
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={service}",
+                    AC_POWER_PATH,
+                    GET_VALUE_METHOD,
                 ],
                 timeout=0.3,
             )

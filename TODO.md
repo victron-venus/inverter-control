@@ -52,7 +52,7 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 **Files:** `inverter_control/logic.py` (lines 332–345)
 **Effort:** S
 
-### Q2: Consolidate duplicated Tasmota/Acload parsing
+### Q2: Consolidate duplicated Tasmota/Acload parsing ✅
 **Problem:** `Ac/Power` regex parsing is duplicated between background poller and fallback paths for Tasmota (victron.py:415–444 vs 887–923) and Acload (446–496 vs 925–982).
 **Fix:** Extract shared `_parse_power_from_tree_output()` helper.
 **Files:** `inverter_control/victron.py`

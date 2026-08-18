@@ -170,8 +170,7 @@ class VUESensorDBusClient:
 
         with ThreadPoolExecutor(max_workers=len(self._vue_services)) as pool:
             futures = [
-                pool.submit(_query_power, key, svc)
-                for key, svc in self._vue_services.items()
+                pool.submit(_query_power, key, svc) for key, svc in self._vue_services.items()
             ]
             for future in as_completed(futures):
                 key, value = future.result()
