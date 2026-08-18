@@ -6,6 +6,7 @@ Fast D-Bus access for grid control and monitoring
 
 import logging
 import math
+import re
 import subprocess
 import threading
 import time
@@ -379,7 +380,6 @@ class VictronDBus:
             BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
-        import re as _re
 
         socs = []
         for service in battery_services:
@@ -396,7 +396,7 @@ class VictronDBus:
                 timeout=0.3,
             )
             if output:
-                match = _re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
+                match = re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
@@ -456,14 +456,12 @@ class VictronDBus:
 
     def _parse_chain_voltages(self, service: str, output: str) -> list[float]:
         """Parse cell voltages from tree output, stopping at first gap."""
-        import re as _re
-
         chain_voltages = []
         known_count = self._chain_cell_counts.get(service, 16)
         max_cell = min(known_count + 1, 16)
 
         for i in range(1, max_cell + 1):
-            match = _re.search(
+            match = re.search(
                 rf'string "Cell/{i}/Voltage"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
                 output,
             )
@@ -474,11 +472,9 @@ class VictronDBus:
 
     def _parse_chain_temps(self, output: str) -> list[float]:
         """Parse cell temperatures from tree output (may be sparse)."""
-        import re as _re
-
         chain_temps = []
         for i in range(1, 17):
-            match = _re.search(
+            match = re.search(
                 rf'string "Cell/{i}/Temperature"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
                 output,
             )
@@ -488,18 +484,14 @@ class VictronDBus:
 
     def _parse_chain_soc(self, output: str) -> float | None:
         """Parse chain SoC from tree output."""
-        import re as _re
-
-        soc_match = _re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
+        soc_match = re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
         return float(soc_match.group(1)) if soc_match else None
 
     @staticmethod
     def _tree_bool(output: str, path: str) -> bool | None:
         """Parse a 0/1 variant value for a path from a tree query reply."""
-        import re as _re
-
-        match = _re.search(
-            rf'string "{_re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+        match = re.search(
+            rf'string "{re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
             output,
         )
         if not match:
