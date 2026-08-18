@@ -1,7 +1,7 @@
 name: 'Auto Approve PRs'
 description: 'Auto-approve Dependabot, Renovate, and 4alvit PRs'
 
-on:
+"on":
   pull_request:
     types: [opened, synchronize, reopened]
 
