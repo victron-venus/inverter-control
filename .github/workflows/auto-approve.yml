@@ -9,13 +9,20 @@ permissions:
   contents: read
   pull-requests: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   auto-approve:
     name: Auto Approve
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-approve-reusable.yml@9b8be91dabe9df8a5c2b7545aabece86b5c880d9
-    with:
-      pr-author: 'dependabot[bot],renovate[bot],4alvit'
-      required-reviews: '0'
-      pr-types: 'all'
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    if: |
+      github.event.pull_request.user.login == 'dependabot[bot]' ||
+      github.event.pull_request.user.login == 'renovate[bot]' ||
+      github.event.pull_request.user.login == '4alvit'
+    steps:
+      - name: Auto Approve
+        uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363
+        with:
+          github-token: ${{ secrets.BOT_PAT }}
+          review-message: 'Auto-approved by CI'

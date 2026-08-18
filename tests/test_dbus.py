@@ -69,10 +69,10 @@ class TestSetupDbusSend(unittest.TestCase):
             list_names_result = MagicMock()
             list_names_result.returncode = 0
             list_names_result.stdout = (
-                'array of strings [\n'
+                "array of strings [\n"
                 '  string "com.victronenergy.acload.ttyACM0"\n'
                 '  string "com.victronenergy.acload.ttyACM1"\n'
-                ']\n'
+                "]\n"
             )
             garage_name = MagicMock()
             garage_name.returncode = 0
@@ -149,7 +149,7 @@ class TestUpdateAll(unittest.TestCase):
         with patch("inverter_control.dbus.subprocess.run") as mock_run:
             result = MagicMock()
             result.returncode = 0
-            result.stdout = '   variant    double 2500.0\n'
+            result.stdout = "   variant    double 2500.0\n"
             mock_run.return_value = result
 
             vue_sensors = {"garage": 0}

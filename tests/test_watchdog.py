@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, ".")
 
-from main import HardwareWatchdog
+from inverter_control.watchdog import HardwareWatchdog
 
 
 def wait_until(condition, timeout=2.0, interval=0.01):
@@ -133,7 +133,7 @@ class TestWatchdogConcurrency(unittest.TestCase):
 
     def test_rapid_mark_calls_from_threads(self):
         """Multiple threads calling mark methods simultaneously must not crash or corrupt state"""
-        watchdog, victron = self.make_watchdog(timeout=30)
+        watchdog, _victron = self.make_watchdog(timeout=30)
         watchdog.start()
 
         def mark_loop():
@@ -157,7 +157,7 @@ class TestWatchdogConcurrency(unittest.TestCase):
 
     def test_get_status_returns_correct_dict(self):
         """get_status returns all expected keys with correct types"""
-        watchdog, victron = self.make_watchdog(timeout=60)
+        watchdog, _victron = self.make_watchdog(timeout=60)
         watchdog.start()
 
         status = watchdog.get_status()
@@ -179,7 +179,7 @@ class TestWatchdogConcurrency(unittest.TestCase):
 
     def test_pre_forced_state_restored_on_recovery(self):
         """_pre_forced_external and _pre_forced_setpoint are used to restore ESS mode"""
-        watchdog, victron = self.make_watchdog(timeout=0.1)
+        watchdog, _victron = self.make_watchdog(timeout=0.1)
         watchdog.start()
         watchdog.mark_dbus_update()
         watchdog.mark_setpoint_update()
@@ -203,7 +203,7 @@ class TestWatchdogConcurrency(unittest.TestCase):
 
     def test_concurrent_mark_and_failsafe_check(self):
         """Failsafe check runs in a background thread while marks happen concurrently"""
-        watchdog, victron = self.make_watchdog(timeout=0.05, check_interval=0.01)
+        watchdog, _victron = self.make_watchdog(timeout=0.05, check_interval=0.01)
         watchdog.start()
         watchdog.mark_dbus_update()
         watchdog.mark_setpoint_update()

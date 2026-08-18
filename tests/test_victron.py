@@ -372,14 +372,14 @@ class TestVictronDBus:
 
             def side_effect(service, path):
                 values = {
-                    "com.victronenergy.battery.dbus-mqtt-chain1": {
+                    "com.victronenergy.battery.mqtt_chain1": {
                         "/Dc/0/Current": "5.0",
                         "/Dc/0/Voltage": "52.0",
                         "/Dc/0/Power": "260.0",
                         "/Soc": "80.0",
                         "/TimeToGo": "3600",
                     },
-                    "com.victronenergy.battery.dbus-mqtt-chain2": {
+                    "com.victronenergy.battery.mqtt_chain2": {
                         "/Dc/0/Current": "-3.0",
                         "/Dc/0/Voltage": "51.0",
                         "/Dc/0/Power": "-153.0",
@@ -700,12 +700,12 @@ class TestVictronDBus:
 
         v._poll_battery_cell_data_tree()
 
-        entry = v._cached_battery_cell_data["com.victronenergy.battery.dbus-mqtt-chain1"]
+        entry = v._cached_battery_cell_data["com.victronenergy.battery.mqtt_chain1"]
         assert entry["voltages"] == [3.45, 3.46, 3.44]
         assert entry["soc"] == 85.5
         assert entry["allow_charge"] is True
         assert entry["allow_discharge"] is None
-        assert v._chain_cell_counts["com.victronenergy.battery.dbus-mqtt-chain1"] == 3
+        assert v._chain_cell_counts["com.victronenergy.battery.mqtt_chain1"] == 3
 
     def test_poll_battery_cell_data_tree_throttled(self):
         """Test the tree poller is throttled to CELL_DATA_POLL_INTERVAL"""
@@ -723,7 +723,7 @@ class TestVictronDBus:
         """Test get_battery_cell_data returns cached tree data without D-Bus calls"""
         v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
         v._cached_battery_cell_data = {
-            "com.victronenergy.battery.dbus-mqtt-chain1": {
+            "com.victronenergy.battery.mqtt_chain1": {
                 "voltages": [3.45, 3.46],
                 "temps": [25.5],
                 "soc": 85.0,

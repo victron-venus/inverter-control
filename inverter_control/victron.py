@@ -6,14 +6,22 @@ Fast D-Bus access for grid control and monitoring
 
 import logging
 import math
-import re
 import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
+from .config import INVERTER_STATES
+from .victron_parse import (
+    VARIANT_RE,
+    calculate_battery_soc_from_voltage,
+    extract_acload_name_power,
+    extract_power_from_tree,
+    parse_mppt_output,
+    parse_system_data_output,
+    parse_variant_value,
+)
 
 logger = logging.getLogger("inverter-control")
 
@@ -26,196 +34,16 @@ GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
 TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
 AC_POWER_PATH = "/Ac/Power"
-VARIANT_VALUE_PATTERN = r"variant\s+\S+\s+([\d.]+)"
-
-# Pre-compiled regexes for hot-path parsing (called per-service per-poll cycle)
-_MPPT_POWER_RE = re.compile(r"Yield/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)")
-_MPPT_CURRENT_RE = re.compile(r"Dc/0/Current[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)")
-_TASMOTA_POWER_RE = re.compile(r"Ac/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)")
-_VARIANT_RE = re.compile(r"variant\s+\S+\s+([\d.]+)")
-_VARIANT_Typed_RE = re.compile(r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)")
-_VARIANT_STR_RE = re.compile(r"variant\s+(\S.*)")
-
-
-def _extract_power_from_tree(output: str | None) -> float:
-    """Extract Ac/Power value from a D-Bus output.
-
-    Handles both tree query format (with path) and literal format (variant only).
-    """
-    if not output:
-        return 0.0
-    # Try tree query format first (has Ac/Power in path)
-    match = _TASMOTA_POWER_RE.search(output)
-    if not match:
-        # Fallback: literal format (just variant value)
-        match = _VARIANT_RE.search(output)
-    if match:
-        try:
-            return float(match.group(1))
-        except (ValueError, TypeError):
-            logger.debug("Power parse failed: %s", match.group(1))
-    return 0.0
-
-
-_ACLOAD_POWER_RE = re.compile(r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d.]+)")
-
-
-def _extract_acload_name_power(
-    service_output: tuple[str | None, str | None],
-) -> tuple[str, float] | None:
-    """Extract (key, power) from CustomName + Ac/Power D-Bus outputs. Returns None on failure."""
-    name_output, power_output = service_output
-    if not name_output or not power_output:
-        return None
-    name_match = _VARIANT_STR_RE.search(name_output.strip())
-    power_match = _ACLOAD_POWER_RE.search(power_output)
-    if not name_match or not power_match:
-        return None
-    try:
-        name = name_match.group(1).strip()
-        power = float(power_match.group(1))
-        key = name.lower().replace(" ", "_")
-        return key, power
-    except (ValueError, TypeError) as e:
-        logger.debug("acload parse failed: %s", e)
-        return None
-
-
-# System data regex patterns - shared between background poll and sync fallback
-SYSTEM_DATA_PATTERNS = {
-    "g1": r"Ac/Grid/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-    "g2": r"Ac/Grid/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-    "t1": r"Ac/Consumption/L1/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-    "t2": r"Ac/Consumption/L2/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-    "bv": r"Dc/Battery/Voltage[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
-    "bc": r"Dc/Battery/Current[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-    "bp": r"Dc/Battery/Power[^\n]*\n[^\n]*variant\s+\S+\s+(\-?[\d.]+)",
-    "pv_total": r"Dc/Pv/Power[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)",
-}
-
-
-def _parse_system_data_output(output: str) -> dict[str, Any]:
-    """Parse system data tree output using shared patterns. Returns dict with g1,g2,gt,t1,t2,tt,bv,bc,bp,pv_total."""
-    data: dict[str, Any] = {
-        "g1": 0,
-        "g2": 0,
-        "t1": 0,
-        "t2": 0,
-        "bv": 0.0,
-        "bc": 0.0,
-        "bp": 0,
-        "pv_total": 0,
-    }
-    for key, pattern in SYSTEM_DATA_PATTERNS.items():
-        match = re.search(pattern, output)
-        if match:
-            try:
-                val = float(match.group(1))
-                data[key] = int(val) if key not in ("bv", "bc") else val
-            except (ValueError, TypeError) as e:
-                logger.debug("System data parse failed for %s: %s", key, e)
-    data["gt"] = data["g1"] + data["g2"]
-    data["tt"] = data["t1"] + data["t2"]
-    return data
-
 
 # Battery chains with per-cell data, polled as full tree queries in the
 # background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
 # (as get_battery_cell_data used to) is ~72 subprocess calls per cycle which
 # blows the 5s cycle watchdog on a slow RPi.
-BATTERY_CELL_SERVICES = [
-    "com.victronenergy.battery.dbus-mqtt-chain1",
-    "com.victronenergy.battery.dbus-mqtt-chain2",
-]
+BATTERY_CHAIN_1 = "com.victronenergy.battery.mqtt_chain1"
+BATTERY_CHAIN_2 = "com.victronenergy.battery.mqtt_chain2"
+BATTERY_CELL_SERVICES = [BATTERY_CHAIN_1, BATTERY_CHAIN_2]
 # How often the background poller refreshes the cell-data cache.
 CELL_DATA_POLL_INTERVAL = 30
-
-# =============================================================================
-# BATTERY SOC CALCULATION (ported from HA template sensors)
-# =============================================================================
-# This replaces the HA-based corrected_battery_soc calculation for independence.
-# Source: HA template sensor "Corrected Battery SOC" + compensation_sensor_battery_voltage
-
-# Polynomial coefficients for voltage -> SOC conversion (5th degree, highest first)
-# From: sensor.compensation_sensor_battery_voltage coefficients attribute
-# SOC = c0*V^5 + c1*V^4 + c2*V^3 + c3*V^2 + c4*V + c5
-BATTERY_VOLTAGE_TO_SOC_COEFFS = (
-    0.004273352289848183,  # V^5
-    -1.1946101528489494,  # V^4
-    131.15278553768547,  # V^3
-    -7086.612266200085,  # V^2
-    188790.53434597014,  # V^1
-    -1986209.3055883816,  # V^0 (constant)
-)
-
-# Battery parameters for load correction (Coulomb counting approximation)
-# From: HA template sensor "Corrected Battery SOC"
-BATTERY_CAPACITY_CHARGE_AH = 280.0  # Ah when charging
-BATTERY_CAPACITY_DISCHARGE_AH = 180.0  # Ah when discharging
-BATTERY_ROUNDTRIP_EFFICIENCY = 0.95  # 95%
-
-
-def _voltage_to_soc(voltage: float) -> float:
-    """
-    Convert battery voltage to SOC using 5th-degree polynomial.
-    Coefficients from HA compensation_sensor_battery_voltage.
-    """
-    try:
-        v = float(voltage)
-        # Clamp to reasonable voltage range for LiFePO4 (16S ~ 48V nominal)
-        if v < 40.0 or v > 58.4:
-            return 0.0
-        # Horner's method for polynomial evaluation
-        soc = BATTERY_VOLTAGE_TO_SOC_COEFFS[0]
-        for coeff in BATTERY_VOLTAGE_TO_SOC_COEFFS[1:]:
-            soc = soc * v + coeff
-        return max(0.0, min(100.0, soc))
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _apply_load_correction(base_soc: float, power_w: float) -> float:
-    """
-    Apply load correction to SOC based on battery power.
-    Replicates HA template logic:
-    - Discharging (power < 0): voltage sags, actual SOC higher than voltage indicates
-    - Charging (power > 0): voltage rises, actual SOC lower than voltage indicates
-    - Correction = (power / capacity) * 100 * (1 - efficiency)
-    """
-    try:
-        p = float(power_w)
-        soc = float(base_soc)
-
-        if p < 0:  # Discharging
-            capacity = BATTERY_CAPACITY_DISCHARGE_AH
-            correction = (abs(p) / capacity) * 100.0 * (1.0 - BATTERY_ROUNDTRIP_EFFICIENCY)
-            return min(soc + correction, 100.0)
-        elif p > 0:  # Charging
-            capacity = BATTERY_CAPACITY_CHARGE_AH
-            correction = (p / capacity) * 100.0 * (1.0 - BATTERY_ROUNDTRIP_EFFICIENCY)
-            return max(soc - correction, 0.0)
-        else:
-            return soc
-    except (ValueError, TypeError):
-        return base_soc
-
-
-def calculate_battery_soc_from_voltage(voltage: float, power_w: float) -> float:
-    """
-    Calculate corrected battery SOC from voltage and power.
-    This is the local replacement for HA's corrected_battery_soc sensor.
-
-    Args:
-        voltage: Battery voltage in volts (from D-Bus Dc/Battery/Voltage)
-        power_w: Battery power in watts (from D-Bus Dc/Battery/Power,
-                 positive=charging, negative=discharging)
-
-    Returns:
-        SOC percentage (0-100)
-    """
-    base_soc = _voltage_to_soc(voltage)
-    corrected_soc = _apply_load_correction(base_soc, power_w)
-    return round(corrected_soc, 2)
 
 
 class VictronDBus:
@@ -262,12 +90,19 @@ class VictronDBus:
         self._acload_services: list = []
         self._cached_acload_powers: dict[str, float] = {}
         self._last_acload_time: float = 0.0
+        # Cache for discovered Tasmota PV inverter services
+        self._tasmota_pv_services: list = []
         # Cache for daily yields (MPPT + Tasmota) and battery daily energy
         self._cached_mppt_daily_yields: list[float] = []
         self._cached_tasmota_daily_yields: list[float] = []
         self._cached_battery_daily_energy: tuple[float, float] = (0.0, 0.0)
         self._last_daily_yields_time: float = 0.0
         self._last_battery_daily_energy_time: float = 0.0
+        # Cache for get_all_batteries() and get_mppt_chargers() - avoid 15+ D-Bus calls per cycle
+        self._cached_all_batteries: list = []
+        self._last_all_batteries_time: float = 0.0
+        self._cached_mppt_chargers: list = []
+        self._last_mppt_chargers_time: float = 0.0
         # Midnight tracker for Tasmota daily yield calculation
         self._tasmota_midnight_kwh: list[float] = []
         self._tasmota_midnight_date: int = 0
@@ -285,7 +120,7 @@ class VictronDBus:
         self._discover_services()
 
     def _discover_services(self):
-        """Discover VE.Bus, MPPT, and acload services"""
+        """Discover VE.Bus, MPPT, acload, and Tasmota PV inverter services"""
 
         self._last_scan_time = time.time()
         old_vebus = self._vebus_service
@@ -299,6 +134,7 @@ class VictronDBus:
             self._vebus_service = None
             self._mppt_services = []
             self._acload_services = []
+            self._tasmota_pv_services = []
 
             for line in lines:
                 if "com.victronenergy.vebus" in line:
@@ -307,9 +143,12 @@ class VictronDBus:
                     self._mppt_services.append(line.strip())
                 elif "com.victronenergy.acload" in line:
                     self._acload_services.append(line.strip())
+                elif "com.victronenergy.pvinverter." in line:
+                    self._tasmota_pv_services.append(line.strip())
 
             self._mppt_services.sort()
             self._acload_services.sort()
+            self._tasmota_pv_services.sort()
 
             # Log if service changed
             if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
@@ -319,6 +158,9 @@ class VictronDBus:
 
             if self._acload_services:
                 print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
+
+            if self._tasmota_pv_services:
+                print(f"  [D-Bus] PV inverters found: {self._tasmota_pv_services}")
 
             self._consecutive_errors = 0
 
@@ -380,7 +222,7 @@ class VictronDBus:
             self._poll_mppt_data_tree()
 
         # Poll Tasmota PV power
-        if TASMOTA_DBUS_SERVICES:
+        if self._tasmota_pv_services:
             self._poll_tasmota_power()
 
         # Poll acload (Emporia Vue) power channels
@@ -421,7 +263,7 @@ class VictronDBus:
 
     def _parse_system_data(self, output: str):
         """Parse system data from tree query output using shared parser"""
-        parsed = _parse_system_data_output(output)
+        parsed = parse_system_data_output(output)
         self._system_data.update(parsed)
         self._system_data["_last_update"] = time.time()
 
@@ -441,7 +283,7 @@ class VictronDBus:
                 ],
                 timeout=0.5,
             )
-            return idx, self._parse_mppt_output(output) if output else {"w": 0.0, "a": 0.0}
+            return idx, parse_mppt_output(output) if output else {"w": 0.0, "a": 0.0}
 
         with ThreadPoolExecutor(max_workers=len(self._mppt_services)) as pool:
             futures = [
@@ -454,41 +296,10 @@ class VictronDBus:
         self._cached_mppt_data = data
         self._last_mppt_time = time.time()
 
-    @staticmethod
-    def _parse_variant_value(output: str | None) -> float:
-        """Parse a variant value from D-Bus output, return 0.0 on failure"""
-        if not output:
-            return 0.0
-        match = _VARIANT_RE.search(output)
-        if not match:
-            return 0.0
-        try:
-            return float(match.group(1))
-        except (ValueError, TypeError):
-            logger.debug("D-Bus value parse failed: %s", match.group(1))
-            return 0.0
-
-    def _parse_mppt_output(self, output: str) -> dict[str, float]:
-        """Parse MPPT power and current from tree query output"""
-        mppt_data = {"w": 0.0, "a": 0.0}
-        match = _MPPT_POWER_RE.search(output)
-        if match:
-            try:
-                mppt_data["w"] = float(match.group(1))
-            except (ValueError, TypeError):
-                logger.debug("MPPT power parse failed: %s", match.group(1))
-        match = _MPPT_CURRENT_RE.search(output)
-        if match:
-            try:
-                mppt_data["a"] = float(match.group(1))
-            except (ValueError, TypeError):
-                logger.debug("MPPT current parse failed: %s", match.group(1))
-        return mppt_data
-
     def _poll_tasmota_power(self):
         """Poll Tasmota PV power"""
         powers = []
-        for service in TASMOTA_DBUS_SERVICES:
+        for service in self._tasmota_pv_services:
             output = self._safe_subprocess(
                 [
                     "dbus-send",
@@ -500,7 +311,7 @@ class VictronDBus:
                 ],
                 timeout=0.3,
             )
-            powers.append(_extract_power_from_tree(output))
+            powers.append(extract_power_from_tree(output))
         self._cached_tasmota_powers = powers
         self._last_tasmota_time = time.time()
 
@@ -530,7 +341,7 @@ class VictronDBus:
                 ],
                 timeout=0.3,
             )
-            result = _extract_acload_name_power((name_output, power_output))
+            result = extract_acload_name_power((name_output, power_output))
             if result:
                 key, power = result
                 powers[key] = power
@@ -540,9 +351,11 @@ class VictronDBus:
     def _poll_battery_chain_socs(self):
         """Poll battery chain SoCs"""
         battery_services = [
-            "com.victronenergy.battery.mqtt_chain1",
+            BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
+        import re as _re
+
         socs = []
         for service in battery_services:
             output = self._safe_subprocess(
@@ -557,7 +370,7 @@ class VictronDBus:
                 timeout=0.3,
             )
             if output:
-                match = re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
+                match = _re.search(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)", output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
@@ -616,12 +429,14 @@ class VictronDBus:
 
     def _parse_chain_voltages(self, service: str, output: str) -> list[float]:
         """Parse cell voltages from tree output, stopping at first gap."""
+        import re as _re
+
         chain_voltages = []
         known_count = self._chain_cell_counts.get(service, 16)
         max_cell = min(known_count + 1, 16)
 
         for i in range(1, max_cell + 1):
-            match = re.search(
+            match = _re.search(
                 rf'string "Cell/{i}/Voltage"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
                 output,
             )
@@ -632,9 +447,11 @@ class VictronDBus:
 
     def _parse_chain_temps(self, output: str) -> list[float]:
         """Parse cell temperatures from tree output (may be sparse)."""
+        import re as _re
+
         chain_temps = []
         for i in range(1, 17):
-            match = re.search(
+            match = _re.search(
                 rf'string "Cell/{i}/Temperature"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
                 output,
             )
@@ -644,14 +461,18 @@ class VictronDBus:
 
     def _parse_chain_soc(self, output: str) -> float | None:
         """Parse chain SoC from tree output."""
-        soc_match = re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
+        import re as _re
+
+        soc_match = _re.search(r'string "Soc"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)', output)
         return float(soc_match.group(1)) if soc_match else None
 
     @staticmethod
     def _tree_bool(output: str, path: str) -> bool | None:
         """Parse a 0/1 variant value for a path from a tree query reply."""
-        match = re.search(
-            rf'string "{re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
+        import re as _re
+
+        match = _re.search(
+            rf'string "{_re.escape(path)}"[^\n]*\n[^\n]*variant\s+\S+\s+([-0-9.]+)',
             output,
         )
         if not match:
@@ -707,7 +528,7 @@ class VictronDBus:
         # Tasmota daily yields (lifetime - midnight reference)
         tasmota_yields = []
         today = time.localtime().tm_yday
-        for i, service in enumerate(TASMOTA_DBUS_SERVICES):
+        for i, service in enumerate(self._tasmota_pv_services):
             lifetime_kwh = self._get_float(service, TASMOTA_ENERGY_FORWARD_PATH)
             if lifetime_kwh <= 0:
                 tasmota_yields.append(0.0)
@@ -716,14 +537,16 @@ class VictronDBus:
             # Initialize midnight tracker on first use
             if not self._tasmota_midnight_kwh or len(self._tasmota_midnight_kwh) <= i:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
+                    for s in self._tasmota_pv_services
                 ]
                 self._tasmota_midnight_date = today
 
             # Reset midnight reference on new day
             if today != self._tasmota_midnight_date:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
+                    for s in self._tasmota_pv_services
                 ]
                 self._tasmota_midnight_date = today
 
@@ -864,7 +687,7 @@ class VictronDBus:
         if not output:
             return data
 
-        parsed = _parse_system_data_output(output)
+        parsed = parse_system_data_output(output)
         data.update(parsed)
         return data
 
@@ -899,12 +722,7 @@ class VictronDBus:
         Calculate battery SOC locally from D-Bus voltage and power.
         Replaces HA corrected_battery_soc sensor for independence.
         Returns SOC percentage (0-100).
-
-        Pass the sys_data dict already fetched by get_system_data() in the
-        control loop to avoid an extra full D-Bus tree read every cycle.
         """
-        from inverter_control.victron import calculate_battery_soc_from_voltage
-
         if sys_data is None:
             sys_data = self.get_system_data()
         voltage = sys_data.get("bv", 0.0)
@@ -914,12 +732,10 @@ class VictronDBus:
 
     def get_inverter_power(self) -> int:
         """Get current inverter AC output power - instant from background cache"""
-        # Background polling keeps _system_data["inv_power"] updated
         return self._system_data.get("inv_power", 0)
 
     def get_ac_in_power(self) -> int:
         """Get AC input power (from grid) - from system data cache"""
-        # Grid power is in system data as gt (grid total)
         return self._system_data.get("gt", 0)
 
     def set_grid_setpoint(self, watts: int) -> bool:
@@ -954,18 +770,16 @@ class VictronDBus:
             timeout=0.5,
         )
         return {
-            "w": self._parse_variant_value(power_output),
-            "a": self._parse_variant_value(current_output),
+            "w": parse_variant_value(power_output),
+            "a": parse_variant_value(current_output),
         }
 
     def get_mppt_data(self) -> dict[str, dict[str, float]]:
         """Get power and current from all MPPT chargers - instant from background cache"""
-        # Return cached data if fresh (background poll updates every 0.2s)
         now = time.time()
         if now - self._last_mppt_time < 0.5:  # TTL 0.5 seconds
             return self._cached_mppt_data
 
-        # Background polling keeps this fresh, fallback to synchronous call if stale
         if not self._mppt_services:
             return {}
 
@@ -980,14 +794,12 @@ class VictronDBus:
 
     def get_tasmota_pv_power(self) -> list:
         """Get power from Tasmota PV inverters via D-Bus - instant from background cache"""
-        # Return cached data if fresh (background poll updates every 0.2s)
         now = time.time()
         if now - self._last_tasmota_time < 0.5:  # TTL 0.5 seconds
             return self._cached_tasmota_powers
 
-        # Background polling keeps this fresh, fallback to synchronous call if stale
         powers = []
-        for service in TASMOTA_DBUS_SERVICES:
+        for service in self._tasmota_pv_services:
             output = self._safe_subprocess(
                 [
                     "dbus-send",
@@ -999,19 +811,17 @@ class VictronDBus:
                 ],
                 timeout=0.3,
             )
-            powers.append(_extract_power_from_tree(output))
+            powers.append(extract_power_from_tree(output))
         self._cached_tasmota_powers = powers
         self._last_tasmota_time = time.time()
         return powers
 
     def get_acload_powers(self) -> dict[str, float]:
         """Get power from Emporia Vue channels (acload services) - instant from background cache"""
-        # Return cached data if fresh (background poll updates every 0.2s)
         now = time.time()
         if now - self._last_acload_time < 0.5:  # TTL 0.5 seconds
             return self._cached_acload_powers
 
-        # Background polling keeps this fresh, fallback to synchronous call if stale
         powers = {}
         for service in self._acload_services:
             name_output = self._safe_subprocess(
@@ -1036,7 +846,7 @@ class VictronDBus:
                 ],
                 timeout=0.3,
             )
-            result = _extract_acload_name_power((name_output, power_output))
+            result = extract_acload_name_power((name_output, power_output))
             if result:
                 key, power = result
                 powers[key] = power
@@ -1055,20 +865,13 @@ class VictronDBus:
         return None
 
     def get_battery_chain_socs(self) -> list:
-        """Get SoC for each battery chain from D-Bus - instant from background cache
-
-        Returns list of SoC values for:
-        - mqtt_chain1 (first series)
-        - mqtt_chain2 (second series)
-        """
-        # Return cached data if fresh (background poll updates every 0.2s)
+        """Get SoC for each battery chain from D-Bus - instant from background cache"""
         now = time.time()
         if now - self._last_battery_chain_soc_time < 2.0:  # TTL 2 seconds
             return self._cached_battery_chain_socs
 
-        # Background polling keeps this fresh, fallback to synchronous call if stale
         battery_services = [
-            "com.victronenergy.battery.mqtt_chain1",
+            BATTERY_CHAIN_1,
             "com.victronenergy.battery.mqtt_chain2",
         ]
         socs = []
@@ -1085,7 +888,7 @@ class VictronDBus:
                 timeout=0.3,
             )
             if output:
-                match = _VARIANT_RE.search(output)
+                match = VARIANT_RE.search(output)
                 if match:
                     try:
                         socs.append(float(match.group(1)))
@@ -1102,22 +905,11 @@ class VictronDBus:
         return socs
 
     def get_cell_counts(self) -> dict[str, int]:
-        """Get discovered cell counts per battery chain service.
-
-        Returns a copy of _chain_cell_counts, mapping service name to cell count.
-        Used by DVCC to set accurate cell count instead of hardcoded 16.
-        """
+        """Get discovered cell counts per battery chain service."""
         return dict(self._chain_cell_counts)
 
     def get_ess_mode(self) -> dict[str, Any]:
-        """Get current ESS mode
-
-        Returns dict with:
-        - hub4_mode: 1=ESS, 3=External control
-        - battery_life_state: 0=Optimized without BatteryLife, 1-8=BatteryLife, 9=Keep charged
-        - mode_name: Human readable name
-        - is_external: True if External control mode
-        """
+        """Get current ESS mode"""
         now = time.time()
         with self._dbus_lock:
             if self._ess_mode_cache is not None and now - self._ess_mode_cache_time < 5.0:
@@ -1140,11 +932,6 @@ class VictronDBus:
             except (ValueError, TypeError) as e:
                 logger.debug("BatteryLife state parse failed: %s", e)
 
-        # Determine mode name
-        # BatteryLife states:
-        # 0 or 10 = Optimized without BatteryLife (BatteryLife disabled)
-        # 1-8 = Optimized with BatteryLife (various SoC stages)
-        # 9 = Keep batteries charged
         if hub4_mode == 3:
             mode_name = "External control"
             is_external = True
@@ -1172,18 +959,10 @@ class VictronDBus:
         return result
 
     def set_ess_mode(self, external: bool) -> bool:
-        """Set ESS mode
-
-        Args:
-            external: True for External control, False for Optimized without BatteryLife
-
-        Returns True if successful
-        """
+        """Set ESS mode"""
         if external:
-            # External control: Hub4Mode = 3
             result = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32")
         else:
-            # Optimized without BatteryLife: Hub4Mode = 1, BatteryLife/State = 0
             success1 = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 1, "int32")
             success2 = self._dbus_set(
                 SETTINGS_SERVICE,
@@ -1192,7 +971,6 @@ class VictronDBus:
                 "int32",
             )
             result = success1 and success2
-        # Invalidate the ESS mode cache so the next read is fresh
         with self._dbus_lock:
             self._ess_mode_cache = None
             self._ess_mode_cache_time = 0.0
@@ -1227,14 +1005,15 @@ class VictronDBus:
         return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
 
     def get_all_batteries(self) -> list:
-        """Get detailed data for all battery chains including SmartShunt
+        """Get detailed data for all battery chains including SmartShunt.
+        Cached for 2s to avoid 15+ D-Bus calls per cycle."""
+        now = time.time()
+        if self._cached_all_batteries and now - self._last_all_batteries_time < 2.0:
+            return self._cached_all_batteries
 
-        Returns list of dicts with: name, voltage, current, power, soc, state,
-        time_to_go (formatted), time_to_go_sec (optional).
-        """
         battery_services = [
-            ("com.victronenergy.battery.dbus-mqtt-chain1", "JBD Chain 1"),
-            ("com.victronenergy.battery.dbus-mqtt-chain2", "JBD Chain 2"),
+            (BATTERY_CHAIN_1, "JBD Chain 1"),
+            ("com.victronenergy.battery.mqtt_chain2", "JBD Chain 2"),
             ("com.victronenergy.battery.virtual_chain", "Virtual Battery"),
         ]
 
@@ -1264,16 +1043,12 @@ class VictronDBus:
                 }
             )
 
+        self._cached_all_batteries = batteries
+        self._last_all_batteries_time = now
         return batteries
 
     def _read_chain_cell_voltages(self, service: str, offset: int) -> list[tuple[float, int]]:
-        """Probe cell voltage paths for a chain, updating the cached cell count.
-
-        Once we know how many cells a chain actually reports, stop probing all
-        16 possible slots every cycle - just query the known-present cells
-        (plus one extra to detect growth). `offset` is the number of voltages
-        already collected from other chains, used to build a global cell id.
-        """
+        """Probe cell voltage paths for a chain, updating the cached cell count."""
         known_count = self._chain_cell_counts.get(service, 16)
         max_cell_index = min(known_count + 1, 16)
         discovered_count = 0
@@ -1289,10 +1064,8 @@ class VictronDBus:
                 if v > 0:
                     voltages.append((v, offset + len(voltages)))
             except (ValueError, TypeError):
-                pass  # Ignore invalid D-Bus values
+                pass
 
-        # Only grow immediately; keep prior count on a transient miss so a
-        # single failed probe doesn't slow re-discovery of all cells.
         if discovered_count > 0:
             self._chain_cell_counts[service] = discovered_count
 
@@ -1307,10 +1080,10 @@ class VictronDBus:
                 continue
             try:
                 t = float(val)
-                if -50 <= t <= 100:  # Sanity check
+                if -50 <= t <= 100:
                     temps.append(t)
             except (ValueError, TypeError):
-                pass  # Ignore invalid temperature values
+                pass
         return temps
 
     def _read_chain_soc(self, service: str) -> float | None:
@@ -1320,7 +1093,7 @@ class VictronDBus:
         try:
             return float(soc_val)
         except (ValueError, TypeError):
-            return None  # Ignore invalid SoC value
+            return None
 
     def _read_chain_allow_flag(self, service: str, path: str) -> bool | None:
         val = self._dbus_get(service, path)
@@ -1329,17 +1102,10 @@ class VictronDBus:
         try:
             return int(float(val)) == 1
         except (ValueError, TypeError):
-            return None  # Ignore invalid allow-flag value
+            return None
 
     def get_battery_cell_data(self) -> dict[str, Any]:
-        """Get detailed cell data from battery chains for DVCC calculation.
-
-        Returns dict with:
-        - max_cell, max_cell_id, min_cell, min_cell_id: Cell voltage extremes
-        - max_temp, min_temp: Temperature extremes
-        - soc: Overall SoC
-        - allow_charge, allow_discharge: BMS flags
-        """
+        """Get detailed cell data from battery chains for DVCC calculation."""
         self._maybe_refresh_cell_cache()
         cached = self._build_from_cache()
         if cached:
@@ -1507,10 +1273,12 @@ class VictronDBus:
         return result
 
     def get_mppt_chargers(self) -> list:
-        """Get detailed data for all MPPT chargers
+        """Get detailed data for all MPPT chargers.
+        Cached for 2s to avoid D-Bus calls per cycle."""
+        now = time.time()
+        if self._cached_mppt_chargers and now - self._last_mppt_chargers_time < 2.0:
+            return self._cached_mppt_chargers
 
-        Returns list of dicts with: name, pv_voltage, current, power
-        """
         chargers = []
         for i, service in enumerate(self._mppt_services):
             parts = service.split(":")
@@ -1523,6 +1291,9 @@ class VictronDBus:
                     "power": self._get_float(service, "/Yield/Power"),
                 }
             )
+
+        self._cached_mppt_chargers = chargers
+        self._last_mppt_chargers_time = now
         return chargers
 
     def get_mppt_daily_yields(self) -> list[float]:
@@ -1534,10 +1305,7 @@ class VictronDBus:
         return list(self._cached_tasmota_daily_yields)
 
     def get_battery_daily_energy(self) -> tuple[float, float]:
-        """Get battery daily charge/discharge energy (kWh) - instant from background cache
-
-        Returns (charge_kwh, discharge_kwh)
-        """
+        """Get battery daily charge/discharge energy (kWh) - instant from background cache"""
         return self._cached_battery_daily_energy
 
     def get_total_solar_yield_today(self) -> float:

@@ -1,5 +1,5 @@
 """
-Unit tests for InverterController in main.py
+Unit tests for InverterController in controller.py
 """
 
 import os
@@ -11,37 +11,28 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inverter_control.logic import SystemState
 
+_MOD = "inverter_control.controller"
+
 
 def _make_controller(**overrides):
     """Build an InverterController with all subsystems mocked."""
-    with patch("main.get_victron") as mock_get_victron, patch(
-        "main.get_ha"
-    ) as mock_get_ha, patch("main.ConsoleUI") as mock_console_cls, patch(
-        "main.SetpointCalculator"
-    ) as mock_calc_cls, patch(
-        "inverter_control.config.get_ui_config", return_value={}
-    ), patch(
-        "main.DRY_RUN", False
-    ), patch(
-        "main.LOOP_INTERVAL", 0.33
-    ), patch(
-        "main.POWER_LIMIT_MIN", -2300
-    ), patch(
-        "main.POWER_LIMIT_MAX", 2250
-    ), patch(
-        "main.DVCC_ENABLED", False
-    ), patch(
-        "main.ENABLE_GRID_SMOOTHING_WITH_HOME", False
-    ), patch(
-        "main.ENABLE_EV", True
-    ), patch(
-        "main.ENABLE_WATER", True
-    ), patch(
-        "main.ENABLE_HA", True
-    ), patch(
-        "main.ENABLE_HA_LOADS", False
+    with (
+        patch(f"{_MOD}.get_victron") as mock_get_victron,
+        patch(f"{_MOD}.get_ha") as mock_get_ha,
+        patch(f"{_MOD}.ConsoleUI") as mock_console_cls,
+        patch(f"{_MOD}.SetpointCalculator") as mock_calc_cls,
+        patch("inverter_control.config.get_ui_config", return_value={}),
+        patch(f"{_MOD}.DRY_RUN", False),
+        patch(f"{_MOD}.LOOP_INTERVAL", 0.33),
+        patch(f"{_MOD}.POWER_LIMIT_MIN", -2300),
+        patch(f"{_MOD}.POWER_LIMIT_MAX", 2250),
+        patch(f"{_MOD}.DVCC_ENABLED", False),
+        patch(f"{_MOD}.ENABLE_GRID_SMOOTHING_WITH_HOME", False),
+        patch(f"{_MOD}.ENABLE_EV", True),
+        patch(f"{_MOD}.ENABLE_WATER", True),
+        patch(f"{_MOD}.ENABLE_HA", True),
+        patch(f"{_MOD}.ENABLE_HA_LOADS", False),
     ):
-
         mock_victron = MagicMock()
         mock_ha = MagicMock()
         mock_console = MagicMock()
@@ -56,7 +47,7 @@ def _make_controller(**overrides):
         mock_calc.power_limit_min = -2300
         mock_calc.power_limit_max = 2250
 
-        from main import InverterController
+        from inverter_control.controller import InverterController
 
         controller = InverterController(dry_run=overrides.get("dry_run", False))
         controller.victron = mock_victron
@@ -84,7 +75,7 @@ class TestInverterControllerInit(unittest.TestCase):
 
     def test_init_creates_watchdog(self):
         controller, _, _, _ = _make_controller()
-        from main import HardwareWatchdog
+        from inverter_control.watchdog import HardwareWatchdog
 
         assert isinstance(controller._watchdog, HardwareWatchdog)
 
@@ -106,8 +97,16 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_calc.calculate.return_value = MagicMock(setpoint=-600, flags="[T]", filtered_gt=100.0)
 
         sys_data = {
-            "g1": 200, "g2": 0, "gt": 200, "t1": 300, "t2": 0,
-            "tt": 300, "bv": 52.0, "bc": -5.0, "bp": -260, "soc": 80,
+            "g1": 200,
+            "g2": 0,
+            "gt": 200,
+            "t1": 300,
+            "t2": 0,
+            "tt": 300,
+            "bv": 52.0,
+            "bc": -5.0,
+            "bp": -260,
+            "soc": 80,
         }
         setpoint, flags = controller.calculate_setpoint(sys_data)
 
@@ -124,8 +123,16 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_calc.calculate.return_value = MagicMock(setpoint=-400, flags="", filtered_gt=50.0)
 
         sys_data = {
-            "g1": 100, "g2": 50, "gt": 150, "t1": 200, "t2": 100,
-            "tt": 300, "bv": 51.0, "bc": -4.0, "bp": -200, "soc": 75,
+            "g1": 100,
+            "g2": 50,
+            "gt": 150,
+            "t1": 200,
+            "t2": 100,
+            "tt": 300,
+            "bv": 51.0,
+            "bc": -4.0,
+            "bp": -200,
+            "soc": 75,
         }
         controller.calculate_setpoint(sys_data)
 
@@ -153,7 +160,20 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_ha.get_boolean.return_value = False
         mock_calc.calculate.return_value = MagicMock(setpoint=0, flags="", filtered_gt=42.0)
 
-        controller.calculate_setpoint({"g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0, "bv": 0, "bc": 0, "bp": 0, "soc": 0})
+        controller.calculate_setpoint(
+            {
+                "g1": 0,
+                "g2": 0,
+                "gt": 0,
+                "t1": 0,
+                "t2": 0,
+                "tt": 0,
+                "bv": 0,
+                "bc": 0,
+                "bp": 0,
+                "soc": 0,
+            }
+        )
 
         assert controller.filtered_gt == 42.0
 
@@ -166,7 +186,20 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_ha.get_boolean.return_value = False
         mock_calc.calculate.return_value = MagicMock(setpoint=0, flags="", filtered_gt=0.0)
 
-        controller.calculate_setpoint({"g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0, "bv": 0, "bc": 0, "bp": 0, "soc": 0})
+        controller.calculate_setpoint(
+            {
+                "g1": 0,
+                "g2": 0,
+                "gt": 0,
+                "t1": 0,
+                "t2": 0,
+                "tt": 0,
+                "bv": 0,
+                "bc": 0,
+                "bp": 0,
+                "soc": 0,
+            }
+        )
 
         assert controller._cached_mppt_data == {"mppt0": {"w": 100.0, "a": 2.0}}
         assert controller._cached_tasmota_powers == [200.0]
@@ -176,7 +209,7 @@ class TestUpdateState(unittest.TestCase):
     """Test InverterController.update_state()"""
 
     def test_assembles_state_dict(self):
-        controller, mock_victron, mock_ha, mock_calc = _make_controller()
+        controller, mock_victron, mock_ha, _mock_calc = _make_controller()
         mock_victron.get_battery_chain_socs.return_value = [80.0, 75.0]
         mock_victron.get_inverter_state.return_value = (9, "Inverting")
         mock_victron.get_ess_mode.return_value = {"is_external": True, "mode_name": "External"}
@@ -205,8 +238,16 @@ class TestUpdateState(unittest.TestCase):
         controller.previous_setpoint = -500
 
         sys_data = {
-            "g1": 100, "g2": 50, "gt": 150, "t1": 200, "t2": 100,
-            "tt": 300, "bv": 51.0, "bc": -4.0, "bp": -200, "soc": 80,
+            "g1": 100,
+            "g2": 50,
+            "gt": 150,
+            "t1": 200,
+            "t2": 100,
+            "tt": 300,
+            "bv": 51.0,
+            "bc": -4.0,
+            "bp": -200,
+            "soc": 80,
         }
         controller.update_state(sys_data, -450)
 
@@ -242,7 +283,18 @@ class TestUpdateState(unittest.TestCase):
         controller._cached_mppt_data = {"mppt0": {"w": 100.0, "a": 2.0}}
         controller._cached_tasmota_powers = [50.0]
 
-        sys_data = {"g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0, "bv": 0, "bc": 0, "bp": 0, "soc": 0}
+        sys_data = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "bv": 0,
+            "bc": 0,
+            "bp": 0,
+            "soc": 0,
+        }
         controller.update_state(sys_data, 0)
 
         assert controller.state["mppt_data"] == {"mppt0": {"w": 100.0, "a": 2.0}}
@@ -255,8 +307,17 @@ class TestRunCycle(unittest.TestCase):
     def test_returns_true_on_success(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_system_data.return_value = {
-            "g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0,
-            "bv": 48.0, "bc": 0, "bp": 0, "pv_total": 0, "soc": 80,
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "bv": 48.0,
+            "bc": 0,
+            "bp": 0,
+            "pv_total": 0,
+            "soc": 80,
         }
         mock_victron.get_mppt_data.return_value = {}
         mock_victron.get_tasmota_pv_power.return_value = []
@@ -282,8 +343,17 @@ class TestRunCycle(unittest.TestCase):
     def test_calls_get_system_data_and_set_grid_setpoint(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         sys_data = {
-            "g1": 100, "g2": 50, "gt": 150, "t1": 200, "t2": 100,
-            "tt": 300, "bv": 52.0, "bc": -5.0, "bp": -260, "pv_total": 0, "soc": 80,
+            "g1": 100,
+            "g2": 50,
+            "gt": 150,
+            "t1": 200,
+            "t2": 100,
+            "tt": 300,
+            "bv": 52.0,
+            "bc": -5.0,
+            "bp": -260,
+            "pv_total": 0,
+            "soc": 80,
         }
         mock_victron.get_system_data.return_value = sys_data
         mock_victron.get_mppt_data.return_value = {}
@@ -314,8 +384,17 @@ class TestRunCycle(unittest.TestCase):
     def test_cycle_marks_watchdog_updates(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_system_data.return_value = {
-            "g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0,
-            "bv": 48.0, "bc": 0, "bp": 0, "pv_total": 0, "soc": 0,
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "bv": 48.0,
+            "bc": 0,
+            "bp": 0,
+            "pv_total": 0,
+            "soc": 0,
         }
         mock_victron.get_mppt_data.return_value = {}
         mock_victron.get_tasmota_pv_power.return_value = []
@@ -348,7 +427,7 @@ class TestRunCycle(unittest.TestCase):
         assert w._last_setpoint_update >= pre_sp
 
     def test_returns_false_on_keyboard_interrupt(self):
-        controller, mock_victron, _, mock_calc = _make_controller()
+        controller, mock_victron, _, _mock_calc = _make_controller()
         mock_victron.get_system_data.side_effect = KeyboardInterrupt
 
         assert controller.run_cycle() is False
@@ -392,18 +471,22 @@ class TestGetEvState(unittest.TestCase):
     """Test InverterController._get_ev_state()"""
 
     def test_returns_ev_data_when_enabled(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
+        controller, _mock_victron, mock_ha, _ = _make_controller()
         mock_ha.get_vue_sensor.return_value = 1500
-        mock_ha.get_sensor.side_effect = lambda k, d=0: {"car_soc": 85, "ev_charging_power": 7.2}.get(k, d)
+        mock_ha.get_sensor.side_effect = lambda k, d=0: {
+            "car_soc": 85,
+            "ev_charging_power": 7.2,
+        }.get(k, d)
 
-        state = controller._get_ev_state()
+        with patch(f"{_MOD}.ENABLE_EV", True):
+            state = controller._get_ev_state()
 
         assert state["ev_power"] == 1500
         assert state["car_soc"] == 85
         assert state["ev_charging_kw"] == 7.2
 
     def test_returns_zeros_when_disabled(self):
-        with patch("main.ENABLE_EV", False):
+        with patch(f"{_MOD}.ENABLE_EV", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_ev_state()
             assert state == {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
@@ -413,19 +496,20 @@ class TestGetWaterState(unittest.TestCase):
     """Test InverterController._get_water_state()"""
 
     def test_returns_water_data_when_enabled(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
+        controller, _mock_victron, mock_ha, _ = _make_controller()
         mock_ha.get_sensor.side_effect = lambda k, d=0: {"water_level": 45}.get(k, d)
         mock_ha.water_valve_on = True
         mock_ha.pump_switch_on = False
 
-        state = controller._get_water_state()
+        with patch(f"{_MOD}.ENABLE_WATER", True):
+            state = controller._get_water_state()
 
         assert state["water_level"] == 45
         assert state["water_valve"] is True
         assert state["pump_switch"] is False
 
     def test_returns_zeros_when_disabled(self):
-        with patch("main.ENABLE_WATER", False):
+        with patch(f"{_MOD}.ENABLE_WATER", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_water_state()
             assert state == {"water_level": 0, "water_valve": False, "pump_switch": False}
@@ -435,7 +519,7 @@ class TestGetHaState(unittest.TestCase):
     """Test InverterController._get_ha_state()"""
 
     def test_returns_ha_data_when_enabled(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
+        controller, _mock_victron, mock_ha, _ = _make_controller()
         mock_ha.get_all_booleans.return_value = {"only_charging": True}
         mock_ha.laundry_outlet_on = True
         mock_ha.home_recliner_on = False
@@ -443,7 +527,8 @@ class TestGetHaState(unittest.TestCase):
         mock_ha.connected = True
         mock_ha.uptime = 3600
 
-        state = controller._get_ha_state()
+        with patch(f"{_MOD}.ENABLE_HA", True):
+            state = controller._get_ha_state()
 
         assert state["booleans"] == {"only_charging": True}
         assert state["laundry_outlet"] is True
@@ -453,7 +538,7 @@ class TestGetHaState(unittest.TestCase):
         assert state["ha_uptime"] == 3600
 
     def test_returns_zeros_when_disabled(self):
-        with patch("main.ENABLE_HA", False):
+        with patch(f"{_MOD}.ENABLE_HA", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_ha_state()
             assert state["booleans"] == {}

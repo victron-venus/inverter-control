@@ -115,6 +115,12 @@ MQTT_SLIM_EXCLUDE_KEYS = frozenset(
 )
 
 # =============================================================================
+# WEBHOOK SERVER (for solar forecast pre-charge triggers)
+# =============================================================================
+WEBHOOK_SERVER_HOST = "0.0.0.0"
+WEBHOOK_SERVER_PORT = 8081
+
+# =============================================================================
 # RUNTIME MODE
 # =============================================================================
 
@@ -230,11 +236,9 @@ TIMEZONE = "America/Los_Angeles"
 # TASMOTA PV INVERTERS (now via D-Bus)
 # =============================================================================
 
-# D-Bus service names for Tasmota PV inverters
-TASMOTA_DBUS_SERVICES = [
-    "com.victronenergy.pvinverter.tasmota_120",
-    "com.victronenergy.pvinverter.tasmota_121",
-]
+# D-Bus service name prefix for Tasmota PV inverters (auto-discovered at runtime)
+# Full service: com.victronenergy.pvinverter.tasmota_<instance>
+TASMOTA_PV_PREFIX = "com.victronenergy.pvinverter.tasmota_"
 
 # Fallback HTTP polling if D-Bus not available
 # TASMOTA_IPS imported from local_config.py

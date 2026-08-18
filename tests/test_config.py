@@ -125,12 +125,11 @@ class TestMQTTConfig:
 class TestTasmotaConfig:
     """Test Tasmota D-Bus configuration"""
 
-    def test_tasmota_services_list(self):
-        """Test TASMOTA_DBUS_SERVICES is a list with expected format"""
-        assert isinstance(config.TASMOTA_DBUS_SERVICES, list)
-        for service in config.TASMOTA_DBUS_SERVICES:
-            assert isinstance(service, str)
-            assert "com.victronenergy.pvinverter.tasmota" in service
+    def test_tasmota_service_prefix(self):
+        """Test TASMOTA_PV_PREFIX is defined with expected format"""
+        assert hasattr(config, "TASMOTA_PV_PREFIX")
+        assert isinstance(config.TASMOTA_PV_PREFIX, str)
+        assert config.TASMOTA_PV_PREFIX == "com.victronenergy.pvinverter.tasmota_"
 
 
 class TestOptionalFeatures:

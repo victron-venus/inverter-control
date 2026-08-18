@@ -500,14 +500,27 @@ class TestNoFeedStrategy(unittest.TestCase):
     """Test no_feed_strategy: returns tasmota_total when active, passthrough otherwise"""
 
     def _state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=-500,
-        )
+        defaults = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "inv_power": 0,
+            "mppt_total": 0,
+            "tasmota_total": 0,
+            "pv_total": 0,
+            "ev_power": 0,
+            "garage_power": 0,
+            "only_charging": False,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "limit_to_ev": False,
+            "previous_setpoint": -500,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
@@ -525,7 +538,7 @@ class TestNoFeedStrategy(unittest.TestCase):
 
     def test_no_feed_zero_tasmota(self):
         state = self._state(no_feed=True, tasmota_total=0)
-        result, flags = no_feed_strategy(state, -500)
+        result, _flags = no_feed_strategy(state, -500)
         assert result == 0
 
 
@@ -533,14 +546,27 @@ class TestHouseSupportStrategy(unittest.TestCase):
     """Test house_support_strategy: returns tasmota - 300 offset"""
 
     def _state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=-500,
-        )
+        defaults = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "inv_power": 0,
+            "mppt_total": 0,
+            "tasmota_total": 0,
+            "pv_total": 0,
+            "ev_power": 0,
+            "garage_power": 0,
+            "only_charging": False,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "limit_to_ev": False,
+            "previous_setpoint": -500,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
@@ -558,12 +584,12 @@ class TestHouseSupportStrategy(unittest.TestCase):
 
     def test_house_support_small_tasmota(self):
         state = self._state(house_support=True, tasmota_total=200)
-        result, flags = house_support_strategy(state, -500)
+        result, _flags = house_support_strategy(state, -500)
         assert result == -100
 
     def test_house_support_zero_tasmota(self):
         state = self._state(house_support=True, tasmota_total=0)
-        result, flags = house_support_strategy(state, -500)
+        result, _flags = house_support_strategy(state, -500)
         assert result == -300
 
 
@@ -571,14 +597,27 @@ class TestLimitToEvStrategy(unittest.TestCase):
     """Test limit_to_ev_strategy: exports solar to grid when EV is charging"""
 
     def _state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=0,
-        )
+        defaults = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "inv_power": 0,
+            "mppt_total": 0,
+            "tasmota_total": 0,
+            "pv_total": 0,
+            "ev_power": 0,
+            "garage_power": 0,
+            "only_charging": False,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "limit_to_ev": False,
+            "previous_setpoint": 0,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
@@ -591,7 +630,7 @@ class TestLimitToEvStrategy(unittest.TestCase):
 
     def test_limit_to_ev_active_garage_power(self):
         state = self._state(limit_to_ev=True, garage_power=2000, mppt_total=1500)
-        result, flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
+        result, _flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
         # ac_output=1500, export=1500-500=1000
         assert result == -1000
 
@@ -609,13 +648,13 @@ class TestLimitToEvStrategy(unittest.TestCase):
 
     def test_limit_to_ev_zero_solar(self):
         state = self._state(limit_to_ev=True, ev_power=3000, mppt_total=0)
-        result, flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
+        result, _flags = limit_to_ev_strategy(state, 0, efficiency=1.0)
         # ac_output=0, export=0-500=-500, max(0,-500)=0
         assert result == 0
 
     def test_limit_to_ev_with_efficiency(self):
         state = self._state(limit_to_ev=True, ev_power=3000, mppt_total=2000)
-        result, flags = limit_to_ev_strategy(state, 0, efficiency=0.94)
+        result, _flags = limit_to_ev_strategy(state, 0, efficiency=0.94)
         # ac_output=int(2000*0.94)=1880, export=1880-500=1380
         assert result == -1380
 
@@ -624,14 +663,27 @@ class TestDoNotSupplyChargerStrategy(unittest.TestCase):
     """Test do_not_supply_charger_strategy: prevents battery from powering EV charger"""
 
     def _state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=0,
-        )
+        defaults = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "inv_power": 0,
+            "mppt_total": 0,
+            "tasmota_total": 0,
+            "pv_total": 0,
+            "ev_power": 0,
+            "garage_power": 0,
+            "only_charging": False,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "limit_to_ev": False,
+            "previous_setpoint": 0,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
@@ -662,13 +714,17 @@ class TestDoNotSupplyChargerStrategy(unittest.TestCase):
 
     def test_active_zero_solar(self):
         state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=0)
-        result, flags = do_not_supply_charger_strategy(state, -1000, efficiency=1.0, solar_offset=0)
+        result, _flags = do_not_supply_charger_strategy(
+            state, -1000, efficiency=1.0, solar_offset=0
+        )
         # max_ac_output = max(0, 0-0) = 0, min_setpoint = 0
         assert result == 0
 
     def test_with_solar_offset(self):
         state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=2000)
-        result, flags = do_not_supply_charger_strategy(state, -2500, efficiency=1.0, solar_offset=60)
+        result, _flags = do_not_supply_charger_strategy(
+            state, -2500, efficiency=1.0, solar_offset=60
+        )
         # max_ac_output = max(0, 2000-60) = 1940
         assert result == -1940
 
@@ -698,27 +754,42 @@ class TestGridSmoothingWithHome(unittest.TestCase):
         return config
 
     def _base_state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=0,
-            home_total=0.0, derived_gt=None, filtered_gt=None,
-        )
+        defaults = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "inv_power": 0,
+            "mppt_total": 0,
+            "tasmota_total": 0,
+            "pv_total": 0,
+            "ev_power": 0,
+            "garage_power": 0,
+            "only_charging": False,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "limit_to_ev": False,
+            "previous_setpoint": 0,
+            "home_total": 0.0,
+            "derived_gt": None,
+            "filtered_gt": None,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
     def test_ema_convergence_over_multiple_cycles(self):
-        config = self._make_config(EMA_ALPHA=1.0, GRID_SMOOTHING_HOME_WEIGHT=0.7,
-                                   GRID_SMOOTHING_DERIVED_ALPHA=0.1)
+        config = self._make_config(
+            EMA_ALPHA=1.0, GRID_SMOOTHING_HOME_WEIGHT=0.7, GRID_SMOOTHING_DERIVED_ALPHA=0.1
+        )
         calculator = SetpointCalculator(config)
 
         # derived_gt=1000, instantaneous gt=0 → blended effective_gt = 0.7*1000 + 0.3*0 = 700
         # EMA_ALPHA=1.0 → filtered_gt = effective_gt
-        state = self._base_state(gt=0, derived_gt=1000, home_total=2000,
-                                 previous_setpoint=0)
+        state = self._base_state(gt=0, derived_gt=1000, home_total=2000, previous_setpoint=0)
 
         r1 = calculator.calculate(state)
         assert r1.filtered_gt == 700.0
@@ -731,19 +802,20 @@ class TestGridSmoothingWithHome(unittest.TestCase):
 
         # derived_gt=500 → _filtered_derived_gt = 0.1*500 + 0.9*1000 = 950
         # effective_gt = 0.7*950 + 0.3*0 = 665
-        state2 = self._base_state(gt=0, derived_gt=500, home_total=1500,
-                                  previous_setpoint=0, filtered_gt=r1.filtered_gt)
+        state2 = self._base_state(
+            gt=0, derived_gt=500, home_total=1500, previous_setpoint=0, filtered_gt=r1.filtered_gt
+        )
         r3 = calculator.calculate(state2)
         assert r3.filtered_gt == 665.0
 
     def test_blend_weight_application(self):
-        config = self._make_config(EMA_ALPHA=1.0, GRID_SMOOTHING_HOME_WEIGHT=0.5,
-                                   GRID_SMOOTHING_DERIVED_ALPHA=1.0)
+        config = self._make_config(
+            EMA_ALPHA=1.0, GRID_SMOOTHING_HOME_WEIGHT=0.5, GRID_SMOOTHING_DERIVED_ALPHA=1.0
+        )
         calculator = SetpointCalculator(config)
 
         # derived_gt=1000, gt=200 → 0.5*1000 + 0.5*200 = 600
-        state = self._base_state(gt=200, derived_gt=1000, home_total=2000,
-                                 previous_setpoint=0)
+        state = self._base_state(gt=200, derived_gt=1000, home_total=2000, previous_setpoint=0)
         r = calculator.calculate(state)
         assert r.filtered_gt == 600.0
 
@@ -757,17 +829,18 @@ class TestGridSmoothingWithHome(unittest.TestCase):
         assert r.filtered_gt == 300.0
 
     def test_filtered_gt_persists_across_cycles(self):
-        config = self._make_config(EMA_ALPHA=0.3, GRID_SMOOTHING_HOME_WEIGHT=0.7,
-                                   GRID_SMOOTHING_DERIVED_ALPHA=0.1)
+        config = self._make_config(
+            EMA_ALPHA=0.3, GRID_SMOOTHING_HOME_WEIGHT=0.7, GRID_SMOOTHING_DERIVED_ALPHA=0.1
+        )
         calculator = SetpointCalculator(config)
 
-        state = self._base_state(gt=100, derived_gt=500, home_total=1000,
-                                 previous_setpoint=0)
+        state = self._base_state(gt=100, derived_gt=500, home_total=1000, previous_setpoint=0)
         r1 = calculator.calculate(state)
 
         # Change gt between cycles to show EMA convergence
-        state2 = self._base_state(gt=200, derived_gt=500, home_total=1000,
-                                  previous_setpoint=0, filtered_gt=r1.filtered_gt)
+        state2 = self._base_state(
+            gt=200, derived_gt=500, home_total=1000, previous_setpoint=0, filtered_gt=r1.filtered_gt
+        )
         r2 = calculator.calculate(state2)
 
         # With EMA_ALPHA=0.3, filtered_gt should change between cycles
@@ -784,13 +857,13 @@ class TestGridSmoothingWithHome(unittest.TestCase):
         assert r.filtered_gt == 500.0
 
     def test_blend_with_nonzero_instantaneous(self):
-        config = self._make_config(EMA_ALPHA=1.0, GRID_SMOOTHING_HOME_WEIGHT=0.7,
-                                   GRID_SMOOTHING_DERIVED_ALPHA=1.0)
+        config = self._make_config(
+            EMA_ALPHA=1.0, GRID_SMOOTHING_HOME_WEIGHT=0.7, GRID_SMOOTHING_DERIVED_ALPHA=1.0
+        )
         calculator = SetpointCalculator(config)
 
         # gt=200, derived_gt=800 → 0.7*800 + 0.3*200 = 620
-        state = self._base_state(gt=200, derived_gt=800, home_total=1800,
-                                 previous_setpoint=0)
+        state = self._base_state(gt=200, derived_gt=800, home_total=1800, previous_setpoint=0)
         r = calculator.calculate(state)
         assert r.filtered_gt == 620.0
 
