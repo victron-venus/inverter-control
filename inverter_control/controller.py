@@ -47,7 +47,7 @@ from inverter_control.config import (
     POWER_LIMIT_MIN,
     Colors as C,
 )
-from inverter_control.config import EXPORTED_KEYS
+import inverter_control.config as _config
 from inverter_control.console_server import broadcast_line
 from inverter_control.console_ui import ConsoleUI
 from inverter_control.dvcc import create_dvcc_from_config
@@ -99,9 +99,7 @@ class InverterController:
         self.ui_config = get_ui_config()
 
         # Initialize Logic and UI components
-        import inverter_control.config as _config
-
-        config_dict = {k: getattr(_config, k) for k in EXPORTED_KEYS}
+        config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron)
 

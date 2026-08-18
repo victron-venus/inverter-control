@@ -14,11 +14,7 @@ from typing import Any
 
 from .config import INVERTER_STATES, TASMOTA_DBUS_SERVICES
 from .victron_parse import (
-    ACLOAD_POWER_RE,
-    MPPT_CURRENT_RE,
-    MPPT_POWER_RE,
     VARIANT_RE,
-    VARIANT_STR_RE,
     calculate_battery_soc_from_voltage,
     extract_acload_name_power,
     extract_power_from_tree,
