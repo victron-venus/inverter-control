@@ -500,14 +500,14 @@ class TestNoFeedStrategy(unittest.TestCase):
     """Test no_feed_strategy: returns tasmota_total when active, passthrough otherwise"""
 
     def _state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=-500,
-        )
+        defaults = {
+            "g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0, "inv_power": 0,
+            "mppt_total": 0, "tasmota_total": 0, "pv_total": 0,
+            "ev_power": 0, "garage_power": 0,
+            "only_charging": False, "no_feed": False, "house_support": False,
+            "charge_battery": False, "do_not_supply_charger": False, "limit_to_ev": False,
+            "previous_setpoint": -500,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
@@ -533,14 +533,14 @@ class TestHouseSupportStrategy(unittest.TestCase):
     """Test house_support_strategy: returns tasmota - 300 offset"""
 
     def _state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=-500,
-        )
+        defaults = {
+            "g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0, "inv_power": 0,
+            "mppt_total": 0, "tasmota_total": 0, "pv_total": 0,
+            "ev_power": 0, "garage_power": 0,
+            "only_charging": False, "no_feed": False, "house_support": False,
+            "charge_battery": False, "do_not_supply_charger": False, "limit_to_ev": False,
+            "previous_setpoint": -500,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
