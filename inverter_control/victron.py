@@ -802,20 +802,17 @@ class VictronDBus:
 
     def get_inverter_state(self) -> tuple[int, str]:
         """Get inverter state code and description - instant from background cache"""
-        # Return cached data if fresh
         now = time.time()
         if now - self._last_inverter_state_time < 2.0:  # TTL 2 seconds
             return self._cached_inverter_state
 
-        # Background thread keeps this updated, but fallback to sync call if stale
         if not self._vebus_service:
             return 0, "Unknown"
 
         val = self._dbus_get(self._vebus_service, "/State")
         if val:
             try:
-                code = int(val)
-                result = (code, INVERTER_STATES.get(code, f"? ({code})"))
+                result = self._parse_inverter_state_code(val)
                 self._cached_inverter_state = result
                 self._last_inverter_state_time = now
                 return result
