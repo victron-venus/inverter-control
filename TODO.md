@@ -86,25 +86,25 @@ Analysis of v1.20.0 codebase (~8,700 lines). Prioritized by impact on reliabilit
 
 ## 3. Testing
 
-### T1: InverterController tests
+### T1: InverterController tests ✅
 **Problem:** `main.py` — 950 lines, `InverterController` completely untested. This is the core orchestrator.
 **Fix:** Mock victron/ha/mqtt, test `run_cycle()`, `calculate_setpoint()`, `update_state()`. Follow same pattern as `test_watchdog.py`.
 **Files:** `tests/test_main.py` (new), `main.py`
 **Effort:** L
 
-### T2: VUESensorDBusClient tests
+### T2: VUESensorDBusClient tests ✅
 **Problem:** `dbus.py` — 164 lines, completely untested.
 **Fix:** Mock subprocess/dbus_fast, test discovery, `update_all`, fallback logic.
 **Files:** `tests/test_dbus.py` (new), `inverter_control/dbus.py`
 **Effort:** M
 
-### T3: Isolated strategy tests
+### T3: Isolated strategy tests ✅
 **Problem:** 4 strategies (`no_feed`, `house_support`, `limit_to_ev`, `do_not_supply_charger`) not tested in isolation.
 **Fix:** 2–3 tests per strategy: normal case, edge case, override behavior.
 **Files:** `tests/test_logic.py`
 **Effort:** S
 
-### T4: Grid smoothing tests
+### T4: Grid smoothing tests ✅
 **Problem:** Grid smoothing with home load (v1.19.1) — no tests for `derived_gt` blending or EMA smoothing.
 **Fix:** Test blend weight application, EMA convergence, fallback when `home_total` unavailable.
 **Files:** `tests/test_logic.py`
