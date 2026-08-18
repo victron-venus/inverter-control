@@ -269,13 +269,13 @@ class TestVictronDBus:
         assert data["mppt0"]["w"] == 500.0
         assert data["mppt0"]["a"] == 10.5
 
-    def test_get_tasmota_pv_power(self):
+    def test_get_pv_power(self):
         """Test getting Tasmota PV power"""
         victron.reset_victron_for_testing()
         v = victron.get_victron(test_mode=True)
-        v._cached_tasmota_powers = [1200.0, 800.0]
-        v._last_tasmota_time = time.time()
-        powers = v.get_tasmota_pv_power()
+        v._cached_pv_powers = [1200.0, 800.0]
+        v._last_pv_time = time.time()
+        powers = v.get_pv_power()
 
         assert powers == [1200.0, 800.0]
 
@@ -697,6 +697,8 @@ class TestVictronDBus:
         v._cached_battery_cell_data = {}
         v._chain_cell_counts = {}
         v._last_battery_cell_data_time = 0.0
+        v._service_consecutive_fails = {}
+        v._service_backoff_until = {}
 
         v._poll_battery_cell_data_tree()
 
@@ -747,6 +749,8 @@ class TestVictronDBus:
         v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
         v._cached_battery_cell_data = {}
         v._last_battery_cell_data_time = 0.0
+        v._service_consecutive_fails = {}
+        v._service_backoff_until = {}
         v._get_battery_cell_data_live = MagicMock(return_value={"max_cell": 3.5})
 
         result = v.get_battery_cell_data()
