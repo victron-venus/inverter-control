@@ -14,65 +14,13 @@ import sys
 import threading
 import time
 import traceback
-from typing import Any
 
-from inverter_control.config import (
-    DRY_RUN,
-    DVCC_CCL_CHANGE_RATE,
-    DVCC_CELL_BALANCE_VOLTAGE,
-    DVCC_CELL_CUTOFF,
-    DVCC_CELL_FULL_CURRENT,
-    DVCC_CELL_MAX_VOLTAGE,
-    DVCC_CELL_NEAR_FULL,
-    DVCC_CELL_START_LIMIT,
-    DVCC_DCL_CHANGE_RATE,
-    DVCC_ENABLED,
-    DVCC_IMBALANCE_AGGRESSIVE,
-    DVCC_IMBALANCE_CRITICAL,
-    DVCC_IMBALANCE_START_LIMIT,
-    DVCC_MAX_CHARGE_CURRENT,
-    DVCC_MAX_DISCHARGE_CURRENT,
-    DVCC_MIN_CHARGE_CURRENT,
-    DVCC_SOC_DISCHARGE_REDUCED,
-    DVCC_SOC_DISCHARGE_STOP,
-    DVCC_SOC_REDUCE_FACTOR,
-    DVCC_SOC_REDUCE_START,
-    DVCC_TEMP_DISCHARGE_MIN,
-    DVCC_TEMP_DISCHARGE_REDUCED,
-    DVCC_TEMP_FULL_CURRENT_MAX,
-    DVCC_TEMP_FULL_CURRENT_MIN,
-    DVCC_TEMP_REDUCED,
-    DVCC_TEMP_STOP_CHARGE,
-    DVCC_TEMP_STOP_CHARGE_HIGH,
-    ENABLE_EV,
-    ENABLE_GRID_SMOOTHING_WITH_HOME,
-    ENABLE_HA,
-    ENABLE_HA_LOADS,
-    ENABLE_WATER,
-    LOOP_INTERVAL,
-    MQTT_SLIM_EXCLUDE_KEYS,
-    MQTT_SLIM_STATE,
-    NO_FEED_SLEEP_INTERVAL,
-    POWER_LIMIT_MAX,
-    POWER_LIMIT_MIN,
-)
-from inverter_control.config import (
-    Colors as C,
-)
-from inverter_control.console_server import (
-    broadcast_line,
-)
 from inverter_control.console_server import (
     start_server as start_console_server,
 )
 from inverter_control.console_server import (
     stop_server as stop_console_server,
 )
-from inverter_control.console_ui import ConsoleUI
-from inverter_control.dvcc import create_dvcc_from_config
-from inverter_control.homeassistant import get_ha
-from inverter_control.logic import SetpointCalculator, SystemState
-from inverter_control.victron import get_victron
 
 try:
     from inverter_control.mqtt_bridge import MQTT_AVAILABLE, get_mqtt_bridge
@@ -84,16 +32,15 @@ except ImportError:
 
 
 # Re-export from submodules for backward compatibility (tests, external callers)
-from inverter_control.controller import (  # noqa: E402, F401
-    InverterController,
+from inverter_control.controller import (
     VERSION,
+    InverterController,
     log_exception,
 )
-from inverter_control.watchdog import (  # noqa: E402, F401
+from inverter_control.watchdog import (  # noqa: F401
     HardwareWatchdog,
     WatchdogTimeoutError,
 )
-
 
 # =============================================================================
 # LOGGING SETUP - All errors go to file
