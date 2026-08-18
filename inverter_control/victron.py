@@ -675,12 +675,12 @@ class VictronDBus:
             self._service_backoff_until[service] = time.time() + backoff
             logger.warning(
                 "D-Bus service %s unresponsive (%d failures), backing off %.0fs",
-                service, fails, backoff,
+                service,
+                fails,
+                backoff,
             )
 
-    def _safe_subprocess_tracked(
-        self, cmd: list, service: str, timeout: float = 0.3
-    ) -> str | None:
+    def _safe_subprocess_tracked(self, cmd: list, service: str, timeout: float = 0.3) -> str | None:
         """Run subprocess with service health tracking (for background poll).
         Returns None immediately if service is in backoff period."""
         if not self._service_healthy(service):
@@ -1144,9 +1144,13 @@ class VictronDBus:
             if not self._service_healthy(service):
                 return {
                     "name": name,
-                    "voltage": 0.0, "current": 0.0, "power": 0,
-                    "soc": 0.0, "state": "Unknown",
-                    "time_to_go": "", "time_to_go_sec": None,
+                    "voltage": 0.0,
+                    "current": 0.0,
+                    "power": 0,
+                    "soc": 0.0,
+                    "state": "Unknown",
+                    "time_to_go": "",
+                    "time_to_go_sec": None,
                 }
             current = self._get_float(service, DC_CURRENT_PATH)
             state = self._battery_state(current)
@@ -1169,10 +1173,7 @@ class VictronDBus:
             }
 
         with ThreadPoolExecutor(max_workers=len(battery_services)) as pool:
-            futures = [
-                pool.submit(_query_battery, svc, name)
-                for svc, name in battery_services
-            ]
+            futures = [pool.submit(_query_battery, svc, name) for svc, name in battery_services]
             batteries = [f.result() for f in futures]
 
         self._cached_all_batteries = batteries
@@ -1242,14 +1243,14 @@ class VictronDBus:
         cached = self._build_from_cache()
         if cached:
             return cached
-        if getattr(self, '_poll_thread', None) and self._poll_thread.is_alive():
+        if getattr(self, "_poll_thread", None) and self._poll_thread.is_alive():
             return {}
         return self._get_battery_cell_data_live()
 
     def _maybe_refresh_cell_cache(self) -> None:
         """Refresh cache if stale. Non-blocking: skips if background thread will handle it."""
         if time.time() - self._last_battery_cell_data_time >= CELL_DATA_POLL_INTERVAL:
-            if getattr(self, '_poll_thread', None) and self._poll_thread.is_alive():
+            if getattr(self, "_poll_thread", None) and self._poll_thread.is_alive():
                 return
             self._poll_battery_cell_data_tree()
 
