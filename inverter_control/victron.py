@@ -339,8 +339,8 @@ class VictronDBus:
         self._cached_pv_powers = powers
         self._last_pv_time = time.time()
 
-    def _poll_acload_power(self):
-        """Poll Emporia Vue power channels (acload services)"""
+    def _query_acload_powers(self) -> dict[str, float]:
+        """Query all acload services for name+power (shared by poll and fallback)."""
         powers = {}
         for service in self._acload_services:
             name_output = self._safe_subprocess_tracked(
@@ -371,7 +371,11 @@ class VictronDBus:
             if result:
                 key, power = result
                 powers[key] = power
-        self._cached_acload_powers = powers
+        return powers
+
+    def _poll_acload_power(self):
+        """Poll Emporia Vue power channels (acload services)"""
+        self._cached_acload_powers = self._query_acload_powers()
         self._last_acload_time = time.time()
 
     def _poll_battery_chain_socs(self):
@@ -912,36 +916,7 @@ class VictronDBus:
         if now - self._last_acload_time < 0.5:  # TTL 0.5 seconds
             return self._cached_acload_powers
 
-        powers = {}
-        for service in self._acload_services:
-            name_output = self._safe_subprocess_tracked(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    "/CustomName",
-                    GET_VALUE_METHOD,
-                ],
-                service=service,
-                timeout=0.3,
-            )
-            power_output = self._safe_subprocess_tracked(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    AC_POWER_PATH,
-                    GET_VALUE_METHOD,
-                ],
-                service=service,
-                timeout=0.3,
-            )
-            result = extract_acload_name_power((name_output, power_output))
-            if result:
-                key, power = result
-                powers[key] = power
+        powers = self._query_acload_powers()
         self._cached_acload_powers = powers
         self._last_acload_time = time.time()
         return powers
@@ -1069,6 +1044,15 @@ class VictronDBus:
             self._ess_mode_cache_time = 0.0
         return result
 
+    @staticmethod
+    def _parse_float_or_zero(raw: str) -> float:
+        """Parse a float from raw output, returning 0.0 on failure or non-finite."""
+        try:
+            f = float(raw)
+            return f if math.isfinite(f) else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
     def _get_float(self, service: str, path: str) -> float:
         """Read a D-Bus path and return its float value, or 0.0 on failure."""
         val = self._dbus_get(service, path)
@@ -1094,13 +1078,7 @@ class VictronDBus:
             service=service,
             timeout=0.3,
         )
-        if output:
-            try:
-                f = float(output.strip())
-                return f if math.isfinite(f) else 0.0
-            except (ValueError, TypeError):
-                pass
-        return 0.0
+        return self._parse_float_or_zero(output.strip()) if output else 0.0
 
     @staticmethod
     def _battery_state(current: float) -> str:
