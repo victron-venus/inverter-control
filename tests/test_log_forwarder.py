@@ -19,8 +19,10 @@ class TestLogForwarder:
 
     def setup_method(self):
         """Set up test environment."""
-        self.temp_state_file = tempfile.NamedTemporaryFile(delete=False).name
-        self.temp_log_file = tempfile.NamedTemporaryFile(delete=False).name
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            self.temp_state_file = f.name
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            self.temp_log_file = f.name
 
         # Patch the global constants
         self.state_patcher = patch.object(log_forwarder, "STATE_FILE", self.temp_state_file)
@@ -141,23 +143,23 @@ class TestLogForwarder:
     def test_read_new_lines_with_position(self):
         """Test reading from specific position returns new lines only."""
         # Read all lines first
-        lines1, pos1, inode1 = log_forwarder.read_new_lines(self.temp_log_file, 0, None)
+        _lines1, pos1, inode1 = log_forwarder.read_new_lines(self.temp_log_file, 0, None)
 
         # Reading from the returned position should return no new lines
-        lines2, pos2, inode2 = log_forwarder.read_new_lines(self.temp_log_file, pos1, inode1)
-        assert lines2 == []
+        _lines2, _pos2, _inode2 = log_forwarder.read_new_lines(self.temp_log_file, pos1, inode1)
+        assert _lines2 == []
 
     def test_read_new_lines_appended_content(self):
         """Test reading appended content."""
         # Read initial content
-        lines1, pos1, inode1 = log_forwarder.read_new_lines(self.temp_log_file, 0, None)
+        _lines1, pos1, inode1 = log_forwarder.read_new_lines(self.temp_log_file, 0, None)
 
         # Append more content
         with open(self.temp_log_file, "a") as f:
             f.write("@4000000067890abcdef12347 appended line\n")
 
         # Read again from same position
-        lines2, pos2, inode2 = log_forwarder.read_new_lines(self.temp_log_file, pos1, inode1)
+        _lines2, _pos2, _inode2 = log_forwarder.read_new_lines(self.temp_log_file, pos1, inode1)
         assert len(lines2) >= 1
         assert any("appended line" in line for line in lines2)
 
