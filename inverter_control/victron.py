@@ -1311,7 +1311,7 @@ class VictronDBus:
         """
         yields = []
         for i, service in enumerate(TASMOTA_DBUS_SERVICES):
-            lifetime_kwh = self._get_float(service, "/Ac/Energy/Forward")
+            lifetime_kwh = self._get_float(service, TASMOTA_ENERGY_FORWARD_PATH)
             if lifetime_kwh <= 0:
                 yields.append(0.0)
                 continue
@@ -1319,7 +1319,7 @@ class VictronDBus:
             # Initialize midnight tracker on first use
             if not hasattr(self, "_tasmota_midnight_kwh"):
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, "/Ac/Energy/Forward") for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
                 ]
                 self._tasmota_midnight_date = time.localtime().tm_yday
 
@@ -1328,7 +1328,7 @@ class VictronDBus:
             if today != self._tasmota_midnight_date:
                 # New day - update midnight reference to current lifetime
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, "/Ac/Energy/Forward") for s in TASMOTA_DBUS_SERVICES
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in TASMOTA_DBUS_SERVICES
                 ]
                 self._tasmota_midnight_date = today
 
