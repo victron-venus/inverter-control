@@ -537,14 +537,16 @@ class VictronDBus:
             # Initialize midnight tracker on first use
             if not self._tasmota_midnight_kwh or len(self._tasmota_midnight_kwh) <= i:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in self._tasmota_pv_services
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
+                    for s in self._tasmota_pv_services
                 ]
                 self._tasmota_midnight_date = today
 
             # Reset midnight reference on new day
             if today != self._tasmota_midnight_date:
                 self._tasmota_midnight_kwh = [
-                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH) for s in self._tasmota_pv_services
+                    self._get_float(s, TASMOTA_ENERGY_FORWARD_PATH)
+                    for s in self._tasmota_pv_services
                 ]
                 self._tasmota_midnight_date = today
 
