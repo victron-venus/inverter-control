@@ -525,7 +525,7 @@ class TestNoFeedStrategy(unittest.TestCase):
 
     def test_no_feed_zero_tasmota(self):
         state = self._state(no_feed=True, tasmota_total=0)
-        result, flags = no_feed_strategy(state, -500)
+        result, _flags = no_feed_strategy(state, -500)
         assert result == 0
 
 
@@ -698,15 +698,15 @@ class TestGridSmoothingWithHome(unittest.TestCase):
         return config
 
     def _base_state(self, **kwargs):
-        defaults = dict(
-            g1=0, g2=0, gt=0, t1=0, t2=0, tt=0, inv_power=0,
-            mppt_total=0, tasmota_total=0, pv_total=0,
-            ev_power=0, garage_power=0,
-            only_charging=False, no_feed=False, house_support=False,
-            charge_battery=False, do_not_supply_charger=False, limit_to_ev=False,
-            previous_setpoint=0,
-            home_total=0.0, derived_gt=None, filtered_gt=None,
-        )
+        defaults = {
+            "g1": 0, "g2": 0, "gt": 0, "t1": 0, "t2": 0, "tt": 0, "inv_power": 0,
+            "mppt_total": 0, "tasmota_total": 0, "pv_total": 0,
+            "ev_power": 0, "garage_power": 0,
+            "only_charging": False, "no_feed": False, "house_support": False,
+            "charge_battery": False, "do_not_supply_charger": False, "limit_to_ev": False,
+            "previous_setpoint": 0,
+            "home_total": 0.0, "derived_gt": None, "filtered_gt": None,
+        }
         defaults.update(kwargs)
         return SystemState(**defaults)
 
