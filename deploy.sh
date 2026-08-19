@@ -35,6 +35,11 @@ echo "    Syntax OK"
 
 # Package the repo and run update.sh on the device. `set -e` on the remote
 # aborts the whole chain if update.sh fails, so the deploy is atomic-ish.
+#
+# Before the update we start a keepalive daemon that re-writes the last
+# grid setpoint every second.  This prevents the inverter from dropping
+# into passthrough mode (which also kills MPPT generation) during the
+# window when the main service is stopped.
 echo ">>> Streaming repository to $SSH_HOST and running update.sh..."
 tar \
     --exclude='.git' \
@@ -50,7 +55,9 @@ tar \
     -czf - -C "$SCRIPT_DIR" . \
     | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
+        sh $DEPLOY_DIR/keepalive.sh start; \
         PUSH_LOCAL_CONFIG=1 sh $DEPLOY_DIR/update.sh; \
+        sh $DEPLOY_DIR/keepalive.sh stop; \
         rm -rf $DEPLOY_DIR"
 
 # Wait for supervise to bring the service back up (svc -u is async)
