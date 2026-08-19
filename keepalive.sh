@@ -15,6 +15,7 @@
 
 set -eu
 
+HEARTBEAT_FILE="/run/inverter-control/heartbeat"
 PID_FILE="/run/inverter-control/keepalive.pid"
 STATE_DIR="/run/inverter-control"
 INTERVAL=1
@@ -46,7 +47,7 @@ write_setpoint() {
 }
 
 is_main_running() {
-    pgrep -f 'python3 main.py' >/dev/null 2>&1
+    [ -f "$HEARTBEAT_FILE" ]
 }
 
 # ---------------------------------------------------------------------------

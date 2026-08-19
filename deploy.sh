@@ -57,6 +57,7 @@ tar \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
         sh $DEPLOY_DIR/keepalive.sh start; \
         PUSH_LOCAL_CONFIG=1 sh $DEPLOY_DIR/update.sh; \
+        waited=0; while [ \$waited -lt 15 ] && ! [ -f /run/inverter-control/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
         sh $DEPLOY_DIR/keepalive.sh stop; \
         rm -rf $DEPLOY_DIR"
 
