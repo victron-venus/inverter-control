@@ -383,7 +383,9 @@ class VictronDBus:
         self._last_acload_time = time.time()
 
     def _query_battery_chain_socs(
-        self, path: str = "/", reply_mode: str = "--print-reply",
+        self,
+        path: str = "/",
+        reply_mode: str = "--print-reply",
         soc_regex: re.Pattern | None = None,
     ) -> list[float]:
         """Query all battery chain services for SoC (shared by poll and fallback)."""
