@@ -117,6 +117,7 @@ class InverterController:
 
         self.loop_count = 0
         self.state: dict[str, Any] = {}
+        self.last_console_line = None
 
         # Pre-charge state (triggered by solar-forecast webhook)
         self._pre_charge_requested = False
@@ -479,6 +480,7 @@ class InverterController:
         old_handler = signal.signal(signal.SIGALRM, watchdog_handler)
         signal.alarm(5)
         try:
+            self.last_console_line = None
             sys_data = self.victron.get_system_data()
             # Mark D-Bus telemetry as fresh for hardware watchdog
             self._watchdog.mark_dbus_update()
@@ -519,6 +521,7 @@ class InverterController:
             line = self.console.format_line(
                 sys_data, setpoint, self.previous_setpoint, flags, filtered_display
             )
+            self.last_console_line = line
             print(line)
             broadcast_line(line)
 

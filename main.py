@@ -190,6 +190,9 @@ def _run_main_loop(controller, mqtt_bridge):
                 mqtt_bridge.publish_state(controller.get_state_for_mqtt())
                 # Mark MQTT telemetry as fresh for hardware watchdog
                 controller._watchdog.mark_mqtt_update()
+                # Publish console line if available
+                if controller.last_console_line:
+                    mqtt_bridge.publish_console(controller.last_console_line)
 
             # Write heartbeat for watchdog
             try:
