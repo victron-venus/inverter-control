@@ -166,8 +166,13 @@ def _detect_portal_id() -> str:
     return "your_portal_id"
 
 
-# Lazy: first access triggers detection (cached for subsequent calls)
-PORTAL_ID = _detect_portal_id()
+def __getattr__(name: str):
+    """Lazy module attribute (PEP 562): PORTAL_ID resolved on first access,
+    so importing config never blocks on /sbin/get-unique-id (5s timeout)."""
+    if name == "PORTAL_ID":
+        return _detect_portal_id()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Power limits for outlet protection (Watts)
 POWER_LIMIT_MAX = 2250  # Maximum feed-in (positive = charging battery)
@@ -387,7 +392,7 @@ def _validate_config():
     checks = [
         _check_type("HA_TOKEN", HA_TOKEN, str),
         _check_type("HA_URL", HA_URL, str),
-        _check_type("PORTAL_ID", PORTAL_ID, str),
+        # PORTAL_ID not checked: lazily resolved via __getattr__, always str
         _check_type("TASMOTA_IPS", TASMOTA_IPS, (list, tuple)),
         _check_type("HA_SENSORS", HA_SENSORS, dict),
         _check_type("VUE_SENSORS", VUE_SENSORS, dict),

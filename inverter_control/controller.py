@@ -143,10 +143,12 @@ class InverterController:
         # DVCC Calculator for dynamic battery current limits (SoC & Cell Temp curves)
         if DVCC_ENABLED:
             cell_counts = self.victron.get_cell_counts()
-            total_cells = sum(cell_counts.values()) if cell_counts else 16
+            # CVL is a system-level voltage limit: battery chains are parallel,
+            # so use the per-chain cell count, not the sum across chains.
+            cells_per_chain = max(cell_counts.values()) if cell_counts else 16
             self.dvcc_calculator = create_dvcc_from_config(
                 {
-                    "DVCC_CELL_COUNT": total_cells,
+                    "DVCC_CELL_COUNT": cells_per_chain,
                     "DVCC_MAX_CHARGE_CURRENT": DVCC_MAX_CHARGE_CURRENT,
                     "DVCC_MAX_DISCHARGE_CURRENT": DVCC_MAX_DISCHARGE_CURRENT,
                     "DVCC_CELL_MAX_VOLTAGE": DVCC_CELL_MAX_VOLTAGE,
