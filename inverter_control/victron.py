@@ -4,6 +4,7 @@ Victron D-Bus Interface
 Fast D-Bus access for grid control and monitoring
 """
 
+import json
 import logging
 import math
 import re
@@ -11,7 +12,9 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .config import INVERTER_STATES
 from .victron_parse import (
@@ -35,6 +38,10 @@ GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
 TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
 AC_POWER_PATH = "/Ac/Power"
+# Battery daily energy is integrated from battery power (no D-Bus history on
+# dbus-systemcalc-py based systems). State file survives service restarts.
+BATTERY_ENERGY_STATE_FILE = "/data/inverter-control/battery_daily_energy.json"
+BATTERY_ENERGY_PERSIST_INTERVAL = 30.0
 
 # Battery chains with per-cell data, polled as full tree queries in the
 # background. Reading each Cell/N/Voltage with a separate dbus-send subprocess
@@ -115,10 +122,19 @@ class VictronDBus:
         # Midnight tracker for Tasmota daily yield calculation
         self._pv_midnight_kwh: list[float] = []
         self._pv_midnight_date: int = 0
+        # Battery daily energy integration state (charge/discharge kWh)
+        self._battery_energy_file = BATTERY_ENERGY_STATE_FILE
+        self._battery_energy_date: int = 0
+        self._battery_energy_last_time: float = 0.0
+        self._battery_energy_last_persist: float = 0.0
         # Service health tracking: detect unresponsive D-Bus services
         # and back off to avoid 4+ second freezes from sequential timeouts.
         self._service_consecutive_fails: dict[str, int] = {}
         self._service_backoff_until: dict[str, float] = {}
+        # Venus OS system clock runs UTC; user timezone lives in localsettings,
+        # read lazily on first _local_today() (localsettings may lag at boot).
+        self._tz_name: str = ""
+        self._load_battery_daily_energy()
 
         self._test_mode = test_mode
 
@@ -599,7 +615,7 @@ class VictronDBus:
 
         # Tasmota daily yields (lifetime - midnight reference)
         tasmota_yields = []
-        today = time.localtime().tm_yday
+        today = self._local_today()
         for i, service in enumerate(self._pv_inverter_services):
             lifetime_kwh = self._get_float_nolock(service, TASMOTA_ENERGY_FORWARD_PATH)
             if lifetime_kwh <= 0:
@@ -628,16 +644,78 @@ class VictronDBus:
         self._cached_tasmota_daily_yields = tasmota_yields
         self._last_daily_yields_time = now
 
+    def _local_today(self) -> int:
+        """Day-of-year in the user's timezone (/Settings/System/TimeZone).
+        Falls back to system localtime (UTC on Venus) if setting is missing."""
+        if not self._tz_name:
+            self._tz_name = self._dbus_get(SETTINGS_SERVICE, "/Settings/System/TimeZone") or ""
+        if self._tz_name:
+            try:
+                return datetime.now(ZoneInfo(self._tz_name)).timetuple().tm_yday
+            except Exception as e:
+                logger.warning("Timezone %s unavailable (%s), using system local", self._tz_name, e)
+                self._tz_name = ""
+        return time.localtime().tm_yday
+
     def _poll_battery_daily_energy(self):
-        """Poll battery daily charge/discharge energy (throttled to 5s)"""
+        """Integrate battery power over time into daily charge/discharge kWh (5s tick).
+        com.victronenergy.system has no /History/Daily paths on dbus-systemcalc-py
+        systems, so we accumulate bp ourselves and reset at midnight."""
         now = time.time()
         if now - self._last_battery_daily_energy_time < 5.0:
             return
 
-        charge = self._get_float_nolock(SYSTEM_SERVICE, "/History/Daily/0/ChargeEnergy")
-        discharge = self._get_float_nolock(SYSTEM_SERVICE, "/History/Daily/0/DischargeEnergy")
-        self._cached_battery_daily_energy = (charge, discharge)
+        today = self._local_today()
+        if today != self._battery_energy_date:
+            self._cached_battery_daily_energy = (0.0, 0.0)
+            self._battery_energy_date = today
+            self._persist_battery_daily_energy(now)
+
+        bp = self._system_data.get("bp") or 0.0
+        dt = now - self._battery_energy_last_time if self._battery_energy_last_time else 0.0
+        if 0 < dt < 30:  # skip first sample and long gaps (restart/suspend)
+            charge, discharge = self._cached_battery_daily_energy
+            kwh = abs(bp) * dt / 3600000.0  # W*s -> kWh
+            if bp > 0:
+                charge += kwh
+            else:
+                discharge += kwh
+            self._cached_battery_daily_energy = (round(charge, 4), round(discharge, 4))
+
+        self._battery_energy_last_time = now
+        if now - self._battery_energy_last_persist >= BATTERY_ENERGY_PERSIST_INTERVAL:
+            self._persist_battery_daily_energy(now)
         self._last_battery_daily_energy_time = now
+
+    def _persist_battery_daily_energy(self, now: float | None = None):
+        """Save battery daily energy accumulators so a restart keeps today's totals."""
+        self._battery_energy_last_persist = now if now is not None else time.time()
+        try:
+            with open(self._battery_energy_file, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "date": self._battery_energy_date,
+                        "charge": self._cached_battery_daily_energy[0],
+                        "discharge": self._cached_battery_daily_energy[1],
+                    },
+                    f,
+                )
+        except OSError as e:
+            logger.debug("Battery energy persist failed: %s", e)
+
+    def _load_battery_daily_energy(self):
+        """Load battery daily energy accumulators from a previous run (same day only)."""
+        try:
+            with open(self._battery_energy_file, encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("date") == self._local_today():
+                self._cached_battery_daily_energy = (
+                    float(data.get("charge", 0.0)),
+                    float(data.get("discharge", 0.0)),
+                )
+                self._battery_energy_date = int(data["date"])
+        except (OSError, ValueError, TypeError):
+            pass  # Missing or corrupt file -> start from zero
 
     @property
     def vebus_service(self) -> str | None:
@@ -1053,7 +1131,9 @@ class VictronDBus:
             service=service,
             timeout=0.3,
         )
-        return self._parse_float_or_zero(output.strip()) if output else 0.0
+        # dbus-send --print-reply=literal prints "variant double <val>"; take last token
+        parts = output.split()
+        return self._parse_float_or_zero(parts[-1]) if parts else 0.0
 
     @staticmethod
     def _battery_state(current: float) -> str:
