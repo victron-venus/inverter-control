@@ -37,6 +37,15 @@ for svc in /service/inverter-control/log /service/inverter-control /service/log-
 done
 sleep 1
 
+# 1a. Hold the grid setpoint while we install. The controller is now down;
+#     without this the inverter drifts into passthrough mode within seconds,
+#     which also kills MPPT generation. The daemon re-reads the current
+#     setpoint and re-writes it every second, clears any stale heartbeat on
+#     start, and exits by itself once the new instance writes a fresh
+#     heartbeat (or after its TIMEOUT net).
+#     Never fatal: a keepalive failure must not abort the update.
+sh "$SRC_DIR/keepalive.sh" start || true
+
 # 1c. Reap stale daemontools supervise processes left behind by earlier
 #     updates. Every time a service dir under $INSTALL_DIR/service is replaced
 #     the inode changes, so svscan spawns a NEW supervise and the old one is
@@ -138,5 +147,9 @@ svc -t /service/PackageManager 2>/dev/null || true
 for svc in /service/inverter-control/log /service/inverter-control /service/log-forwarder /service/watchdog; do
     [ -e "$svc" ] && svc -u "$svc" 2>/dev/null || true
 done
+
+# 9. Stop the keepalive if it somehow survived (it normally exits by itself
+#    once the new instance writes its first heartbeat).
+sh "$SRC_DIR/keepalive.sh" stop || true
 
 sep "installed version $(cat "$INSTALL_DIR/version" 2>/dev/null || echo unknown)"
