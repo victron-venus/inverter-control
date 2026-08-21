@@ -30,7 +30,7 @@ discover_vebus() {
 }
 
 read_setpoint() {
-    dbus-send --system --print-reply \
+    dbus-send --system --print-reply=literal \
         --dest="$1" \
         /Hub4/L1/AcPowerSetpoint \
         com.victronenergy.BusItem.GetValue 2>/dev/null \
