@@ -1,0 +1,3 @@
+# False positive: placeholder token in docs example, not a real secret.
+# Line removed from HEAD in d3123d3; only historical commits match.
+0ad1dc7d277e1912c4a481961a8cf96404b7817d:README.md:curl-auth-header:232
