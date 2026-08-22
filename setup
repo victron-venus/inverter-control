@@ -51,8 +51,11 @@ fi
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
 
-    # Remove installation directory
+    # Remove installation directory and GUI-editable settings
     rm -rf "$installDir"
+    removeDbusSettings \
+        "/Settings/InverterControl/TouExpensiveStartHour" \
+        "/Settings/InverterControl/TouExpensiveEndHour"
 fi
 
 # Install/uninstall services and finish
