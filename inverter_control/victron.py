@@ -16,7 +16,8 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .config import INVERTER_STATES
+from .config import INVERTER_STATES, USE_NATIVE_DBUS
+from .dbus_native import NativeDbusClient
 from .victron_parse import (
     VARIANT_RE,
     calculate_battery_soc_from_voltage,
@@ -62,7 +63,10 @@ CELL_DATA_POLL_INTERVAL = 30
 class VictronDBus:
     """
     Fast D-Bus interface for Victron system.
-    Uses subprocess calls to dbus-send for maximum speed on Venus OS.
+
+    Get/Set go through a persistent dbus_fast connection (see dbus_native)
+    with dbus-send subprocess fallback; the background tree polling stays
+    on dbus-send for now (not in the control-loop hot path).
     """
 
     # Auto-rescan thresholds
@@ -84,6 +88,11 @@ class VictronDBus:
         self._last_success_time: float = 0
         self._last_rescan_time: float = 0  # Cooldown tracker for error-triggered rescans
         self._dbus_lock = threading.Lock()
+        # Setpoint writes get their own lock so a telemetry read holding
+        # _dbus_lock can never delay the control-loop write path.
+        self._set_lock = threading.Lock()
+        # Persistent native D-Bus connection (None in test mode / disabled)
+        self._native: NativeDbusClient | None = None
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
         # doesn't cost 2 D-Bus roundtrips every loop.
         self._ess_mode_cache: dict[str, Any] | None = None
@@ -141,6 +150,9 @@ class VictronDBus:
         self._load_battery_daily_energy()
 
         self._test_mode = test_mode
+
+        if not test_mode and USE_NATIVE_DBUS:
+            self._native = NativeDbusClient()
 
         # Background polling thread (like HA does) - skip in test mode
         self._poll_thread: threading.Thread | None = None
@@ -843,10 +855,18 @@ class VictronDBus:
         return result
 
     def _dbus_get(self, service: str, path: str) -> str | None:
-        """Get a single value from D-Bus.
+        """Get a single value from D-Bus (native connection, CLI fallback).
         Skips known-unresponsive services to avoid blocking the caller."""
         if not self._service_healthy(service):
             return None
+
+        if self._native is not None:
+            value = self._native.get_value(service, path)
+            if value is not None:
+                self._consecutive_errors = 0
+                self._last_success_time = time.time()
+                self._record_service_success(service)
+                return value
 
         with self._dbus_lock:
             result = self._safe_subprocess(
@@ -874,7 +894,16 @@ class VictronDBus:
             return None
 
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
-        """Set a value on D-Bus"""
+        """Set a value on D-Bus (native connection, CLI fallback).
+        Uses _set_lock so writes never wait behind telemetry reads."""
+
+        if self._native is not None:
+            with self._set_lock:
+                ok = self._native.set_value(service, path, value, value_type)
+            if ok:
+                self._consecutive_errors = 0
+                self._last_success_time = time.time()
+                return True
 
         with self._dbus_lock:
             result = self._safe_subprocess(
