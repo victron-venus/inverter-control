@@ -58,6 +58,7 @@ from inverter_control.console_ui import ConsoleUI
 from inverter_control.dvcc import create_dvcc_from_config
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
+from inverter_control.metrics import CycleMetrics
 from inverter_control.victron import (
     TOU_END_SETTING,
     TOU_START_SETTING,
@@ -155,6 +156,9 @@ class InverterController:
         self.power_limit_min = POWER_LIMIT_MIN
         self.power_limit_max = POWER_LIMIT_MAX
         self.loop_interval = LOOP_INTERVAL
+        # Rolling latency metrics for hardware-run benchmarking (see metrics.py)
+        self.metrics = CycleMetrics()
+        self._last_perf_snapshot = 0.0
 
         # DVCC Calculator for dynamic battery current limits (SoC & Cell Temp curves)
         if DVCC_ENABLED:
@@ -561,6 +565,13 @@ class InverterController:
             "ui_config": self.ui_config,
             "dvcc_limits": self.dvcc_limits if self.dvcc_limits else None,
         }
+        # Perf snapshot into state at most every 5s (percentile sort is cheap
+        # but pointless at 3 Hz)
+        now = time.time()
+        if now - self._last_perf_snapshot >= 5.0:
+            self.metrics.sample_process()
+            self.state["perf"] = self.metrics.snapshot()
+            self._last_perf_snapshot = now
 
     def get_state_for_mqtt(self) -> dict[str, Any]:
         if not MQTT_SLIM_STATE:
@@ -576,11 +587,16 @@ class InverterController:
 
         old_handler = signal.signal(signal.SIGALRM, watchdog_handler)
         signal.alarm(5)
+        cycle_started = time.monotonic()
         try:
             self.last_console_line = None
             sys_data = self.victron.get_system_data()
             # Mark D-Bus telemetry as fresh for hardware watchdog
             self._watchdog.mark_dbus_update()
+            # Age of the telemetry snapshot this cycle decides on (ms)
+            last_update = sys_data.get("_last_update")
+            if last_update:
+                self.metrics.record_age((time.time() - last_update) * 1000.0)
 
             if self.dvcc_calculator is not None:
                 now = time.time()
@@ -603,7 +619,9 @@ class InverterController:
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
             else:
-                self.victron.set_grid_setpoint(setpoint)
+                write_started = time.perf_counter()
+                write_ok = self.victron.set_grid_setpoint(setpoint)
+                self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
                 # Mark setpoint-write liveness for the hardware watchdog
                 self._watchdog.mark_setpoint_update()
 
@@ -626,6 +644,7 @@ class InverterController:
             self.console.update_terminal_title()
             self.previous_setpoint = setpoint
 
+            self.metrics.record_cycle(cycle_started, self.loop_interval)
             try:
                 if self.ha.get_boolean("no_feed"):
                     time.sleep(NO_FEED_SLEEP_INTERVAL)

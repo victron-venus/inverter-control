@@ -87,6 +87,10 @@ class VictronDBus:
     on dbus-send for now (not in the control-loop hot path).
     """
 
+    # Total dbus-send invocations (perf metric; class default covers
+    # instances created without __init__, e.g. in tests)
+    subprocess_calls = 0
+
     # Auto-rescan thresholds
     RESCAN_ERROR_THRESHOLD = 5  # Rescan after N consecutive errors
     RESCAN_INTERVAL_SECONDS = 300  # Rescan every 5 minutes regardless
@@ -911,6 +915,7 @@ class VictronDBus:
 
     def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> str | None:
         """Run subprocess with strict timeout and error handling"""
+        self.subprocess_calls += 1
         try:
             # Use start_new_session to be able to kill the whole process group
             result = subprocess.run(
