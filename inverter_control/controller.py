@@ -232,12 +232,17 @@ class InverterController:
         return current
 
     def _in_expensive_window(self) -> bool:
-        """True while local time is inside the TOU expensive window (if configured)."""
+        """True while inside the TOU expensive window (if configured).
+
+        Hour comes from the GX timezone setting (/Settings/System/TimeZone),
+        so the window follows the user's wall clock even though the Venus
+        system clock runs UTC.
+        """
         start = _config.TOU_EXPENSIVE_START_HOUR
         end = _config.TOU_EXPENSIVE_END_HOUR
         if start < 0 or end < 0 or start == end:
             return False
-        hour = time.localtime().tm_hour
+        hour = self.victron.get_local_hour()
         if start < end:
             return start <= hour < end
         return hour >= start or hour < end  # wraps midnight

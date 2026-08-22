@@ -630,18 +630,27 @@ class VictronDBus:
         ]
         self._last_daily_yields_time = now
 
-    def _local_today(self) -> int:
-        """Day-of-year in the user's timezone (/Settings/System/TimeZone).
+    def _local_now(self) -> datetime:
+        """Now in the user's timezone (/Settings/System/TimeZone).
         Falls back to system localtime (UTC on Venus) if setting is missing."""
         if not self._tz_name:
             self._tz_name = self._dbus_get(SETTINGS_SERVICE, "/Settings/System/TimeZone") or ""
         if self._tz_name:
             try:
-                return datetime.now(ZoneInfo(self._tz_name)).timetuple().tm_yday
+                return datetime.now(ZoneInfo(self._tz_name))
             except Exception as e:
                 logger.warning("Timezone %s unavailable (%s), using system local", self._tz_name, e)
                 self._tz_name = ""
-        return time.localtime().tm_yday
+        return datetime.fromtimestamp(time.time()).astimezone()
+
+    def get_local_hour(self) -> int:
+        """Hour-of-day in the user's timezone (/Settings/System/TimeZone)."""
+        return self._local_now().hour
+
+    def _local_today(self) -> int:
+        """Day-of-year in the user's timezone (/Settings/System/TimeZone).
+        Falls back to system localtime (UTC on Venus) if setting is missing."""
+        return self._local_now().timetuple().tm_yday
 
     def _poll_battery_daily_energy(self):
         """Integrate battery power over time into daily charge/discharge kWh (5s tick).
