@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -241,3 +242,161 @@ class TestVictronDBusIntegration:
 
         assert v._dbus_get("svc", "/x") == "9"
         assert mock_run.called
+
+
+def _signal(path, value):
+    return Message(
+        message_type=MessageType.SIGNAL,
+        path=path,
+        interface=BUSITEM_INTERFACE,
+        member="PropertiesChanged",
+        body=[{"Value": value, "Text": "x"}],
+        signature="a{sv}",
+        serial=7,
+    )
+
+
+class TestSignalSubscription:
+    """subscribe_busitem arms match rules; signals dispatch to handlers."""
+
+    def test_subscribe_sends_addmatch_rule(self, client):
+        bus = FakeBus(_return(None))
+        client._bus = bus
+
+        assert client.subscribe_busitem("com.victronenergy.system", "/Ac/Grid/L1/Power")
+
+        msg = bus.messages[0]
+        assert msg.destination == "org.freedesktop.DBus"
+        assert msg.member == "AddMatch"
+        rule = msg.body[0]
+        assert "type='signal'" in rule
+        assert "sender='com.victronenergy.system'" in rule
+        assert "path='/Ac/Grid/L1/Power'" in rule
+        assert "member='PropertiesChanged'" in rule
+
+    def test_subscribe_idempotent(self, client):
+        bus = FakeBus(_return(None))
+        client._bus = bus
+        assert client.subscribe_busitem("svc.a", "/p")
+        assert client.subscribe_busitem("svc.a", "/p")
+        assert bus.call_count == 1
+
+    def test_subscribe_failure_not_remembered(self, client):
+        client._bus = FakeBus(_error())
+        assert not client.subscribe_busitem("svc.a", "/p")
+        assert not client._subscriptions  # failed rule is not replayed later
+
+    def test_subscribe_service_items_rule(self, client):
+        bus = FakeBus(_return(None))
+        client._bus = bus
+        assert client.subscribe_service_items("com.victronenergy.system")
+        rule = bus.messages[0].body[0]
+        assert "member='ItemsChanged'" in rule
+        assert "path='/'" in rule
+
+    def test_signal_dispatches_to_handler(self, client):
+        received = []
+        client.add_signal_handler(lambda path, value: received.append((path, value)))
+        client._handle_message(_signal("/Ac/Grid/L1/Power", Variant("i", 123)))
+
+        assert received == [("/Ac/Grid/L1/Power", "123")]
+
+    def test_non_signal_ignored(self, client):
+        received = []
+        client.add_signal_handler(lambda path, value: received.append((path, value)))
+        client._handle_message(_return([Variant("i", 1)]))
+
+        assert received == []
+
+
+class TestReconnectReplay:
+    """After a dropped connection, match rules are re-armed and values reseeded."""
+
+    def test_reconnect_replays_and_fires_hook(self, client):
+        bus = FakeBus(_return(None))
+        client._bus = bus
+        client.subscribe_busitem("svc.a", "/p")
+
+        # Simulate a dropped connection, then a reconnect via _get_bus
+        # (stub the real connect so no actual bus is opened)
+        def fake_connect():
+            client._bus = bus
+            if client._subscriptions:
+                client._replay_subscriptions()
+
+        client._connect = fake_connect
+        client._bus = None
+        fired = []
+        client.on_reconnect = lambda: fired.append(True)
+        assert client._get_bus() is bus
+        assert bus.call_count == 2  # original AddMatch + replayed AddMatch
+        assert fired == [True]
+
+
+class TestVictronSignalIntegration:
+    """VictronDBus routes signal payloads into caches and gates tree polls."""
+
+    def setup_method(self):
+        victron.reset_victron_for_testing()
+
+    def teardown_method(self):
+        victron.reset_victron_for_testing()
+
+    def test_apply_fast_value_system_paths(self):
+        v = victron.get_victron(test_mode=True)
+        v._apply_fast_value("/Ac/Grid/L1/Power", "100")
+        v._apply_fast_value("/Ac/Grid/L2/Power", "-30.0")
+        v._apply_fast_value("/Dc/Battery/Voltage", "48.5")
+        v._apply_fast_value("/Dc/Battery/Power", "500.4")
+
+        data = v.get_system_data()
+        assert data["g1"] == 100
+        assert data["g2"] == -30
+        assert data["gt"] == 70
+        assert data["bv"] == 48.5
+        assert data["bp"] == 500
+
+    def test_apply_fast_value_inverter(self):
+        v = victron.get_victron(test_mode=True)
+        v._apply_fast_value("/State", "3")
+        v._apply_fast_value("/Devices/0/Ac/Inverter/P", "1234.0")
+
+        code, _name = v.get_inverter_state()
+        assert code == 3
+        assert v.get_inverter_power() == 1234
+
+    def test_apply_fast_value_garbage_ignored(self):
+        v = victron.get_victron(test_mode=True)
+        v._apply_fast_value("/Ac/Grid/L1/Power", "not-a-number")
+        assert "g1" not in v._system_data  # payload ignored, cache untouched
+
+    def test_poll_all_skipped_while_signals_healthy(self):
+        v = victron.get_victron(test_mode=True)
+        v._native = MagicMock()
+        v._signal_paths_subscribed = True
+        v._last_signal_reconcile = time.time()
+
+        with patch.object(victron.VictronDBus, "_poll_system_data") as p_sys:
+            v._poll_all()
+        p_sys.assert_not_called()
+
+    def test_poll_all_reconciles_after_interval(self):
+        v = victron.get_victron(test_mode=True)
+        v._native = MagicMock()
+        v._signal_paths_subscribed = True
+        v._last_signal_reconcile = time.time() - 100
+
+        with patch.object(victron.VictronDBus, "_poll_system_data") as p_sys:
+            v._poll_all()
+        p_sys.assert_called_once()
+
+    def test_get_system_data_fresh_when_signals_healthy(self):
+        v = victron.get_victron(test_mode=True)
+        v._native = MagicMock()
+        v._signal_paths_subscribed = True
+        v._system_data = {"g1": 1, "_last_update": time.time() - 30}
+
+        with patch.object(victron.VictronDBus, "_safe_subprocess") as p_sub:
+            data = v.get_system_data()
+        assert data["g1"] == 1
+        p_sub.assert_not_called()
