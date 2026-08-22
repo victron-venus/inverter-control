@@ -19,7 +19,9 @@ dev = [
     "pytest>=8.4.2",
     "pytest-cov>=6.2.1",
 ]
-test = []
+test = [
+    "dbus-fast>=2.21.1",
+]
 
 [tool.pylint.messages_control]
 disable = [
