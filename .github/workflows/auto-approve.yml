@@ -1,5 +1,7 @@
 name: 'Auto Approve PRs'
-description: 'Auto-approve Dependabot and Renovate PRs'
+# Auto-approve Dependabot and Renovate PRs
+# (workflow-level `description:` is not a valid GitHub Actions key — it breaks
+# OSSF Scorecard's workflow verification when results are uploaded)
 
 "on":
   pull_request:
