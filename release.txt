@@ -1,0 +1,8 @@
+## v1.21.1 — Fix TOU settings creation
+
+### Fix
+- `ensure_tou_settings()` used `SetValue` on a nonexistent localsettings path, which Venus rejects — fresh installs never got the GUI-editable TOU entries. Settings are now registered via `com.victronenergy.Settings.AddSetting` (verified live on Cerbo: completion code 0, GetValue serves the value).
+- Behavior without the entries is unchanged (falls back to local_config/env); this only affects first-run creation of the Settings-menu entries.
+
+### Housekeeping
+- requirements: `pydbus` → `dbus-fast>=2.21.1` (persistent native D-Bus groundwork), `USE_NATIVE_DBUS` config flag (unused yet)
