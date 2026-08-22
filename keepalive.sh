@@ -30,24 +30,28 @@ discover_vebus() {
     dbus -y 2>/dev/null | while IFS= read -r line; do
         case "$line" in
             *com.victronenergy.vebus*) echo "$line"; return ;;
+            *) : ;;
         esac
     done
 }
 
 read_setpoint() {
+    service="$1"
     dbus-send --system --print-reply=literal \
-        --dest="$1" \
+        --dest="$service" \
         /Hub4/L1/AcPowerSetpoint \
         com.victronenergy.BusItem.GetValue 2>/dev/null \
     | awk '$1 == "variant" && ($2 == "int16" || $2 == "int32") { print $3 }'
 }
 
 write_setpoint() {
+    service="$1"
+    value="$2"
     dbus-send --system --type=method_call \
-        --dest="$1" \
+        --dest="$service" \
         /Hub4/L1/AcPowerSetpoint \
         com.victronenergy.BusItem.SetValue \
-        "variant:int16:$2" >/dev/null 2>&1
+        "variant:int16:$value" >/dev/null 2>&1
 }
 
 # The heartbeat file survives a killed service (nothing removes it), so

@@ -321,6 +321,42 @@ class SetpointCalculator:
         brake = -int(d_gt * self.d_gain)
         return raw_vanew + brake, f"[D:{brake:+d}] "
 
+    def _run_strategies(self, state: SystemState) -> tuple[int, str]:
+        """Run all strategies with their config kwargs. Returns (raw_vanew, flags)."""
+        raw_vanew = state.previous_setpoint
+        total_flags = ""
+        for strategy in STRATEGIES:
+            # Pass config params via kwargs for each strategy
+            if strategy is normal_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    damping_factor=self.config.get("DAMPING_FACTOR", 0.7),
+                    deadband_low=self.config.get("GRID_ZERO_DEADBAND_LOW", -50),
+                    deadband_high=self.config.get("GRID_ZERO_DEADBAND_HIGH", 80),
+                    creep_rate=self.config.get("CREEP_RATE", 0.5),
+                    creep_max=self.config.get("CREEP_MAX", 100.0),
+                    export_damping=self.config.get("EXPORT_DAMPING", 1.0),
+                    _state=self._normal_state,
+                )
+            elif strategy is only_charging_strategy or strategy is do_not_supply_charger_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
+                    solar_offset=self.config.get("SOLAR_OUTPUT_OFFSET", 60),
+                )
+            elif strategy is limit_to_ev_strategy:
+                raw_vanew, flags = strategy(
+                    state,
+                    raw_vanew,
+                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
+                )
+            else:
+                raw_vanew, flags = strategy(state, raw_vanew)
+            total_flags += flags
+        return raw_vanew, total_flags
+
     def calculate(self, state: SystemState) -> ControlResult:
         """Execute the control logic pipeline"""
 
@@ -356,38 +392,7 @@ class SetpointCalculator:
         state.filtered_gt = new_filtered_gt
 
         # Run strategies
-        raw_vanew = state.previous_setpoint
-        total_flags = ""
-        for strategy in STRATEGIES:
-            # Pass config params via kwargs for each strategy
-            if strategy is normal_strategy:
-                raw_vanew, flags = strategy(
-                    state,
-                    raw_vanew,
-                    damping_factor=self.config.get("DAMPING_FACTOR", 0.7),
-                    deadband_low=self.config.get("GRID_ZERO_DEADBAND_LOW", -50),
-                    deadband_high=self.config.get("GRID_ZERO_DEADBAND_HIGH", 80),
-                    creep_rate=self.config.get("CREEP_RATE", 0.5),
-                    creep_max=self.config.get("CREEP_MAX", 100.0),
-                    export_damping=self.config.get("EXPORT_DAMPING", 1.0),
-                    _state=self._normal_state,
-                )
-            elif strategy is only_charging_strategy or strategy is do_not_supply_charger_strategy:
-                raw_vanew, flags = strategy(
-                    state,
-                    raw_vanew,
-                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
-                    solar_offset=self.config.get("SOLAR_OUTPUT_OFFSET", 60),
-                )
-            elif strategy is limit_to_ev_strategy:
-                raw_vanew, flags = strategy(
-                    state,
-                    raw_vanew,
-                    efficiency=self.config.get("INVERTER_EFFICIENCY", 0.94),
-                )
-            else:
-                raw_vanew, flags = strategy(state, raw_vanew)
-            total_flags += flags
+        raw_vanew, total_flags = self._run_strategies(state)
 
         # Apply corrections
         raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(
