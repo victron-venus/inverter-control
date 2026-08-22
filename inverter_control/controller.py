@@ -231,6 +231,17 @@ class InverterController:
             return new_mode
         return current
 
+    def _in_expensive_window(self) -> bool:
+        """True while local time is inside the TOU expensive window (if configured)."""
+        start = _config.TOU_EXPENSIVE_START_HOUR
+        end = _config.TOU_EXPENSIVE_END_HOUR
+        if start < 0 or end < 0 or start == end:
+            return False
+        hour = time.localtime().tm_hour
+        if start < end:
+            return start <= hour < end
+        return hour >= start or hour < end  # wraps midnight
+
     def _handle_pre_charge_webhook(self, payload: dict) -> bool:
         """Handle pre-charge webhook from solar-forecast-langgraph.
 
@@ -239,6 +250,10 @@ class InverterController:
         setpoint calculation (forces ~2200W charging).
         """
         try:
+            from inverter_control.mqtt_bridge import (  # pylint: disable=import-outside-toplevel
+                get_mqtt_bridge,
+            )
+
             forecast_wh = payload.get("forecast_energy_wh", 0)
             threshold_wh = payload.get("threshold_wh", 0)
             horizon_hours = payload.get("horizon_hours", 6)
@@ -246,6 +261,25 @@ class InverterController:
                 f"Pre-charge webhook: forecast={forecast_wh:.0f}Wh "
                 f"threshold={threshold_wh:.0f}Wh horizon={horizon_hours}h"
             )
+            bridge = get_mqtt_bridge()
+
+            if self._in_expensive_window():
+                logger.info("Pre-charge webhook ignored: expensive grid window active")
+                if bridge:
+                    bridge.publish_notification(
+                        notification_id="precharge-suppressed-"
+                        + datetime.now(UTC).strftime("%Y%m%d-%H"),
+                        level="info",
+                        title="Pre-charge skipped",
+                        body=(
+                            "Expensive grid window "
+                            f"({_config.TOU_EXPENSIVE_START_HOUR}:00"
+                            f"-{_config.TOU_EXPENSIVE_END_HOUR}:00)"
+                        ),
+                        source="inverter-control",
+                    )
+                return True
+
             # Set pre-charge flag - this will be picked up in run_cycle
             # by setting the HA boolean 'charge_battery' or by overriding
             # the state.charge_battery flag directly
@@ -253,11 +287,6 @@ class InverterController:
             self._pre_charge_horizon_hours = horizon_hours
 
             # Notify dashboards (id is hour-scoped so consumers can dedupe)
-            from inverter_control.mqtt_bridge import (  # pylint: disable=import-outside-toplevel
-                get_mqtt_bridge,
-            )
-
-            bridge = get_mqtt_bridge()
             if bridge:
                 notification_id = "precharge-" + datetime.now(UTC).strftime("%Y%m%d-%H")
                 bridge.publish_notification(
@@ -309,9 +338,12 @@ class InverterController:
         # Handle pre-charge request from solar forecast webhook
         charge_battery = self.ha.get_boolean("charge_battery")
         if self._pre_charge_requested:
-            charge_battery = True
             self._pre_charge_requested = False  # One-shot
-            logger.info("Pre-charge triggered by solar forecast")
+            if self._in_expensive_window():
+                logger.info("Pre-charge suppressed: expensive grid window active")
+            else:
+                charge_battery = True
+                logger.info("Pre-charge triggered by solar forecast")
 
         state = SystemState(
             g1=sys_data["g1"],
