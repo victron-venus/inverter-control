@@ -218,6 +218,7 @@ class TestUpdateState(unittest.TestCase):
         mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 80.0
         mock_victron.get_battery_daily_energy.return_value = (10.0, 5.0)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = [15.0]
         mock_victron.get_pv_inverter_daily_yields.return_value = [3.0]
         mock_ha.get_all_booleans.return_value = {}
@@ -273,6 +274,7 @@ class TestUpdateState(unittest.TestCase):
         mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 0
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
         mock_ha.get_all_booleans.return_value = {}
@@ -330,6 +332,7 @@ class TestRunCycle(unittest.TestCase):
         mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 80
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
         mock_ha.get_vue_sensor.return_value = 0
@@ -367,6 +370,7 @@ class TestRunCycle(unittest.TestCase):
         mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 80
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
         mock_ha.get_vue_sensor.return_value = 0
@@ -407,6 +411,7 @@ class TestRunCycle(unittest.TestCase):
         mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 0
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
         mock_ha.get_vue_sensor.return_value = 0
@@ -439,6 +444,7 @@ class TestGetDailyStats(unittest.TestCase):
     def test_returns_correct_dict_structure(self):
         controller, mock_victron, _, _ = _make_controller()
         mock_victron.get_battery_daily_energy.return_value = (10.5, 8.2)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = [5.0, 3.0, 2.0]
         mock_victron.get_pv_inverter_daily_yields.return_value = [1.5, 0.5]
 
@@ -457,6 +463,7 @@ class TestGetDailyStats(unittest.TestCase):
     def test_returns_zeroed_dict_when_no_data(self):
         controller, mock_victron, _, _ = _make_controller()
         mock_victron.get_battery_daily_energy.return_value = (0.0, 0.0)
+        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
 

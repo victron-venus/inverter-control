@@ -179,6 +179,7 @@ class TestConsoleUI:
         # Mock new D-Bus methods
         self.mock_victron.get_total_solar_yield_today.return_value = 12.5
         self.mock_victron.get_battery_daily_energy.return_value = (3.2, 4.8)
+        self.mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
 
         # Should not print until 10th call
         for i in range(9):

@@ -86,6 +86,34 @@ def test_midnight_reset(v):
         assert json.load(f)["charge"] == 0.0
 
 
+def test_midnight_promotes_today_to_yesterday(v):
+    v._cached_battery_daily_energy = (2.5, 1.25)
+    v._battery_energy_date = time.localtime().tm_yday + 1  # stale -> rollover on tick
+    _tick(v, 0.0, 5)
+    assert v.get_battery_yesterday_energy() == (2.5, 1.25)
+    assert v.get_battery_daily_energy() == (0.0, 0.0)
+    with open(v._battery_energy_file, encoding="utf-8") as f:
+        data = json.load(f)
+    assert data["y_charge"] == 2.5
+    assert data["y_discharge"] == 1.25
+
+
+def test_load_yesterday_date_file_promoted(v):
+    from datetime import timedelta
+
+    yesterday_doy = (v._local_now() - timedelta(days=1)).timetuple().tm_yday
+    with open(v._battery_energy_file, "w", encoding="utf-8") as f:
+        json.dump({"date": yesterday_doy, "charge": 3.0, "discharge": 4.0}, f)
+
+    inst = victron.VictronDBus(test_mode=True)
+    inst._battery_energy_file = v._battery_energy_file
+    inst._load_battery_daily_energy()
+    assert inst.get_battery_yesterday_energy() == (3.0, 4.0)
+    # date must be today so the first poll doesn't roll yesterday back to zero
+    assert inst._battery_energy_date == v._local_today()
+    assert inst.get_battery_daily_energy() == (0.0, 0.0)
+
+
 def test_local_today_uses_venus_timezone(v):
     from datetime import datetime
     from zoneinfo import ZoneInfo

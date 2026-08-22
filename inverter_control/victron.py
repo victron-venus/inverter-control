@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -162,6 +162,8 @@ class VictronDBus:
         self._battery_energy_date: int = 0
         self._battery_energy_last_time: float = 0.0
         self._battery_energy_last_persist: float = 0.0
+        # Yesterday's totals, promoted from today's at the local-midnight rollover
+        self._battery_energy_yesterday: tuple[float, float] = (0.0, 0.0)
         # Service health tracking: detect unresponsive D-Bus services
         # and back off to avoid 4+ second freezes from sequential timeouts.
         self._service_consecutive_fails: dict[str, int] = {}
@@ -855,6 +857,8 @@ class VictronDBus:
 
         today = self._local_today()
         if today != self._battery_energy_date:
+            # Promote today's totals to "yesterday" before resetting at midnight
+            self._battery_energy_yesterday = self._cached_battery_daily_energy
             self._cached_battery_daily_energy = (0.0, 0.0)
             self._battery_energy_date = today
             self._persist_battery_daily_energy(now)
@@ -885,6 +889,8 @@ class VictronDBus:
                         "date": self._battery_energy_date,
                         "charge": self._cached_battery_daily_energy[0],
                         "discharge": self._cached_battery_daily_energy[1],
+                        "y_charge": self._battery_energy_yesterday[0],
+                        "y_discharge": self._battery_energy_yesterday[1],
                     },
                     f,
                 )
@@ -892,16 +898,26 @@ class VictronDBus:
             logger.debug("Battery energy persist failed: %s", e)
 
     def _load_battery_daily_energy(self):
-        """Load battery daily energy accumulators from a previous run (same day only)."""
+        """Load battery daily energy accumulators from a previous run.
+        Same-day file restores today's totals; a file stamped with yesterday's
+        date is promoted to the 'yesterday' slot (restart across midnight)."""
         try:
             with open(self._battery_energy_file, encoding="utf-8") as f:
                 data = json.load(f)
-            if data.get("date") == self._local_today():
-                self._cached_battery_daily_energy = (
-                    float(data.get("charge", 0.0)),
-                    float(data.get("discharge", 0.0)),
+            charge = float(data.get("charge", 0.0))
+            discharge = float(data.get("discharge", 0.0))
+            date = int(data.get("date", 0))
+            today = self._local_today()
+            if date == today:
+                self._cached_battery_daily_energy = (charge, discharge)
+                self._battery_energy_date = date
+                self._battery_energy_yesterday = (
+                    float(data.get("y_charge", 0.0)),
+                    float(data.get("y_discharge", 0.0)),
                 )
-                self._battery_energy_date = int(data["date"])
+            elif date == (self._local_now() - timedelta(days=1)).timetuple().tm_yday:
+                self._battery_energy_yesterday = (charge, discharge)
+                self._battery_energy_date = today  # skip rollover (would zero yesterday)
         except (OSError, ValueError, TypeError):
             pass  # Missing or corrupt file -> start from zero
 
@@ -1692,6 +1708,11 @@ class VictronDBus:
     def get_battery_daily_energy(self) -> tuple[float, float]:
         """Get battery daily charge/discharge energy (kWh) - instant from background cache"""
         return self._cached_battery_daily_energy
+
+    def get_battery_yesterday_energy(self) -> tuple[float, float]:
+        """Get yesterday's battery charge/discharge energy (kWh) - instant from cache.
+        Promoted from today's totals at the local-midnight rollover."""
+        return self._battery_energy_yesterday
 
     def get_total_solar_yield_today(self) -> float:
         """Get total solar production today (kWh) from all sources"""
