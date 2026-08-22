@@ -35,16 +35,15 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     cp "$scriptDir/inverter_control/"*.py "$installDir/inverter_control/"
     chmod +x "$installDir/main.py"
 
-    # Install config from setupOptions or use example
-    if [ -f "/data/setupOptions/$packageName/site_config.py" ]; then
-        cp "/data/setupOptions/$packageName/site_config.py" "$installDir/"
-        logMessage "Using site_config.py from setupOptions"
-    elif [ -f "$scriptDir/site_config.py" ]; then
-        cp "$scriptDir/site_config.py" "$installDir/"
-        logMessage "Using site_config.py from package"
+    # Install config from setupOptions; never clobber an existing config on update
+    if [ -f "/data/setupOptions/$packageName/local_config.py" ]; then
+        cp "/data/setupOptions/$packageName/local_config.py" "$installDir/"
+        logMessage "Using local_config.py from setupOptions"
+    elif [ -f "$installDir/local_config.py" ]; then
+        logMessage "Keeping existing local_config.py"
     else
-        cp "$scriptDir/site_config.example.py" "$installDir/site_config.py"
-        logMessage "WARNING: Using site_config.example.py - configure /data/setupOptions/$packageName/site_config.py"
+        cp "$scriptDir/local_config.example.py" "$installDir/local_config.py"
+        logMessage "WARNING: Installed local_config.example.py as local_config.py - edit TOU hours, HA token, Tasmota IPs (or place your config at /data/setupOptions/$packageName/local_config.py)"
     fi
 fi
 
@@ -52,8 +51,11 @@ fi
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
 
-    # Remove installation directory
+    # Remove installation directory and GUI-editable settings
     rm -rf "$installDir"
+    removeDbusSettings \
+        "/Settings/InverterControl/TouExpensiveStartHour" \
+        "/Settings/InverterControl/TouExpensiveEndHour"
 fi
 
 # Install/uninstall services and finish

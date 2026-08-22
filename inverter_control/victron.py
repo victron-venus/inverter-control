@@ -33,6 +33,8 @@ logger = logging.getLogger("inverter-control")
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
+TOU_START_SETTING = "/Settings/InverterControl/TouExpensiveStartHour"
+TOU_END_SETTING = "/Settings/InverterControl/TouExpensiveEndHour"
 SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
@@ -646,6 +648,32 @@ class VictronDBus:
     def get_local_hour(self) -> int:
         """Hour-of-day in the user's timezone (/Settings/System/TimeZone)."""
         return self._local_now().hour
+
+    @staticmethod
+    def _tou_setting_int(raw: str | None) -> int | None:
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    def get_tou_setting(self, path: str) -> int | None:
+        """Read an integer InverterControl setting (None if missing/unreadable)."""
+        return self._tou_setting_int(self._dbus_get(SETTINGS_SERVICE, path))
+
+    def ensure_tou_settings(self, default_start: int, default_end: int) -> None:
+        """Create the GUI-editable TOU settings with defaults if missing.
+        Existing values are never overwritten, so user edits and reinstalls
+        via PackageManager both survive."""
+        for path, default in (
+            (TOU_START_SETTING, default_start),
+            (TOU_END_SETTING, default_end),
+        ):
+            if self._dbus_get(SETTINGS_SERVICE, path) is None and self._dbus_set(
+                SETTINGS_SERVICE, path, default, "int32"
+            ):
+                logger.info("Created TOU setting %s = %d", path, default)
 
     def _local_today(self) -> int:
         """Day-of-year in the user's timezone (/Settings/System/TimeZone).

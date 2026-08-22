@@ -58,11 +58,18 @@ from inverter_control.console_ui import ConsoleUI
 from inverter_control.dvcc import create_dvcc_from_config
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
-from inverter_control.victron import get_victron
+from inverter_control.victron import (
+    TOU_END_SETTING,
+    TOU_START_SETTING,
+    get_victron,
+)
 from inverter_control.watchdog import HardwareWatchdog, WatchdogTimeoutError
 from inverter_control.webhook_server import get_webhook_server
 
 logger = logging.getLogger("inverter-control")
+
+# How often the GUI-editable TOU settings are re-read from localsettings
+TOU_SETTING_TTL_SECONDS = 60.0
 
 
 def log_exception(msg: str):
@@ -123,6 +130,14 @@ class InverterController:
         # Pre-charge state (triggered by solar-forecast webhook)
         self._pre_charge_requested = False
         self._pre_charge_horizon_hours = 6
+
+        # TOU window settings cache (see _tou_hours)
+        self._tou_cache: tuple[int, int] | None = None
+        self._tou_cache_time = 0.0
+        if not getattr(self.victron, "_test_mode", False):
+            self.victron.ensure_tou_settings(
+                _config.TOU_EXPENSIVE_START_HOUR, _config.TOU_EXPENSIVE_END_HOUR
+            )
 
         # Cached D-Bus data
         self._cached_mppt_data = {}
@@ -234,18 +249,35 @@ class InverterController:
     def _in_expensive_window(self) -> bool:
         """True while inside the TOU expensive window (if configured).
 
+        Hours come from the GUI-editable localsettings entries
+        (/Settings/InverterControl/TouExpensive*) so they can be changed
+        from the Venus Settings menu without SSH. Falls back to the
+        local_config/env values when the settings are unreadable.
         Hour comes from the GX timezone setting (/Settings/System/TimeZone),
         so the window follows the user's wall clock even though the Venus
         system clock runs UTC.
         """
-        start = _config.TOU_EXPENSIVE_START_HOUR
-        end = _config.TOU_EXPENSIVE_END_HOUR
+        start, end = self._tou_hours()
         if start < 0 or end < 0 or start == end:
             return False
         hour = self.victron.get_local_hour()
         if start < end:
             return start <= hour < end
         return hour >= start or hour < end  # wraps midnight
+
+    def _tou_hours(self) -> tuple[int, int]:
+        """TOU window hours from localsettings, refreshed at most once per
+        TOU_SETTING_TTL_SECONDS (subprocess D-Bus reads are not free on RPi)."""
+        now = time.time()
+        if self._tou_cache is None or now - self._tou_cache_time >= TOU_SETTING_TTL_SECONDS:
+            start = self.victron.get_tou_setting(TOU_START_SETTING)
+            end = self.victron.get_tou_setting(TOU_END_SETTING)
+            self._tou_cache = (
+                _config.TOU_EXPENSIVE_START_HOUR if start is None else start,
+                _config.TOU_EXPENSIVE_END_HOUR if end is None else end,
+            )
+            self._tou_cache_time = now
+        return self._tou_cache
 
     def _handle_pre_charge_webhook(self, payload: dict) -> bool:
         """Handle pre-charge webhook from solar-forecast-langgraph.
