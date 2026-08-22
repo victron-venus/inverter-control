@@ -10,7 +10,8 @@ import math
 import queue
 import threading
 from collections.abc import Callable
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 logger = logging.getLogger("inverter-control")
 
@@ -189,6 +190,40 @@ class MQTTBridge:
             pass  # Drop console lines silently when queue full
         except Exception as e:
             logger.debug(f"MQTT console queue error: {e}")
+
+    def publish_notification(
+        self,
+        notification_id: str,
+        level: Literal["info", "warning", "alarm"],
+        title: str,
+        body: str = "",
+        source: str = "inverter-control",
+    ):
+        """Publish user-facing notification to {prefix}/notifications (async, non-blocking).
+
+        Consumed by inverter-desktop banner; deduplicated by consumers on notification_id.
+        """
+        if not self._connected:
+            logger.debug("MQTT not connected, dropping notification %s", notification_id)
+            return
+
+        payload = json.dumps(
+            {
+                "id": notification_id,
+                "level": level,
+                "title": title,
+                "body": body,
+                "source": source,
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        )
+        try:
+            self._ensure_publish_thread()
+            self._publish_queue.put_nowait((f"{self.prefix}/notifications", payload, 0, False))
+        except queue.Full:
+            logger.debug("MQTT publish queue full, dropping notification %s", notification_id)
+        except Exception as e:
+            logger.debug(f"MQTT notification publish error: {e}")
 
     def flush(self):
         """Wait for publish queue to empty (for testing)"""

@@ -4,6 +4,7 @@ import logging
 import signal
 import time
 import traceback
+from datetime import UTC, datetime
 from typing import Any
 
 import inverter_control.config as _config
@@ -250,6 +251,25 @@ class InverterController:
             # the state.charge_battery flag directly
             self._pre_charge_requested = True
             self._pre_charge_horizon_hours = horizon_hours
+
+            # Notify dashboards (id is hour-scoped so consumers can dedupe)
+            from inverter_control.mqtt_bridge import (  # pylint: disable=import-outside-toplevel
+                get_mqtt_bridge,
+            )
+
+            bridge = get_mqtt_bridge()
+            if bridge:
+                notification_id = "precharge-" + datetime.now(UTC).strftime("%Y%m%d-%H")
+                bridge.publish_notification(
+                    notification_id=notification_id,
+                    level="info",
+                    title="Pre-charge triggered",
+                    body=(
+                        f"Low solar forecast: {forecast_wh / 1000:.1f} kWh "
+                        f"< {threshold_wh / 1000:.1f} kWh in {horizon_hours}h"
+                    ),
+                    source="solar-forecast",
+                )
             return True
         except Exception:
             logger.exception("Error handling pre-charge webhook")
