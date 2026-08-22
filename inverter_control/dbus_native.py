@@ -30,10 +30,13 @@ except ImportError:  # Development machines without dbus-fast: CLI fallback only
     _DBUS_FAST_AVAILABLE = False
 
 BUSITEM_INTERFACE = "com.victronenergy.BusItem"
+DBUS_DAEMON = "org.freedesktop.DBus"
+DBUS_DAEMON_PATH = "/org/freedesktop/DBus"
 SYSTEM_BUS_ADDRESS = os.environ.get(
     "DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/var/run/dbus/system_bus_socket"
 )
 CONNECT_TIMEOUT = 2.0
+MATCH_TIMEOUT = 1.0
 # After a failure, skip native calls briefly so the CLI fallback takes over
 # while the bus recovers; next call after cooldown reconnects automatically.
 RECONNECT_COOLDOWN = 5.0
@@ -64,6 +67,14 @@ class NativeDbusClient:
         self._bus = None
         self._state_lock = threading.Lock()
         self._fail_until = 0.0
+        # Signal subscription support (PropertiesChanged)
+        self._signal_handlers: list = []  # callbacks (path, value_str)
+        self._handlers_lock = threading.Lock()
+        # Armed match rules (strings), replayed after reconnect
+        self._subscriptions: set[str] = set()
+        # Called after a lost connection is re-established, so the owner can
+        # refetch initial values (signals only fire on change).
+        self.on_reconnect = None
 
     # ------------------------------------------------------------------ #
     # Loop / connection lifecycle                                        #
@@ -82,11 +93,51 @@ class NativeDbusClient:
         from dbus_fast.aio.message_bus import MessageBus
 
         async def _connect():
-            return await MessageBus(bus_address=SYSTEM_BUS_ADDRESS).connect()
+            bus = await MessageBus(bus_address=SYSTEM_BUS_ADDRESS).connect()
+            bus.add_message_handler(self._handle_message)
+            return bus
 
         self._bus = asyncio.run_coroutine_threadsafe(_connect(), self._ensure_loop()).result(
             CONNECT_TIMEOUT
         )
+        if self._subscriptions:
+            # Re-arm match rules; signals don't survive a disconnect
+            self._replay_subscriptions()
+
+    def _replay_subscriptions(self):
+        """Re-arm match rules after a (re)connect; signals don't survive disconnects."""
+        for rule in list(self._subscriptions):
+            try:
+                self._send_add_match(rule)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("Native D-Bus re-subscribe failed (%s): %s", rule, e)
+        if self.on_reconnect is not None:
+            try:
+                self.on_reconnect()
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("Native D-Bus on_reconnect handler failed: %s", e)
+
+    def _build_rule(self, service: str, member: str, path: str) -> str:
+        return (
+            f"type='signal',sender='{service}',"
+            f"interface='{BUSITEM_INTERFACE}',member='{member}',path='{path}'"
+        )
+
+    def _send_add_match(self, rule: str):
+        from dbus_fast import Message
+
+        message = Message(
+            destination=DBUS_DAEMON,
+            path=DBUS_DAEMON_PATH,
+            interface="org.freedesktop.DBus",
+            member="AddMatch",
+            body=[rule],
+            signature="s",
+        )
+        future = asyncio.run_coroutine_threadsafe(self._bus.call(message), self._loop)
+        reply = future.result(MATCH_TIMEOUT)
+        if reply.message_type != MessageType.METHOD_RETURN:
+            raise ConnectionError(f"AddMatch rejected: {reply.message_type}")
 
     def _get_bus(self):
         """Return a connected bus or None (cooldown active / connect failed)."""
@@ -204,6 +255,76 @@ class NativeDbusClient:
             logger.warning("SetValue %s%s rejected: %s", service, path, reply.body[0])
             return False
         return True
+
+    # ------------------------------------------------------------------ #
+    # Signal subscriptions (BusItem change signals)                      #
+    # ------------------------------------------------------------------ #
+    # Venus services announce changes in two shapes, and which one they use
+    # depends on the service implementation:
+    #   - per-item PropertiesChanged on the item's object path
+    #   - bulk ItemsChanged on "/" carrying {object_path: {Value, Text}}
+    # Verified live: com.victronenergy.system (dbus-systemcalc-py) only emits
+    # ItemsChanged; battery/vebus-style services emit per-item signals too.
+
+    def add_signal_handler(self, callback):
+        """Register callback(path: str, value: str | None) for matched signals."""
+
+        with self._handlers_lock:
+            self._signal_handlers.append(callback)
+
+    def subscribe_signal(self, service: str, member: str, path: str) -> bool:
+        """Arm one match rule. Idempotent; re-armed automatically after a
+        reconnect. Initial values must still be fetched (signals fire on
+        change only)."""
+        rule = self._build_rule(service, member, path)
+        if rule in self._subscriptions:
+            return True
+
+        bus = self._get_bus()
+        if bus is None:
+            return False
+        try:
+            self._send_add_match(rule)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Native D-Bus subscribe %s failed: %s", rule, e)
+            return False
+        self._subscriptions.add(rule)
+        return True
+
+    def subscribe_busitem(self, service: str, path: str) -> bool:
+        """Forward per-item PropertiesChanged for one BusItem object."""
+        return self.subscribe_signal(service, "PropertiesChanged", path)
+
+    def subscribe_service_items(self, service: str) -> bool:
+        """Forward the bulk ItemsChanged signal a service emits on '/'."""
+        return self.subscribe_signal(service, "ItemsChanged", "/")
+
+    def _handle_message(self, message):
+        """Dispatch BusItem change signals to registered handlers.
+
+        Runs on the event-loop thread; handlers are called inline and must be
+        quick (they update caches only).
+        """
+        try:
+            if message.message_type != MessageType.SIGNAL or message.interface != BUSITEM_INTERFACE:
+                return
+            if message.member == "ItemsChanged" and message.path == "/":
+                items = message.body[0] if message.body else {}
+                for obj_path, props in items.items():
+                    self._dispatch(obj_path, props)
+            elif message.member == "PropertiesChanged":
+                props = message.body[0] if message.body else {}
+                self._dispatch(message.path, props)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Native D-Bus signal dispatch failed: %s", e)
+
+    def _dispatch(self, path: str, props):
+        value = getattr(props.get("Value"), "value", None)
+        formatted = _format_value(value)
+        with self._handlers_lock:
+            handlers = list(self._signal_handlers)
+        for callback in handlers:
+            callback(path, formatted)
 
 
 def _format_value(value) -> str | None:

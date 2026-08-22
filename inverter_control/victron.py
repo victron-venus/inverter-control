@@ -59,6 +59,24 @@ BATTERY_CELL_SERVICES = [BATTERY_CHAIN_1, BATTERY_CHAIN_2]
 # How often the background poller refreshes the cell-data cache.
 CELL_DATA_POLL_INTERVAL = 30
 
+# Fast inputs driven by BusItem PropertiesChanged signals instead of the 5Hz
+# tree polls; the tree queries remain only as a slow reconciliation pass
+# against missed events. gt/tt are derived (g1+g2 / t1+t2) like the parser.
+SYSTEM_SIGNAL_PATHS = {
+    "/Ac/Grid/L1/Power": "g1",
+    "/Ac/Grid/L2/Power": "g2",
+    "/Ac/Consumption/L1/Power": "t1",
+    "/Ac/Consumption/L2/Power": "t2",
+    "/Dc/Battery/Voltage": "bv",
+    "/Dc/Battery/Current": "bc",
+    "/Dc/Battery/Power": "bp",
+    "/Dc/Pv/Power": "pv_total",
+}
+VEBUS_STATE_PATH = "/State"
+VEBUS_INV_POWER_PATH = "/Devices/0/Ac/Inverter/P"
+# While signals are healthy, hot tree polls run only this often
+SIGNAL_RECONCILE_INTERVAL = 30.0
+
 
 class VictronDBus:
     """
@@ -68,6 +86,10 @@ class VictronDBus:
     with dbus-send subprocess fallback; the background tree polling stays
     on dbus-send for now (not in the control-loop hot path).
     """
+
+    # Total dbus-send invocations (perf metric; class default covers
+    # instances created without __init__, e.g. in tests)
+    subprocess_calls = 0
 
     # Auto-rescan thresholds
     RESCAN_ERROR_THRESHOLD = 5  # Rescan after N consecutive errors
@@ -154,6 +176,12 @@ class VictronDBus:
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
 
+        # Signal-driven fast inputs (see SYSTEM_SIGNAL_PATHS)
+        self._signal_paths_subscribed = False
+        self._signal_handler_attached = False
+        self._last_signal_reconcile = 0.0
+        self._last_signal_setup_try = 0.0
+
         # Background polling thread (like HA does) - skip in test mode
         self._poll_thread: threading.Thread | None = None
         self._poll_stop_event = threading.Event()
@@ -163,6 +191,90 @@ class VictronDBus:
             self._start_background_polling()
 
         self._discover_services()
+
+        if self._native is not None:
+            self._setup_fast_signals()
+
+    def _fast_targets(self) -> list[tuple[str, str]]:
+        """(service, path) pairs for all signal-driven fast inputs."""
+        targets = [(SYSTEM_SERVICE, path) for path in SYSTEM_SIGNAL_PATHS]
+        if self._vebus_service:
+            targets.append((self._vebus_service, VEBUS_STATE_PATH))
+            targets.append((self._vebus_service, VEBUS_INV_POWER_PATH))
+        return targets
+
+    def _setup_fast_signals(self):
+        """Subscribe to BusItem change signals for the fast inputs and seed values.
+
+        com.victronenergy.system (dbus-systemcalc-py) announces changes via the
+        bulk ItemsChanged snapshot on "/" and not per-item signals, so both
+        shapes are armed. Signals fire on change only, so current values are
+        fetched once here; the reconnect hook re-seeds them after a drop."""
+        if self._native is None:
+            return
+        self._last_signal_setup_try = time.time()
+        if not self._signal_handler_attached:
+            self._native.on_reconnect = self._seed_fast_values
+            self._native.add_signal_handler(self._on_fast_signal)
+            self._signal_handler_attached = True
+
+        subscribed = [self._native.subscribe_service_items(SYSTEM_SERVICE)]
+        if self._vebus_service:
+            # vebus is a C++ service; arm both signal shapes for it
+            subscribed.append(self._native.subscribe_service_items(self._vebus_service))
+            subscribed.append(self._native.subscribe_busitem(self._vebus_service, VEBUS_STATE_PATH))
+            subscribed.append(
+                self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH)
+            )
+        self._signal_paths_subscribed = all(subscribed)
+        if not all(subscribed):
+            logger.debug(
+                "Fast signal subscribe incomplete (%d/%d)", sum(subscribed), len(subscribed)
+            )
+
+        self._seed_fast_values()
+
+    def _seed_fast_values(self):
+        """Fetch current values for all subscribed paths (initial/reconnect)."""
+        if self._native is None:
+            return
+        for service, path in self._fast_targets():
+            self._apply_fast_value(path, self._native.get_value(service, path))
+        self._last_signal_reconcile = time.time()
+
+    def _signals_healthy(self) -> bool:
+        """True when all fast-input subscriptions are armed on the live bus."""
+        return bool(self._native is not None and self._signal_paths_subscribed)
+
+    def _on_fast_signal(self, path: str, raw: str | None):
+        """PropertiesChanged handler: routes one payload into the caches."""
+        self._apply_fast_value(path, raw)
+
+    def _apply_fast_value(self, path: str, raw: str | None):
+        """Apply one fast-input reading (signal or seed fetch) to the caches."""
+        if raw is None:
+            return
+        now = time.time()
+        try:
+            if path in SYSTEM_SIGNAL_PATHS:
+                key = SYSTEM_SIGNAL_PATHS[path]
+                val = float(raw)
+                self._system_data[key] = round(val) if key not in ("bv", "bc") else val
+                self._system_data["gt"] = int(
+                    self._system_data.get("g1", 0) + self._system_data.get("g2", 0)
+                )
+                self._system_data["tt"] = int(
+                    self._system_data.get("t1", 0) + self._system_data.get("t2", 0)
+                )
+                self._system_data["_last_update"] = now
+            elif path == VEBUS_STATE_PATH:
+                code = int(float(raw))
+                self._cached_inverter_state = (code, INVERTER_STATES.get(code, f"? ({code})"))
+                self._last_inverter_state_time = now
+            elif path == VEBUS_INV_POWER_PATH:
+                self._system_data["inv_power"] = int(float(raw))
+        except (ValueError, TypeError):
+            pass  # non-numeric payload (e.g. NULL variant); next event fixes it
 
     def _discover_services(self):
         """Discover VE.Bus, MPPT, acload, and Tasmota PV inverter services"""
@@ -267,8 +379,20 @@ class VictronDBus:
     def _poll_all(self):
         """Poll all D-Bus data in one pass"""
 
-        # Poll system data (tree query)
-        self._poll_system_data()
+        # Fast inputs (grid/battery/inverter) arrive via PropertiesChanged
+        # signals while subscriptions are healthy; tree polls then only
+        # reconcile every SIGNAL_RECONCILE_INTERVAL against missed events.
+        if self._signals_healthy():
+            if time.time() - self._last_signal_reconcile >= SIGNAL_RECONCILE_INTERVAL:
+                self._poll_system_data()
+                self._poll_inverter_state()
+                self._poll_inverter_power()
+                self._last_signal_reconcile = time.time()
+        else:
+            if self._native is not None and time.time() - self._last_signal_setup_try > 60:
+                self._setup_fast_signals()  # retry failed subscriptions (e.g. boot)
+            # Poll system data (tree query)
+            self._poll_system_data()
 
         # Poll MPPT data (tree query per MPPT)
         if self._mppt_services:
@@ -287,12 +411,6 @@ class VictronDBus:
 
         # Poll battery chain cell data (throttled to every 30s)
         self._poll_battery_cell_data_tree()
-
-        # Poll inverter state
-        self._poll_inverter_state()
-
-        # Poll inverter power
-        self._poll_inverter_power()
 
         # Poll daily yields and battery energy (throttled to every 5s)
         self._poll_daily_yields()
@@ -797,6 +915,7 @@ class VictronDBus:
 
     def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> str | None:
         """Run subprocess with strict timeout and error handling"""
+        self.subprocess_calls += 1
         try:
             # Use start_new_session to be able to kill the whole process group
             result = subprocess.run(
@@ -930,8 +1049,13 @@ class VictronDBus:
         """
         Get all system data - now returns instantly from background-poll cache.
         """
-        # Return cached data from background polling
-        if self._system_data and time.time() - self._system_data.get("_last_update", 0) < 1.0:
+        # Return cached data from background polling. While signal-driven,
+        # values are current by construction even without recent changes.
+        cache_fresh = self._system_data and (
+            time.time() - self._system_data.get("_last_update", 0) < 1.0
+            or (self._signals_healthy() and self._system_data.get("_last_update", 0) > 0)
+        )
+        if cache_fresh:
             return dict(self._system_data)
 
         # Fallback: synchronous call if cache stale (should rarely happen)
