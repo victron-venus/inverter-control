@@ -662,6 +662,39 @@ class VictronDBus:
         """Read an integer InverterControl setting (None if missing/unreadable)."""
         return self._tou_setting_int(self._dbus_get(SETTINGS_SERVICE, path))
 
+    def _dbus_add_setting(self, group: str, name: str, value: int) -> bool:
+        """Create a localsettings entry via com.victronenergy.Settings.AddSetting.
+
+        SetValue on a nonexistent path is rejected - new settings must be
+        registered through AddSetting (group, name, default variant:int32,
+        type 'i', min/max variant:int32). Returns True on completion code 0.
+        """
+        with self._dbus_lock:
+            result = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--type=method_call",
+                    "--print-reply",
+                    f"--dest={SETTINGS_SERVICE}",
+                    "/Settings",
+                    "com.victronenergy.Settings.AddSetting",
+                    f"string:{group}",
+                    f"string:{name}",
+                    f"variant:int32:{value}",
+                    "string:i",
+                    "variant:int32:-1",
+                    "variant:int32:24",
+                ],
+                timeout=0.5,
+            )
+        if not result:
+            return False
+        try:
+            return int(result.split()[-1]) == 0
+        except ValueError:
+            return False
+
     def ensure_tou_settings(self, default_start: int, default_end: int) -> None:
         """Create the GUI-editable TOU settings with defaults if missing.
         Existing values are never overwritten, so user edits and reinstalls
@@ -670,9 +703,11 @@ class VictronDBus:
             (TOU_START_SETTING, default_start),
             (TOU_END_SETTING, default_end),
         ):
-            if self._dbus_get(SETTINGS_SERVICE, path) is None and self._dbus_set(
-                SETTINGS_SERVICE, path, default, "int32"
-            ):
+            if self._dbus_get(SETTINGS_SERVICE, path) is not None:
+                continue
+            group, name = path.rstrip("/").rsplit("/", 1)
+            group = group.removeprefix("/Settings/")
+            if self._dbus_add_setting(group, name, default):
                 logger.info("Created TOU setting %s = %d", path, default)
 
     def _local_today(self) -> int:

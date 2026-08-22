@@ -4,6 +4,5 @@ requests>=2.34.2
 # MsgPack for efficient binary serialization
 msgpack>=1.2.1
 
-# D-Bus (optional - for native D-Bus access instead of subprocess)
-pydbus>=0.6.0
-# python-dbus is a system dependency required by pydbus: apt install python3-dbus
+# D-Bus (persistent dbus_fast connection for Get/Set; preinstalled on Venus OS)
+dbus-fast>=2.21.1

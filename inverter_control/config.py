@@ -206,6 +206,12 @@ LOOP_INTERVAL = 0.33  # seconds (3 times per second)
 HA_POLL_INTERVAL = 1.5  # seconds for Home Assistant polling
 NO_FEED_SLEEP_INTERVAL = 1.0  # seconds to sleep in no_feed mode (slows loop to ~1 Hz)
 
+# Persistent native D-Bus connection (dbus_fast) for Get/Set calls, replacing
+# per-call dbus-send subprocesses in the hot path. Automatically falls back
+# to dbus-send when the connection is unavailable. Set env USE_NATIVE_DBUS=0
+# to force the CLI path.
+USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "false")
+
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 80  # Watts - upper bound (slight import OK)
