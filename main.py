@@ -37,10 +37,6 @@ from inverter_control.controller import (
     InverterController,
     log_exception,
 )
-from inverter_control.watchdog import (  # noqa: F401
-    HardwareWatchdog,
-    WatchdogTimeoutError,
-)
 
 # =============================================================================
 # LOGGING SETUP - All errors go to file
@@ -165,6 +161,17 @@ def _setup_mqtt_bridge(controller):
     return bridge
 
 
+def _write_heartbeats(heartbeat_file: str, watchdog_heartbeat_file: str) -> None:
+    """Write heartbeat files for the internal and external watchdogs."""
+    try:
+        with open(heartbeat_file, "w", encoding="utf-8") as f:
+            f.write(str(int(time.time())))
+        with open(watchdog_heartbeat_file, "w", encoding="utf-8") as f:
+            f.write(str(int(time.time())))
+    except OSError:
+        pass  # Ignore if heartbeat fails
+
+
 def _run_main_loop(controller, mqtt_bridge):
     """Run the main control loop until exit or error."""
     gc_interval = 300
@@ -195,13 +202,7 @@ def _run_main_loop(controller, mqtt_bridge):
                     mqtt_bridge.publish_console(controller.last_console_line)
 
             # Write heartbeat for watchdog
-            try:
-                with open(heartbeat_file, "w", encoding="utf-8") as f:
-                    f.write(str(int(time.time())))
-                with open(watchdog_heartbeat_file, "w", encoding="utf-8") as f:
-                    f.write(str(int(time.time())))
-            except OSError:
-                pass  # Ignore if heartbeat fails
+            _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
 
             now = time.time()
             if now - last_gc_time > gc_interval:

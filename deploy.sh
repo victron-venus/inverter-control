@@ -18,7 +18,6 @@ set -e
 
 SSH_HOST="${1:-Cerbo}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="/data/inverter-control"
 DEPLOY_DIR="/data/.inverter-control-deploy"
 SEPARATOR="=============================================="
 
@@ -64,7 +63,7 @@ for i in $(seq 1 15); do
     sleep 1
     STATUS="$(ssh "$SSH_HOST" "svstat /service/inverter-control 2>&1")" \
         && printf '%s\n' "$STATUS" && break
-    [ "$i" = "15" ] && echo "$STATUS" && exit 1
+    [[ "$i" == "15" ]] && echo "$STATUS" && exit 1
 done
 
 echo ""
