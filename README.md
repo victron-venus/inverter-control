@@ -155,7 +155,7 @@ inverter-control/              # Git repo root
 ├── inverter_control/          # Python package
 │   ├── __init__.py
 │   ├── config.py              # Non-sensitive parameters (tuning, limits, flags)
-│   ├── site_config.py             # Sensitive config — NOT in git (see site_config.example.py)
+│   ├── local_config.py        # Sensitive config — NOT in git (see local_config.example.py)
 │   ├── logic.py               # SetpointCalculator, strategies, EMA, burst, D-term
 │   ├── victron.py             # D-Bus I/O — background 5 Hz polling thread, cached reads (< 1 ms)
 │   ├── homeassistant.py       # HA API polling with circuit breaker
@@ -170,7 +170,7 @@ inverter-control/              # Git repo root
 ├── version                    # Current version (read by PackageManager)
 ├── deploy.sh                  # SSH deploy to Cerbo/Pi (dev workflow)
 ├── install.sh                 # Manual installer (legacy, prefer setup)
-├── site_config.example.py         # Template for site_config.py
+├── local_config.example.py    # Template for local_config.py
 ├── tests/
 │   └── test_logic.py          # Unit tests for control logic
 ├── services/
@@ -186,8 +186,8 @@ inverter-control/              # Git repo root
 
 ## Configuration
 
-1. Copy `site_config.example.py` to `site_config.py`
-2. Edit `site_config.py` with your actual values:
+1. Copy `local_config.example.py` to `local_config.py`
+2. Edit `local_config.py` with your actual values:
 
 ```python
 # Home Assistant connection
@@ -197,11 +197,16 @@ HA_TOKEN = "your_long_lived_access_token"
 # Victron Portal ID (VRM) is auto-detected at runtime
 # (/sbin/get-unique-id, fallback: eth0 MAC) — nothing to configure
 
+# Time-of-use expensive grid window (local hours; -1/-1 disables).
+# Solar-forecast pre-charge is suppressed inside [START, END).
+TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
+TOU_EXPENSIVE_END_HOUR = 24  # midnight
+
 # Tasmota device IPs
 TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
 
 # HA Sensors, VUE sensors, booleans, etc.
-# See site_config.example.py for full template
+# See local_config.example.py for full template
 ```
 
 3. Edit `config.py` for non-sensitive parameters:
@@ -254,10 +259,11 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 
 3. **Configure secrets** (from your local machine):
    ```bash
-   cp site_config.example.py site_config.py
-   # Edit site_config.py with your HA token, Tasmota IPs, sensor names, etc.
-   scp site_config.py root@cerbo:/data/inverter-control/
+   cp local_config.example.py local_config.py
+   # Edit local_config.py with your TOU hours, HA token, Tasmota IPs, sensor names, etc.
+   scp local_config.py root@cerbo:/data/setupOptions/inverter-control/
    ```
+   Config in `/data/setupOptions/` survives package reinstalls; a copy directly in `/data/inverter-control/` also works (kept on update once installed).
 
 4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
 
@@ -266,7 +272,7 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 PackageManager discovers packages by scanning `/data/` for directories containing both a `version` file and a `setup` script. The `setup` script (sourced from this repo) is executed with the `INSTALL` action by SetupHelper, which:
 
 - Creates `/data/inverter-control/` and copies `main.py` + `inverter_control/` package
-- Copies `site_config.py` from `/data/setupOptions/inverter-control/` or the package
+- Installs `local_config.py` from `/data/setupOptions/inverter-control/`; if absent but the install dir already has one, keeps it; otherwise installs `local_config.example.py` as a starting point
 - Creates the daemontools service under `/service/inverter-control/`
 - Restarts the service
 

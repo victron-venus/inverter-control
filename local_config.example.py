@@ -21,6 +21,16 @@ HA_TOKEN = "your_long_lived_access_token_here"
 # (fallback: eth0 MAC address). No need to configure it here.
 
 # =============================================================================
+# TIME-OF-USE EXPENSIVE GRID WINDOW (local hours)
+# =============================================================================
+# Solar-forecast pre-charge is suppressed while the wall-clock hour (from the
+# GX /Settings/System/TimeZone setting) is inside [START, END).
+# Set both to -1 to disable. Windows may wrap midnight (e.g. 22 -> 6).
+
+TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
+TOU_EXPENSIVE_END_HOUR = 24  # midnight
+
+# =============================================================================
 # TASMOTA DEVICES
 # =============================================================================
 

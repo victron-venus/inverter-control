@@ -125,9 +125,23 @@ WEBHOOK_SERVER_PORT = 8081
 # Forecast pre-charge is suppressed while inside the window so the battery
 # never force-charges from expensive grid power. Set both to -1 to disable.
 # Handles windows that wrap midnight (e.g. 22 -> 6).
+# Resolution order: local_config.py -> environment variable -> default.
 # =============================================================================
-TOU_EXPENSIVE_START_HOUR = int(os.environ.get("TOU_EXPENSIVE_START_HOUR", "15"))
-TOU_EXPENSIVE_END_HOUR = int(os.environ.get("TOU_EXPENSIVE_END_HOUR", "24"))
+
+
+def _tou_hour(name: str, default: int) -> int:
+    """Read a TOU window hour from local_config, then env, then default."""
+    raw = _import_local_config(name, None)
+    if raw is None or str(raw).strip() == "":
+        raw = os.environ.get(name, "")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+TOU_EXPENSIVE_START_HOUR = _tou_hour("TOU_EXPENSIVE_START_HOUR", 15)
+TOU_EXPENSIVE_END_HOUR = _tou_hour("TOU_EXPENSIVE_END_HOUR", 24)
 
 # =============================================================================
 # RUNTIME MODE
