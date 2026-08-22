@@ -16,4 +16,4 @@ permissions:
 jobs:
   scorecard:
     name: Scorecard
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/scorecard.yml@4eaa91b6cdcc192a7ac3bc9d074042f70eb403cc
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/scorecard.yml@5b18667880c7a0154b7c7e6686042eff5f47cdb7
