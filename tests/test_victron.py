@@ -782,5 +782,58 @@ class TestGetVictron:
         assert v1 is v2
 
 
+class TestPollDailyYields:
+    """_poll_daily_yields reads published counters directly - no midnight arithmetic"""
+
+    def setup_method(self):
+        victron.reset_victron_for_testing()
+
+    def teardown_method(self):
+        victron.reset_victron_for_testing()
+
+    @patch("inverter_control.victron.subprocess.run")
+    def test_reads_daily_and_yesterday_paths(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        v = victron.get_victron(test_mode=True)
+        v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB1"]
+        v._pv_inverter_services = ["com.victronenergy.pvinverter.tasmota_1"]
+
+        reads: list[tuple[str, str]] = []
+
+        def fake_get(service, path):
+            reads.append((service, path))
+            return {
+                "/History/Daily/0/Yield": 4.0,
+                "/History/Daily/1/Yield": 3.0,
+                victron.TASMOTA_ENERGY_DAILY_PATH: 2.0,
+                victron.TASMOTA_ENERGY_YESTERDAY_PATH: 1.5,
+            }.get(path, 0.0)
+
+        with patch.object(v, "_get_float_nolock", side_effect=fake_get):
+            v._poll_daily_yields()
+
+        assert v._cached_mppt_daily_yields == [4.0]
+        assert v._cached_mppt_yesterday_yields == [3.0]
+        assert v._cached_tasmota_daily_yields == [2.0]
+        assert v._cached_tasmota_yesterday_yields == [1.5]
+
+    @patch("inverter_control.victron.subprocess.run")
+    def test_lifetime_forward_path_not_polled(self, mock_run):
+        """Daily yield must come from /Ac/Energy/Daily, not lifetime-minus-midnight"""
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        v = victron.get_victron(test_mode=True)
+        v._pv_inverter_services = ["com.victronenergy.pvinverter.tasmota_1"]
+        v._mppt_services = []
+
+        reads: list[str] = []
+        with patch.object(
+            v, "_get_float_nolock", side_effect=lambda s, path: reads.append(path) or 7.5
+        ):
+            v._poll_daily_yields()
+
+        assert victron.TASMOTA_ENERGY_FORWARD_PATH not in reads
+        assert victron.TASMOTA_ENERGY_DAILY_PATH in reads
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

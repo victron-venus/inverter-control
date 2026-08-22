@@ -37,6 +37,9 @@ SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
 TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
+TASMOTA_ENERGY_DAILY_PATH = "/Ac/Energy/Daily"
+# Published by dbus-tasmota-pv >= 3.0 (Tasmota ENERGY.Yesterday)
+TASMOTA_ENERGY_YESTERDAY_PATH = "/Energy/Daily/Yesterday"
 AC_POWER_PATH = "/Ac/Power"
 # Battery daily energy is integrated from battery power (no D-Bus history on
 # dbus-systemcalc-py based systems). State file survives service restarts.
@@ -108,9 +111,11 @@ class VictronDBus:
         self._last_acload_time: float = 0.0
         # Cache for discovered Tasmota PV inverter services
         self._pv_inverter_services: list = []
-        # Cache for daily yields (MPPT + Tasmota) and battery daily energy
+        # Cache for daily/yesterday yields (MPPT + Tasmota) and battery daily energy
         self._cached_mppt_daily_yields: list[float] = []
         self._cached_tasmota_daily_yields: list[float] = []
+        self._cached_mppt_yesterday_yields: list[float] = []
+        self._cached_tasmota_yesterday_yields: list[float] = []
         self._cached_battery_daily_energy: tuple[float, float] = (0.0, 0.0)
         self._last_daily_yields_time: float = 0.0
         self._last_battery_daily_energy_time: float = 0.0
@@ -119,9 +124,6 @@ class VictronDBus:
         self._last_all_batteries_time: float = 0.0
         self._cached_mppt_chargers: list = []
         self._last_mppt_chargers_time: float = 0.0
-        # Midnight tracker for Tasmota daily yield calculation
-        self._pv_midnight_kwh: list[float] = []
-        self._pv_midnight_date: int = 0
         # Battery daily energy integration state (charge/discharge kWh)
         self._battery_energy_file = BATTERY_ENERGY_STATE_FILE
         self._battery_energy_date: int = 0
@@ -602,46 +604,30 @@ class VictronDBus:
             self._consecutive_errors += 1
 
     def _poll_daily_yields(self):
-        """Poll daily yields for MPPT chargers and Tasmota inverters (throttled to 5s)"""
+        """Poll daily/yesterday yields for MPPT chargers and Tasmota inverters (throttled to 5s)"""
         now = time.time()
         if now - self._last_daily_yields_time < 5.0:
             return
 
-        # MPPT daily yields (no lock - background thread)
-        mppt_yields = []
-        for service in self._mppt_services:
-            mppt_yields.append(self._get_float_nolock(service, "/History/Daily/0/Yield"))
-        self._cached_mppt_daily_yields = mppt_yields
+        # MPPT: /History/Daily/0 is today, /1 is yesterday (no lock - background thread)
+        self._cached_mppt_daily_yields = [
+            self._get_float_nolock(service, "/History/Daily/0/Yield")
+            for service in self._mppt_services
+        ]
+        self._cached_mppt_yesterday_yields = [
+            self._get_float_nolock(service, "/History/Daily/1/Yield")
+            for service in self._mppt_services
+        ]
 
-        # Tasmota daily yields (lifetime - midnight reference)
-        tasmota_yields = []
-        today = self._local_today()
-        for i, service in enumerate(self._pv_inverter_services):
-            lifetime_kwh = self._get_float_nolock(service, TASMOTA_ENERGY_FORWARD_PATH)
-            if lifetime_kwh <= 0:
-                tasmota_yields.append(0.0)
-                continue
-
-            # Initialize midnight tracker on first use
-            if not self._pv_midnight_kwh or len(self._pv_midnight_kwh) <= i:
-                self._pv_midnight_kwh = [
-                    self._get_float_nolock(s, TASMOTA_ENERGY_FORWARD_PATH)
-                    for s in self._pv_inverter_services
-                ]
-                self._pv_midnight_date = today
-
-            # Reset midnight reference on new day
-            if today != self._pv_midnight_date:
-                self._pv_midnight_kwh = [
-                    self._get_float_nolock(s, TASMOTA_ENERGY_FORWARD_PATH)
-                    for s in self._pv_inverter_services
-                ]
-                self._pv_midnight_date = today
-
-            daily_yield = lifetime_kwh - self._pv_midnight_kwh[i]
-            tasmota_yields.append(max(0.0, daily_yield))
-
-        self._cached_tasmota_daily_yields = tasmota_yields
+        # Tasmota: dbus-tasmota-pv publishes both counters directly from the
+        # plug telemetry (ENERGY.Today / ENERGY.Yesterday) - no arithmetic here.
+        self._cached_tasmota_daily_yields = [
+            self._get_float_nolock(s, TASMOTA_ENERGY_DAILY_PATH) for s in self._pv_inverter_services
+        ]
+        self._cached_tasmota_yesterday_yields = [
+            self._get_float_nolock(s, TASMOTA_ENERGY_YESTERDAY_PATH)
+            for s in self._pv_inverter_services
+        ]
         self._last_daily_yields_time = now
 
     def _local_today(self) -> int:
@@ -1469,6 +1455,14 @@ class VictronDBus:
     def get_pv_inverter_daily_yields(self) -> list[float]:
         """Get daily yield (kWh) for each Tasmota PV inverter - instant from background cache"""
         return list(self._cached_tasmota_daily_yields)
+
+    def get_mppt_yesterday_yields(self) -> list[float]:
+        """Get yesterday's yield (kWh) for each MPPT charger - instant from background cache"""
+        return list(self._cached_mppt_yesterday_yields)
+
+    def get_pv_inverter_yesterday_yields(self) -> list[float]:
+        """Get yesterday's yield (kWh) for each Tasmota PV inverter - instant from cache"""
+        return list(self._cached_tasmota_yesterday_yields)
 
     def get_battery_daily_energy(self) -> tuple[float, float]:
         """Get battery daily charge/discharge energy (kWh) - instant from background cache"""

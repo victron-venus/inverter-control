@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.0] - 2026-08-21
+
+### Changed
+- **Tasmota daily yields are no longer computed synthetically**: `_poll_daily_yields`
+  reads `/Ac/Energy/Daily` published by dbus-tasmota-pv (Tasmota's own `ENERGY.Today`
+  counter) instead of subtracting a midnight reference from the lifetime counter.
+  Removes the `_pv_midnight_kwh` tracker and its timezone/reset edge cases
+- MPPT yesterday yield is now read from `/History/Daily/1/Yield`
+
+### Added
+- Yesterday production in `daily_stats` on `inverter/state`: `produced_yesterday`,
+  `tasmota_yesterday[]`, `mppt_yesterday[]` (Tasmota yesterday comes from the new
+  dbus-tasmota-pv 3.0 path `/Energy/Daily/Yesterday`; older module versions report 0)
+
 ## [1.20.0] - 2026-08-16
 
 ### Fixed

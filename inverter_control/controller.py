@@ -408,9 +408,13 @@ class InverterController:
         mppt_daily = self.victron.get_mppt_daily_yields()
         tasmota_daily = self.victron.get_pv_inverter_daily_yields()
         produced_today = sum(mppt_daily) + sum(tasmota_daily)
+        mppt_yesterday = self.victron.get_mppt_yesterday_yields()
+        tasmota_yesterday = self.victron.get_pv_inverter_yesterday_yields()
+        produced_yesterday = sum(mppt_yesterday) + sum(tasmota_yesterday)
 
         return {
             "produced_today": produced_today,
+            "produced_yesterday": produced_yesterday,
             "produced_dollars": 0.0,  # No HA - compute locally if needed
             "grid_kwh": 0.0,  # No D-Bus equivalent yet
             "battery_in": battery_in,
@@ -420,6 +424,8 @@ class InverterController:
             "pv_total_daily": produced_today,
             "tasmota_daily": tasmota_daily,
             "mppt_daily": mppt_daily,
+            "tasmota_yesterday": tasmota_yesterday,
+            "mppt_yesterday": mppt_yesterday,
         }
 
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
