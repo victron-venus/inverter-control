@@ -7,8 +7,6 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Venus OS](https://img.shields.io/badge/Venus%20OS-3.x-blue)](https://github.com/victronenergy/venus)
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/victron-venus/inverter-control)
-[![GitHub stars](https://img.shields.io/github/stars/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/network/members)
 [![GitHub watchers](https://img.shields.io/github/watchers/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/watchers)
 [![GitHub contributors](https://img.shields.io/github/contributors/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/graphs/contributors)
 [![GitHub issues](https://img.shields.io/github/issues/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/issues)
@@ -22,7 +20,6 @@
 [![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![Victron Community](https://img.shields.io/badge/Victron-Community-blue)](https://community.victronenergy.com/)
 
-[![GitHub Stars](https://img.shields.io/github/stars/victron-venus/inverter-control?style=social)](https://github.com/victron-venus/inverter-control/stargazers)
 
 ---
 
