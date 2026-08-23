@@ -127,6 +127,7 @@ class InverterController:
         self.loop_count = 0
         self.state: dict[str, Any] = {}
         self.last_console_line = None
+        self._solar_forecast: dict[str, Any] | None = None
 
         # Pre-charge state (triggered by solar-forecast webhook)
         self._pre_charge_requested = False
@@ -217,6 +218,7 @@ class InverterController:
             host=WEBHOOK_SERVER_HOST,
             port=WEBHOOK_SERVER_PORT,
             pre_charge_callback=self._handle_pre_charge_webhook,
+            forecast_callback=self._handle_forecast_webhook,
         )
         self._webhook_server.start()
 
@@ -343,6 +345,27 @@ class InverterController:
             return True
         except Exception:
             logger.exception("Error handling pre-charge webhook")
+            return False
+
+    def _handle_forecast_webhook(self, payload: dict) -> bool:
+        """Store daily forecast summary from solar-forecast-langgraph.
+
+        Included in the published state so dashboards can display the
+        solar outlook next to actual production figures.
+        """
+        try:
+            self._solar_forecast = {
+                k: payload[k]
+                for k in ("date", "today_kwh", "tomorrow_kwh", "generated_at", "site_id")
+                if k in payload
+            }
+            logger.info(
+                f"Forecast stored: today={self._solar_forecast.get('today_kwh')}kWh "
+                f"tomorrow={self._solar_forecast.get('tomorrow_kwh')}kWh"
+            )
+            return True
+        except Exception:
+            logger.exception("Error handling forecast webhook")
             return False
 
     def get_state(self) -> dict[str, Any]:
@@ -559,6 +582,7 @@ class InverterController:
             "battery_current": sys_data.get("bc", 0),
             "battery_soc": sys_data.get("soc", 0) or self.victron.get_battery_soc_local(sys_data),
             "daily_stats": self._get_daily_stats(),
+            "solar_forecast": self._solar_forecast,
             "limits": {"min": self.power_limit_min, "max": self.power_limit_max},
             "loop_interval": self.loop_interval,
             "version": VERSION,

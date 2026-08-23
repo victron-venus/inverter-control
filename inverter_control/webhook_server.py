@@ -19,6 +19,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
     # Class-level callback storage (set by server instance)
     pre_charge_callback: Callable[[dict], bool] | None = None
+    forecast_callback: Callable[[dict], bool] | None = None
 
     def _send_response(self, status: int, data: dict):
         """Send JSON response."""
@@ -31,6 +32,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
         """Handle POST requests."""
         if self.path == "/api/v1/pre-charge":
             self._handle_pre_charge()
+        elif self.path == "/api/v1/forecast":
+            self._handle_forecast()
         else:
             self._send_response(404, {"error": "Not found"})
 
@@ -80,6 +83,44 @@ class WebhookHandler(BaseHTTPRequestHandler):
             logger.exception("Pre-charge webhook error")
             self._send_response(500, {"error": str(e)})
 
+    def _handle_forecast(self):
+        """Handle daily forecast summary from solar-forecast-langgraph."""
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            raw_data = self.rfile.read(content_length).decode("utf-8")
+            payload = json.loads(raw_data) if raw_data else {}
+
+            if not isinstance(payload, dict):
+                self._send_response(400, {"error": "Invalid JSON payload"})
+                return
+
+            today_kwh = payload.get("today_kwh")
+            tomorrow_kwh = payload.get("tomorrow_kwh")
+
+            if not isinstance(today_kwh, int | float) or not isinstance(tomorrow_kwh, int | float):
+                self._send_response(400, {"error": "Missing numeric today_kwh/tomorrow_kwh"})
+                return
+
+            logger.info(
+                f"Forecast webhook received: today={today_kwh:.1f}kWh "
+                f"tomorrow={tomorrow_kwh:.1f}kWh date={payload.get('date')}"
+            )
+
+            if self.forecast_callback:
+                success = self.forecast_callback(payload)
+                if success:
+                    self._send_response(200, {"status": "forecast stored"})
+                else:
+                    self._send_response(500, {"error": "Forecast callback failed"})
+            else:
+                self._send_response(503, {"error": "Forecast handler not configured"})
+
+        except json.JSONDecodeError:
+            self._send_response(400, {"error": "Invalid JSON"})
+        except Exception as e:
+            logger.exception("Forecast webhook error")
+            self._send_response(500, {"error": str(e)})
+
     def do_GET(self):
         """Handle GET requests (health check)."""
         if self.path == "/health":
@@ -100,6 +141,7 @@ class WebhookServer:
         host: str = "0.0.0.0",
         port: int = 8081,
         pre_charge_callback: Callable[[dict], bool] | None = None,
+        forecast_callback: Callable[[dict], bool] | None = None,
     ):
         self.host = host
         self.port = port
@@ -107,8 +149,9 @@ class WebhookServer:
         self._thread: threading.Thread | None = None
         self._running = False
 
-        # Store callback in handler class
+        # Store callbacks in handler class
         WebhookHandler.pre_charge_callback = pre_charge_callback
+        WebhookHandler.forecast_callback = forecast_callback
 
     def start(self):
         """Start the server in a background thread."""
@@ -149,9 +192,10 @@ def get_webhook_server(
     host: str = "0.0.0.0",
     port: int = 8081,
     pre_charge_callback: Callable[[dict], bool] | None = None,
+    forecast_callback: Callable[[dict], bool] | None = None,
 ) -> WebhookServer:
     """Get or create webhook server singleton."""
     global _webhook_server
     if _webhook_server is None:
-        _webhook_server = WebhookServer(host, port, pre_charge_callback)
+        _webhook_server = WebhookServer(host, port, pre_charge_callback, forecast_callback)
     return _webhook_server
