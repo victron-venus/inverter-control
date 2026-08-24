@@ -223,6 +223,11 @@ DAMPING_FACTOR = 0.7  # Damping for import correction (0.0-1.0)
 EMA_ALPHA = float(
     _import_local_config("EMA_ALPHA", 0.3)
 )  # EMA smoothing (0.1=smooth, 0.5=responsive)
+# Time constant (seconds) for the background GridFilter thread that owns the
+# grid EMA (see inverter_control/grid_filter.py). When > 0, the control loop
+# receives pre-smoothed values and EMA_ALPHA is forced to 1.0 to avoid double
+# smoothing. Set to 0 to disable the thread and use per-cycle EMA_ALPHA again.
+GRID_FILTER_TAU = float(_import_local_config("GRID_FILTER_TAU", 2.0))
 SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
 # Aggressive Grid Smoothing with Home Load (Vue via HA cloud)
@@ -449,7 +454,11 @@ def _validate_config():
         _check_range("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, 0.0, 1.0),
         _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),
         _check_range("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, 0.0, 1.0),
+        _check_type("GRID_FILTER_TAU", GRID_FILTER_TAU, (int, float)),
     ]
+
+    if GRID_FILTER_TAU < 0:
+        checks.append(f"GRID_FILTER_TAU must be >= 0, got {GRID_FILTER_TAU!r}")
 
     if LOOP_INTERVAL <= 0:
         checks.append(f"LOOP_INTERVAL must be positive number, got {LOOP_INTERVAL!r}")

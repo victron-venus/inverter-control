@@ -41,6 +41,7 @@ from inverter_control.config import (
     ENABLE_HA,
     ENABLE_HA_LOADS,
     ENABLE_WATER,
+    GRID_FILTER_TAU,
     LOOP_INTERVAL,
     MQTT_SLIM_EXCLUDE_KEYS,
     MQTT_SLIM_STATE,
@@ -56,6 +57,7 @@ from inverter_control.config import (
 from inverter_control.console_server import broadcast_line
 from inverter_control.console_ui import ConsoleUI
 from inverter_control.dvcc import create_dvcc_from_config
+from inverter_control.grid_filter import GridFilter
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.metrics import CycleMetrics
@@ -122,8 +124,22 @@ class InverterController:
 
         # Initialize Logic and UI components
         config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
+        if GRID_FILTER_TAU > 0:
+            # EMA smoothing moves into the background GridFilter thread
+            # (time-based tau); logic receives pre-smoothed input, so the
+            # per-cycle EMA must be identity to avoid double smoothing.
+            config_dict["EMA_ALPHA"] = 1.0
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron, self.water)
+
+        # Background grid EMA filter (owns filtered_gt; started with the main
+        # loop). Not started here so unit tests stay single-threaded.
+        self.grid_filter: GridFilter | None = None
+        if GRID_FILTER_TAU > 0:
+            self.grid_filter = GridFilter(
+                getter=lambda: float(self.victron.get_ac_in_power()),
+                tau=GRID_FILTER_TAU,
+            )
 
         # State
         self.current_setpoint = 0
@@ -438,14 +454,17 @@ class InverterController:
             do_not_supply_charger=self.ha.get_boolean("do_not_supply_charger"),
             limit_to_ev=self.ha.get_boolean("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
-            filtered_gt=self.filtered_gt,
+            filtered_gt=(
+                self.grid_filter.value() if self.grid_filter else self.filtered_gt
+            ),
             derived_gt=derived_gt,
         )
 
         # Perform calculation
         result = self.calculator.calculate(state)
 
-        # Update persistence
+        # Mirror for display/MQTT state; the authoritative smoothed value
+        # lives in the GridFilter thread when it is running.
         self.filtered_gt = result.filtered_gt
 
         return result.setpoint, result.flags
