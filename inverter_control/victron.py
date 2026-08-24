@@ -459,6 +459,8 @@ class VictronDBus:
             )
             return idx, parse_mppt_output(output) if output else {"w": 0.0, "a": 0.0}
 
+        if not self._mppt_services:
+            return []
         with ThreadPoolExecutor(max_workers=len(self._mppt_services)) as pool:
             futures = [
                 pool.submit(_query_mppt, i, svc) for i, svc in enumerate(self._mppt_services)
@@ -1401,6 +1403,8 @@ class VictronDBus:
                 "time_to_go_sec": ttg_sec,
             }
 
+        if not battery_services:
+            return []
         with ThreadPoolExecutor(max_workers=len(battery_services)) as pool:
             futures = [pool.submit(_query_battery, svc, name) for svc, name in battery_services]
             batteries = [f.result() for f in futures]
