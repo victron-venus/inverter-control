@@ -253,6 +253,9 @@ def _main_inner():
         return
 
     start_console_server()
+    from inverter_control.prom_metrics import start as start_prom_metrics
+
+    start_prom_metrics()
     print("Starting control loop...")
     print("-" * 80)
 

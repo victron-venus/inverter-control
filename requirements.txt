@@ -6,3 +6,6 @@ msgpack>=1.2.1
 
 # D-Bus (persistent dbus_fast connection for Get/Set; preinstalled on Venus OS)
 dbus-fast>=2.21.1
+
+# Optional Prometheus exposition of CycleMetrics (auto-disabled if absent)
+prometheus-client>=0.19
