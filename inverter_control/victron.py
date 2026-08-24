@@ -19,7 +19,6 @@ from zoneinfo import ZoneInfo
 from .config import INVERTER_STATES, USE_NATIVE_DBUS
 from .dbus_native import NativeDbusClient
 from .victron_parse import (
-    VARIANT_RE,
     calculate_battery_soc_from_voltage,
     extract_acload_name_power,
     extract_power_from_tree,
@@ -534,44 +533,22 @@ class VictronDBus:
         self._cached_acload_powers = self._query_acload_powers()
         self._last_acload_time = time.time()
 
-    def _query_battery_chain_socs(
-        self,
-        path: str = "/",
-        reply_mode: str = "--print-reply",
-        soc_regex: re.Pattern | None = None,
-    ) -> list[float]:
-        """Query all battery chain services for SoC (shared by poll and fallback)."""
-        if soc_regex is None:
-            soc_regex = re.compile(r"Soc[^\n]*\n[^\n]*variant\s+\S+\s+([\d.]+)")
-        battery_services = [
-            BATTERY_CHAIN_1,
-            "com.victronenergy.battery.mqtt_chain2",
-        ]
+    def _query_battery_chain_socs(self) -> list[float]:
+        """Query all battery chain services for SoC (shared by poll and fallback).
+
+        Goes through the native-first _dbus_get helper on purpose: the
+        mqtt-chain battery services never answer a plain dbus-send call, so
+        the previous CLI-only read here failed every cycle, accumulated
+        per-service failures and tripped the backoff that zeroed out
+        get_all_batteries().
+        """
         socs = []
-        for service in battery_services:
-            output = self._safe_subprocess_tracked(
-                [
-                    "dbus-send",
-                    "--system",
-                    reply_mode,
-                    f"--dest={service}",
-                    path,
-                    GET_VALUE_METHOD,
-                ],
-                service=service,
-                timeout=0.3,
-            )
-            if output:
-                match = soc_regex.search(output)
-                if match:
-                    try:
-                        socs.append(float(match.group(1)))
-                    except (ValueError, TypeError):
-                        logger.debug("Battery chain SoC parse failed: %s", match.group(1))
-                        socs.append(0.0)
-                else:
-                    socs.append(0.0)
-            else:
+        for service in (BATTERY_CHAIN_1, BATTERY_CHAIN_2):
+            val = self._dbus_get(service, "/Soc")
+            try:
+                socs.append(float(val) if val is not None else 0.0)
+            except (TypeError, ValueError):
+                logger.debug("Battery chain SoC parse failed: %s", val)
                 socs.append(0.0)
         return socs
 
@@ -1247,11 +1224,7 @@ class VictronDBus:
         if now - self._last_battery_chain_soc_time < 2.0:  # TTL 2 seconds
             return self._cached_battery_chain_socs
 
-        socs = self._query_battery_chain_socs(
-            path="/Soc",
-            reply_mode=PRINT_REPLY_LITERAL,
-            soc_regex=VARIANT_RE,
-        )
+        socs = self._query_battery_chain_socs()
         self._cached_battery_chain_socs = socs
         self._last_battery_chain_soc_time = time.time()
         return socs

@@ -172,6 +172,22 @@ def _write_heartbeats(heartbeat_file: str, watchdog_heartbeat_file: str) -> None
         pass  # Ignore if heartbeat fails
 
 
+HEARTBEAT_INTERVAL = 5.0
+
+
+def _heartbeat_loop(stop_event, heartbeat_file: str, watchdog_heartbeat_file: str) -> None:
+    """Keep the external watchdog's heartbeat fresh from its own thread.
+
+    The external watchdog measures "process is alive". Writing from a
+    dedicated ticker (instead of the control cycle) prevents a slow-but-alive
+    loop - or CPU starvation during D-Bus storms - from being misread as a
+    dead service and triggering the restart kill-loop. True stalls are still
+    caught by the in-process HardwareWatchdog, which forces a safe setpoint.
+    """
+    while not stop_event.wait(HEARTBEAT_INTERVAL):
+        _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
+
+
 def _run_main_loop(controller, mqtt_bridge):
     """Run the main control loop until exit or error."""
     gc_interval = 300
@@ -186,6 +202,20 @@ def _run_main_loop(controller, mqtt_bridge):
     # Start the hardware watchdog just before entering the loop, so slow
     # startup work above doesn't get mistaken for a stalled control loop.
     controller._watchdog.start()
+    if controller.grid_filter:
+        controller.grid_filter.start()
+
+    hb_stop = threading.Event()
+    hb_thread = threading.Thread(
+        target=_heartbeat_loop,
+        args=(hb_stop, heartbeat_file, watchdog_heartbeat_file),
+        name="heartbeat-writer",
+        daemon=True,
+    )
+    hb_thread.start()
+    # Prime the heartbeat immediately so a freshly started service isn't
+    # seen as stale by the external watchdog during first-loop warmup.
+    _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
 
     try:
         os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
@@ -201,9 +231,6 @@ def _run_main_loop(controller, mqtt_bridge):
                 if controller.last_console_line:
                     mqtt_bridge.publish_console(controller.last_console_line)
 
-            # Write heartbeat for watchdog
-            _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
-
             now = time.time()
             if now - last_gc_time > gc_interval:
                 last_gc_time = now
@@ -214,6 +241,10 @@ def _run_main_loop(controller, mqtt_bridge):
         print("\nShutting down...")
     finally:
         logger.info("Inverter Control shutting down")
+        hb_stop.set()
+        hb_thread.join(timeout=HEARTBEAT_INTERVAL + 2.0)
+        if controller.grid_filter:
+            controller.grid_filter.stop()
         # Stop hardware watchdog
         try:
             controller._watchdog.stop()
