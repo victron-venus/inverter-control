@@ -16,11 +16,9 @@ try:
         HA_BINARY_SENSORS,
         HA_BOOLEANS,
         HA_DUMP_LOADS,
-        HA_PUMP_SWITCH,
         HA_SENSORS,
         HA_TOKEN,
         HA_URL,
-        HA_WATER_VALVE,
         TASMOTA_IPS,
         VUE_SENSORS,
     )
@@ -34,17 +32,15 @@ except ImportError:
     VUE_SENSORS = {}
     HA_BOOLEANS = {}
     HA_DUMP_LOADS = []
-    HA_WATER_VALVE = ""
-    HA_PUMP_SWITCH = ""
     HA_BINARY_SENSORS = {}
 
 
 def _import_local_config(name: str, default=""):
     """Import a variable from local_config with a fallback default."""
     try:
-        from local_config import vars as local_vars
+        import local_config
 
-        return getattr(local_vars, name, default)
+        return getattr(local_config, name, default)
     except (ImportError, AttributeError):
         return default
 
@@ -55,10 +51,19 @@ HA_DRYER_POWER = _import_local_config("HA_DRYER_POWER")
 HA_LAUNDRY_OUTLET = _import_local_config("HA_LAUNDRY_OUTLET")
 
 # =============================================================================
+# WATER SYSTEM (dbus-pump D-Bus services on the GX - no Home Assistant)
+# =============================================================================
+# dbus-pump exposes com.victronenergy.tank.ha_tank{N} and
+# com.victronenergy.pump.startstop{N}; these must match its local_config.py.
+WATER_TANK_INSTANCE = int(_import_local_config("WATER_TANK_INSTANCE", 21))
+WATER_PUMP_INSTANCE = int(_import_local_config("WATER_PUMP_INSTANCE", 1))
+WATER_VALVE_INSTANCE = int(_import_local_config("WATER_VALVE_INSTANCE", 2))
+
+# =============================================================================
 # OPTIONAL FEATURES
 # =============================================================================
 # Set to False to disable features manually, or leave True for auto-detection.
-# Features auto-disable if HA_TOKEN is not configured.
+# HA-backed features auto-disable if HA_TOKEN is not configured.
 #
 # When disabled:
 #   - Console output omits the corresponding sections
@@ -66,7 +71,7 @@ HA_LAUNDRY_OUTLET = _import_local_config("HA_LAUNDRY_OUTLET")
 #   - No HA API calls are made for disabled features
 
 ENABLE_EV = True  # EV charging monitoring (car SoC, VUE charger power)
-ENABLE_WATER = True  # Water level, pump and valve control
+ENABLE_WATER = True  # Water level, pump and valve (via dbus-pump D-Bus)
 ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
 ENABLE_DISHWASHER = True  # Dishwasher duration monitoring
 ENABLE_WASHER = True  # Washer remaining time monitoring
@@ -77,7 +82,6 @@ ENABLE_HA = True  # Home Assistant integration entirely
 if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_HA = False
     ENABLE_EV = False
-    ENABLE_WATER = False
     ENABLE_HA_LOADS = False
     ENABLE_DISHWASHER = False
     ENABLE_WASHER = False
@@ -96,6 +100,8 @@ MQTT_TOPIC_PREFIX = "inverter"
 # When True, inverter/state MQTT payload omits Home Assistant mirror fields (booleans,
 # switch shadows, appliance flags). Use this with inverter-dashboard ha_secrets.py + HA_DIRECT_CONTROLS
 # so switch state is read from HA in the dashboard instead of duplicated over MQTT.
+# Water keys are NOT excluded: water state now comes from dbus-pump D-Bus and is
+# always relayed so remote consumers see it without HA.
 MQTT_SLIM_STATE = True
 
 MQTT_SLIM_EXCLUDE_KEYS = frozenset(
@@ -103,8 +109,6 @@ MQTT_SLIM_EXCLUDE_KEYS = frozenset(
         "laundry_outlet",
         "home_recliner",
         "home_garage",
-        "water_valve",
-        "pump_switch",
         "dishwasher_running",
         "dishwasher_duration",
         "washer_time",
@@ -216,15 +220,20 @@ USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "f
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 80  # Watts - upper bound (slight import OK)
 DAMPING_FACTOR = 0.7  # Damping for import correction (0.0-1.0)
-EMA_ALPHA = 0.3  # Exponential Moving Average smoothing (0.1=smooth, 0.5=responsive)
+EMA_ALPHA = float(
+    _import_local_config("EMA_ALPHA", 0.3)
+)  # EMA smoothing (0.1=smooth, 0.5=responsive)
 SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
 # Aggressive Grid Smoothing with Home Load (Vue via HA cloud)
 # Uses "home_total" (total house consumption from Vue) + known production
 # to derive a stable grid estimate. Blends with instantaneous CT meter.
-ENABLE_GRID_SMOOTHING_WITH_HOME = False  # Enable derived grid blending
-GRID_SMOOTHING_HOME_WEIGHT = 0.7  # Weight for derived grid (0.0-1.0, higher = more stable)
-GRID_SMOOTHING_DERIVED_ALPHA = 0.1  # EMA alpha for derived grid (slower = smoother)
+# Values are tuned by inverter-monitoring analysis/grid_correlation.py.
+ENABLE_GRID_SMOOTHING_WITH_HOME = bool(
+    _import_local_config("ENABLE_GRID_SMOOTHING_WITH_HOME", False)
+)
+GRID_SMOOTHING_HOME_WEIGHT = float(_import_local_config("GRID_SMOOTHING_HOME_WEIGHT", 0.7))
+GRID_SMOOTHING_DERIVED_ALPHA = float(_import_local_config("GRID_SMOOTHING_DERIVED_ALPHA", 0.1))
 
 # Export asymmetry — export to grid is undesirable, correct more aggressively
 EXPORT_DAMPING = 1.0  # Full correction for export (no damping)
@@ -258,7 +267,7 @@ INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
 # =============================================================================
 
 # HA_URL, HA_TOKEN, HA_SENSORS, VUE_SENSORS, HA_BOOLEANS,
-# HA_DUMP_LOADS, HA_WATER_VALVE, HA_BINARY_SENSORS
+# HA_DUMP_LOADS, HA_BINARY_SENSORS
 # are all imported from local_config.py
 
 HA_TIMEOUT = 2.0  # seconds
@@ -386,6 +395,8 @@ EXPORTED_KEYS = [
     "DAMPING_FACTOR",
     "EMA_ALPHA",
     "EXPORT_DAMPING",
+    "GRID_SMOOTHING_DERIVED_ALPHA",
+    "GRID_SMOOTHING_HOME_WEIGHT",
     "GRID_ZERO_DEADBAND_HIGH",
     "GRID_ZERO_DEADBAND_LOW",
     "INVERTER_EFFICIENCY",
@@ -434,6 +445,10 @@ def _validate_config():
         _check_type("EMA_ALPHA", EMA_ALPHA, (int, float)),
         _check_range("DAMPING_FACTOR", DAMPING_FACTOR, 0.0, 1.0),
         _check_range("EMA_ALPHA", EMA_ALPHA, 0.0, 1.0),
+        _check_type("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, (int, float)),
+        _check_range("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, 0.0, 1.0),
+        _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),
+        _check_range("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, 0.0, 1.0),
     ]
 
     if LOOP_INTERVAL <= 0:
@@ -538,8 +553,9 @@ UI_CONFIG: dict = {
         "min_watts": 10,
     },
     "water": {
-        "valve_entity": "switch.shutoff_valve",
-        "pump_entity": "switch.pump_switch",
+        "tank_instance": WATER_TANK_INSTANCE,
+        "pump_instance": WATER_PUMP_INSTANCE,
+        "valve_instance": WATER_VALVE_INSTANCE,
     },
     "ev": {
         "charging_sensor": "ev_charging_power",

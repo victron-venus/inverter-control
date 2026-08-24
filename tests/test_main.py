@@ -227,8 +227,6 @@ class TestUpdateState(unittest.TestCase):
         mock_ha.get_boolean.return_value = False
         mock_ha.connected = False
         mock_ha.uptime = 0
-        mock_ha.water_valve_on = False
-        mock_ha.pump_switch_on = False
         mock_ha.laundry_outlet_on = False
         mock_ha.home_recliner_on = False
         mock_ha.home_garage_on = False
@@ -261,7 +259,7 @@ class TestUpdateState(unittest.TestCase):
         assert state["inverter_state"] == "Inverting"
         assert state["battery_socs"] == [80.0, 75.0]
         assert state["ev_power"] == 0
-        assert state["water_level"] == 0
+        assert state["water_level"] is None
         assert state["ha_connected"] is False
 
     def test_injects_cached_mppt_data(self):
@@ -500,26 +498,35 @@ class TestGetEvState(unittest.TestCase):
 
 
 class TestGetWaterState(unittest.TestCase):
-    """Test InverterController._get_water_state()"""
+    """Test InverterController._get_water_state() (dbus-pump D-Bus reader)"""
 
-    def test_returns_water_data_when_enabled(self):
-        controller, _mock_victron, mock_ha, _ = _make_controller()
-        mock_ha.get_sensor.side_effect = lambda k, d=0: {"water_level": 45}.get(k, d)
-        mock_ha.water_valve_on = True
-        mock_ha.pump_switch_on = False
+    def test_returns_reader_data_when_enabled(self):
+        controller, _mock_victron, _mock_ha, _ = _make_controller()
+        controller.water = MagicMock()
+        controller.water.read.return_value = {
+            "water_level": 45.0,
+            "water_valve": True,
+            "pump_switch": False,
+        }
 
         with patch(f"{_MOD}.ENABLE_WATER", True):
             state = controller._get_water_state()
 
-        assert state["water_level"] == 45
+        assert state["water_level"] == 45.0
         assert state["water_valve"] is True
         assert state["pump_switch"] is False
 
-    def test_returns_zeros_when_disabled(self):
+    def test_returns_none_when_no_reader(self):
+        with patch(f"{_MOD}.ENABLE_WATER", True):
+            controller, _, _, _ = _make_controller()
+            state = controller._get_water_state()
+            assert state == {"water_level": None, "water_valve": None, "pump_switch": None}
+
+    def test_returns_none_when_disabled(self):
         with patch(f"{_MOD}.ENABLE_WATER", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_water_state()
-            assert state == {"water_level": 0, "water_valve": False, "pump_switch": False}
+            assert state == {"water_level": None, "water_valve": None, "pump_switch": None}
 
 
 class TestGetHaState(unittest.TestCase):

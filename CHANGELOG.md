@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Water system migrated from Home Assistant to dbus-pump D-Bus services** (no HA):
+  - New `inverter_control/water.py` reads `com.victronenergy.tank.ha_tank{N}` `/Level`
+    and `com.victronenergy.pump.startstop{N}` `/State` with a 2 s TTL cache;
+    a missing service yields "no data" instead of zeros
+  - Config: `WATER_TANK_INSTANCE` / `WATER_PUMP_INSTANCE` / `WATER_VALVE_INSTANCE`
+    (defaults 21/1/2) replace `HA_WATER_VALVE` / `HA_PUMP_SWITCH`; water no longer
+    auto-disables when HA_TOKEN is absent
+  - Console UI shows tank level in % (was cm) and colors by valve state
+  - MQTT: `water_level` / `water_valve` / `pump_switch` are always relayed on
+    `inverter/state` (removed from `MQTT_SLIM_EXCLUDE_KEYS`)
+
 ## [1.21.0] - 2026-08-21
 
 ### Changed

@@ -105,13 +105,11 @@ class TestMQTTConfig:
         assert isinstance(config.MQTT_SLIM_EXCLUDE_KEYS, frozenset)
 
     def test_slim_exclude_keys_content(self):
-        """Test MQTT_SLIM_EXCLUDE_KEYS has expected keys"""
+        """Test MQTT_SLIM_EXCLUDE_KEYS has expected keys (water always relayed)"""
         expected_keys = {
             "laundry_outlet",
             "home_recliner",
             "home_garage",
-            "water_valve",
-            "pump_switch",
             "dishwasher_running",
             "dishwasher_duration",
             "washer_time",
@@ -120,6 +118,8 @@ class TestMQTTConfig:
             "dryer_power",
         }
         assert config.MQTT_SLIM_EXCLUDE_KEYS == expected_keys
+        assert "water_valve" not in config.MQTT_SLIM_EXCLUDE_KEYS
+        assert "pump_switch" not in config.MQTT_SLIM_EXCLUDE_KEYS
 
 
 class TestTasmotaConfig:

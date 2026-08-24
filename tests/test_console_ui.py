@@ -43,21 +43,26 @@ class TestConsoleUI:
             "kitchen_fridge_side": 0,
             "dishwasher": 0,
             "lost": 0,
-            "water_level": 150,
         }.get(key, default)
 
         self.mock_ha.get_boolean.side_effect = lambda key: False
         self.mock_ha.get_binary_sensor.side_effect = lambda key: False
 
+        # Water comes from dbus-pump D-Bus reader (mocked)
+        self.mock_water = MagicMock()
+        self.mock_water.read.return_value = {
+            "water_level": 66.0,
+            "water_valve": False,
+            "pump_switch": False,
+        }
+
         # Setup mock returns
-        self.mock_ha.water_valve_on = False
-        self.mock_ha.pump_switch_on = False
         self.mock_ha.home_recliner_on = False
         self.mock_ha.home_garage_on = False
 
         self.mock_victron.get_inverter_state.return_value = (9, "Inverting")
 
-        self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron)
+        self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron, self.mock_water)
 
     def test_format_line_basic(self):
         """Test basic line formatting"""
@@ -161,8 +166,8 @@ class TestConsoleUI:
             with patch("inverter_control.console_ui.ENABLE_EV", True):
                 with patch("inverter_control.console_ui.ENABLE_DISHWASHER", False):
                     extra = self.ui._fmt_extra_info()
-                    # Water level
-                    assert "cm" in extra
+                    # Water level (%, from dbus-pump)
+                    assert "66%" in extra
                     # Car SOC
                     assert "80%" in extra
 
@@ -205,8 +210,6 @@ class TestConsoleUIEdgeCases:
         self.mock_ha.get_sensor.return_value = 0
         self.mock_ha.get_boolean.return_value = False
         self.mock_ha.get_binary_sensor.return_value = False
-        self.mock_ha.water_valve_on = False
-        self.mock_ha.pump_switch_on = False
         self.mock_victron.get_inverter_state.return_value = (0, "Off")
 
         self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron)
