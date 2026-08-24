@@ -101,9 +101,7 @@ class TestMQTTBridge:
 
         assert bridge._connected is True
         mock_client.subscribe.assert_called_once_with("test/cmd/#")
-        mock_client.publish.assert_called_once_with(
-            "test/portal", "portal123", qos=0, retain=True
-        )
+        mock_client.publish.assert_called_once_with("test/portal", "portal123", qos=0, retain=True)
 
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
     @patch("inverter_control.mqtt_bridge.mqtt")
