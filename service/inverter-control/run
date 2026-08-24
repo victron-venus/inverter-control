@@ -1,0 +1,6 @@
+#!/bin/sh
+exec 2>&1
+
+cd /data/inverter-control
+export INVERTER_METRICS_PORT=9102
+exec python3 main.py
