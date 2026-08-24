@@ -90,8 +90,14 @@ HA_DUMP_LOADS = [
     "switch.your_dump_load_2",
 ]
 
-HA_WATER_VALVE = "switch.your_water_valve"
-HA_PUMP_SWITCH = "switch.your_pump_switch"
+# =============================================================================
+# WATER SYSTEM (dbus-pump D-Bus services on the GX - no Home Assistant)
+# =============================================================================
+# Must match DEVICE_INSTANCE_TANK / PUMP_STARTSTOP_INSTANCE /
+# VALVE_STARTSTOP_INSTANCE in dbus-pump's local_config.py.
+WATER_TANK_INSTANCE = 21
+WATER_PUMP_INSTANCE = 1
+WATER_VALVE_INSTANCE = 2
 
 # Laundry appliance controls
 HA_WASHER_POWER = "switch.washer_power"

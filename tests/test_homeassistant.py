@@ -32,13 +32,10 @@ class TestHomeAssistantClient:
                 "inverter_control.homeassistant.HA_BINARY_SENSORS", {"binary1": "entity_binary1"}
             ),
             patch("inverter_control.homeassistant.HA_DUMP_LOADS", ["load1", "load2"]),
-            patch("inverter_control.homeassistant.HA_WATER_VALVE", "valve1"),
-            patch("inverter_control.homeassistant.HA_PUMP_SWITCH", "pump1"),
             patch("inverter_control.homeassistant.VUE_SENSORS", {"vue1": "entity_vue1"}),
             patch("inverter_control.homeassistant.ENABLE_DISHWASHER", True),
             patch("inverter_control.homeassistant.ENABLE_WASHER", True),
             patch("inverter_control.homeassistant.ENABLE_DRYER", True),
-            patch("inverter_control.homeassistant.ENABLE_WATER", True),
             patch("inverter_control.homeassistant.HA_WASHER_POWER", "washer_power"),
             patch("inverter_control.homeassistant.HA_DRYER_POWER", "dryer_power"),
             patch("inverter_control.homeassistant.HA_LAUNDRY_OUTLET", "laundry_outlet"),
@@ -139,18 +136,20 @@ class TestHomeAssistantClient:
         with patch("inverter_control.homeassistant.ENABLE_DISHWASHER", False):
             with patch("inverter_control.homeassistant.ENABLE_WASHER", False):
                 with patch("inverter_control.homeassistant.ENABLE_DRYER", False):
-                    with patch("inverter_control.homeassistant.ENABLE_WATER", False):
-                        client = homeassistant.HomeAssistantClient()
-                        template = client._build_template()
-                        # Should not include disabled sensors
-                        assert "dishwasher_duration" not in template
-                        assert "dishwasher_running" not in template
-                        assert "washer_time" not in template
-                        assert "dryer_time" not in template
-                        assert "water_level" not in template
-                        assert "washer_power" not in template
-                        assert "dryer_power" not in template
-                        assert "laundry_outlet" not in template
+                    client = homeassistant.HomeAssistantClient()
+                    template = client._build_template()
+                    # Should not include disabled sensors
+                    assert "dishwasher_duration" not in template
+                    assert "dishwasher_running" not in template
+                    assert "washer_time" not in template
+                    assert "dryer_time" not in template
+                    # Water never appears - read from dbus-pump D-Bus, not HA
+                    assert "water_level" not in template
+                    assert "water_valve" not in template
+                    assert "pump_switch" not in template
+                    assert "washer_power" not in template
+                    assert "dryer_power" not in template
+                    assert "laundry_outlet" not in template
 
     @patch("inverter_control.homeassistant.requests.Session.post")
     def test_fetch_template_data_success(self, mock_post):
@@ -229,8 +228,6 @@ class TestHomeAssistantClient:
     def test_parse_switches(self):
         """Test switch parsing"""
         data = {
-            "water_valve": "on",
-            "pump_switch": "off",
             "washer_power": "on",
             "dryer_power": "off",
             "laundry_outlet": "on",
@@ -238,8 +235,6 @@ class TestHomeAssistantClient:
             "home_garage": "off",
         }
         self.client._parse_switches(data)
-        assert self.client._water_valve is True
-        assert self.client._pump_switch is False
         assert self.client._washer_power is True
         assert self.client._dryer_power is False
         assert self.client._laundry_outlet is True
@@ -253,7 +248,6 @@ class TestHomeAssistantClient:
             "sensor1": "150",
             "bool1": "on",
             "binary1": "off",
-            "water_valve": "on",
         }
         with patch.object(self.client._vue_dbus_client, "update_all") as mock_vue:
             mock_vue.side_effect = lambda vue_dict: vue_dict.update({"vue1": 200})
@@ -263,7 +257,6 @@ class TestHomeAssistantClient:
         assert self.client._sensors["sensor1"] == 150
         assert self.client._booleans["bool1"] is True
         assert self.client._binary_sensors["binary1"] is False
-        assert self.client._water_valve is True
         assert self.client._vue_sensors["vue1"] == 200
 
     @patch("inverter_control.homeassistant.HomeAssistantClient._fetch_template_data")
@@ -301,13 +294,6 @@ class TestHomeAssistantClient:
         """Test getting binary sensor value"""
         self.client._binary_sensors["test_binary"] = True
         assert self.client.get_binary_sensor("test_binary") is True
-
-    def test_switch_properties(self):
-        """Test switch properties"""
-        self.client._water_valve = True
-        self.client._pump_switch = False
-        assert self.client.water_valve_on is True
-        assert self.client.pump_switch_on is False
 
     def test_control_dump_loads(self):
         """Test control dump loads"""

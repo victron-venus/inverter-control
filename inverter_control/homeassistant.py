@@ -20,20 +20,17 @@ from .config import (
     ENABLE_DISHWASHER,
     ENABLE_DRYER,
     ENABLE_WASHER,
-    ENABLE_WATER,
     HA_BINARY_SENSORS,
     HA_BOOLEANS,
     HA_DRYER_POWER,
     HA_DUMP_LOADS,
     HA_LAUNDRY_OUTLET,
     HA_POLL_INTERVAL,
-    HA_PUMP_SWITCH,
     HA_SENSORS,
     HA_TIMEOUT,
     HA_TOKEN,
     HA_URL,
     HA_WASHER_POWER,
-    HA_WATER_VALVE,
     VUE_SENSORS,
 )
 from .dbus import VUESensorDBusClient
@@ -98,8 +95,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._vue_sensors: dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
         self._booleans: dict[str, bool] = dict.fromkeys(HA_BOOLEANS, False)
         self._binary_sensors: dict[str, bool] = dict.fromkeys(HA_BINARY_SENSORS, False)
-        self._water_valve: bool = False
-        self._pump_switch: bool = False
         self._washer_power: bool = False
         self._dryer_power: bool = False
         self._laundry_outlet: bool = False
@@ -306,8 +301,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
     def _parse_switches(self, data: dict):
         """Parse switch states into attributes"""
         switch_map = {
-            "water_valve": "_water_valve",
-            "pump_switch": "_pump_switch",
             "washer_power": "_washer_power",
             "dryer_power": "_dryer_power",
             "laundry_outlet": "_laundry_outlet",
@@ -327,7 +320,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                 (ENABLE_DISHWASHER, "dishwasher_duration"),
                 (ENABLE_WASHER, "washer_time"),
                 (ENABLE_DRYER, "dryer_time"),
-                (ENABLE_WATER, "water_level"),
             ]
             if not enabled
         }
@@ -353,8 +345,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                 items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
         conditional_switches = [
-            (ENABLE_WATER, HA_WATER_VALVE, "water_valve"),
-            (ENABLE_WATER, HA_PUMP_SWITCH, "pump_switch"),
             (ENABLE_WASHER and HA_WASHER_POWER, HA_WASHER_POWER, "washer_power"),
             (ENABLE_DRYER and HA_DRYER_POWER, HA_DRYER_POWER, "dryer_power"),
             (
@@ -416,16 +406,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         """Get cached binary sensor value"""
         with self._lock:
             return self._binary_sensors.get(key, False)
-
-    @property
-    def water_valve_on(self) -> bool:
-        with self._lock:
-            return self._water_valve
-
-    @property
-    def pump_switch_on(self) -> bool:
-        with self._lock:
-            return self._pump_switch
 
     @property
     def washer_power_on(self) -> bool:

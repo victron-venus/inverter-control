@@ -989,6 +989,10 @@ class VictronDBus:
             self._record_service_failure(service)
         return result
 
+    def dbus_get(self, service: str, path: str) -> str | None:
+        """Public single-value read (native connection, CLI fallback)."""
+        return self._dbus_get(service, path)
+
     def _dbus_get(self, service: str, path: str) -> str | None:
         """Get a single value from D-Bus (native connection, CLI fallback).
         Skips known-unresponsive services to avoid blocking the caller."""

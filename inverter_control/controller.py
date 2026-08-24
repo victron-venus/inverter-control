@@ -65,6 +65,7 @@ from inverter_control.victron import (
     get_victron,
 )
 from inverter_control.watchdog import HardwareWatchdog, WatchdogTimeoutError
+from inverter_control.water import WaterSystemReader
 from inverter_control.webhook_server import get_webhook_server
 
 logger = logging.getLogger("inverter-control")
@@ -105,6 +106,12 @@ class InverterController:
         self.victron = get_victron()
         self.ha = get_ha()
 
+        # Water comes from dbus-pump D-Bus services (no HA). In test mode the
+        # victron client never touches the bus, so skip the reader entirely.
+        self.water: WaterSystemReader | None = None
+        if not getattr(self.victron, "_test_mode", False):
+            self.water = WaterSystemReader(self.victron.dbus_get)
+
         # Load UI configuration
         from inverter_control.config import (
             get_ui_config,  # pylint: disable=import-outside-toplevel
@@ -115,7 +122,7 @@ class InverterController:
         # Initialize Logic and UI components
         config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
         self.calculator = SetpointCalculator(config_dict)
-        self.console = ConsoleUI(self.ha, self.victron)
+        self.console = ConsoleUI(self.ha, self.victron, self.water)
 
         # State
         self.current_setpoint = 0
@@ -492,12 +499,11 @@ class InverterController:
 
     def _get_water_state(self) -> dict[str, Any]:
         if not ENABLE_WATER:
-            return {"water_level": 0, "water_valve": False, "pump_switch": False}
-        return {
-            "water_level": self.ha.get_sensor("water_level", 0),
-            "water_valve": self.ha.water_valve_on,
-            "pump_switch": self.ha.pump_switch_on,
-        }
+            return {"water_level": None, "water_valve": None, "pump_switch": None}
+        if self.water is None:
+            # Test mode / no D-Bus: report no data rather than fake zeros
+            return {"water_level": None, "water_valve": None, "pump_switch": None}
+        return self.water.read()
 
     def _get_ha_state(self) -> dict[str, Any]:
         if not ENABLE_HA:
