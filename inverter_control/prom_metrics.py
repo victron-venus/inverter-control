@@ -32,21 +32,15 @@ def start() -> bool:
         return False
 
     _gauges = {
-        "cycle": Gauge(
-            "inverter_control_cycle_ms", "Control cycle duration ms", ["quantile"]
-        ),
+        "cycle": Gauge("inverter_control_cycle_ms", "Control cycle duration ms", ["quantile"]),
         "missed_deadlines": Gauge(
             "inverter_control_missed_deadlines_total", "Missed cycle deadlines"
         ),
         "write": Gauge(
             "inverter_control_setvalue_ms", "Grid setpoint write duration ms", ["quantile"]
         ),
-        "failed_writes": Gauge(
-            "inverter_control_failed_writes_total", "Failed setpoint writes"
-        ),
-        "age": Gauge(
-            "inverter_control_snapshot_age_ms", "Telemetry snapshot age ms", ["quantile"]
-        ),
+        "failed_writes": Gauge("inverter_control_failed_writes_total", "Failed setpoint writes"),
+        "age": Gauge("inverter_control_snapshot_age_ms", "Telemetry snapshot age ms", ["quantile"]),
         "cpu": Gauge("inverter_control_cpu_percent", "Process CPU percent"),
         "rss": Gauge("inverter_control_rss_mb", "Process RSS MB"),
     }
