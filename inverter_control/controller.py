@@ -454,9 +454,7 @@ class InverterController:
             do_not_supply_charger=self.ha.get_boolean("do_not_supply_charger"),
             limit_to_ev=self.ha.get_boolean("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
-            filtered_gt=(
-                self.grid_filter.value() if self.grid_filter else self.filtered_gt
-            ),
+            filtered_gt=(self.grid_filter.value() if self.grid_filter else self.filtered_gt),
             derived_gt=derived_gt,
         )
 
