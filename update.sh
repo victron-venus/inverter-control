@@ -136,6 +136,31 @@ ln -sf "$INSTALL_DIR/service/inverter-control" /service/
 ln -sf "$INSTALL_DIR/service/log-forwarder" /service/
 ln -sf "$INSTALL_DIR/service/watchdog" /service/
 
+# 6a. Ensure boot persistence: /service is tmpfs, so rc.local recreates the
+#     symlinks on every boot. Idempotent — only appends when block missing.
+RC_LOCAL="/data/rc.local"
+if [ ! -f "$RC_LOCAL" ]; then
+    printf '#!/bin/sh\n' > "$RC_LOCAL"
+    chmod +x "$RC_LOCAL"
+fi
+if ! grep -q "inverter-control/service/inverter-control" "$RC_LOCAL"; then
+    cat >> "$RC_LOCAL" << 'RCEOF'
+
+# === inverter-control service persistence ===
+# Recreate /service symlinks on boot (lost since /service is tmpfs)
+ln -sf /data/inverter-control/service/inverter-control /service/
+ln -sf /data/inverter-control/service/log-forwarder /service/
+ln -sf /data/inverter-control/service/watchdog /service/
+sleep 3
+svc -u /service/inverter-control/log 2>/dev/null || true
+svc -u /service/inverter-control 2>/dev/null || true
+svc -u /service/log-forwarder 2>/dev/null || true
+svc -u /service/watchdog 2>/dev/null || true
+# === end inverter-control ===
+RCEOF
+    sep "added rc.local boot persistence block"
+fi
+
 # 6b. Give svscan a moment to spawn fresh supervisors for the new symlinks
 #     before we try to bring the services up, so svc -u lands on a live one.
 sleep 3
