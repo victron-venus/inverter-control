@@ -122,6 +122,20 @@ class MQTTBridge:
 
         # Subscribe to command topics
         client.subscribe(f"{self.prefix}/cmd/#")
+        self._publish_portal_id(client)
+
+    def _publish_portal_id(self, client) -> None:
+        """Publish the VRM portal ID (retained) so remote consumers (desktop,
+        dashboards) can discover the N/<portal>/... water topics without
+        manual configuration."""
+        try:
+            from .config import PORTAL_ID  # lazy: first access runs detection
+
+            if PORTAL_ID and PORTAL_ID != "your_portal_id":
+                client.publish(f"{self.prefix}/portal", PORTAL_ID, qos=0, retain=True)
+                logger.info("Published portal ID to %s/portal", self.prefix)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Portal ID publish failed: %s", e)
 
     def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):  # pylint: disable=too-many-arguments,unused-argument
         """Disconnected from broker"""
