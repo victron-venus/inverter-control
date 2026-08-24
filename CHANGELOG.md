@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Retained `inverter/portal` MQTT topic: the auto-detected VRM Portal ID is
+  published on every broker connect, so remote consumers (desktop app) can
+  discover the `N/<portal>/...` water/alarm topics with no manual config.
+
 ### Changed
 - **Water system migrated from Home Assistant to dbus-pump D-Bus services** (no HA):
   - New `inverter_control/water.py` reads `com.victronenergy.tank.ha_tank{N}` `/Level`

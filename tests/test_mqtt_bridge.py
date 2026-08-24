@@ -96,10 +96,25 @@ class TestMQTTBridge:
         mock_mqtt.Client.return_value = mock_client
 
         bridge = mqtt_bridge.MQTTBridge(prefix="test")
-        bridge._on_connect(mock_client, None, None, 0)
+        with patch("inverter_control.config.PORTAL_ID", "portal123"):
+            bridge._on_connect(mock_client, None, None, 0)
 
         assert bridge._connected is True
         mock_client.subscribe.assert_called_once_with("test/cmd/#")
+        mock_client.publish.assert_called_once_with("test/portal", "portal123", qos=0, retain=True)
+
+    @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
+    @patch("inverter_control.mqtt_bridge.mqtt")
+    def test_on_connect_skips_stub_portal(self, mock_mqtt):
+        """Stub portal id (non-Venus dev machine) must not be published"""
+        mock_client = MagicMock()
+        mock_mqtt.Client.return_value = mock_client
+
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
+        with patch("inverter_control.config.PORTAL_ID", "your_portal_id"):
+            bridge._on_connect(mock_client, None, None, 0)
+
+        mock_client.publish.assert_not_called()
 
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
     @patch("inverter_control.mqtt_bridge.mqtt")
