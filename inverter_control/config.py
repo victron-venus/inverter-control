@@ -220,14 +220,18 @@ USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "f
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 80  # Watts - upper bound (slight import OK)
 DAMPING_FACTOR = 0.7  # Damping for import correction (0.0-1.0)
-EMA_ALPHA = float(_import_local_config("EMA_ALPHA", 0.3))  # EMA smoothing (0.1=smooth, 0.5=responsive)
+EMA_ALPHA = float(
+    _import_local_config("EMA_ALPHA", 0.3)
+)  # EMA smoothing (0.1=smooth, 0.5=responsive)
 SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
 # Aggressive Grid Smoothing with Home Load (Vue via HA cloud)
 # Uses "home_total" (total house consumption from Vue) + known production
 # to derive a stable grid estimate. Blends with instantaneous CT meter.
 # Values are tuned by inverter-monitoring analysis/grid_correlation.py.
-ENABLE_GRID_SMOOTHING_WITH_HOME = bool(_import_local_config("ENABLE_GRID_SMOOTHING_WITH_HOME", False))
+ENABLE_GRID_SMOOTHING_WITH_HOME = bool(
+    _import_local_config("ENABLE_GRID_SMOOTHING_WITH_HOME", False)
+)
 GRID_SMOOTHING_HOME_WEIGHT = float(_import_local_config("GRID_SMOOTHING_HOME_WEIGHT", 0.7))
 GRID_SMOOTHING_DERIVED_ALPHA = float(_import_local_config("GRID_SMOOTHING_DERIVED_ALPHA", 0.1))
 
