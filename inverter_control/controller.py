@@ -59,6 +59,7 @@ from inverter_control.dvcc import create_dvcc_from_config
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.metrics import CycleMetrics
+from inverter_control.prom_metrics import publish as prom_metrics_publish
 from inverter_control.victron import (
     TOU_END_SETTING,
     TOU_START_SETTING,
@@ -602,6 +603,7 @@ class InverterController:
         if now - self._last_perf_snapshot >= 5.0:
             self.metrics.sample_process()
             self.state["perf"] = self.metrics.snapshot()
+            prom_metrics_publish(self.state["perf"])
             self._last_perf_snapshot = now
 
     def get_state_for_mqtt(self) -> dict[str, Any]:
