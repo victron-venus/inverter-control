@@ -166,7 +166,7 @@ inverter-control/              # Git repo root
 ├── gitHubInfo                 # GitHub user:branch for PackageManager auto-download
 ├── version                    # Current version (read by PackageManager)
 ├── deploy.sh                  # SSH deploy to Cerbo/Pi (dev workflow)
-├── install.sh                 # Manual installer (legacy, prefer setup)
+├── update.sh                  # Deploy/update via deploy.sh (stream + run on device)
 ├── local_config.example.py    # Template for local_config.py
 ├── tests/
 │   └── test_logic.py          # Unit tests for control logic
