@@ -619,8 +619,12 @@ class InverterController:
         now = time.time()
         if now - self._last_perf_snapshot >= 5.0:
             self.metrics.sample_process()
-            self.state["perf"] = self.metrics.snapshot()
-            prom_metrics_publish(self.state["perf"])
+            perf = self.metrics.snapshot()
+            # Signal-path truth + dbus-send spawn counter (storm canary)
+            perf["signals_healthy"] = bool(self.victron.is_signals_healthy())
+            perf["dbus_subprocess_calls"] = int(getattr(self.victron, "subprocess_calls", 0))
+            self.state["perf"] = perf
+            prom_metrics_publish(perf)
             self._last_perf_snapshot = now
 
     def get_state_for_mqtt(self) -> dict[str, Any]:
