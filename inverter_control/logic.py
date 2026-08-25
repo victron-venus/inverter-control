@@ -283,7 +283,7 @@ class SetpointCalculator:
 
             @property
             def deadband_high(self):
-                return self._state.get("deadband_high", 80)
+                return self._state.get("deadband_high", 30)
 
             @deadband_high.setter
             def deadband_high(self, value):
@@ -333,7 +333,7 @@ class SetpointCalculator:
                     raw_vanew,
                     damping_factor=self.config.get("DAMPING_FACTOR", 0.7),
                     deadband_low=self.config.get("GRID_ZERO_DEADBAND_LOW", -50),
-                    deadband_high=self.config.get("GRID_ZERO_DEADBAND_HIGH", 80),
+                    deadband_high=self.config.get("GRID_ZERO_DEADBAND_HIGH", 30),
                     creep_rate=self.config.get("CREEP_RATE", 0.5),
                     creep_max=self.config.get("CREEP_MAX", 100.0),
                     export_damping=self.config.get("EXPORT_DAMPING", 1.0),

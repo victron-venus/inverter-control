@@ -96,6 +96,18 @@ class TestLogic(unittest.TestCase):
         self.assertEqual(result.setpoint, -500)
         self.assertIn("[~", result.flags)
 
+    def test_default_deadband_high_is_30(self):
+        """Post-incident tightening: default HIGH is +30W import, not +80W."""
+        minimal = SetpointCalculator(
+            {
+                "EMA_ALPHA": 1.0,
+                "POWER_LIMIT_MIN": -2300,
+                "POWER_LIMIT_MAX": 2250,
+            }
+        )
+        self.assertEqual(minimal.strategies[0].deadband_high, 30)
+        self.assertEqual(minimal.strategies[0].deadband_low, -50)
+
     def test_creep_import(self):
         """Creep should increase discharge when consistently importing in deadband"""
         state = self.get_base_state()
