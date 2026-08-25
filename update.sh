@@ -101,10 +101,10 @@ for item in $RUNTIME_ITEMS; do
     fi
 done
 
-# 4. Install daemontools services: every dir under service/ and services/
-#    maps to INSTALL_DIR/service/. New services are picked up automatically.
+# 4. Install daemontools services: every dir under service/ maps to
+#    INSTALL_DIR/service/. New services are picked up automatically.
 mkdir -p "$INSTALL_DIR/service"
-for svc in "$SRC_DIR/service"/* "$SRC_DIR/services"/*; do
+for svc in "$SRC_DIR/service"/*; do
     [ -d "$svc" ] || continue
     name="$(basename "$svc")"
     rm -rf "$INSTALL_DIR/service/$name"

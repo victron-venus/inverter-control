@@ -245,6 +245,11 @@ ENABLE_GRID_SMOOTHING_WITH_HOME = bool(
 GRID_SMOOTHING_HOME_WEIGHT = float(_import_local_config("GRID_SMOOTHING_HOME_WEIGHT", 0.7))
 GRID_SMOOTHING_DERIVED_ALPHA = float(_import_local_config("GRID_SMOOTHING_DERIVED_ALPHA", 0.1))
 
+# Loud warning when live control is silently ignored: GX only honors
+# /Hub4/L1/AcPowerSetpoint while ESS is in External control (Hub4Mode=3).
+# Warn after the mismatch persists this many minutes.
+ESS_EXTERNAL_WARN_MINUTES = float(_import_local_config("ESS_EXTERNAL_WARN_MINUTES", 5))
+
 # Export asymmetry — export to grid is undesirable, correct more aggressively
 EXPORT_DAMPING = 1.0  # Full correction for export (no damping)
 
@@ -462,6 +467,7 @@ def _validate_config():
         _check_type("GRID_FILTER_TAU", GRID_FILTER_TAU, (int, float)),
         _check_type("WATCHDOG_TIMEOUT_SECONDS", WATCHDOG_TIMEOUT_SECONDS, int),
         _check_type("WATCHDOG_CHECK_INTERVAL", WATCHDOG_CHECK_INTERVAL, (int, float)),
+        _check_type("ESS_EXTERNAL_WARN_MINUTES", ESS_EXTERNAL_WARN_MINUTES, (int, float)),
     ]
 
     if GRID_FILTER_TAU < 0:
@@ -473,6 +479,10 @@ def _validate_config():
         )
     if WATCHDOG_CHECK_INTERVAL <= 0:
         checks.append(f"WATCHDOG_CHECK_INTERVAL must be positive, got {WATCHDOG_CHECK_INTERVAL!r}")
+    if ESS_EXTERNAL_WARN_MINUTES <= 0:
+        checks.append(
+            f"ESS_EXTERNAL_WARN_MINUTES must be positive number, got {ESS_EXTERNAL_WARN_MINUTES!r}"
+        )
 
     if LOOP_INTERVAL <= 0:
         checks.append(f"LOOP_INTERVAL must be positive number, got {LOOP_INTERVAL!r}")

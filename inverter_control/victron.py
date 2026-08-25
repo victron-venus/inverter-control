@@ -75,6 +75,16 @@ VEBUS_STATE_PATH = "/State"
 VEBUS_INV_POWER_PATH = "/Devices/0/Ac/Inverter/P"
 # While signals are healthy, hot tree polls run only this often
 SIGNAL_RECONCILE_INTERVAL = 30.0
+# When the signal path is down, tree polls back off from every 5Hz pass to
+# this cadence (matches the control-thread staleness budget of ~1s).
+UNHEALTHY_POLL_INTERVAL = 1.0
+# Failed subscribe attempts are retried at this cadence (vebus may simply not
+# be up yet during boot; a mid-run daemon drop needs faster repair than 60s).
+SIGNAL_SETUP_RETRY_INTERVAL = 10.0
+# A healthy-flagged path that produces no data for this long is treated as
+# dead: subscriptions can silently vanish (daemon restart drops match rules),
+# so the flag must be re-derived from observed traffic, not trusted forever.
+SIGNAL_SILENCE_TIMEOUT = 10.0
 
 
 class VictronDBus:
@@ -182,6 +192,8 @@ class VictronDBus:
         self._signal_handler_attached = False
         self._last_signal_reconcile = 0.0
         self._last_signal_setup_try = 0.0
+        self._last_signal_ok_monotonic: float | None = None
+        self._next_unhealthy_poll = 0.0
 
         # Background polling thread (like HA does) - skip in test mode
         self._poll_thread: threading.Thread | None = None
@@ -227,8 +239,10 @@ class VictronDBus:
             subscribed.append(
                 self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH)
             )
-        self._signal_paths_subscribed = all(subscribed)
-        if not all(subscribed):
+        self._set_signals_healthy(all(subscribed))
+        if all(subscribed):
+            self._last_signal_ok_monotonic = time.monotonic()
+        else:
             logger.debug(
                 "Fast signal subscribe incomplete (%d/%d)", sum(subscribed), len(subscribed)
             )
@@ -247,6 +261,20 @@ class VictronDBus:
         """True when all fast-input subscriptions are armed on the live bus."""
         return bool(self._native is not None and self._signal_paths_subscribed)
 
+    def is_signals_healthy(self) -> bool:
+        """Public view of fast-signal path health (for perf telemetry)."""
+        return self._signals_healthy()
+
+    def _set_signals_healthy(self, value: bool) -> None:
+        """Update subscription flag; log each healthy<->unhealthy flip once."""
+        if value == self._signal_paths_subscribed:
+            return
+        self._signal_paths_subscribed = value
+        if value:
+            logger.info("Fast signal path healthy: subscriptions armed")
+        else:
+            logger.warning("Fast signal path unhealthy: tree polling fallback engaged")
+
     def _on_fast_signal(self, path: str, raw: str | None):
         """PropertiesChanged handler: routes one payload into the caches."""
         self._apply_fast_value(path, raw)
@@ -255,6 +283,8 @@ class VictronDBus:
         """Apply one fast-input reading (signal or seed fetch) to the caches."""
         if raw is None:
             return
+        # Observed traffic proves the signal path alive; see _poll_all.
+        self._last_signal_ok_monotonic = time.monotonic()
         now = time.time()
         try:
             if path in SYSTEM_SIGNAL_PATHS:
@@ -380,6 +410,18 @@ class VictronDBus:
     def _poll_all(self):
         """Poll all D-Bus data in one pass"""
 
+        # A healthy-flagged path that has gone silent is lying: match rules
+        # can vanish on a daemon restart without any error surfacing. Re-derive
+        # the flag from observed traffic so repair (and the health metric)
+        # engage during mid-run outages, not only after boot failures.
+        if (
+            self._signals_healthy()
+            and self._last_signal_ok_monotonic is not None
+            and time.monotonic() - self._last_signal_ok_monotonic > SIGNAL_SILENCE_TIMEOUT
+        ):
+            logger.warning("No fast-signal data for %.0fs - resubscribing", SIGNAL_SILENCE_TIMEOUT)
+            self._set_signals_healthy(False)
+
         # Fast inputs (grid/battery/inverter) arrive via PropertiesChanged
         # signals while subscriptions are healthy; tree polls then only
         # reconcile every SIGNAL_RECONCILE_INTERVAL against missed events.
@@ -390,10 +432,17 @@ class VictronDBus:
                 self._poll_inverter_power()
                 self._last_signal_reconcile = time.time()
         else:
-            if self._native is not None and time.time() - self._last_signal_setup_try > 60:
+            if (
+                self._native is not None
+                and time.time() - self._last_signal_setup_try > SIGNAL_SETUP_RETRY_INTERVAL
+            ):
                 self._setup_fast_signals()  # retry failed subscriptions (e.g. boot)
-            # Poll system data (tree query)
-            self._poll_system_data()
+            # Poll system data (tree query), throttled: a dbus-send spawn per
+            # 5Hz pass was the storm behind the watchdog restart loop.
+            now_mono = time.monotonic()
+            if now_mono >= self._next_unhealthy_poll:
+                self._next_unhealthy_poll = now_mono + UNHEALTHY_POLL_INTERVAL
+                self._poll_system_data()
 
         # Poll MPPT data (tree query per MPPT)
         if self._mppt_services:
