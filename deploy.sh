@@ -39,6 +39,20 @@ echo "    Syntax OK"
 # itself (it starts right after the services are killed and stops once the
 # new instance writes a fresh heartbeat), so it also covers webhook deploys.
 echo ">>> Streaming repository to $SSH_HOST and running update.sh..."
+
+# Push the developer's working local_config.py when it exists locally
+# (override with PUSH_LOCAL_CONFIG=0 to keep the device's current config).
+# update.sh also skips the copy itself if the source file is missing.
+if [ "${PUSH_LOCAL_CONFIG:-}" = "" ]; then
+    if [ -f "$SCRIPT_DIR/local_config.py" ]; then
+        PUSH_LOCAL_CONFIG=1
+        echo "    Local local_config.py found - will push it to the device"
+    else
+        PUSH_LOCAL_CONFIG=0
+        echo "    No local local_config.py - keeping device config"
+    fi
+fi
+
 tar \
     --exclude='.git' \
     --exclude='__pycache__' \
