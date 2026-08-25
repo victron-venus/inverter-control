@@ -170,12 +170,10 @@ inverter-control/              # Git repo root
 ├── local_config.example.py    # Template for local_config.py
 ├── tests/
 │   └── test_logic.py          # Unit tests for control logic
-├── services/
-│   └── inverter-control/
-│       └── run                # daemontools service runner
 ├── service/
-│   └── log-forwarder/
-│       └── run                # Log forwarder service
+│   ├── inverter-control/      # daemontools service runner
+│   ├── log-forwarder/         # Log forwarder service
+│   └── watchdog/              # External process watchdog
 ├── LOGIC.md                   # Control logic documentation (EN)
 ├── LOGIC_RUS.md               # Control logic documentation (RU)
 └── release.sh                 # Tag, push, create GitHub release
