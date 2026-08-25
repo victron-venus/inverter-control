@@ -41,6 +41,14 @@ def start() -> bool:
         ),
         "failed_writes": Gauge("inverter_control_failed_writes_total", "Failed setpoint writes"),
         "age": Gauge("inverter_control_snapshot_age_ms", "Telemetry snapshot age ms", ["quantile"]),
+        "signals": Gauge(
+            "inverter_control_signals_healthy",
+            "D-Bus fast-signal path health (1=healthy)",
+        ),
+        "subprocess": Gauge(
+            "inverter_control_dbus_subprocess_calls_total",
+            "dbus-send subprocess spawns (storm canary)",
+        ),
         "cpu": Gauge("inverter_control_cpu_percent", "Process CPU percent"),
         "rss": Gauge("inverter_control_rss_mb", "Process RSS MB"),
     }
@@ -80,6 +88,9 @@ def publish(snapshot: dict[str, Any]) -> None:
     ages = snapshot.get("snapshot_age_ms", {})
     _set("age", ages.get("p50"), "p50")
     _set("age", ages.get("max"), "max")
+
+    _set("signals", snapshot.get("signals_healthy"))
+    _set("subprocess", snapshot.get("dbus_subprocess_calls"))
 
     _set("cpu", snapshot.get("cpu_percent"))
     _set("rss", snapshot.get("rss_mb"))
