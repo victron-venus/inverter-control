@@ -212,24 +212,26 @@ class TestControllerWiring:
 
             controller = InverterController(dry_run=True)
 
-        assert controller.grid_filter is None
-        assert controller.derived_grid_filter is not None
-        assert not controller.derived_grid_filter.is_alive()
+            assert controller.grid_filter is None
+            assert controller.derived_grid_filter is not None
+            assert not controller.derived_grid_filter.is_alive()
 
-        sys_data = {"g1": 0, "g2": 0, "gt": 100, "t1": 0, "t2": 0, "tt": 0}
-        controller.victron = MagicMock()
-        controller.victron.get_system_data.return_value = sys_data
-        controller.ha.get_vue_sensor.return_value = 500  # home_total
-        controller.ha.get_boolean.return_value = False
-        controller.victron.get_mppt_data.return_value = {}
-        controller.victron.get_pv_power.return_value = []
-        controller.victron.get_inverter_power.return_value = 0
-        controller.calculator.calculate.return_value = MagicMock(
-            setpoint=0, flags="", filtered_gt=100.0
-        )
-        controller.calculate_setpoint(sys_data)
-        # Raw derived (home - pv) landed on the filter's getter...
-        assert controller._raw_derived_gt == 500.0
-        # ...but no tick has run yet, so state got None this cycle.
-        state_arg = controller.calculator.calculate.call_args[0][0]
-        assert state_arg.derived_gt is None
+            sys_data = {"g1": 0, "g2": 0, "gt": 100, "t1": 0, "t2": 0, "tt": 0}
+            controller.victron = MagicMock()
+            controller.victron.get_system_data.return_value = sys_data
+            controller.ha.get_vue_sensor.return_value = 500  # home_total
+            controller.ha.get_boolean.return_value = False
+            controller.victron.get_mppt_data.return_value = {}
+            controller.victron.get_pv_power.return_value = []
+            controller.victron.get_inverter_power.return_value = 0
+            controller.calculator.calculate.return_value = MagicMock(
+                setpoint=0, flags="", filtered_gt=100.0
+            )
+            # Flag must still be patched here: calculate_setpoint gates the
+            # derived path on it at call time.
+            controller.calculate_setpoint(sys_data)
+            # Raw derived (home - pv) landed on the filter's getter...
+            assert controller._raw_derived_gt == 500.0
+            # ...but no tick has run yet, so state got None this cycle.
+            state_arg = controller.calculator.calculate.call_args[0][0]
+            assert state_arg.derived_gt is None
