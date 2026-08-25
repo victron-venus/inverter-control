@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.3] - 2026-08-25
+
+### Added
+- `setup` is now self-sufficient for standalone manual installs: installs the
+  daemontools services (persistent `/data/inverter-control/service/*` dirs
+  symlinked into tmpfs `/service`) and an idempotent `rc.local` boot block;
+  UNINSTALL removes symlinks; skips file copies when run from the install dir
+  itself (#153)
+
+### Changed
+- README install section rewritten: Option 3 is now the on-device tarball +
+  `setup install auto` recipe; PackageManager section describes the real
+  persistent-service layout (#154)
+- deploy.sh auto-pushes a local `local_config.py` when present (PUSH_LOCAL_CONFIG
+  path in update.sh) (#151)
+
+### Fixed
+- Auto-merge workflow never fired: automerge-action default label list
+  (`automerge`) did not match the repo label (`auto-merge`); retry window
+  3×10s was shorter than CI; dead `check_suite` trigger removed (#152)
+
 ## [1.21.2] - 2026-08-25
 
 Post-incident hardening release (Cerbo GX investigation 2026-08-24/25: grid not

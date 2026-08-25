@@ -1,21 +1,11 @@
-Post-incident hardening (Cerbo GX, 2026-08-24/25) + everything since v1.21.1.
+Deploy-hygiene + auto-merge fixes; everything since v1.21.2.
 
 Highlights:
-- Persistent dbus_fast connection + signal-driven fast inputs; unhealthy
-  fallback throttled 5Hz -> 1s (kills the dbus-send spawn storm behind the
-  watchdog restart loop)
-- Per-stage cycle timing + deadline-anchored loop sleep; Prometheus metrics
-  on :9102 (INVERTER_METRICS_PORT)
-- Signal-path health re-derived from observed traffic; storm-canary counter
-  published
-- Loud warning when ESS leaves External control (silent no-op trap)
-- Watchdog failsafe forces setpoint only - no more ESS mode flapping /
-  passthru dips / BatteryLife wipes on transient stalls
-- External watchdog: timeout default 300s, WATCHDOG_ALERT_ONLY escape hatch
-- Grid-zero deadband HIGH tightened +80W -> +30W
-- derived_gt smoothing moved into the GridFilter thread
-  (GRID_SMOOTHING_DERIVED_TAU=3.2s; 0 = legacy path)
-- Water system on dbus-pump D-Bus (no HA); inverter/portal topic;
-  solar forecast webhook
+- `setup install` now performs a complete standalone manual install
+  (services, /service symlinks, rc.local boot block) - replaces the
+  removed legacy install.sh; recipe: wget tarball, `setup install auto`
+- Auto-merge workflow fixed (label mismatch + retry window): PRs labeled
+  `auto-merge` actually merge themselves after CI
+- README install docs match reality
 
-Full list: CHANGELOG.md [1.21.2]
+Full list: CHANGELOG.md [1.21.3]
