@@ -46,6 +46,14 @@ def start() -> bool:
             "Control cycle per-stage duration ms",
             ["stage", "quantile"],
         ),
+        "signals": Gauge(
+            "inverter_control_signals_healthy",
+            "D-Bus fast-signal path health (1=healthy)",
+        ),
+        "subprocess": Gauge(
+            "inverter_control_dbus_subprocess_calls_total",
+            "dbus-send subprocess spawns (storm canary)",
+        ),
         "cpu": Gauge("inverter_control_cpu_percent", "Process CPU percent"),
         "rss": Gauge("inverter_control_rss_mb", "Process RSS MB"),
     }
@@ -85,6 +93,9 @@ def publish(snapshot: dict[str, Any]) -> None:
     ages = snapshot.get("snapshot_age_ms", {})
     _set("age", ages.get("p50"), "p50")
     _set("age", ages.get("max"), "max")
+
+    _set("signals", snapshot.get("signals_healthy"))
+    _set("subprocess", snapshot.get("dbus_subprocess_calls"))
 
     for stage, stats in snapshot.get("stage_ms", {}).items():
         for quantile in ("p50", "p95", "max"):
