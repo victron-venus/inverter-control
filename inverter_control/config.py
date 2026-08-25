@@ -223,7 +223,7 @@ USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "f
 
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
-GRID_ZERO_DEADBAND_HIGH = 80  # Watts - upper bound (slight import OK)
+GRID_ZERO_DEADBAND_HIGH = 30  # Watts - upper bound (slight import OK)
 DAMPING_FACTOR = 0.7  # Damping for import correction (0.0-1.0)
 EMA_ALPHA = float(
     _import_local_config("EMA_ALPHA", 0.3)
