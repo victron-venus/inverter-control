@@ -9,7 +9,18 @@ source "/data/SetupHelper/HelperResources/IncludeHelpers"
 
 installDir="/data/inverter-control"
 
-#### running manually - prompt for input
+#### running manually - prompt for input (interactive terminals only).
+# Headless callers (MCP tools, CI, PackageManager without env) must never
+# land in standardActionPrompt: it reads stdin and blocks forever on a
+# non-interactive channel. 2026-08-24: such a hang outlived its SSH session,
+# left a zombie bash, and the half-done install had already swapped the
+# package directory. Refuse cleanly instead.
+if [ "$scriptAction" == 'NONE' ] && ! [ -t 0 ]; then
+    echo "ERROR: scriptAction is not set and stdin is not a TTY - refusing to prompt." >&2
+    echo "Install via PackageManager, or run non-interactively:" >&2
+    echo "  scriptAction=INSTALL packageName=inverter-control scriptDir=$(pwd) $0 </dev/null" >&2
+    exit 1
+fi
 if [ "$scriptAction" == 'NONE' ]; then
     standardActionPrompt
 fi
