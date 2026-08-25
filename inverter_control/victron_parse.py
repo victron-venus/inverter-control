@@ -149,71 +149,27 @@ def parse_mppt_output(output: str) -> dict[str, float]:
 # BATTERY SOC CALCULATION (ported from HA template sensors)
 # =============================================================================
 
-# Polynomial coefficients for voltage -> SOC conversion (5th degree, highest first)
-# From: sensor.compensation_sensor_battery_voltage coefficients attribute
-# SOC = c0*V^5 + c1*V^4 + c2*V^3 + c3*V^2 + c4*V + c5
-BATTERY_VOLTAGE_TO_SOC_COEFFS = (
-    0.004273352289848183,  # V^5
-    -1.1946101528489494,  # V^4
-    131.15278553768547,  # V^3
-    -7086.612266200085,  # V^2
-    188790.53434597014,  # V^1
-    -1986209.3055883816,  # V^0 (constant)
-)
-
-# Battery parameters for load correction (Coulomb counting approximation)
-BATTERY_CAPACITY_CHARGE_AH = 280.0  # Ah when charging
-BATTERY_CAPACITY_DISCHARGE_AH = 180.0  # Ah when discharging
-BATTERY_ROUNDTRIP_EFFICIENCY = 0.95  # 95%
+# Bank SOC paradigm copied from the Home Assistant "Battery %" template
+# sensor: a plain linear map of pack voltage onto 0-100%, clamped and rounded.
+BATTERY_VOLTAGE_MIN = 40.0  # V -> 0%
+BATTERY_VOLTAGE_MAX = 54.4  # V -> 100% (absorption voltage)
 
 
-def _voltage_to_soc(voltage: float) -> float:
-    """Convert battery voltage to SOC using 5th-degree polynomial."""
-    try:
-        v = float(voltage)
-        if v < 40.0 or v > 58.4:
-            return 0.0
-        soc = BATTERY_VOLTAGE_TO_SOC_COEFFS[0]
-        for coeff in BATTERY_VOLTAGE_TO_SOC_COEFFS[1:]:
-            soc = soc * v + coeff
-        return max(0.0, min(100.0, soc))
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _apply_load_correction(base_soc: float, power_w: float) -> float:
-    """Apply load correction to SOC based on battery power."""
-    try:
-        p = float(power_w)
-        soc = float(base_soc)
-
-        if p < 0:  # Discharging
-            capacity = BATTERY_CAPACITY_DISCHARGE_AH
-            correction = (abs(p) / capacity) * 100.0 * (1.0 - BATTERY_ROUNDTRIP_EFFICIENCY)
-            return min(soc + correction, 100.0)
-        elif p > 0:  # Charging
-            capacity = BATTERY_CAPACITY_CHARGE_AH
-            correction = (p / capacity) * 100.0 * (1.0 - BATTERY_ROUNDTRIP_EFFICIENCY)
-            return max(soc - correction, 0.0)
-        else:
-            return soc
-    except (ValueError, TypeError):
-        return base_soc
-
-
-def calculate_battery_soc_from_voltage(voltage: float, power_w: float) -> float:
+def calculate_battery_soc_from_voltage(voltage: float) -> float:
     """
-    Calculate corrected battery SOC from voltage and power.
-    This is the local replacement for HA's corrected_battery_soc sensor.
+    Calculate bank SOC from pack voltage the same way the HA "Battery %" sensor
+    does: linear between min and max voltage, clamped to 0-100, rounded.
 
     Args:
-        voltage: Battery voltage in volts (from D-Bus Dc/Battery/Voltage)
-        power_w: Battery power in watts (from D-Bus Dc/Battery/Power,
-                 positive=charging, negative=discharging)
+        voltage: Battery voltage in volts (SmartShunt Dc/0/Voltage)
 
     Returns:
-        SOC percentage (0-100)
+        SOC percentage as whole number 0-100
     """
-    base_soc = _voltage_to_soc(voltage)
-    corrected_soc = _apply_load_correction(base_soc, power_w)
-    return round(corrected_soc, 2)
+    try:
+        pct = (
+            (float(voltage) - BATTERY_VOLTAGE_MIN) / (BATTERY_VOLTAGE_MAX - BATTERY_VOLTAGE_MIN)
+        ) * 100.0
+    except (ValueError, TypeError):
+        return 0.0
+    return float(round(min(100.0, max(0.0, pct))))

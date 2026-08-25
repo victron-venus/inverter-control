@@ -103,24 +103,29 @@ class TestParseVariantAndMppt:
 
 
 class TestBatterySocFromVoltage:
-    def test_voltage_out_of_range(self):
-        assert vp.calculate_battery_soc_from_voltage(30.0, 0) == 0.0
-        assert vp.calculate_battery_soc_from_voltage(60.0, 0) == 0.0
+    """Parity with the HA "Battery %" template: linear 40-54.4V, clamp, round."""
 
-    def test_monotonic_in_range(self):
-        low = vp.calculate_battery_soc_from_voltage(51.0, 0)
-        high = vp.calculate_battery_soc_from_voltage(55.0, 0)
-        assert 0 <= low < high <= 100
+    def test_endpoints(self):
+        assert vp.calculate_battery_soc_from_voltage(vp.BATTERY_VOLTAGE_MIN) == 0.0
+        assert vp.calculate_battery_soc_from_voltage(vp.BATTERY_VOLTAGE_MAX) == 100.0
 
-    def test_discharge_correction_raises_soc(self):
-        base = vp._voltage_to_soc(53.0)
-        corrected = vp.calculate_battery_soc_from_voltage(53.0, -500)
-        assert corrected >= base
+    def test_clamps_outside_range(self):
+        assert vp.calculate_battery_soc_from_voltage(30.0) == 0.0
+        assert vp.calculate_battery_soc_from_voltage(60.0) == 100.0
 
-    def test_charge_correction_lowers_soc(self):
-        base = vp._voltage_to_soc(53.0)
-        corrected = vp.calculate_battery_soc_from_voltage(53.0, 500)
-        assert corrected <= base
+    def test_midpoint_is_half(self):
+        mid = (vp.BATTERY_VOLTAGE_MIN + vp.BATTERY_VOLTAGE_MAX) / 2
+        assert vp.calculate_battery_soc_from_voltage(mid) == 50.0
 
-    def test_zero_power_no_correction(self):
-        assert vp.calculate_battery_soc_from_voltage(53.0, 0) == round(vp._voltage_to_soc(53.0), 2)
+    def test_monotonic_and_whole_numbers(self):
+        prev = -1.0
+        v = vp.BATTERY_VOLTAGE_MIN
+        while v <= vp.BATTERY_VOLTAGE_MAX:
+            soc = vp.calculate_battery_soc_from_voltage(v)
+            assert prev <= soc <= 100
+            assert float(soc).is_integer()
+            prev = soc
+            v += 0.1
+
+    def test_garbage_voltage_returns_zero(self):
+        assert vp.calculate_battery_soc_from_voltage("not-a-number") == 0.0  # type: ignore[arg-type]
