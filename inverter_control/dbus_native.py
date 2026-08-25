@@ -65,7 +65,10 @@ class NativeDbusClient:
     def __init__(self):
         self._loop: asyncio.AbstractEventLoop | None = None
         self._bus = None
-        self._state_lock = threading.Lock()
+        # RLock: _connect() -> _replay_subscriptions() -> on_reconnect() ->
+        # get_value() re-enters _get_bus() on the SAME thread; a plain Lock
+        # self-deadlocked there and wedged the whole control cycle.
+        self._state_lock = threading.RLock()
         self._fail_until = 0.0
         # Signal subscription support (PropertiesChanged)
         self._signal_handlers: list = []  # callbacks (path, value_str)
