@@ -3,8 +3,9 @@ name: Auto-merge PR
 on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
-  check_suite:
-    types: [completed]
+  # check_suite trigger removed: the job if reads github.event.pull_request.*,
+  # which is null on check_suite events, so those runs always skipped anyway.
+  # wait-for-status-checks inside pull_request runs covers waiting for checks.
 
 permissions:
   contents: write
@@ -44,6 +45,10 @@ jobs:
         uses: pascalgn/automerge-action@7961b8b5eec56cc088c140b56d864285eabd3f67 # v0.16.4
         env:
           GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
+          # automerge-action's default label list is "automerge,@automerge" —
+          # it never matched this repo's "auto-merge" label, so nothing ever
+          # merged. Point it at the repo label.
+          MERGE_LABELS: auto-merge
           MERGE_METHOD: squash
           MERGE_COMMIT_MESSAGE: automatic
           MERGE_RETRIES: 3
