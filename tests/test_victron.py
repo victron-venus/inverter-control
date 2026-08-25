@@ -131,24 +131,46 @@ class TestVictronDBus:
         assert result is False
 
     def test_get_system_data(self):
-        """Test getting system data"""
-        with patch("inverter_control.victron.subprocess.run") as mock_run:
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_result.stdout = (
-                "Ac/Grid/L1/Power\nvariant       int32 500\n"
-                "Ac/Grid/L2/Power\nvariant       int32 -300\n"
-                "Ac/Consumption/L1/Power\nvariant       int32 200\n"
-                "Ac/Consumption/L2/Power\nvariant       int32 100\n"
-                "Dc/Battery/Voltage\nvariant       double 52.4\n"
-                "Dc/Battery/Current\nvariant       double -5.2\n"
-                "Dc/Battery/Power\nvariant       int32 -270\n"
-                "Dc/Pv/Power\nvariant       int32 1500\n"
-            )
-            mock_run.return_value = mock_result
+        """Test getting system data: grid/consumption/pv from system service,
+        bank V/I/P from the SmartShunt service only."""
+        system_tree = (
+            "Ac/Grid/L1/Power\nvariant       int32 500\n"
+            "Ac/Grid/L2/Power\nvariant       int32 -300\n"
+            "Ac/Consumption/L1/Power\nvariant       int32 200\n"
+            "Ac/Consumption/L2/Power\nvariant       int32 100\n"
+            "Dc/Pv/Power\nvariant       int32 1500\n"
+        )
+        shunt_tree = (
+            "Dc/0/Voltage\nvariant       double 52.4\n"
+            "Dc/0/Current\nvariant       double -5.2\n"
+            "Dc/0/Power\nvariant       int32 -270\n"
+        )
 
+        def fake_run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            if cmd[0] == "dbus":
+                # bus-name listing: one shunt battery + vebus + system
+                result.stdout = (
+                    "com.victronenergy.battery.ttyUSB4\n"
+                    "com.victronenergy.vebus.ttyACM0\n"
+                    "com.victronenergy.system"
+                )
+            elif "/ProductName" in " ".join(cmd):
+                result.stdout = 'variant       string "SmartShunt 500A/50mV"'
+            elif f"--dest={victron.SYSTEM_SERVICE}" in cmd:
+                result.stdout = system_tree
+            elif "--dest=com.victronenergy.battery." in " ".join(cmd):
+                result.stdout = shunt_tree
+            else:
+                result.stdout = ""
+            return result
+
+        with patch("inverter_control.victron.subprocess.run", side_effect=fake_run):
             victron.reset_victron_for_testing()
             v = victron.get_victron(test_mode=True)
+            # discovery runs in __init__; shunt matched by ProductName
+            assert v._shunt_service == "com.victronenergy.battery.ttyUSB4"
             data = v.get_system_data()
 
         assert data["g1"] == 500

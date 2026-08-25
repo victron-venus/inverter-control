@@ -346,14 +346,17 @@ class TestVictronSignalIntegration:
         v = victron.get_victron(test_mode=True)
         v._apply_fast_value("/Ac/Grid/L1/Power", "100")
         v._apply_fast_value("/Ac/Grid/L2/Power", "-30.0")
-        v._apply_fast_value("/Dc/Battery/Voltage", "48.5")
-        v._apply_fast_value("/Dc/Battery/Power", "500.4")
+        # bank V/I/P arrive via shunt-service signals (/Dc/0/*)
+        v._apply_fast_value("/Dc/0/Voltage", "48.5")
+        v._apply_fast_value("/Dc/0/Current", "-3.25")
+        v._apply_fast_value("/Dc/0/Power", "500.4")
 
         data = v.get_system_data()
         assert data["g1"] == 100
         assert data["g2"] == -30
         assert data["gt"] == 70
         assert data["bv"] == 48.5
+        assert data["bc"] == -3.25
         assert data["bp"] == 500
 
     def test_apply_fast_value_inverter(self):

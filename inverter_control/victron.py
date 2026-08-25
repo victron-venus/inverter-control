@@ -23,6 +23,7 @@ from .victron_parse import (
     extract_acload_name_power,
     extract_power_from_tree,
     parse_mppt_output,
+    parse_shunt_data_output,
     parse_system_data_output,
     parse_variant_value,
 )
@@ -66,10 +67,17 @@ SYSTEM_SIGNAL_PATHS = {
     "/Ac/Grid/L2/Power": "g2",
     "/Ac/Consumption/L1/Power": "t1",
     "/Ac/Consumption/L2/Power": "t2",
-    "/Dc/Battery/Voltage": "bv",
-    "/Dc/Battery/Current": "bc",
-    "/Dc/Battery/Power": "bp",
     "/Dc/Pv/Power": "pv_total",
+}
+# Bank V/I/P come straight from the SmartShunt — the ground-truth meter for
+# the whole bank. The system/0 Dc/Battery aggregate only equals the shunt
+# while virtual_chain is healthy (it is derived: shunt - chain1 - chain2),
+# so reading the aggregate adds a failure mode without adding information.
+# No fallback: if the shunt is missing the values stay at 0 until it is found.
+SHUNT_SIGNAL_PATHS = {
+    "/Dc/0/Voltage": "bv",
+    "/Dc/0/Current": "bc",
+    "/Dc/0/Power": "bp",
 }
 VEBUS_STATE_PATH = "/State"
 VEBUS_INV_POWER_PATH = "/Devices/0/Ac/Inverter/P"
@@ -113,6 +121,7 @@ class VictronDBus:
 
     def __init__(self, test_mode: bool = False):
         self._vebus_service: str | None = None
+        self._shunt_service: str | None = None
         self._mppt_services: list = []
         self._consecutive_errors: int = 0
         self._last_scan_time: float = 0
@@ -211,6 +220,8 @@ class VictronDBus:
     def _fast_targets(self) -> list[tuple[str, str]]:
         """(service, path) pairs for all signal-driven fast inputs."""
         targets = [(SYSTEM_SERVICE, path) for path in SYSTEM_SIGNAL_PATHS]
+        if self._shunt_service:
+            targets.extend((self._shunt_service, path) for path in SHUNT_SIGNAL_PATHS)
         if self._vebus_service:
             targets.append((self._vebus_service, VEBUS_STATE_PATH))
             targets.append((self._vebus_service, VEBUS_INV_POWER_PATH))
@@ -232,6 +243,8 @@ class VictronDBus:
             self._signal_handler_attached = True
 
         subscribed = [self._native.subscribe_service_items(SYSTEM_SERVICE)]
+        if self._shunt_service:
+            subscribed.append(self._native.subscribe_service_items(self._shunt_service))
         if self._vebus_service:
             # vebus is a C++ service; arm both signal shapes for it
             subscribed.append(self._native.subscribe_service_items(self._vebus_service))
@@ -287,8 +300,8 @@ class VictronDBus:
         self._last_signal_ok_monotonic = time.monotonic()
         now = time.time()
         try:
-            if path in SYSTEM_SIGNAL_PATHS:
-                key = SYSTEM_SIGNAL_PATHS[path]
+            if path in SYSTEM_SIGNAL_PATHS or path in SHUNT_SIGNAL_PATHS:
+                key = SYSTEM_SIGNAL_PATHS.get(path) or SHUNT_SIGNAL_PATHS[path]
                 val = float(raw)
                 self._system_data[key] = round(val) if key not in ("bv", "bc") else val
                 self._system_data["gt"] = int(
@@ -323,6 +336,7 @@ class VictronDBus:
             self._mppt_services = []
             self._acload_services = []
             self._pv_inverter_services = []
+            battery_candidates: list[str] = []
 
             for line in lines:
                 if "com.victronenergy.vebus" in line:
@@ -333,16 +347,33 @@ class VictronDBus:
                     self._acload_services.append(line.strip())
                 elif "com.victronenergy.pvinverter." in line:
                     self._pv_inverter_services.append(line.strip())
+                elif "com.victronenergy.battery." in line:
+                    battery_candidates.append(line.strip())
 
             self._mppt_services.sort()
             self._acload_services.sort()
             self._pv_inverter_services.sort()
+
+            # The SmartShunt's bus-name suffix (ttyUSB4 today) can change
+            # across GX reboots, so match by ProductName, never by instance.
+            old_shunt = self._shunt_service
+            self._shunt_service = None
+            for candidate in battery_candidates:
+                if "shunt" in self._read_product_name(candidate).lower():
+                    self._shunt_service = candidate
+                    break
 
             # Log if service changed
             if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
                 print(f"  [D-Bus] VE.Bus service changed: {old_vebus} -> {self._vebus_service}")
             elif not old_vebus and self._vebus_service:
                 print(f"  [D-Bus] VE.Bus service found: {self._vebus_service}")
+
+            if old_shunt != self._shunt_service:
+                if self._shunt_service:
+                    print(f"  [D-Bus] SmartShunt service found: {self._shunt_service}")
+                else:
+                    print("  [D-Bus] SmartShunt service not found")
 
             if self._acload_services:
                 print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
@@ -428,6 +459,7 @@ class VictronDBus:
         if self._signals_healthy():
             if time.time() - self._last_signal_reconcile >= SIGNAL_RECONCILE_INTERVAL:
                 self._poll_system_data()
+                self._poll_shunt_data()
                 self._poll_inverter_state()
                 self._poll_inverter_power()
                 self._last_signal_reconcile = time.time()
@@ -443,6 +475,7 @@ class VictronDBus:
             if now_mono >= self._next_unhealthy_poll:
                 self._next_unhealthy_poll = now_mono + UNHEALTHY_POLL_INTERVAL
                 self._poll_system_data()
+                self._poll_shunt_data()
 
         # Poll MPPT data (tree query per MPPT)
         if self._mppt_services:
@@ -488,6 +521,46 @@ class VictronDBus:
         parsed = parse_system_data_output(output)
         self._system_data.update(parsed)
         self._system_data["_last_update"] = time.time()
+
+    def _poll_shunt_data(self):
+        """Poll bank V/I/P from the SmartShunt service (tree query)."""
+        if not self._shunt_service:
+            return
+        output = self._safe_subprocess_tracked(
+            [
+                "dbus-send",
+                "--system",
+                "--print-reply",
+                f"--dest={self._shunt_service}",
+                "/",
+                GET_VALUE_METHOD,
+            ],
+            service=self._shunt_service,
+            timeout=0.5,
+        )
+        if output:
+            self._system_data.update(parse_shunt_data_output(output))
+            self._system_data["_last_update"] = time.time()
+
+    def _read_product_name(self, service: str) -> str:
+        """Product name of a battery service ('' when unreadable)."""
+        if self._native is not None:
+            value = self._native.get_value(service, "/ProductName")
+            if value:
+                return str(value)
+        result = self._safe_subprocess(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={service}",
+                "/ProductName",
+                GET_VALUE_METHOD,
+            ],
+            timeout=0.3,
+        )
+        match = re.search(r'string\s+"([^"]*)"', result or "")
+        return match.group(1) if match else ""
 
     def _poll_mppt_data_tree(self):
         """Poll all MPPT data using parallel tree queries"""
@@ -1137,6 +1210,22 @@ class VictronDBus:
 
         parsed = parse_system_data_output(output)
         data.update(parsed)
+
+        # Bank V/I/P from the SmartShunt only (see SHUNT_SIGNAL_PATHS note).
+        if self._shunt_service:
+            shunt_output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply",
+                    f"--dest={self._shunt_service}",
+                    "/",
+                    GET_VALUE_METHOD,
+                ],
+                timeout=0.5,
+            )
+            if shunt_output:
+                data.update(parse_shunt_data_output(shunt_output))
         return data
 
     def get_inverter_state(self) -> tuple[int, str]:
