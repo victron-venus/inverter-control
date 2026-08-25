@@ -749,6 +749,8 @@ class TestGridSmoothingWithHome(unittest.TestCase):
             "D_BRAKE_ZONE": 100,
             "D_THRESHOLD": 50,
             "D_GAIN": 0.3,
+            # Legacy derived-EMA path by default; TAU-path tests opt in.
+            "GRID_SMOOTHING_DERIVED_TAU": 0,
         }
         config.update(overrides)
         return config
@@ -866,6 +868,95 @@ class TestGridSmoothingWithHome(unittest.TestCase):
         state = self._base_state(gt=200, derived_gt=800, home_total=1800, previous_setpoint=0)
         r = calculator.calculate(state)
         assert r.filtered_gt == 620.0
+
+
+class TestDerivedTauPath(unittest.TestCase):
+    """GRID_SMOOTHING_DERIVED_TAU > 0: derived_gt arrives pre-smoothed from the
+    GridFilter thread; calculate() must blend it directly (no per-cycle EMA)."""
+
+    def _base_state(self, **kwargs):
+        defaults = {
+            "g1": 0,
+            "g2": 0,
+            "gt": 0,
+            "t1": 0,
+            "t2": 0,
+            "tt": 0,
+            "inv_power": 0,
+            "mppt_total": 0,
+            "tasmota_total": 0,
+            "pv_total": 0,
+            "ev_power": 0,
+            "garage_power": 0,
+            "only_charging": False,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "limit_to_ev": False,
+            "previous_setpoint": 0,
+            "home_total": 0.0,
+            "derived_gt": None,
+            "filtered_gt": None,
+        }
+        defaults.update(kwargs)
+        return SystemState(**defaults)
+
+    def _calculator(self, **overrides):
+        config = {
+            "EMA_ALPHA": 1.0,
+            "POWER_LIMIT_MIN": -2300,
+            "POWER_LIMIT_MAX": 2250,
+            "SETPOINT_DELTA_LIMIT": 2000,
+            "DAMPING_FACTOR": 0.7,
+            "GRID_ZERO_DEADBAND_LOW": -10,
+            "GRID_ZERO_DEADBAND_HIGH": 10,
+            "INVERTER_EFFICIENCY": 1.0,
+            "SOLAR_OUTPUT_OFFSET": 0,
+            "EXPORT_DAMPING": 1.0,
+            "CREEP_RATE": 0.5,
+            "CREEP_MAX": 100.0,
+            "D_BRAKE_ZONE": 100,
+            "D_THRESHOLD": 50,
+            "D_GAIN": 0.3,
+            "GRID_SMOOTHING_DERIVED_TAU": 3.2,
+            "GRID_SMOOTHING_HOME_WEIGHT": 0.7,
+        }
+        config.update(overrides)
+        return SetpointCalculator(config)
+
+    def test_blend_uses_value_directly(self):
+        calc = self._calculator()
+        # Filtered derived=800, instantaneous gt=200 → 0.7*800 + 0.3*200 = 620
+        state = self._base_state(gt=200, derived_gt=800)
+        r = calc.calculate(state)
+        assert r.filtered_gt == 620.0
+
+    def test_no_internal_ema_persistence(self):
+        # Unlike the legacy path, a raw jump in filtered derived is blended
+        # immediately - no alpha lag across cycles.
+        calc = self._calculator()
+        s1 = self._base_state(gt=0, derived_gt=1000)
+        r1 = calc.calculate(s1)
+        assert r1.filtered_gt == 700.0
+        s2 = self._base_state(gt=0, derived_gt=500, filtered_gt=r1.filtered_gt)
+        r2 = calc.calculate(s2)
+        assert r2.filtered_gt == 350.0  # 0.7*500 + 0.3*0
+
+    def test_tau_zero_keeps_legacy_alpha(self):
+        calc = self._calculator(GRID_SMOOTHING_DERIVED_TAU=0, GRID_SMOOTHING_DERIVED_ALPHA=0.1)
+        s1 = self._base_state(gt=0, derived_gt=1000)
+        r1 = calc.calculate(s1)  # seeds internal EMA at 1000
+        s2 = self._base_state(gt=0, derived_gt=500, filtered_gt=r1.filtered_gt)
+        r2 = calc.calculate(s2)
+        # Legacy: _filtered_derived_gt = 0.1*500 + 0.9*1000 = 950 → 0.7*950 = 665
+        assert r2.filtered_gt == 665.0
+
+    def test_fallback_when_derived_gt_none(self):
+        calc = self._calculator()
+        state = self._base_state(gt=300, derived_gt=None)
+        r = calc.calculate(state)
+        assert r.filtered_gt == 300.0
 
 
 if __name__ == "__main__":

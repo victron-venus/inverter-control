@@ -244,6 +244,12 @@ ENABLE_GRID_SMOOTHING_WITH_HOME = bool(
 )
 GRID_SMOOTHING_HOME_WEIGHT = float(_import_local_config("GRID_SMOOTHING_HOME_WEIGHT", 0.7))
 GRID_SMOOTHING_DERIVED_ALPHA = float(_import_local_config("GRID_SMOOTHING_DERIVED_ALPHA", 0.1))
+# Time constant (seconds) for the background GridFilter thread that smooths
+# derived_gt (home_total - pv_total), giving one consistent notion of smoothed
+# grid alongside the CT filter. When > 0 it replaces the legacy per-cycle
+# GRID_SMOOTHING_DERIVED_ALPHA EMA inside SetpointCalculator; set to 0 to
+# fall back to the legacy path without a version downgrade.
+GRID_SMOOTHING_DERIVED_TAU = float(_import_local_config("GRID_SMOOTHING_DERIVED_TAU", 3.2))
 
 # Loud warning when live control is silently ignored: GX only honors
 # /Hub4/L1/AcPowerSetpoint while ESS is in External control (Hub4Mode=3).
@@ -411,6 +417,7 @@ EXPORTED_KEYS = [
     "EMA_ALPHA",
     "EXPORT_DAMPING",
     "GRID_SMOOTHING_DERIVED_ALPHA",
+    "GRID_SMOOTHING_DERIVED_TAU",
     "GRID_SMOOTHING_HOME_WEIGHT",
     "GRID_ZERO_DEADBAND_HIGH",
     "GRID_ZERO_DEADBAND_LOW",
@@ -464,11 +471,17 @@ def _validate_config():
         _check_range("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, 0.0, 1.0),
         _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),
         _check_range("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, 0.0, 1.0),
+        _check_type("GRID_SMOOTHING_DERIVED_TAU", GRID_SMOOTHING_DERIVED_TAU, (int, float)),
         _check_type("GRID_FILTER_TAU", GRID_FILTER_TAU, (int, float)),
         _check_type("WATCHDOG_TIMEOUT_SECONDS", WATCHDOG_TIMEOUT_SECONDS, int),
         _check_type("WATCHDOG_CHECK_INTERVAL", WATCHDOG_CHECK_INTERVAL, (int, float)),
         _check_type("ESS_EXTERNAL_WARN_MINUTES", ESS_EXTERNAL_WARN_MINUTES, (int, float)),
     ]
+
+    if GRID_SMOOTHING_DERIVED_TAU < 0:
+        checks.append(
+            f"GRID_SMOOTHING_DERIVED_TAU must be >= 0, got {GRID_SMOOTHING_DERIVED_TAU!r}"
+        )
 
     if GRID_FILTER_TAU < 0:
         checks.append(f"GRID_FILTER_TAU must be >= 0, got {GRID_FILTER_TAU!r}")
