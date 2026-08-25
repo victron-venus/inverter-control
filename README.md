@@ -271,7 +271,7 @@ PackageManager discovers packages by scanning `/data/` for directories containin
 
 - Creates `/data/inverter-control/` and copies `main.py` + `inverter_control/` package
 - Installs `local_config.py` from `/data/setupOptions/inverter-control/`; if absent but the install dir already has one, keeps it; otherwise installs `local_config.example.py` as a starting point
-- Creates the daemontools service under `/service/inverter-control/`
+- Installs the daemontools services (`inverter-control`, `log-forwarder`, `watchdog`): persistent run/log dirs under `/data/inverter-control/service/`, symlinked into tmpfs `/service`, plus an idempotent `/data/rc.local` block that recreates the symlinks after reboot
 - Restarts the service
 
 The `gitHubInfo` file tells PackageManager where to download from:
@@ -290,17 +290,21 @@ For development or testing, use `deploy.sh`:
 
 This copies `main.py`, the `inverter_control/` package, `setup`, and `gitHubInfo` to the device, then restarts the service.
 
-### Option 3: Manual Install
+### Option 3: Manual Install (from the Cerbo)
+
+Download and install straight on the device — `setup install auto` is fully self-sufficient (copies files, creates the daemontools services, adds the rc.local boot-persistence block):
 
 ```bash
-# Copy files to Venus OS
-scp -r main.py inverter_control/ setup gitHubInfo version root@cerbo:/data/inverter-control/
-
-# SSH to Venus OS and run installer
 ssh root@cerbo
-cd /data/inverter-control
-./setup
+cd /data && wget -qO- https://github.com/victron-venus/inverter-control/archive/main.tar.gz | tar -xzf - && mv inverter-control-main inverter-control
+/data/inverter-control/setup install auto
 ```
+
+Notes:
+- Run interactively over SSH? Plain `/data/inverter-control/setup` prompts for the action instead of needing `install auto`.
+- Config goes to `/data/setupOptions/inverter-control/local_config.py` (see step 3 above); without one, `local_config.example.py` is installed as a starting point.
+- An existing installation is backed up to `/data/inverter-control.rollback` before reinstalling.
+- Uninstall: `/data/inverter-control/setup uninstall`.
 
 ## Usage
 
