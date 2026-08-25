@@ -631,7 +631,7 @@ class InverterController:
             "battery_power": sys_data.get("bp", 0),
             "battery_voltage": sys_data.get("bv", 0),
             "battery_current": sys_data.get("bc", 0),
-            "battery_soc": sys_data.get("soc", 0) or self.victron.get_battery_soc_local(sys_data),
+            "battery_soc": self.victron.get_battery_soc_local(sys_data),
             "daily_stats": self._get_daily_stats(),
             "solar_forecast": self._solar_forecast,
             "limits": {"min": self.power_limit_min, "max": self.power_limit_max},
