@@ -200,9 +200,6 @@ HA_TOKEN = "your_long_lived_access_token"
 TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
 TOU_EXPENSIVE_END_HOUR = 24  # midnight
 
-# Tasmota device IPs
-TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
-
 # HA Sensors, VUE sensors, booleans, etc.
 # See local_config.example.py for full template
 ```
@@ -258,7 +255,7 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 3. **Configure secrets** (from your local machine):
    ```bash
    cp local_config.example.py local_config.py
-   # Edit local_config.py with your TOU hours, HA token, Tasmota IPs, sensor names, etc.
+   # Edit local_config.py with your TOU hours, HA token, sensor names, etc.
    scp local_config.py root@cerbo:/data/setupOptions/inverter-control/
    ```
    Config in `/data/setupOptions/` survives package reinstalls; a copy directly in `/data/inverter-control/` also works (kept on update once installed).

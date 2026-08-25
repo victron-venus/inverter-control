@@ -19,7 +19,6 @@ try:
         HA_SENSORS,
         HA_TOKEN,
         HA_URL,
-        TASMOTA_IPS,
         VUE_SENSORS,
     )
 except ImportError:
@@ -27,7 +26,6 @@ except ImportError:
     print("WARNING: local_config.py not found! Copy local_config.example.py to local_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     HA_TOKEN = "your_token_here"
-    TASMOTA_IPS = []
     HA_SENSORS = {}
     VUE_SENSORS = {}
     HA_BOOLEANS = {}
@@ -297,17 +295,6 @@ HA_TIMEOUT = 2.0  # seconds
 TIMEZONE = "America/Los_Angeles"
 
 # =============================================================================
-# TASMOTA PV INVERTERS (now via D-Bus)
-# =============================================================================
-
-# D-Bus service name prefix for Tasmota PV inverters (auto-discovered at runtime)
-# Full service: com.victronenergy.pvinverter.tasmota_<instance>
-TASMOTA_PV_PREFIX = "com.victronenergy.pvinverter.tasmota_"
-
-# Fallback HTTP polling if D-Bus not available
-# TASMOTA_IPS imported from local_config.py
-
-# =============================================================================
 # DVCC (Dynamic Voltage & Current Control) - Battery Protection
 # =============================================================================
 # These settings control automatic charge/discharge current limiting based on:
@@ -455,7 +442,6 @@ def _validate_config():
         _check_type("HA_TOKEN", HA_TOKEN, str),
         _check_type("HA_URL", HA_URL, str),
         # PORTAL_ID not checked: lazily resolved via __getattr__, always str
-        _check_type("TASMOTA_IPS", TASMOTA_IPS, (list, tuple)),
         _check_type("HA_SENSORS", HA_SENSORS, dict),
         _check_type("VUE_SENSORS", VUE_SENSORS, dict),
         _check_type("HA_BOOLEANS", HA_BOOLEANS, dict),
