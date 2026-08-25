@@ -244,7 +244,7 @@ class TestVictronDBusIntegration:
         assert mock_run.called
 
 
-def _signal(path, value):
+def _signal(path, value, sender=":1.42"):
     return Message(
         message_type=MessageType.SIGNAL,
         path=path,
@@ -253,6 +253,7 @@ def _signal(path, value):
         body=[{"Value": value, "Text": "x"}],
         signature="a{sv}",
         serial=7,
+        sender=sender,
     )
 
 
@@ -296,14 +297,24 @@ class TestSignalSubscription:
 
     def test_signal_dispatches_to_handler(self, client):
         received = []
-        client.add_signal_handler(lambda path, value: received.append((path, value)))
+        client._sender_service[":1.42"] = "com.victronenergy.system"
+        client.add_signal_handler(lambda svc, path, value: received.append((svc, path, value)))
         client._handle_message(_signal("/Ac/Grid/L1/Power", Variant("i", 123)))
 
-        assert received == [("/Ac/Grid/L1/Power", "123")]
+        assert received == [("com.victronenergy.system", "/Ac/Grid/L1/Power", "123")]
+
+    def test_unknown_sender_dropped(self, client):
+        """A sender whose well-known name is unresolved must not reach handlers."""
+        received = []
+        client.add_signal_handler(lambda svc, path, value: received.append((svc, path)))
+        client._loop = None  # no loop: resolution cannot run, message still dropped
+        client._handle_message(_signal("/Dc/0/Power", Variant("d", 112.0), sender=":1.99"))
+
+        assert received == []
 
     def test_non_signal_ignored(self, client):
         received = []
-        client.add_signal_handler(lambda path, value: received.append((path, value)))
+        client.add_signal_handler(lambda svc, path, value: received.append((svc, path, value)))
         client._handle_message(_return([Variant("i", 1)]))
 
         assert received == []
@@ -329,7 +340,8 @@ class TestReconnectReplay:
         fired = []
         client.on_reconnect = lambda: fired.append(True)
         assert client._get_bus() is bus
-        assert bus.call_count == 2  # original AddMatch + replayed AddMatch
+        # original AddMatch + replayed AddMatch + sender-map GetNameOwner
+        assert bus.call_count == 3
         assert fired == [True]
 
 
@@ -344,12 +356,15 @@ class TestVictronSignalIntegration:
 
     def test_apply_fast_value_system_paths(self):
         v = victron.get_victron(test_mode=True)
-        v._apply_fast_value("/Ac/Grid/L1/Power", "100")
-        v._apply_fast_value("/Ac/Grid/L2/Power", "-30.0")
+        sys_svc = victron.SYSTEM_SERVICE
+        shunt_svc = "com.victronenergy.battery.ttyUSB4"
+        v._shunt_service = shunt_svc
+        v._apply_fast_value(sys_svc, "/Ac/Grid/L1/Power", "100")
+        v._apply_fast_value(sys_svc, "/Ac/Grid/L2/Power", "-30.0")
         # bank V/I/P arrive via shunt-service signals (/Dc/0/*)
-        v._apply_fast_value("/Dc/0/Voltage", "48.5")
-        v._apply_fast_value("/Dc/0/Current", "-3.25")
-        v._apply_fast_value("/Dc/0/Power", "500.4")
+        v._apply_fast_value(shunt_svc, "/Dc/0/Voltage", "48.5")
+        v._apply_fast_value(shunt_svc, "/Dc/0/Current", "-3.25")
+        v._apply_fast_value(shunt_svc, "/Dc/0/Power", "500.4")
 
         data = v.get_system_data()
         assert data["g1"] == 100
@@ -359,10 +374,40 @@ class TestVictronSignalIntegration:
         assert data["bc"] == -3.25
         assert data["bp"] == 500
 
+    def test_apply_fast_value_vebus_dc_does_not_clobber_shunt(self):
+        """vebus bulk snapshots carry their own /Dc/0/*; they are Multi DC
+        accounting and must never overwrite the SmartShunt's bank values."""
+        v = victron.get_victron(test_mode=True)
+        shunt_svc = "com.victronenergy.battery.ttyUSB4"
+        vebus_svc = "com.victronenergy.vebus.ttyUSB2"
+        v._shunt_service = shunt_svc
+        v._vebus_service = vebus_svc
+        v._apply_fast_value(shunt_svc, "/Dc/0/Voltage", "53.2")
+        v._apply_fast_value(shunt_svc, "/Dc/0/Current", "-32.0")
+        v._apply_fast_value(shunt_svc, "/Dc/0/Power", "1700")
+
+        # the exact live-observed pollution: vebus reporting ~112 W / small I
+        v._apply_fast_value(vebus_svc, "/Dc/0/Power", "112")
+        v._apply_fast_value(vebus_svc, "/Dc/0/Current", "2.1")
+        v._apply_fast_value(vebus_svc, "/Dc/0/Voltage", "53.13")
+
+        data = v.get_system_data()
+        assert data["bp"] == 1700
+        assert data["bc"] == -32.0
+        assert data["bv"] == 53.2
+
+    def test_apply_fast_value_unknown_sender_ignored(self):
+        v = victron.get_victron(test_mode=True)
+        v._shunt_service = "com.victronenergy.battery.ttyUSB4"
+        v._apply_fast_value("com.victronenergy.something.else", "/Dc/0/Power", "999")
+        assert "bp" not in v._system_data
+
     def test_apply_fast_value_inverter(self):
         v = victron.get_victron(test_mode=True)
-        v._apply_fast_value("/State", "3")
-        v._apply_fast_value("/Devices/0/Ac/Inverter/P", "1234.0")
+        vebus_svc = "com.victronenergy.vebus.ttyUSB2"
+        v._vebus_service = vebus_svc
+        v._apply_fast_value(vebus_svc, "/State", "3")
+        v._apply_fast_value(vebus_svc, "/Devices/0/Ac/Inverter/P", "1234.0")
 
         code, _name = v.get_inverter_state()
         assert code == 3
@@ -370,7 +415,7 @@ class TestVictronSignalIntegration:
 
     def test_apply_fast_value_garbage_ignored(self):
         v = victron.get_victron(test_mode=True)
-        v._apply_fast_value("/Ac/Grid/L1/Power", "not-a-number")
+        v._apply_fast_value(victron.SYSTEM_SERVICE, "/Ac/Grid/L1/Power", "not-a-number")
         assert "g1" not in v._system_data  # payload ignored, cache untouched
 
     def test_poll_all_skipped_while_signals_healthy(self):

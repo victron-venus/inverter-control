@@ -267,7 +267,7 @@ class VictronDBus:
         if self._native is None:
             return
         for service, path in self._fast_targets():
-            self._apply_fast_value(path, self._native.get_value(service, path))
+            self._apply_fast_value(service, path, self._native.get_value(service, path))
         self._last_signal_reconcile = time.time()
 
     def _signals_healthy(self) -> bool:
@@ -288,35 +288,52 @@ class VictronDBus:
         else:
             logger.warning("Fast signal path unhealthy: tree polling fallback engaged")
 
-    def _on_fast_signal(self, path: str, raw: str | None):
-        """PropertiesChanged handler: routes one payload into the caches."""
-        self._apply_fast_value(path, raw)
+    def _on_fast_signal(self, service: str | None, path: str, raw: str | None):
+        """BusItem change handler: routes one payload into the caches."""
+        self._apply_fast_value(service, path, raw)
 
-    def _apply_fast_value(self, path: str, raw: str | None):
-        """Apply one fast-input reading (signal or seed fetch) to the caches."""
+    def _apply_fast_value(self, service: str | None, path: str, raw: str | None):
+        """Apply one fast-input reading (signal or seed fetch) to the caches.
+
+        Routing is by (service, path), never path alone: vebus's bulk
+        ItemsChanged snapshot carries its own /Dc/0/{Power,Current,Voltage}
+        items whose values are the Multi's coarse DC accounting, not the
+        SmartShunt's bank truth — a path-only route let them overwrite bp/bc/bv
+        every snapshot and made battery power flicker between two realities.
+        """
         if raw is None:
+            return
+        if service == SYSTEM_SERVICE:
+            key = SYSTEM_SIGNAL_PATHS.get(path)
+        elif service is not None and service == self._shunt_service:
+            key = SHUNT_SIGNAL_PATHS.get(path)
+        elif service is not None and service == self._vebus_service:
+            if path == VEBUS_STATE_PATH:
+                code = int(float(raw))
+                self._cached_inverter_state = (code, INVERTER_STATES.get(code, f"? ({code})"))
+                self._last_inverter_state_time = time.time()
+            elif path == VEBUS_INV_POWER_PATH:
+                self._system_data["inv_power"] = int(float(raw))
+            # Observed traffic proves the signal path alive; see _poll_all.
+            self._last_signal_ok_monotonic = time.monotonic()
+            return
+        else:
+            return  # unknown sender: not a subscribed fast input, ignore
+        if key is None:
             return
         # Observed traffic proves the signal path alive; see _poll_all.
         self._last_signal_ok_monotonic = time.monotonic()
         now = time.time()
         try:
-            if path in SYSTEM_SIGNAL_PATHS or path in SHUNT_SIGNAL_PATHS:
-                key = SYSTEM_SIGNAL_PATHS.get(path) or SHUNT_SIGNAL_PATHS[path]
-                val = float(raw)
-                self._system_data[key] = round(val) if key not in ("bv", "bc") else val
-                self._system_data["gt"] = int(
-                    self._system_data.get("g1", 0) + self._system_data.get("g2", 0)
-                )
-                self._system_data["tt"] = int(
-                    self._system_data.get("t1", 0) + self._system_data.get("t2", 0)
-                )
-                self._system_data["_last_update"] = now
-            elif path == VEBUS_STATE_PATH:
-                code = int(float(raw))
-                self._cached_inverter_state = (code, INVERTER_STATES.get(code, f"? ({code})"))
-                self._last_inverter_state_time = now
-            elif path == VEBUS_INV_POWER_PATH:
-                self._system_data["inv_power"] = int(float(raw))
+            val = float(raw)
+            self._system_data[key] = round(val) if key not in ("bv", "bc") else val
+            self._system_data["gt"] = int(
+                self._system_data.get("g1", 0) + self._system_data.get("g2", 0)
+            )
+            self._system_data["tt"] = int(
+                self._system_data.get("t1", 0) + self._system_data.get("t2", 0)
+            )
+            self._system_data["_last_update"] = now
         except (ValueError, TypeError):
             pass  # non-numeric payload (e.g. NULL variant); next event fixes it
 

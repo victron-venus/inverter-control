@@ -71,10 +71,17 @@ class NativeDbusClient:
         self._state_lock = threading.RLock()
         self._fail_until = 0.0
         # Signal subscription support (PropertiesChanged)
-        self._signal_handlers: list = []  # callbacks (path, value_str)
+        self._signal_handlers: list = []  # callbacks (service, path, value_str)
         self._handlers_lock = threading.Lock()
         # Armed match rules (strings), replayed after reconnect
         self._subscriptions: set[str] = set()
+        # Well-known services behind the armed rules (for sender resolution)
+        self._subscription_services: set[str] = set()
+        # Sender unique bus name -> well-known service name. Path-keyed fast
+        # inputs collide across services (vebus's bulk ItemsChanged carries its
+        # own /Dc/0/* items), so handlers must know WHO sent a signal.
+        self._sender_service: dict[str, str] = {}
+        self._resolving_senders: set[str] = set()
         # Called after a lost connection is re-established, so the owner can
         # refetch initial values (signals only fire on change).
         self.on_reconnect = None
@@ -109,11 +116,18 @@ class NativeDbusClient:
 
     def _replay_subscriptions(self):
         """Re-arm match rules after a (re)connect; signals don't survive disconnects."""
+        # Bus reattachment gives services new unique names; the old map lies.
+        self._sender_service.clear()
         for rule in list(self._subscriptions):
             try:
                 self._send_add_match(rule)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Native D-Bus re-subscribe failed (%s): %s", rule, e)
+        if self._subscription_services and self._loop is not None and self._bus is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(self._refresh_sender_map(), self._loop)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("Sender map refresh failed: %s", e)
         if self.on_reconnect is not None:
             try:
                 self.on_reconnect()
@@ -292,7 +306,36 @@ class NativeDbusClient:
             logger.debug("Native D-Bus subscribe %s failed: %s", rule, e)
             return False
         self._subscriptions.add(rule)
+        self._subscription_services.add(service)
+        # Resolve the sender eagerly so the first signals already carry the
+        # service tag; lazy refresh below covers services that come up later.
+        if self._loop is not None and self._bus is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(self._refresh_sender_map(), self._loop)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("Sender resolve scheduling failed: %s", e)
         return True
+
+    async def _refresh_sender_map(self):
+        """Map subscribed well-known names to their current unique senders."""
+        from dbus_fast import Message
+
+        for svc in list(self._subscription_services):
+            try:
+                reply = await self._bus.call(
+                    Message(
+                        destination=DBUS_DAEMON,
+                        path=DBUS_DAEMON_PATH,
+                        interface="org.freedesktop.DBus",
+                        member="GetNameOwner",
+                        body=[svc],
+                        signature="s",
+                    )
+                )
+                if reply.message_type == MessageType.METHOD_RETURN and reply.body:
+                    self._sender_service[str(reply.body[0])] = svc
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("GetNameOwner %s failed: %s", svc, e)
 
     def subscribe_busitem(self, service: str, path: str) -> bool:
         """Forward per-item PropertiesChanged for one BusItem object."""
@@ -306,28 +349,47 @@ class NativeDbusClient:
         """Dispatch BusItem change signals to registered handlers.
 
         Runs on the event-loop thread; handlers are called inline and must be
-        quick (they update caches only).
+        quick (they update caches only). Handlers receive the sender's
+        well-known service name so path collisions between services (vebus vs
+        battery both publish /Dc/0/*) can be routed correctly.
         """
         try:
             if message.message_type != MessageType.SIGNAL or message.interface != BUSITEM_INTERFACE:
                 return
+            sender = getattr(message, "sender", None)
+            service = self._sender_service.get(sender) if sender else None
+            if sender and service is None:
+                # Owner not yet resolved (service appeared after subscribe);
+                # refresh the map and drop this batch — reconcile covers it.
+                if sender not in self._resolving_senders:
+                    self._resolving_senders.add(sender)
+                    try:
+                        asyncio.ensure_future(self._refresh_and_clear(sender))
+                    except RuntimeError:
+                        self._resolving_senders.discard(sender)
+                return
             if message.member == "ItemsChanged" and message.path == "/":
                 items = message.body[0] if message.body else {}
                 for obj_path, props in items.items():
-                    self._dispatch(obj_path, props)
+                    self._dispatch(obj_path, props, service)
             elif message.member == "PropertiesChanged":
                 props = message.body[0] if message.body else {}
-                self._dispatch(message.path, props)
+                self._dispatch(message.path, props, service)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus signal dispatch failed: %s", e)
 
-    def _dispatch(self, path: str, props):
+    async def _refresh_and_clear(self, sender: str):
+        """Refresh the sender map, then stop skipping this sender."""
+        await self._refresh_sender_map()
+        self._resolving_senders.discard(sender)
+
+    def _dispatch(self, path: str, props, service: str | None):
         value = getattr(props.get("Value"), "value", None)
         formatted = _format_value(value)
         with self._handlers_lock:
             handlers = list(self._signal_handlers)
         for callback in handlers:
-            callback(path, formatted)
+            callback(service, path, formatted)
 
 
 def _format_value(value) -> str | None:
