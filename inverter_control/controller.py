@@ -41,6 +41,7 @@ from inverter_control.config import (
     ENABLE_HA,
     ENABLE_HA_LOADS,
     ENABLE_WATER,
+    ESS_EXTERNAL_WARN_MINUTES,
     GRID_FILTER_TAU,
     LOOP_INTERVAL,
     MQTT_SLIM_EXCLUDE_KEYS,
@@ -156,6 +157,12 @@ class InverterController:
         # Pre-charge state (triggered by solar-forecast webhook)
         self._pre_charge_requested = False
         self._pre_charge_horizon_hours = 6
+
+        # Sustained "ESS not in External control" tracker: GX silently ignores
+        # AcPowerSetpoint outside Hub4Mode=3, so live control becomes a no-op.
+        self._ess_not_external_since: float | None = None
+        self._ess_warn_last_time = 0.0
+        self._ess_notification_active = False
 
         # TOU window settings cache (see _tou_hours)
         self._tou_cache: tuple[int, int] | None = None
@@ -622,6 +629,84 @@ class InverterController:
             self.state["perf"] = self.metrics.snapshot()
             prom_metrics_publish(self.state["perf"])
             self._last_perf_snapshot = now
+
+        self._check_ess_external()
+
+    def _check_ess_external(self) -> None:
+        """Warn loudly when live control is being silently ignored.
+
+        GX only honors /Hub4/L1/AcPowerSetpoint while ESS is in External
+        control (Hub4Mode=3); a manual switch to Optimized (BatteryLife)
+        turns every setpoint write into a no-op with no other feedback -
+        the incident's grid-zero failure mode.
+        """
+        from inverter_control.mqtt_bridge import (  # pylint: disable=import-outside-toplevel
+            get_mqtt_bridge,
+        )
+
+        if self.dry_run:
+            # Writes are intentionally disabled; the mismatch is expected,
+            # so don't accumulate the timer or hold the banner.
+            self._clear_ess_warning()
+            return
+
+        ess = self.state.get("ess_mode") or {}
+        now = time.time()
+
+        if ess.get("is_external"):
+            if self._ess_notification_active:
+                bridge = get_mqtt_bridge()
+                if bridge:
+                    bridge.publish_notification(
+                        notification_id="ess-not-external",
+                        level="info",
+                        title="ESS External control restored",
+                        body="Grid setpoint writes are honored again.",
+                    )
+                logger.info(
+                    "ESS back in External control after %.0f min",
+                    (now - (self._ess_not_external_since or now)) / 60.0,
+                )
+            self._clear_ess_warning()
+            return
+
+        if self._ess_not_external_since is None:
+            self._ess_not_external_since = now
+            return
+        since = self._ess_not_external_since
+        if now - since < ESS_EXTERNAL_WARN_MINUTES * 60.0:
+            return
+
+        if not self._ess_notification_active:
+            bridge = get_mqtt_bridge()
+            if bridge:
+                bridge.publish_notification(
+                    notification_id="ess-not-external",
+                    level="warning",
+                    title="ESS not in External control",
+                    body=(
+                        "Grid setpoint writes are being IGNORED by the GX. "
+                        "Switch the ESS assistant to 'External control' "
+                        "(Hub4Mode=3) on the GX to restore grid-zero control."
+                    ),
+                )
+            logger.warning(
+                "ESS not in External control for %.0f min - setpoint writes are no-ops",
+                (now - since) / 60.0,
+            )
+            self._ess_notification_active = True
+            self._ess_warn_last_time = now
+        elif now - self._ess_warn_last_time >= 3600.0:
+            logger.warning(
+                "ESS still not in External control (%.0f min) - control remains a no-op",
+                (now - since) / 60.0,
+            )
+            self._ess_warn_last_time = now
+
+    def _clear_ess_warning(self) -> None:
+        """Reset the sustained-mismatch tracker (recovery, dry-run, startup)."""
+        self._ess_notification_active = False
+        self._ess_not_external_since = None
 
     def get_state_for_mqtt(self) -> dict[str, Any]:
         if not MQTT_SLIM_STATE:
