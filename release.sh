@@ -127,6 +127,39 @@ if [ -n "$VERSION_FILE" ]; then
     fi
 fi
 
+# Keep pyproject.toml in sync (CLAUDE.md three-way rule): the version file is
+# read at runtime/dashboards, pyproject by setuptools/pip - drift shows a wrong
+# package version. This is how pyproject stranded at 1.21.0 during v1.21.1.
+PYPROJECT="$SCRIPT_DIR/pyproject.toml"
+if [ -f "$PYPROJECT" ] && grep -q '^version[[:space:]]*=' "$PYPROJECT"; then
+    python3 - "$PYPROJECT" "$NEW_VER" <<'PYEOF'
+import re
+import sys
+
+path, ver = sys.argv[1], sys.argv[2]
+src = open(path).read()
+new = re.sub(r'(?m)^(version\s*=\s*)"[^"]*"', rf'\g<1>"{ver}"', src, count=1)
+if new == src:
+    sys.exit("ERROR: could not rewrite version in pyproject.toml")
+open(path, "w").write(new)
+print(f">>> pyproject.toml version -> {ver}")
+PYEOF
+    git add "$PYPROJECT"
+    if ! git diff --cached --quiet; then
+        git commit -m "Sync pyproject.toml to $NEW_VER for release $NEW_TAG"
+    fi
+fi
+
+# Post-bump assertion: all three sources must agree before tagging.
+if [ -n "$VERSION_FILE" ] && [ -f "$PYPROJECT" ]; then
+    FILE_VER=$(tr -d '\r\nv' < "$VERSION_FILE")
+    PROJ_VER=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$PYPROJECT" | head -n1)
+    if [ "$FILE_VER" != "$PROJ_VER" ]; then
+        echo "Error: version mismatch after bump: $VERSION_FILE=$FILE_VER pyproject=$PROJ_VER"
+        exit 1
+    fi
+fi
+
 git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
 
 echo ">>> git push origin $BRANCH && git push origin $NEW_TAG"

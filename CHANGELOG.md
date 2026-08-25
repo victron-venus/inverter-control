@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.2] - 2026-08-25
+
+Post-incident hardening release (Cerbo GX investigation 2026-08-24/25: grid not
+held at zero, vebus passthru dips, watchdog restart storm). Covers everything
+since v1.21.1.
+
+### Added
+- **Persistent `dbus_fast` connection** for Get/Set hot path, replacing per-call
+  `dbus-send` subprocesses; signal-driven fast inputs via BusItem change
+  signals with slow tree-poll reconciliation
+- **Rolling control-loop latency metrics**: cycle/setpoint-write/snapshot-age
+  p50/p95/p99 in the MQTT `perf` block, missed-deadline counter, process
+  CPU/RSS on Linux (#113, #114)
+- **Per-stage cycle timing** (`perf.stage_ms.{stage}.{p50,p95,max}`) and a
+  deadline-anchored main-loop sleep (#140); Prometheus exposition on
+  `:9102/metrics` via `INVERTER_METRICS_PORT` (#136)
+- **Signal-path health truth**: `signals_healthy` is now re-derived from
+  observed traffic (10s silence invalidates), transition logging, and the
+  dbus-send spawn counter published as a storm canary (#141)
+- **Loud ESS warning**: sustained "ESS not in External control" (>5 min while
+  live) raises an MQTT warning notification (desktop banner) and re-warns
+  hourly; recovery emits info (#142)
+- Real battery yesterday charge/discharge from D-Bus history (#117)
+- `/api/v1/forecast` webhook storing daily solar forecast into MQTT state (#119)
+- Retained `inverter/portal` MQTT topic with the auto-detected VRM Portal ID (#121)
+- Background GridFilter thread for the CT grid value + decoupled heartbeat
+  writer thread (#132)
+
+### Changed
+- **Water system migrated from Home Assistant to dbus-pump D-Bus services**
+  (`WATER_TANK/PUMP/VALVE_INSTANCE` config; water no longer requires HA) (#120)
+- **Watchdog failsafe forces setpoint only** — no longer flips ESS out of
+  External control on stall (each Hub4 3↔1 flap caused a vebus passthru dip
+  and reset BatteryLife State); recovery restores the prior setpoint
+  unconditionally. `WATCHDOG_TIMEOUT_SECONDS` / `WATCHDOG_CHECK_INTERVAL`
+  knobs added (#144)
+- **External watchdog**: timeout default 60→300s, new `WATCHDOG_ALERT_ONLY=1`
+  mode, dead service names dropped from `SERVICES` (#145)
+- **Grid-zero deadband HIGH tightened +80W → +30W** (LOW stays −50W);
+  rollback via local_config.py (#146)
+- derived_gt smoothing moved into the GridFilter thread
+  (`GRID_SMOOTHING_DERIVED_TAU`, default 3.2s; 0 = legacy alpha path) (#147)
+
+### Fixed
+- Unhealthy signal-path fallback throttled from 5Hz to 1s — the dbus-send
+  spawn storm behind the watchdog restart loop (#141)
+- ThreadPoolExecutor crash on empty MPPT service lists (#133)
+- Service runs unbuffered (`python3 -u`) and logs via multilog (#134, #135)
+- setup script refuses interactive prompt on non-TTY stdin (#137)
+- `PUSH_LOCAL_CONFIG` is opt-in in deploy path (#138)
+- Missing daemontools log/run for watchdog and log-forwarder (#139)
+- `service/` and `services/` trees unified (single source of truth) (#143)
+- `release.sh` now syncs pyproject.toml with the version file and asserts
+  agreement before tagging
+
+### Ops note
+`svc -t` does not promptly restart the service under daemontools (graceful
+SIGTERM handling) — use `kill -9 <pid>` and let runit respawn it.
+
 ### Added
 - Retained `inverter/portal` MQTT topic: the auto-detected VRM Portal ID is
   published on every broker connect, so remote consumers (desktop app) can
