@@ -218,6 +218,8 @@ def _run_main_loop(controller, mqtt_bridge):
     controller._watchdog.start()
     if controller.grid_filter:
         controller.grid_filter.start()
+    if controller.derived_grid_filter:
+        controller.derived_grid_filter.start()
 
     hb_stop = threading.Event()
     hb_thread = threading.Thread(
@@ -263,6 +265,8 @@ def _run_main_loop(controller, mqtt_bridge):
         hb_thread.join(timeout=HEARTBEAT_INTERVAL + 2.0)
         if controller.grid_filter:
             controller.grid_filter.stop()
+        if controller.derived_grid_filter:
+            controller.derived_grid_filter.stop()
         # Stop hardware watchdog
         try:
             controller._watchdog.stop()

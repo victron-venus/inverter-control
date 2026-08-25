@@ -43,6 +43,7 @@ from inverter_control.config import (
     ENABLE_WATER,
     ESS_EXTERNAL_WARN_MINUTES,
     GRID_FILTER_TAU,
+    GRID_SMOOTHING_DERIVED_TAU,
     LOOP_INTERVAL,
     MQTT_SLIM_EXCLUDE_KEYS,
     MQTT_SLIM_STATE,
@@ -142,6 +143,18 @@ class InverterController:
             self.grid_filter = GridFilter(
                 getter=lambda: float(self.victron.get_ac_in_power()),
                 tau=GRID_FILTER_TAU,
+            )
+
+        # Second filter for derived_gt (home - pv), same time-based smoothing
+        # as the CT filter. Getter reads the attr refreshed each cycle in
+        # calculate_setpoint; GridFilter.run skips None ticks before the first
+        # cycle lands.
+        self.derived_grid_filter: GridFilter | None = None
+        if ENABLE_GRID_SMOOTHING_WITH_HOME and GRID_SMOOTHING_DERIVED_TAU > 0:
+            self._raw_derived_gt: float | None = None
+            self.derived_grid_filter = GridFilter(
+                getter=lambda: self._raw_derived_gt,
+                tau=GRID_SMOOTHING_DERIVED_TAU,
             )
 
         # State
@@ -431,6 +444,11 @@ class InverterController:
             if home_total > 0:
                 pv_total = mppt_total + tasmota_total
                 derived_gt = home_total - pv_total
+                # Feed the raw value to the background filter; the state gets
+                # one coherent smoothed snapshot (None until first tick).
+                if self.derived_grid_filter is not None:
+                    self._raw_derived_gt = derived_gt
+                    derived_gt = self.derived_grid_filter.value()
 
         # Handle pre-charge request from solar forecast webhook
         charge_battery = self.ha.get_boolean("charge_battery")

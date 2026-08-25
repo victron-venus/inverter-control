@@ -181,3 +181,57 @@ class TestControllerWiring:
         state_arg = controller.calculator.calculate.call_args[0][0]
         assert state_arg.filtered_gt == 123.0  # legacy value passed through
         assert setpoint == 0
+
+    def test_derived_filter_created_and_fed(self):
+        """ENABLE_GRID_SMOOTHING_WITH_HOME + TAU>0: second filter created, fed
+        the raw derived value, and the state receives its smoothed output."""
+        from unittest.mock import MagicMock, patch
+
+        _MOD = "inverter_control.controller"
+
+        with (
+            patch(f"{_MOD}.GRID_FILTER_TAU", 0.0),
+            patch(f"{_MOD}.GRID_SMOOTHING_DERIVED_TAU", 3.2),
+            patch(f"{_MOD}.get_victron") as mock_get_victron,
+            patch(f"{_MOD}.get_ha"),
+            patch(f"{_MOD}.ConsoleUI"),
+            patch(f"{_MOD}.SetpointCalculator"),
+            patch("inverter_control.config.get_ui_config", return_value={}),
+            patch(f"{_MOD}.DRY_RUN", False),
+            patch(f"{_MOD}.DVCC_ENABLED", False),
+            patch(f"{_MOD}.ENABLE_GRID_SMOOTHING_WITH_HOME", True),
+            patch(f"{_MOD}.ENABLE_EV", False),
+            patch(f"{_MOD}.ENABLE_WATER", False),
+            patch(f"{_MOD}.ENABLE_HA", True),
+            patch(f"{_MOD}.ENABLE_HA_LOADS", False),
+        ):
+            mock_victron = MagicMock()
+            mock_get_victron.return_value = mock_victron
+            mock_victron.get_cell_counts.return_value = {}
+            from inverter_control.controller import InverterController
+
+            controller = InverterController(dry_run=True)
+
+            assert controller.grid_filter is None
+            assert controller.derived_grid_filter is not None
+            assert not controller.derived_grid_filter.is_alive()
+
+            sys_data = {"g1": 0, "g2": 0, "gt": 100, "t1": 0, "t2": 0, "tt": 0}
+            controller.victron = MagicMock()
+            controller.victron.get_system_data.return_value = sys_data
+            controller.ha.get_vue_sensor.return_value = 500  # home_total
+            controller.ha.get_boolean.return_value = False
+            controller.victron.get_mppt_data.return_value = {}
+            controller.victron.get_pv_power.return_value = []
+            controller.victron.get_inverter_power.return_value = 0
+            controller.calculator.calculate.return_value = MagicMock(
+                setpoint=0, flags="", filtered_gt=100.0
+            )
+            # Flag must still be patched here: calculate_setpoint gates the
+            # derived path on it at call time.
+            controller.calculate_setpoint(sys_data)
+            # Raw derived (home - pv) landed on the filter's getter...
+            assert controller._raw_derived_gt == 500.0
+            # ...but no tick has run yet, so state got None this cycle.
+            state_arg = controller.calculator.calculate.call_args[0][0]
+            assert state_arg.derived_gt is None

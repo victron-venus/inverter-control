@@ -366,22 +366,33 @@ class SetpointCalculator:
             effective_gt = state.gt - state.ev_power
 
         # Grid smoothing with Home total (derived_gt = home_total - pv_total)
-        # Blend instantaneous CT with derived grid for stability
+        # Blend instantaneous CT with derived grid for stability.
         if state.derived_gt is not None:
             smoothing_weight = self.config.get("GRID_SMOOTHING_HOME_WEIGHT", 0.7)
-            derived_alpha = self.config.get("GRID_SMOOTHING_DERIVED_ALPHA", 0.1)
-            raw_derived = float(state.derived_gt)
-            # EMA smooth the derived value across cycles
-            if self._filtered_derived_gt is None:
-                self._filtered_derived_gt = raw_derived
-            else:
-                self._filtered_derived_gt = (
-                    derived_alpha * raw_derived + (1 - derived_alpha) * self._filtered_derived_gt
+            if self.config.get("GRID_SMOOTHING_DERIVED_TAU", 3.2) > 0:
+                # Pre-smoothed by the background GridFilter thread (time-based
+                # tau, same notion of "smoothed grid" as the CT filter); use
+                # the value directly - no per-cycle EMA here.
+                effective_gt = (
+                    smoothing_weight * float(state.derived_gt)
+                    + (1 - smoothing_weight) * effective_gt
                 )
-            # Blend: weight * derived + (1-weight) * instantaneous
-            effective_gt = (
-                smoothing_weight * self._filtered_derived_gt + (1 - smoothing_weight) * effective_gt
-            )
+            else:
+                # Legacy path (GRID_SMOOTHING_DERIVED_TAU=0): per-cycle EMA on
+                # the raw derived value using GRID_SMOOTHING_DERIVED_ALPHA.
+                derived_alpha = self.config.get("GRID_SMOOTHING_DERIVED_ALPHA", 0.1)
+                raw_derived = float(state.derived_gt)
+                if self._filtered_derived_gt is None:
+                    self._filtered_derived_gt = raw_derived
+                else:
+                    self._filtered_derived_gt = (
+                        derived_alpha * raw_derived
+                        + (1 - derived_alpha) * self._filtered_derived_gt
+                    )
+                effective_gt = (
+                    smoothing_weight * self._filtered_derived_gt
+                    + (1 - smoothing_weight) * effective_gt
+                )
 
         old_filtered_gt = state.filtered_gt
         new_filtered_gt = (
