@@ -18,7 +18,7 @@ installDir="/data/inverter-control"
 if [ "$scriptAction" == 'NONE' ] && ! [ -t 0 ]; then
     echo "ERROR: scriptAction is not set and stdin is not a TTY - refusing to prompt." >&2
     echo "Install via PackageManager, or run non-interactively:" >&2
-    echo "  scriptAction=INSTALL packageName=inverter-control scriptDir=$(pwd) $0 </dev/null" >&2
+    echo "  $0 install auto" >&2
     exit 1
 fi
 if [ "$scriptAction" == 'NONE' ]; then
@@ -40,11 +40,14 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     mkdir -p "$installDir"
     mkdir -p /var/log/inverter-control
 
-    # Install Python scripts
-    mkdir -p "$installDir/inverter_control"
-    cp "$scriptDir/main.py" "$installDir/"
-    cp "$scriptDir/inverter_control/"*.py "$installDir/inverter_control/"
-    chmod +x "$installDir/main.py"
+    # Install Python scripts (skip when running from the install dir itself,
+    # e.g. a manual tarball install where scriptDir == installDir)
+    if [ "$scriptDir" != "$installDir" ]; then
+        mkdir -p "$installDir/inverter_control"
+        cp "$scriptDir/main.py" "$installDir/"
+        cp "$scriptDir/inverter_control/"*.py "$installDir/inverter_control/"
+        chmod +x "$installDir/main.py"
+    fi
 
     # Install config from setupOptions; never clobber an existing config on update
     if [ -f "/data/setupOptions/$packageName/local_config.py" ]; then
@@ -56,11 +59,60 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         cp "$scriptDir/local_config.example.py" "$installDir/local_config.py"
         logMessage "WARNING: Installed local_config.example.py as local_config.py - edit TOU hours, HA token, Tasmota IPs (or place your config at /data/setupOptions/$packageName/local_config.py)"
     fi
+
+    # Install daemontools services: persistent dirs under /data, linked into
+    # tmpfs /service (same layout update.sh creates). endScript INSTALL_SERVICES
+    # is NOT used: SetupHelper expects a services/ directory and installs real
+    # dirs into tmpfs /service.
+    #
+    # Overlay-copy (no dir replace): deleting a supervised dir leaves the
+    # supervisor watching a deleted cwd until manual cleanup
+    mkdir -p "$installDir/service"
+    for svcDir in "$scriptDir"/service/*; do
+        [ -d "$svcDir" ] || continue
+        name="$(basename "$svcDir")"
+        mkdir -p "$installDir/service/$name"
+        [ "$scriptDir" != "$installDir" ] && cp -a "$svcDir/." "$installDir/service/$name/"
+        find "$installDir/service/$name" -type f -name run -exec chmod +x {} \; 2>/dev/null || true
+        ln -sfn "$installDir/service/$name" "/service/$name"
+    done
+
+    # Boot persistence: /service is tmpfs, rc.local recreates symlinks
+    rcLocal="/data/rc.local"
+    if [ ! -f "$rcLocal" ]; then
+        echo "#!/bin/sh" > "$rcLocal"
+        chmod +x "$rcLocal"
+    fi
+    if ! grep -q "inverter-control" "$rcLocal" 2>/dev/null; then
+        cat >> "$rcLocal" << 'RCLOCAL'
+
+# === inverter-control persistence ===
+# Recreate /service symlinks (lost on reboot since /service is tmpfs)
+ln -sf /data/inverter-control/service/inverter-control /service/
+ln -sf /data/inverter-control/service/log-forwarder /service/
+ln -sf /data/inverter-control/service/watchdog /service/
+sleep 2
+svc -u /service/inverter-control/log 2>/dev/null || true
+svc -u /service/inverter-control 2>/dev/null || true
+svc -u /service/log-forwarder 2>/dev/null || true
+svc -u /service/watchdog 2>/dev/null || true
+# === end inverter-control ===
+RCLOCAL
+        logMessage "Added rc.local boot persistence block"
+    fi
 fi
 
 #### uninstall
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
+
+    # Remove service symlinks before the install dir they point into
+    if [ -d "$installDir/service" ]; then
+        for svcDir in "$installDir"/service/*; do
+            [ -d "$svcDir" ] || continue
+            rm -f "/service/$(basename "$svcDir")"
+        done
+    fi
 
     # Remove installation directory and GUI-editable settings
     rm -rf "$installDir"
@@ -69,5 +121,7 @@ if [ "$scriptAction" == 'UNINSTALL' ]; then
         "/Settings/InverterControl/TouExpensiveEndHour"
 fi
 
-# Install/uninstall services and finish
-endScript INSTALL_SERVICE
+# Finish. NOTE: deliberately no INSTALL_SERVICES here — services are installed
+# by the INSTALL branch above (persistent /data layout, not SetupHelper's
+# tmpfs /service copy)
+endScript
