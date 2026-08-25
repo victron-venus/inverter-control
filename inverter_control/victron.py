@@ -481,9 +481,9 @@ class VictronDBus:
         if self._mppt_services:
             self._poll_mppt_data_tree()
 
-        # Poll Tasmota PV power
+        # Poll PV inverter power
         if self._pv_inverter_services:
-            self._poll_tasmota_power()
+            self._poll_pv_power()
 
         # Poll acload (Emporia Vue) power channels
         if self._acload_services:
@@ -613,8 +613,8 @@ class VictronDBus:
             powers.append(extract_power_from_tree(output))
         return powers
 
-    def _poll_tasmota_power(self):
-        """Poll Tasmota PV power"""
+    def _poll_pv_power(self):
+        """Poll PV inverter power"""
         self._cached_pv_powers = self._query_pv_powers()
         self._last_pv_time = time.time()
 

@@ -57,7 +57,7 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         logMessage "Keeping existing local_config.py"
     else
         cp "$scriptDir/local_config.example.py" "$installDir/local_config.py"
-        logMessage "WARNING: Installed local_config.example.py as local_config.py - edit TOU hours, HA token, Tasmota IPs (or place your config at /data/setupOptions/$packageName/local_config.py)"
+        logMessage "WARNING: Installed local_config.example.py as local_config.py - edit TOU hours, HA token (or place your config at /data/setupOptions/$packageName/local_config.py)"
     fi
 
     # Install daemontools services: persistent dirs under /data, linked into

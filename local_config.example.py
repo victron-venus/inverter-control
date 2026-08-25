@@ -34,17 +34,11 @@ TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
 TOU_EXPENSIVE_END_HOUR = 24  # midnight
 
 # =============================================================================
-# TASMOTA DEVICES
-# =============================================================================
-
-TASMOTA_IPS = ["192.168.x.x", "192.168.x.x"]
-
-# =============================================================================
 # HOME ASSISTANT SENSORS
 # =============================================================================
 # Note: "home_total" removed - now read from Vue D-Bus (com.victronenergy.acload.Total)
 # via HomeAssistantClient.get_vue_sensor("total")
-# Note: produced_today, battery_in/out_today, tasmota_*_daily, mppt_*_daily,
+# Note: produced_today, battery_in/out_today, mppt_*_daily,
 # pv_total_daily, compensation_voltage removed - now read from D-Bus
 
 HA_SENSORS = {

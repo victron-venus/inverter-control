@@ -34,7 +34,6 @@ class TestConfigValidation:
         assert isinstance(config.HA_TOKEN, str)
         assert isinstance(config.HA_URL, str)
         assert isinstance(config.PORTAL_ID, str)
-        assert isinstance(config.TASMOTA_IPS, (list, tuple))
         assert isinstance(config.HA_SENSORS, dict)
         assert isinstance(config.VUE_SENSORS, dict)
         assert isinstance(config.HA_BOOLEANS, dict)
@@ -122,16 +121,6 @@ class TestMQTTConfig:
         assert "pump_switch" not in config.MQTT_SLIM_EXCLUDE_KEYS
 
 
-class TestTasmotaConfig:
-    """Test Tasmota D-Bus configuration"""
-
-    def test_tasmota_service_prefix(self):
-        """Test TASMOTA_PV_PREFIX is defined with expected format"""
-        assert hasattr(config, "TASMOTA_PV_PREFIX")
-        assert isinstance(config.TASMOTA_PV_PREFIX, str)
-        assert config.TASMOTA_PV_PREFIX == "com.victronenergy.pvinverter.tasmota_"
-
-
 class TestOptionalFeatures:
     """Test optional feature flags"""
 
@@ -214,12 +203,6 @@ class TestValidationErrors:
         """Test validation catches non-string HA_TOKEN"""
         with patch("inverter_control.config.HA_TOKEN", 123):
             with pytest.raises(ValueError, match="HA_TOKEN must be.*str"):
-                config._validate_config()
-
-    def test_invalid_tasmota_ips_type(self):
-        """Test validation catches non-list TASMOTA_IPS"""
-        with patch("inverter_control.config.TASMOTA_IPS", "not a list"):
-            with pytest.raises(ValueError, match="TASMOTA_IPS must be list/tuple"):
                 config._validate_config()
 
 
