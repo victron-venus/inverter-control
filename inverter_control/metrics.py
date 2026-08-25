@@ -30,6 +30,7 @@ class CycleMetrics:
         self._cycle_ms = deque(maxlen=self.WINDOW)
         self._write_ms = deque(maxlen=self.WINDOW)
         self._age_ms = deque(maxlen=self.WINDOW)
+        self._stage_ms: dict[str, deque] = {}
         self.missed_deadlines = 0
         self.failed_writes = 0
         self._cpu_last: tuple[float, float] | None = None  # (cpu_seconds, monotonic)
@@ -52,6 +53,13 @@ class CycleMetrics:
         """Record telemetry snapshot age at calculation time."""
         if age_ms is not None and age_ms >= 0:
             self._age_ms.append(age_ms)
+
+    def record_stage(self, name: str, duration_ms: float) -> None:
+        """Record one named control-cycle stage duration (windowed)."""
+        stage = self._stage_ms.get(name)
+        if stage is None:
+            stage = self._stage_ms[name] = deque(maxlen=self.WINDOW)
+        stage.append(duration_ms)
 
     def sample_process(self) -> None:
         """Update CPU% and RSS from /proc (no-op off Linux, e.g. macOS dev)."""
@@ -95,6 +103,14 @@ class CycleMetrics:
             "snapshot_age_ms": {
                 "p50": _percentile(ages, 50),
                 "max": _percentile(ages, 100),
+            },
+            "stage_ms": {
+                name: {
+                    "p50": _percentile(sorted(samples), 50),
+                    "p95": _percentile(sorted(samples), 95),
+                    "max": _percentile(sorted(samples), 100),
+                }
+                for name, samples in sorted(self._stage_ms.items())
             },
             "cpu_percent": self.cpu_percent,
             "rss_mb": getattr(self, "rss_mb", None),

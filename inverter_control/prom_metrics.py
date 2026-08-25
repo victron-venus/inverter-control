@@ -41,6 +41,11 @@ def start() -> bool:
         ),
         "failed_writes": Gauge("inverter_control_failed_writes_total", "Failed setpoint writes"),
         "age": Gauge("inverter_control_snapshot_age_ms", "Telemetry snapshot age ms", ["quantile"]),
+        "stage": Gauge(
+            "inverter_control_stage_ms",
+            "Control cycle per-stage duration ms",
+            ["stage", "quantile"],
+        ),
         "signals": Gauge(
             "inverter_control_signals_healthy",
             "D-Bus fast-signal path health (1=healthy)",
@@ -91,6 +96,16 @@ def publish(snapshot: dict[str, Any]) -> None:
 
     _set("signals", snapshot.get("signals_healthy"))
     _set("subprocess", snapshot.get("dbus_subprocess_calls"))
+
+    for stage, stats in snapshot.get("stage_ms", {}).items():
+        for quantile in ("p50", "p95", "max"):
+            value = stats.get(quantile)
+            if value is None:
+                continue
+            try:
+                _gauges["stage"].labels(stage, quantile).set(float(value))
+            except (KeyError, TypeError, ValueError):
+                pass  # Metrics export must never break the control loop
 
     _set("cpu", snapshot.get("cpu_percent"))
     _set("rss", snapshot.get("rss_mb"))

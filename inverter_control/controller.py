@@ -729,6 +729,15 @@ class InverterController:
         old_handler = signal.signal(signal.SIGALRM, watchdog_handler)
         signal.alarm(5)
         cycle_started = time.monotonic()
+        stage_started = time.perf_counter()
+
+        def _stage(name: str) -> None:
+            """Record duration of the stage that just ended."""
+            nonlocal stage_started
+            now = time.perf_counter()
+            self.metrics.record_stage(name, (now - stage_started) * 1000.0)
+            stage_started = now
+
         try:
             self.last_console_line = None
             sys_data = self.victron.get_system_data()
@@ -738,6 +747,7 @@ class InverterController:
             last_update = sys_data.get("_last_update")
             if last_update:
                 self.metrics.record_age((time.time() - last_update) * 1000.0)
+            _stage("get_system_data")
 
             if self.dvcc_calculator is not None:
                 now = time.time()
@@ -749,14 +759,19 @@ class InverterController:
                     self.dvcc_limits = self.dvcc_calculator.calculate(
                         self._cached_battery_cell_data
                     )
+            _stage("dvcc")
+
             if self.manual_setpoint is not None:
                 setpoint = self.manual_setpoint
                 flags = "[MANUAL] "
                 self.manual_setpoint = None
             else:
                 setpoint, flags = self.calculate_setpoint(sys_data)
+            _stage("calculate_setpoint")
 
             self.handle_minimize_charging(sys_data)
+            _stage("minimize_charging")
+
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
             else:
@@ -767,6 +782,7 @@ class InverterController:
                 self._watchdog.mark_setpoint_update()
 
             print(f"\033k{sys_data['gt']}\033\\", end="")
+            _stage("setpoint_write")
 
             # Inject cached data for console UI
             sys_data["battery_socs"] = self._cached_battery_socs
@@ -780,10 +796,12 @@ class InverterController:
             self.last_console_line = line
             print(line)
             broadcast_line(line)
+            _stage("console_render")
 
             self.update_state(sys_data, setpoint)
             self.console.update_terminal_title()
             self.previous_setpoint = setpoint
+            _stage("update_state")
 
             self.metrics.record_cycle(cycle_started, self.loop_interval)
             try:
