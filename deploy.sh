@@ -53,7 +53,7 @@ tar \
     -czf - -C "$SCRIPT_DIR" . \
     | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
-        PUSH_LOCAL_CONFIG=1 sh $DEPLOY_DIR/update.sh; \
+        PUSH_LOCAL_CONFIG="${PUSH_LOCAL_CONFIG:-0}" sh $DEPLOY_DIR/update.sh; \
         waited=0; while [ \$waited -lt 15 ] && ! [ -f /run/inverter-control/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
         rm -rf $DEPLOY_DIR"
 
