@@ -41,6 +41,11 @@ def start() -> bool:
         ),
         "failed_writes": Gauge("inverter_control_failed_writes_total", "Failed setpoint writes"),
         "age": Gauge("inverter_control_snapshot_age_ms", "Telemetry snapshot age ms", ["quantile"]),
+        "stage": Gauge(
+            "inverter_control_stage_ms",
+            "Control cycle per-stage duration ms",
+            ["stage", "quantile"],
+        ),
         "cpu": Gauge("inverter_control_cpu_percent", "Process CPU percent"),
         "rss": Gauge("inverter_control_rss_mb", "Process RSS MB"),
     }
@@ -80,6 +85,16 @@ def publish(snapshot: dict[str, Any]) -> None:
     ages = snapshot.get("snapshot_age_ms", {})
     _set("age", ages.get("p50"), "p50")
     _set("age", ages.get("max"), "max")
+
+    for stage, stats in snapshot.get("stage_ms", {}).items():
+        for quantile in ("p50", "p95", "max"):
+            value = stats.get(quantile)
+            if value is None:
+                continue
+            try:
+                _gauges["stage"].labels(stage, quantile).set(float(value))
+            except (KeyError, TypeError, ValueError):
+                pass
 
     _set("cpu", snapshot.get("cpu_percent"))
     _set("rss", snapshot.get("rss_mb"))

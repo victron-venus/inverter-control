@@ -7,8 +7,11 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import main
 from inverter_control.logic import SystemState
 
 _MOD = "inverter_control.controller"
@@ -609,6 +612,31 @@ class TestSetManualSetpoint(unittest.TestCase):
         controller, _, _, _ = _make_controller()
         controller.set_manual_setpoint(5000)
         assert controller.manual_setpoint == 2250
+
+
+class TestNextSlot:
+    """Deadline-anchored pacing helper."""
+
+    def test_early_cycle_sleeps_remainder(self):
+        # 100ms left in the slot -> sleep 100ms, deadline advances one slot
+        with patch("main.time.monotonic", return_value=1000.0):
+            delay, deadline = main._next_slot(1000.1, 0.33)
+        assert delay == pytest.approx(0.1)
+        assert deadline == pytest.approx(1000.43)
+
+    def test_slow_cycle_skips_sleep(self):
+        # Slightly past deadline -> no sleep, still advance one slot
+        with patch("main.time.monotonic", return_value=1010.1):
+            delay, deadline = main._next_slot(1010.0, 0.33)
+        assert delay == 0.0
+        assert deadline == pytest.approx(1010.33)
+
+    def test_stall_realigns_instead_of_catchup(self):
+        # Stalled past a whole slot -> realign, don't fire backlog cycles
+        with patch("main.time.monotonic", return_value=1012.0):
+            delay, deadline = main._next_slot(1010.0, 0.33)
+        assert delay == 0.0
+        assert deadline == pytest.approx(1012.33)
 
 
 if __name__ == "__main__":

@@ -188,6 +188,20 @@ def _heartbeat_loop(stop_event, heartbeat_file: str, watchdog_heartbeat_file: st
         _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
 
 
+def _next_slot(next_deadline: float, interval: float) -> tuple[float, float]:
+    """Deadline-anchored pacing for the control loop.
+
+    Returns (delay_to_sleep, new_deadline). A slow cycle shortens (or skips)
+    the sleep instead of pushing every following cycle later; if we stalled
+    past a whole slot, realign rather than firing catch-up cycles back to back.
+    """
+    now = time.monotonic()
+    delay = next_deadline - now
+    if delay < -interval:
+        return 0.0, now + interval
+    return max(0.0, delay), next_deadline + interval
+
+
 def _run_main_loop(controller, mqtt_bridge):
     """Run the main control loop until exit or error."""
     gc_interval = 300
@@ -219,6 +233,7 @@ def _run_main_loop(controller, mqtt_bridge):
 
     try:
         os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
+        next_deadline = time.monotonic() + controller.loop_interval
         while True:
             if not controller.run_cycle():
                 logger.info("run_cycle returned False - exiting main loop")
@@ -235,7 +250,10 @@ def _run_main_loop(controller, mqtt_bridge):
             if now - last_gc_time > gc_interval:
                 last_gc_time = now
                 gc.collect()
-            time.sleep(controller.loop_interval)
+
+            delay, next_deadline = _next_slot(next_deadline, controller.loop_interval)
+            if delay > 0:
+                time.sleep(delay)
     except KeyboardInterrupt:
         logger.info("Shutdown requested (KeyboardInterrupt)")
         print("\nShutting down...")

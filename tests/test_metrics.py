@@ -72,3 +72,35 @@ class TestCycleMetrics:
         assert snap["cycle_ms"]["p50"] is None
         assert snap["cycle_ms"]["missed_deadlines"] == 0
         assert snap["setvalue_ms"]["failed"] == 0
+
+
+class TestStageTiming:
+    def test_stage_recording_and_snapshot(self):
+        m = CycleMetrics()
+        m.record_stage("get_system_data", 10.0)
+        m.record_stage("get_system_data", 20.0)
+        m.record_stage("console_render", 100.0)
+        snap = m.snapshot()
+        assert snap["stage_ms"]["get_system_data"] == {"p50": 10.0, "p95": 20.0, "max": 20.0}
+        assert snap["stage_ms"]["console_render"]["max"] == 100.0
+
+    def test_stage_snapshot_empty_when_none_recorded(self):
+        snap = CycleMetrics().snapshot()
+        assert snap["stage_ms"] == {}
+
+    def test_stage_window_bounded(self):
+        m = CycleMetrics()
+        for i in range(m.WINDOW + 50):
+            m.record_stage("dvcc", float(i))
+        assert len(m._stage_ms["dvcc"]) == m.WINDOW
+
+    def test_stages_sum_within_cycle(self):
+        # Stage deltas should roughly account for the whole cycle duration.
+        m = CycleMetrics()
+        t = time.monotonic()
+        m.record_cycle(t - 0.5, 0.33)  # fake 500ms cycle
+        total = m.snapshot()["cycle_ms"]["max"]
+        for name in ("get_system_data", "calculate_setpoint", "console_render"):
+            m.record_stage(name, total / 3)
+        stages_sum = sum(s["max"] for s in m.snapshot()["stage_ms"].values())
+        assert abs(stages_sum - total) < total * 0.05
