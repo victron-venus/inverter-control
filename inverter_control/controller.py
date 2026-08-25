@@ -49,6 +49,8 @@ from inverter_control.config import (
     NO_FEED_SLEEP_INTERVAL,
     POWER_LIMIT_MAX,
     POWER_LIMIT_MIN,
+    WATCHDOG_CHECK_INTERVAL,
+    WATCHDOG_TIMEOUT_SECONDS,
     WEBHOOK_SERVER_HOST,
     WEBHOOK_SERVER_PORT,
 )
@@ -238,8 +240,8 @@ class InverterController:
         # during a slow startup sequence.
         self._watchdog = HardwareWatchdog(
             victron=self.victron,
-            timeout_seconds=30,
-            check_interval=5.0,
+            timeout_seconds=WATCHDOG_TIMEOUT_SECONDS,
+            check_interval=WATCHDOG_CHECK_INTERVAL,
             dry_run=self.dry_run,
             get_setpoint=lambda: self.previous_setpoint,
         )

@@ -210,6 +210,11 @@ LOOP_INTERVAL = 0.33  # seconds (3 times per second)
 HA_POLL_INTERVAL = 1.5  # seconds for Home Assistant polling
 NO_FEED_SLEEP_INTERVAL = 1.0  # seconds to sleep in no_feed mode (slows loop to ~1 Hz)
 
+# Internal hardware watchdog: forces a 0W grid setpoint when BOTH setpoint
+# writes and D-Bus telemetry have been silent this long (stall/crash failsafe).
+WATCHDOG_TIMEOUT_SECONDS = int(_import_local_config("WATCHDOG_TIMEOUT_SECONDS", 30))
+WATCHDOG_CHECK_INTERVAL = float(_import_local_config("WATCHDOG_CHECK_INTERVAL", 5.0))
+
 # Persistent native D-Bus connection (dbus_fast) for Get/Set calls, replacing
 # per-call dbus-send subprocesses in the hot path. Automatically falls back
 # to dbus-send when the connection is unavailable. Set env USE_NATIVE_DBUS=0
@@ -460,12 +465,20 @@ def _validate_config():
         _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),
         _check_range("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, 0.0, 1.0),
         _check_type("GRID_FILTER_TAU", GRID_FILTER_TAU, (int, float)),
+        _check_type("WATCHDOG_TIMEOUT_SECONDS", WATCHDOG_TIMEOUT_SECONDS, int),
+        _check_type("WATCHDOG_CHECK_INTERVAL", WATCHDOG_CHECK_INTERVAL, (int, float)),
         _check_type("ESS_EXTERNAL_WARN_MINUTES", ESS_EXTERNAL_WARN_MINUTES, (int, float)),
     ]
 
     if GRID_FILTER_TAU < 0:
         checks.append(f"GRID_FILTER_TAU must be >= 0, got {GRID_FILTER_TAU!r}")
 
+    if WATCHDOG_TIMEOUT_SECONDS <= 0:
+        checks.append(
+            f"WATCHDOG_TIMEOUT_SECONDS must be positive, got {WATCHDOG_TIMEOUT_SECONDS!r}"
+        )
+    if WATCHDOG_CHECK_INTERVAL <= 0:
+        checks.append(f"WATCHDOG_CHECK_INTERVAL must be positive, got {WATCHDOG_CHECK_INTERVAL!r}")
     if ESS_EXTERNAL_WARN_MINUTES <= 0:
         checks.append(
             f"ESS_EXTERNAL_WARN_MINUTES must be positive number, got {ESS_EXTERNAL_WARN_MINUTES!r}"
