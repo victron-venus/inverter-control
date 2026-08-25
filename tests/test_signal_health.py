@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from inverter_control import victron as victron_mod
 from inverter_control.victron import (
     SIGNAL_SILENCE_TIMEOUT,
     UNHEALTHY_POLL_INTERVAL,
@@ -134,5 +135,13 @@ class TestHealthTransitions:
         v = _make_victron()
         v._last_signal_ok_monotonic = None
         with patch("inverter_control.victron.time.monotonic", return_value=42.0):
-            v._apply_fast_value("/Ac/Grid/L1/Power", "-13")
+            v._apply_fast_value(victron_mod.SYSTEM_SERVICE, "/Ac/Grid/L1/Power", "-13")
         assert v._last_signal_ok_monotonic == 42.0
+
+    def test_apply_fast_value_unknown_service_not_alive(self):
+        """Signals from senders outside the fast-input set prove nothing."""
+        v = _make_victron()
+        v._last_signal_ok_monotonic = None
+        with patch("inverter_control.victron.time.monotonic", return_value=42.0):
+            v._apply_fast_value("com.victronenergy.unknown", "/Dc/0/Power", "-13")
+        assert v._last_signal_ok_monotonic is None
