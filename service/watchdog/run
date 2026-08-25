@@ -7,26 +7,34 @@
 #
 # Environment:
 #   WATCHDOG_INTERVAL - seconds between checks (default: 10)
-#   WATCHDOG_TIMEOUT   - consider stale if heartbeat older than this (default: 60)
+#   WATCHDOG_TIMEOUT   - consider stale if heartbeat older than this (default: 300)
+#                        A restart cannot fix slow cycles - only process death -
+#                        so the default leaves generous headroom for load spikes.
 #   WATCHDOG_MAX_RESTARTS - restarts before disable (default: 3)
 #   WATCHDOG_WINDOW   - time window in seconds for restart count (default: 300)
 #   WATCHDOG_LOG       - log file (default: /var/log/watchdog.log)
 #   WATCHDOG_DISABLE_BACKOFF - seconds to back off after disabling a service (default: 600)
+#   WATCHDOG_ALERT_ONLY - 1 = log stale services but never restart/disable
+#                         (escape hatch after a restart storm; default: 0)
 
 set -euo pipefail
 
 NAME="watchdog"
-VERSION="1.1.0"
+VERSION="1.2.0"
 WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
-WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-60}"
+WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-300}"
 WATCHDOG_MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-3}"
 WATCHDOG_WINDOW="${WATCHDOG_WINDOW:-300}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-/var/log/watchdog.log}"
 WATCHDOG_DISABLE_BACKOFF="${WATCHDOG_DISABLE_BACKOFF:-600}"
+WATCHDOG_ALERT_ONLY="${WATCHDOG_ALERT_ONLY:-0}"
 HB_DIR="/run/inverter-control"
 
-# Services to monitor: name -> heartbeat file
-SERVICES="${SERVICES:-inverter-control mqtt-battery tasmota-pv}"
+# Services to monitor: name -> heartbeat file {HB_DIR}/{name}.heartbeat.
+# Only inverter-control is wired up today (main.py heartbeat thread writes
+# it). Add names here ONLY together with a matching heartbeat writer;
+# entries without one are silently skipped (no file -> no check).
+SERVICES="${SERVICES:-inverter-control}"
 
 log() {
     echo "$(date +'%Y-%m-%d %H:%M:%S') $1" >> "$WATCHDOG_LOG"
@@ -77,14 +85,8 @@ check_service() {
     local hb_file="$HB_DIR/${service}.heartbeat"
     local svc_dir="/service/${service}"
 
-    # Skip if no heartbeat file expected
+    # No heartbeat file -> nothing to judge (service not wired up)
     [ -f "$hb_file" ] || return 0
-
-    # Read heartbeat timestamp
-    if [ ! -f "$hb_file" ]; then
-        log "INFO: $service no heartbeat file (not running?)"
-        return 0
-    fi
 
     local hb_time
     hb_time=$(cat "$hb_file" 2>/dev/null) || return 0
@@ -113,6 +115,13 @@ check_service() {
 
     if [ "$age" -gt "$WATCHDOG_TIMEOUT" ]; then
         log "WARN: $service stale (${age}s > ${WATCHDOG_TIMEOUT}s)"
+
+        # Alert-only mode: surface the stall, never act. A restart cannot fix
+        # slow cycles anyway - this is the post-storm escape hatch.
+        if [ "$WATCHDOG_ALERT_ONLY" = "1" ]; then
+            log "ALERT: $service stale ${age}s [alert-only, no action taken]"
+            return 0
+        fi
 
         # Count recent restarts
         local restarts
