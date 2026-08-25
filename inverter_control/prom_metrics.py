@@ -105,7 +105,7 @@ def publish(snapshot: dict[str, Any]) -> None:
             try:
                 _gauges["stage"].labels(stage, quantile).set(float(value))
             except (KeyError, TypeError, ValueError):
-                pass
+                pass  # Metrics export must never break the control loop
 
     _set("cpu", snapshot.get("cpu_percent"))
     _set("rss", snapshot.get("rss_mb"))
