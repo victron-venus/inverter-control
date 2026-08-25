@@ -64,7 +64,12 @@ class TestHardwareWatchdog(unittest.TestCase):
         watchdog.stop()
 
     def test_stalled_loop_triggers_failsafe(self):
-        """If both setpoint writes and D-Bus telemetry stop, force 0W safe mode."""
+        """If both setpoint writes and D-Bus telemetry stop, force a 0W setpoint.
+
+        The failsafe must NOT touch ESS assistant mode: with Hub4 in External
+        control the 0W write is a complete failsafe, and mode flapping caused
+        passthru dips (plus a BatteryLife State wipe) on every transient stall.
+        """
         watchdog, victron = self.make_watchdog(timeout=0.1)
         watchdog.start()
         watchdog.mark_dbus_update()
@@ -74,13 +79,12 @@ class TestHardwareWatchdog(unittest.TestCase):
         assert wait_until(watchdog.is_triggered)
 
         assert watchdog._hardware_forced
-        # Failsafe wrote a 0W setpoint and left external control
         victron.set_grid_setpoint.assert_any_call(0)
-        victron.set_ess_mode.assert_any_call(external=False)
+        victron.set_ess_mode.assert_not_called()
         watchdog.stop()
 
-    def test_recovery_restores_external_mode_and_setpoint(self):
-        """When telemetry resumes, the watchdog re-arms and restores control."""
+    def test_recovery_restores_setpoint_without_mode_change(self):
+        """When telemetry resumes, restore the prior setpoint; ESS mode untouched."""
         watchdog, victron = self.make_watchdog(timeout=0.1)
         watchdog.start()
         watchdog.mark_dbus_update()
@@ -96,7 +100,7 @@ class TestHardwareWatchdog(unittest.TestCase):
             time.sleep(0.02)
 
         assert wait_until(lambda: not watchdog.is_triggered())
-        victron.set_ess_mode.assert_any_call(external=True)
+        victron.set_ess_mode.assert_not_called()
         victron.set_grid_setpoint.assert_any_call(1234)
         watchdog.stop()
 
@@ -178,7 +182,7 @@ class TestWatchdogConcurrency(unittest.TestCase):
         watchdog.stop()
 
     def test_pre_forced_state_restored_on_recovery(self):
-        """_pre_forced_external and _pre_forced_setpoint are used to restore ESS mode"""
+        """Prior setpoint is saved on failsafe and restored (unconditionally)"""
         watchdog, _victron = self.make_watchdog(timeout=0.1)
         watchdog.start()
         watchdog.mark_dbus_update()
@@ -186,7 +190,6 @@ class TestWatchdogConcurrency(unittest.TestCase):
 
         # Stall → failsafe
         assert wait_until(watchdog.is_triggered)
-        assert watchdog._pre_forced_external is True
         assert watchdog._pre_forced_setpoint == 1234
 
         # Recover
@@ -197,7 +200,6 @@ class TestWatchdogConcurrency(unittest.TestCase):
 
         assert wait_until(lambda: not watchdog.is_triggered())
         # After recovery, pre_forced state should be cleared
-        assert watchdog._pre_forced_external is None
         assert watchdog._pre_forced_setpoint == 0
         watchdog.stop()
 

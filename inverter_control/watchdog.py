@@ -23,7 +23,8 @@ class HardwareWatchdog:
     Trigger is based on the actual setpoint writes, not telemetry reads, so a
     slow-but-alive loop is never mistaken for a crash.
 
-    Runs as a daemon thread checking heartbeat every second.
+    Runs as a daemon thread checking heartbeats every check_interval seconds
+    (WATCHDOG_CHECK_INTERVAL, default 5s).
     """
 
     def __init__(
@@ -47,7 +48,6 @@ class HardwareWatchdog:
         self._stop_event = threading.Event()
         self._triggered = False
         self._hardware_forced = False
-        self._pre_forced_external: bool | None = None
         self._pre_forced_setpoint: int = 0
         self._lock = threading.Lock()
 
@@ -74,7 +74,6 @@ class HardwareWatchdog:
         self._stop_event.clear()
         self._triggered = False
         self._hardware_forced = False
-        self._pre_forced_external = None
         self._pre_forced_setpoint = 0
         now = time.time()
         self._last_dbus_update = now
@@ -122,32 +121,36 @@ class HardwareWatchdog:
             self._recover_from_failsafe()
 
     def _apply_failsafe(self):
-        """Force ESS into safe pass-through mode, remembering prior state for recovery"""
+        """Force a safe 0W setpoint, remembering the prior value for recovery.
+
+        Deliberately does NOT touch the ESS assistant mode: with Hub4 in
+        External control (mode 3) the GX keeps honoring AcPowerSetpoint=0,
+        which is a complete failsafe. Flipping Hub4Mode 3->1->3 on recovery
+        made vebus dip into passthru each time - and set_ess_mode(False) also
+        resets BatteryLife State to 0 - so every transient stall caused its
+        own grid disturbance.
+        """
         if self.dry_run:
-            logger.warning("[DRY] watchdog would force 0W setpoint / ESS pass-through")
+            logger.warning("[DRY] watchdog would force 0W setpoint")
             return
         try:
-            if self._pre_forced_external is None:
-                self._pre_forced_external = self.victron.get_ess_mode().get("is_external")
+            if not self._hardware_forced:
                 self._pre_forced_setpoint = self._get_setpoint() if self._get_setpoint else 0
             self.victron.set_grid_setpoint(0)
-            self.victron.set_ess_mode(external=False)
             self._hardware_forced = True
-        except Exception:
-            pass  # Best effort - don't crash watchdog
+            logger.warning("WATCHDOG: stalled loop detected - forced 0W grid setpoint")
+        except Exception as e:
+            logger.error("WATCHDOG: failsafe write failed: %s", e)
 
     def _recover_from_failsafe(self):
-        """Telemetry recovered - re-arm watchdog and restore prior ESS mode/setpoint"""
+        """Telemetry recovered - re-arm watchdog and restore the prior setpoint"""
         self._triggered = False
         if self._hardware_forced:
             try:
-                if self._pre_forced_external:
-                    self.victron.set_ess_mode(external=True)
-                    self.victron.set_grid_setpoint(self._pre_forced_setpoint)
-            except Exception:
-                pass  # Best effort - don't crash watchdog
+                self.victron.set_grid_setpoint(self._pre_forced_setpoint)
+            except Exception as e:
+                logger.error("WATCHDOG: setpoint restore failed: %s", e)
             self._hardware_forced = False
-        self._pre_forced_external = None
         self._pre_forced_setpoint = 0
         logger.info("hardware watchdog re-armed after telemetry recovery")
 
