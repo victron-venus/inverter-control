@@ -1270,16 +1270,15 @@ class VictronDBus:
 
     def get_battery_soc_local(self, sys_data: dict[str, Any] | None = None) -> float:
         """
-        Calculate battery SOC locally from D-Bus voltage and power.
-        Replaces HA corrected_battery_soc sensor for independence.
+        Calculate battery SOC locally from D-Bus voltage (HA "Battery %" paradigm).
+        Replaces the shunt's own SoC, which reads bogus 100% while charging.
         Returns SOC percentage (0-100).
         """
         if sys_data is None:
             sys_data = self.get_system_data()
         voltage = sys_data.get("bv", 0.0)
-        power = sys_data.get("bp", 0)
 
-        return calculate_battery_soc_from_voltage(voltage, power)
+        return calculate_battery_soc_from_voltage(voltage)
 
     def get_inverter_power(self) -> int:
         """Get current inverter AC output power - instant from background cache"""
