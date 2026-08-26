@@ -13,7 +13,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from .alert_state import PersistentAlert, get_alert_storage
+from .alert_state import get_alert_storage
 
 logger = logging.getLogger("inverter-control")
 
