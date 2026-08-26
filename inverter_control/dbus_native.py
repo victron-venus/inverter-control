@@ -364,39 +364,75 @@ class NativeDbusClient:
             if message.message_type != MessageType.SIGNAL:
                 return
             if message.interface == BUSITEM_INTERFACE:
-                sender = getattr(message, "sender", None)
-                service = self._sender_service.get(sender) if sender else None
-                if sender and service is None:
-                    # Owner not yet resolved (service appeared after subscribe);
-                    # refresh the map and drop this batch — reconcile covers it.
-                    if sender not in self._resolving_senders:
-                        self._resolving_senders.add(sender)
-                        try:
-                            asyncio.ensure_future(self._refresh_and_clear(sender))
-                        except RuntimeError:
-                            self._resolving_senders.discard(sender)
-                    return
-                if message.member == "ItemsChanged" and message.path == "/":
-                    items = message.body[0] if message.body else {}
-                    for obj_path, props in items.items():
-                        self._dispatch(obj_path, props, service)
-                elif message.member == "PropertiesChanged":
-                    props = message.body[0] if message.body else {}
-                    self._dispatch(message.path, props, service)
+                self._handle_busitem_message(message)
             elif (
                 message.interface == DBUS_DAEMON and message.member == "NameOwnerChanged"
             ):
-                if len(message.body) >= 3:
-                    service_name = str(message.body[2])
-                    old_owner = str(message.body[0])
-                    new_owner = str(message.body[1])
-                    with self._handlers_lock:
-                        handlers = list(self._name_owner_handlers)
-                    for callback in handlers:
-                        callback(service_name, old_owner, new_owner)
+                self._handle_name_owner_changed(message)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus signal dispatch failed: %s", e)
 
+    def _handle_busitem_message(self, message):
+        sender = getattr(message, "sender", None)
+        service = self._sender_service.get(sender) if sender else None
+        if sender and service is None:
+            # Owner not yet resolved (service appeared after subscribe);
+            # refresh the map and drop this batch — reconcile covers it.
+            if sender not in self._resolving_senders:
+                self._resolving_senders.add(sender)
+                try:
+                    task = asyncio.ensure_future(self._refresh_and_clear(sender))
+                except RuntimeError:
+                    self._resolving_senders.discard(sender)
+            return
+        if message.member == "ItemsChanged" and message.path == "/":
+            items = message.body[0] if message.body else {}
+            for obj_path, props in items.items():
+                self._dispatch(obj_path, props, service)
+        elif message.member == "PropertiesChanged":
+            props = message.body[0] if message.body else {}
+            self._dispatch(message.path, props, service)
+
+    def _handle_name_owner_changed(self, message):
+        if len(message.body) >= 3:
+            service_name = str(message.body[2])
+            old_owner = str(message.body[0])
+            new_owner = str(message.body[1])
+            with self._handlers_lock:
+                handlers = list(self._name_owner_handlers)
+            for callback in handlers:
+                callback(service_name, old_owner, new_owner)
+
+    def _handle_name_owner_changed(self, message):
+        if len(message.body) >= 3:
+            service_name = str(message.body[2])
+            old_owner = str(message.body[0])
+            new_owner = str(message.body[1])
+            with self._handlers_lock:
+                handlers = list(self._name_owner_handlers)
+            for callback in handlers:
+                callback(service_name, old_owner, new_owner)
+
+    def _handle_busitem_message(self, message):
+        sender = getattr(message, "sender", None)
+        service = self._sender_service.get(sender) if sender else None
+        if sender and service is None:
+            # Owner not yet resolved (service appeared after subscribe);
+            # refresh the map and drop this batch — reconcile covers it.
+            if sender not in self._resolving_senders:
+                self._resolving_senders.add(sender)
+                try:
+                    task = asyncio.ensure_future(self._refresh_and_clear(sender))
+                except RuntimeError:
+                    self._resolving_senders.discard(sender)
+            return
+        if message.member == "ItemsChanged" and message.path == "/":
+            items = message.body[0] if message.body else {}
+            for obj_path, props in items.items():
+                self._dispatch(obj_path, props, service)
+        elif message.member == "PropertiesChanged":
+            props = message.body[0] if message.body else {}
+            self._dispatch(message.path, props, service)
     async def _refresh_and_clear(self, sender: str):
         """Refresh the sender map, then stop skipping this sender."""
         await self._refresh_sender_map()

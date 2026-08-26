@@ -97,15 +97,18 @@ def publish(snapshot: dict[str, Any]) -> None:
     _set("signals", snapshot.get("signals_healthy"))
     _set("subprocess", snapshot.get("dbus_subprocess_calls"))
 
-    for stage, stats in snapshot.get("stage_ms", {}).items():
-        for quantile in ("p50", "p95", "max"):
-            value = stats.get(quantile)
-            if value is None:
-                continue
-            try:
-                _gauges["stage"].labels(stage, quantile).set(float(value))
-            except (KeyError, TypeError, ValueError):
-                pass  # Metrics export must never break the control loop
+    _set_stage_metrics(snapshot, _gauges)
 
     _set("cpu", snapshot.get("cpu_percent"))
     _set("rss", snapshot.get("rss_mb"))
+
+    def _set_stage_metrics(snapshot, gauges):
+        for stage, stats in snapshot.get("stage_ms", {}).items():
+            for quantile in ("p50", "p95", "max"):
+                value = stats.get(quantile)
+                if value is None:
+                    continue
+                try:
+                    gauges["stage"].labels(stage, quantile).set(float(value))
+                except (KeyError, TypeError, ValueError):
+                    pass  # Metrics export must never break the control loop

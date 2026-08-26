@@ -40,6 +40,7 @@ TASMOTA_ENERGY_DAILY_PATH = "/Ac/Energy/Daily"
 # Published by dbus-tasmota-pv >= 3.0 (Tasmota ENERGY.Yesterday)
 TASMOTA_ENERGY_YESTERDAY_PATH = "/Energy/Daily/Yesterday"
 AC_POWER_PATH = "/Ac/Power"
+YIELD_POWER_PATH = "/Yield/Power"
 # Battery daily energy is integrated from battery power (no D-Bus history on
 # dbus-systemcalc-py based systems). State file survives service restarts.
 BATTERY_ENERGY_STATE_FILE = "/data/inverter-control/battery_daily_energy.json"
@@ -78,7 +79,7 @@ SHUNT_SIGNAL_PATHS = {
 # MPPT chargers, Tasmota PV inverters and Vue acloads are signal-driven too;
 # their single-value reads remain only as a slow reconciliation pass.
 MPPT_SIGNAL_PATHS = {
-    "/Yield/Power": "w",
+    YIELD_POWER_PATH: "w",
     DC_CURRENT_PATH: "a",
 }
 PV_SIGNAL_PATHS = {"/Ac/Power": "p"}
@@ -429,18 +430,13 @@ class VictronDBus:
             self._pv_inverter_services = []
             battery_candidates: list[str] = []
 
-            for line in lines:
-                if "com.victronenergy.vebus" in line:
-                    self._vebus_service = line.strip()
-                elif "com.victronenergy.solarcharger" in line:
-                    self._mppt_services.append(line.strip())
-                elif "com.victronenergy.acload" in line:
-                    self._acload_services.append(line.strip())
-                elif "com.victronenergy.pvinverter." in line:
-                    self._pv_inverter_services.append(line.strip())
-                elif "com.victronenergy.battery." in line:
-                    battery_candidates.append(line.strip())
-
+            (
+                self._vebus_service,
+                self._mppt_services,
+                self._acload_services,
+                self._pv_inverter_services,
+                battery_candidates,
+            ) = self._process_discovered_lines(lines)
             self._mppt_services.sort()
             self._acload_services.sort()
             self._pv_inverter_services.sort()
@@ -483,6 +479,26 @@ class VictronDBus:
         except Exception as e:
             logger.debug("D-Bus service discovery failed: %s", e)
 
+
+    def _process_discovered_lines(self, lines):
+        """Process the lines from dbus -y to discover services."""
+        vebus_service = None
+        mppt_services = []
+        acload_services = []
+        pv_inverter_services = []
+        battery_candidates = []
+        for line in lines:
+            if "com.victronenergy.vebus" in line:
+                vebus_service = line.strip()
+            elif "com.victronenergy.solarcharger" in line:
+                mppt_services.append(line.strip())
+            elif "com.victronenergy.acload" in line:
+                acload_services.append(line.strip())
+            elif "com.victronenergy.pvinverter." in line:
+                pv_inverter_services.append(line.strip())
+            elif "com.victronenergy.battery." in line:
+                battery_candidates.append(line.strip())
+        return vebus_service, mppt_services, acload_services, pv_inverter_services, battery_candidates
     def _check_rescan_needed(self) -> bool:
         """Check if D-Bus rescan is needed and perform it if so.
         IMPORTANT: This must NOT be called while holding _dbus_lock,
@@ -695,7 +711,7 @@ class VictronDBus:
         data = {}
         for i, service in enumerate(self._mppt_services):
             data[f"mppt{i}"] = {
-                "w": self._get_float_nolock(service, "/Yield/Power"),
+                "w": self._get_float_nolock(service, YIELD_POWER_PATH),
                 "a": self._get_float_nolock(service, DC_CURRENT_PATH),
             }
         self._cached_mppt_data = data
@@ -1831,7 +1847,7 @@ class VictronDBus:
                 "name": name,
                 "pv_voltage": self._get_float(service, "/Pv/V"),
                 "current": self._get_float(service, DC_CURRENT_PATH),
-                "power": self._get_float(service, "/Yield/Power"),
+                "power": self._get_float(service, YIELD_POWER_PATH),
             }
 
         with ThreadPoolExecutor(max_workers=len(self._mppt_services)) as pool:
