@@ -33,6 +33,7 @@ class TestVictronCoverage:
         assert any(t[0] == v._shunt_service for t in targets)
         # Also check that the paths are from SHUNT_SIGNAL_PATHS
         from inverter_control.victron import SHUNT_SIGNAL_PATHS
+
         for service, path in targets:
             if service == v._shunt_service:
                 assert path in SHUNT_SIGNAL_PATHS
@@ -48,6 +49,7 @@ class TestVictronCoverage:
         targets = v._fast_targets()
         assert any(t[0] == v._vebus_service for t in targets)
         from inverter_control.victron import VEBUS_STATE_PATH, VEBUS_INV_POWER_PATH
+
         for service, path in targets:
             if service == v._vebus_service:
                 assert path in (VEBUS_STATE_PATH, VEBUS_INV_POWER_PATH)
@@ -63,6 +65,7 @@ class TestVictronCoverage:
         targets = v._fast_targets()
         assert any(t[0] == v._mppt_services[0] for t in targets)
         from inverter_control.victron import MPPT_SIGNAL_PATHS
+
         for service, path in targets:
             if service == v._mppt_services[0]:
                 assert path in MPPT_SIGNAL_PATHS
@@ -78,6 +81,7 @@ class TestVictronCoverage:
         targets = v._fast_targets()
         assert any(t[0] == v._pv_inverter_services[0] for t in targets)
         from inverter_control.victron import PV_SIGNAL_PATHS
+
         for service, path in targets:
             if service == v._pv_inverter_services[0]:
                 assert path in PV_SIGNAL_PATHS
@@ -93,6 +97,7 @@ class TestVictronCoverage:
         targets = v._fast_targets()
         assert any(t[0] == v._acload_services[0] for t in targets)
         from inverter_control.victron import ACLOAD_NAME_PATH, AC_POWER_PATH
+
         for service, path in targets:
             if service == v._acload_services[0]:
                 assert path in (ACLOAD_NAME_PATH, AC_POWER_PATH)
@@ -102,7 +107,7 @@ class TestVictronCoverage:
         v = victron.get_victron(test_mode=True)  # test_mode=True => _native = None
         # Mock the method to avoid actually subscribing (but we want to hit the early return)
         # We can just call the method; it should return immediately.
-        # We'll also need to ensure _signal_handler_attached is False to avoid AttributeError? 
+        # We'll also need to ensure _signal_handler_attached is False to avoid AttributeError?
         # Actually the early return is before touching _signal_handler_attached.
         v._native = None
         v._setup_fast_signals()  # Should just return
@@ -111,7 +116,7 @@ class TestVictronCoverage:
     def test_setup_fast_signals_with_shunt_service(self):
         """Cover line 262: subscribed append for shunt service"""
         # We need to patch NativeDbusClient BEFORE creating VictronDBus instance
-        with patch('inverter_control.victron.NativeDbusClient') as MockNative:
+        with patch("inverter_control.victron.NativeDbusClient") as MockNative:
             mock_native_instance = MagicMock()
             MockNative.return_value = mock_native_instance
             # Make the mock's methods return something truthy so that all(subscribed) works
@@ -133,7 +138,7 @@ class TestVictronCoverage:
     def test_setup_fast_signals_with_vebus_service(self):
         """Cover lines 265-267: vebus service signals"""
         # We need to patch NativeDbusClient BEFORE creating VictronDBus instance
-        with patch('inverter_control.victron.NativeDbusClient') as MockNative:
+        with patch("inverter_control.victron.NativeDbusClient") as MockNative:
             mock_native_instance = MagicMock()
             MockNative.return_value = mock_native_instance
             # Make the mock's methods return something truthy so that all(subscribed) works
@@ -149,14 +154,19 @@ class TestVictronCoverage:
             v._setup_fast_signals()
             # Check that the vebus service calls were made
             from inverter_control.victron import VEBUS_STATE_PATH, VEBUS_INV_POWER_PATH
+
             mock_native_instance.subscribe_service_items.assert_any_call(v._vebus_service)
-            mock_native_instance.subscribe_busitem.assert_any_call(v._vebus_service, VEBUS_STATE_PATH)
-            mock_native_instance.subscribe_busitem.assert_any_call(v._vebus_service, VEBUS_INV_POWER_PATH)
+            mock_native_instance.subscribe_busitem.assert_any_call(
+                v._vebus_service, VEBUS_STATE_PATH
+            )
+            mock_native_instance.subscribe_busitem.assert_any_call(
+                v._vebus_service, VEBUS_INV_POWER_PATH
+            )
 
     def test_setup_fast_signals_discovered_services(self):
         """Cover line 272: loop over discovered services"""
         # We need to patch NativeDbusClient BEFORE creating VictronDBus instance
-        with patch('inverter_control.victron.NativeDbusClient') as MockNative:
+        with patch("inverter_control.victron.NativeDbusClient") as MockNative:
             mock_native_instance = MagicMock()
             MockNative.return_value = mock_native_instance
             # Make the mock's methods return something truthy so that all(subscribed) works
@@ -174,7 +184,7 @@ class TestVictronCoverage:
     def test_setup_fast_signals_all_subscribed_true(self):
         """Cover line 275: setting _last_signal_ok_monotonic when all subscribed succeed"""
         # We need to patch NativeDbusClient BEFORE creating VictronDBus instance
-        with patch('inverter_control.victron.NativeDbusClient') as MockNative:
+        with patch("inverter_control.victron.NativeDbusClient") as MockNative:
             mock_native_instance = MagicMock()
             MockNative.return_value = mock_native_instance
             # Make the mock's methods return something truthy so that all(subscribed) works
@@ -193,4 +203,3 @@ class TestVictronCoverage:
 
     # Now we need to cover other missing lines, e.g., in _get_float_nolock, get_all_batteries, etc.
     # We'll add more tests as time permits.
-

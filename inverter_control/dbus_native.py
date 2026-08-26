@@ -383,7 +383,9 @@ class NativeDbusClient:
                 elif message.member == "PropertiesChanged":
                     props = message.body[0] if message.body else {}
                     self._dispatch(message.path, props, service)
-            elif message.interface == "org.freedesktop.DBus" and message.member == "NameOwnerChanged":
+            elif (
+                message.interface == "org.freedesktop.DBus" and message.member == "NameOwnerChanged"
+            ):
                 if len(message.body) >= 3:
                     service_name = str(message.body[2])
                     old_owner = str(message.body[0])

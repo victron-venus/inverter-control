@@ -43,8 +43,8 @@ echo ">>> Streaming repository to $SSH_HOST and running update.sh..."
 # Push the developer's working local_config.py when it exists locally
 # (override with PUSH_LOCAL_CONFIG=0 to keep the device's current config).
 # update.sh also skips the copy itself if the source file is missing.
-if [ "${PUSH_LOCAL_CONFIG:-}" = "" ]; then
-    if [ -f "$SCRIPT_DIR/local_config.py" ]; then
+if [[ "${PUSH_LOCAL_CONFIG:-}" = "" ]]; then
+    if [[ -f "$SCRIPT_DIR/local_config.py" ]]; then
         PUSH_LOCAL_CONFIG=1
         echo "    Local local_config.py found - will push it to the device"
     else

@@ -117,7 +117,9 @@ class VictronDBus:
 
     # Auto-rescan thresholds
     RESCAN_ERROR_THRESHOLD = 5  # Rescan after N consecutive errors
-    RESCAN_INTERVAL_SECONDS = 1800  # Rescan every 30 minutes regardless (fallback for event-driven discovery)
+    RESCAN_INTERVAL_SECONDS = (
+        1800  # Rescan every 30 minutes regardless (fallback for event-driven discovery)
+    )
     RESCAN_COOLDOWN_SECONDS = 60  # Minimum time between error-triggered rescans
 
     # Service health tracking: after N consecutive timeouts, back off
@@ -522,13 +524,15 @@ class VictronDBus:
         }
 
         # Also check for any ve bus, mptt, ac load, or pv inverter services
-        if service_name.startswith((
-            "com.victronenergy.vebus",
-            "com.victronenergy.solarcharger",
-            "com.victronenergy.acload",
-            "com.victronenergy.pvinverter.",
-            "com.victronenergy.battery."
-        )):
+        if service_name.startswith(
+            (
+                "com.victronenergy.vebus",
+                "com.victronenergy.solarcharger",
+                "com.victronenergy.acload",
+                "com.victronenergy.pvinverter.",
+                "com.victronenergy.battery.",
+            )
+        ):
             tracked_services.add(service_name)
 
         if service_name in tracked_services:

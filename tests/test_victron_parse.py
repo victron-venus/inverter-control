@@ -41,8 +41,7 @@ class TestParseSystemDataOutput:
     def test_invalid_float_in_system_data(self):
         """Invalid float in the system data should trigger the exception block and keep default."""
         tree = (
-            '            string "Ac/Grid/L1/Power"\n'
-            "            variant                double .\n"
+            '            string "Ac/Grid/L1/Power"\n            variant                double .\n'
         )
         d = vp.parse_system_data_output(tree)
         assert d["g1"] == 0  # should remain default
@@ -78,10 +77,7 @@ class TestParseShuntDataOutput:
 
     def test_invalid_float_in_shunt_data(self):
         """Invalid float in the shunt data should trigger the exception block and keep the key absent."""
-        tree = (
-            '            string "Dc/0/Voltage"\n'
-            "            variant                double .\n"
-        )
+        tree = '            string "Dc/0/Voltage"\n            variant                double .\n'
         d = vp.parse_shunt_data_output(tree)
         assert "bv" not in d  # should remain absent
         assert "bc" not in d

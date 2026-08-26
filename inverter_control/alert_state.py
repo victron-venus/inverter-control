@@ -2,6 +2,7 @@
 """
 Persistent alert storage for inverter-control
 """
+
 import json
 import os
 import threading
@@ -82,9 +83,7 @@ class AlertStorage:
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.alerts = [
-                        PersistentAlert.from_dict(item) for item in data
-                    ]
+                    self.alerts = [PersistentAlert.from_dict(item) for item in data]
             except (json.JSONDecodeError, IOError) as e:
                 # If file is corrupt, start with empty list and log error
                 # In a real application, we would log this
@@ -150,9 +149,7 @@ class AlertStorage:
         """Get alert history, newest first"""
         with self._lock:
             # Sort by timestamp descending (newest first)
-            sorted_alerts = sorted(
-                self.alerts, key=lambda a: a.timestamp, reverse=True
-            )
+            sorted_alerts = sorted(self.alerts, key=lambda a: a.timestamp, reverse=True)
             if limit is not None:
                 return sorted_alerts[:limit]
             return sorted_alerts
