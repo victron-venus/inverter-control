@@ -13,6 +13,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from .alert_state import PersistentAlert, get_alert_storage
+
 logger = logging.getLogger("inverter-control")
 
 
@@ -64,6 +66,9 @@ class MQTTBridge:
         self._publish_queue: queue.Queue[tuple[str, str, int, bool]] = queue.Queue(maxsize=100)
         self._publish_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+
+        # Alert storage for persistence
+        self._alert_storage = get_alert_storage()
 
         if not MQTT_AVAILABLE:
             return
@@ -122,7 +127,11 @@ class MQTTBridge:
 
         # Subscribe to command topics
         client.subscribe(f"{self.prefix}/cmd/#")
+        # Subscribe to alert acknowledgments
+        client.subscribe(f"{self.prefix}/alert/ack")
         self._publish_portal_id(client)
+        # Resend any unacknowledged alerts on (re)connection
+        self.resend_unacknowledged_alerts()
 
     def _publish_portal_id(self, client) -> None:
         """Publish the VRM portal ID (retained) so remote consumers (desktop,
@@ -147,6 +156,13 @@ class MQTTBridge:
         """Received message"""
         try:
             topic = msg.topic
+
+            # Handle alert acknowledgments
+            if topic == f"{self.prefix}/alert/ack":
+                self._handle_acknowledgment(msg.payload.decode().strip())
+                return
+
+            # Handle other command topics
             cmd = topic.split("/")[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
 
             payload = {}
@@ -216,10 +232,21 @@ class MQTTBridge:
         """Publish user-facing notification to {prefix}/notifications (async, non-blocking).
 
         Consumed by inverter-desktop banner; deduplicated by consumers on notification_id.
+        Also stores the alert persistently for history and acknowledgment.
         """
         if not self._connected:
             logger.debug("MQTT not connected, dropping notification %s", notification_id)
             return
+
+        # Store the alert persistently
+        alert = self._alert_storage.add_alert(
+            title=title,
+            body=body,
+            level=level,
+            source=source,
+        )
+        # Use the persistent alert's ID for the notification (overrides the passed notification_id)
+        notification_id = alert.id
 
         payload = json.dumps(
             {
@@ -238,6 +265,41 @@ class MQTTBridge:
             logger.debug("MQTT publish queue full, dropping notification %s", notification_id)
         except Exception as e:
             logger.debug(f"MQTT notification publish error: {e}")
+
+    def _handle_acknowledgment(self, alert_id: str) -> None:
+        """Handle acknowledgment from inverter-desktop"""
+        if not alert_id:
+            logger.debug("Received empty alert acknowledgment")
+            return
+        if self._alert_storage.acknowledge_alert(alert_id):
+            logger.info("Alert %s acknowledged by inverter-desktop", alert_id)
+        else:
+            logger.warning("Received acknowledgment for unknown alert ID: %s", alert_id)
+
+    def resend_unacknowledged_alerts(self) -> None:
+        """Resend all unacknowledged alerts (called on (re)connection)"""
+        alerts = self._alert_storage.get_unacknowledged_alerts()
+        for alert in alerts:
+            # Re-publish the alert by constructing the payload directly
+            # to avoid double storage (since the alert is already stored)
+            try:
+                payload = json.dumps(
+                    {
+                        "id": alert.id,
+                        "level": alert.level,
+                        "title": alert.title,
+                        "body": alert.body,
+                        "source": alert.source,
+                        "ts": alert.timestamp,  # Use the original timestamp
+                    }
+                )
+                self._ensure_publish_thread()
+                self._publish_queue.put_nowait((f"{self.prefix}/notifications", payload, 0, False))
+                logger.info("Resent unacknowledged alert: %s", alert.id)
+            except queue.Full:
+                logger.debug("MQTT publish queue full, dropping alert %s", alert.id)
+            except Exception as e:
+                logger.debug(f"MQTT alert resend error: {e}")
 
     def flush(self):
         """Wait for publish queue to empty (for testing)"""

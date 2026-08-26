@@ -117,7 +117,7 @@ class VictronDBus:
 
     # Auto-rescan thresholds
     RESCAN_ERROR_THRESHOLD = 5  # Rescan after N consecutive errors
-    RESCAN_INTERVAL_SECONDS = 300  # Rescan every 5 minutes regardless
+    RESCAN_INTERVAL_SECONDS = 1800  # Rescan every 30 minutes regardless (fallback for event-driven discovery)
     RESCAN_COOLDOWN_SECONDS = 60  # Minimum time between error-triggered rescans
 
     # Service health tracking: after N consecutive timeouts, back off
@@ -204,6 +204,8 @@ class VictronDBus:
 
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
+            # Set up NameOwnerChanged handler for service discovery
+            self._native.add_name_owner_handler(self._on_name_owner_changed)
 
         # Signal-driven fast inputs (see SYSTEM_SIGNAL_PATHS)
         self._signal_paths_subscribed = False
@@ -502,6 +504,34 @@ class VictronDBus:
             return True
 
         return False
+
+    def _on_name_owner_changed(self, service_name: str, old_owner: str, new_owner: str):
+        """Handle NameOwnerChanged signals to trigger service discovery when services appear/disappear.
+
+        This replaces the periodic RESCAN_INTERVAL_SECONDS timer with event-driven discovery.
+        We trigger discovery when:
+        - A service gains an owner (appears on the bus)
+        - A service loses its owner (disappears from the bus)
+        """
+        # Only trigger discovery for services we care about
+        tracked_services = {
+            SYSTEM_SERVICE,
+            SETTINGS_SERVICE,
+            BATTERY_CHAIN_1,
+            BATTERY_CHAIN_2,
+        }
+
+        # Also check for any ve bus, mptt, ac load, or pv inverter services
+        if (service_name.startswith("com.victronenergy.vebus") or
+            service_name.startswith("com.victronenergy.solarcharger") or
+            service_name.startswith("com.victronenergy.acload") or
+            service_name.startswith("com.victronenergy.pvinverter.") or
+            service_name.startswith("com.victronenergy.battery.")):
+            tracked_services.add(service_name)
+
+        if service_name in tracked_services:
+            logger.debug(f"NameOwnerChanged: {service_name} {old_owner} -> {new_owner}")
+            self._discover_services()
 
     def _start_background_polling(self):
         """Start background polling thread to keep D-Bus data fresh"""

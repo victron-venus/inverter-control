@@ -50,6 +50,11 @@ class HardwareWatchdog:
         self._hardware_forced = False
         self._pre_forced_setpoint: int = 0
         self._lock = threading.Lock()
+        # Hysteresis counters to prevent flapping
+        self._fail_count = 0
+        self._success_count = 0
+        self._fail_threshold = 3  # consecutive failed checks to trigger
+        self._success_threshold = 2  # consecutive successful checks to recover
 
     def mark_dbus_update(self):
         """Call when D-Bus telemetry is successfully read"""
@@ -75,6 +80,8 @@ class HardwareWatchdog:
         self._triggered = False
         self._hardware_forced = False
         self._pre_forced_setpoint = 0
+        self._fail_count = 0
+        self._success_count = 0
         now = time.time()
         self._last_dbus_update = now
         self._last_mqtt_update = now
@@ -112,12 +119,17 @@ class HardwareWatchdog:
         # control loop has genuinely stalled or crashed.
         stale = setpoint_age > self.timeout_seconds and dbus_age > self.timeout_seconds
 
-        if stale and not self._triggered:
+        if stale:
+            self._fail_count += 1
+            self._success_count = 0
+        else:
+            self._success_count += 1
+            self._fail_count = 0
+
+        if self._fail_count >= self._fail_threshold and not self._triggered:
             self._triggered = True
             self._apply_failsafe()
-        elif stale and self._triggered and not self._hardware_forced:
-            self._apply_failsafe()
-        elif not stale and self._triggered:
+        elif self._success_count >= self._success_threshold and self._triggered:
             self._recover_from_failsafe()
 
     def _apply_failsafe(self):

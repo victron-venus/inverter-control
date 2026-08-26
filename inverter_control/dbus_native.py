@@ -72,6 +72,8 @@ class NativeDbusClient:
         self._fail_until = 0.0
         # Signal subscription support (PropertiesChanged)
         self._signal_handlers: list = []  # callbacks (service, path, value_str)
+        # NameOwnerChanged signal handlers
+        self._name_owner_handlers: list = []  # callbacks (service_name, old_owner, new_owner)
         self._handlers_lock = threading.Lock()
         # Armed match rules (strings), replayed after reconnect
         self._subscriptions: set[str] = set()
@@ -289,6 +291,11 @@ class NativeDbusClient:
         with self._handlers_lock:
             self._signal_handlers.append(callback)
 
+    def add_name_owner_handler(self, callback):
+        """Register callback(service_name: str, old_owner: str, new_owner: str) for NameOwnerChanged signals."""
+        with self._handlers_lock:
+            self._name_owner_handlers.append(callback)
+
     def subscribe_signal(self, service: str, member: str, path: str) -> bool:
         """Arm one match rule. Idempotent; re-armed automatically after a
         reconnect. Initial values must still be fetched (signals fire on
@@ -354,27 +361,37 @@ class NativeDbusClient:
         battery both publish /Dc/0/*) can be routed correctly.
         """
         try:
-            if message.message_type != MessageType.SIGNAL or message.interface != BUSITEM_INTERFACE:
+            if message.message_type != MessageType.SIGNAL:
                 return
-            sender = getattr(message, "sender", None)
-            service = self._sender_service.get(sender) if sender else None
-            if sender and service is None:
-                # Owner not yet resolved (service appeared after subscribe);
-                # refresh the map and drop this batch — reconcile covers it.
-                if sender not in self._resolving_senders:
-                    self._resolving_senders.add(sender)
-                    try:
-                        asyncio.ensure_future(self._refresh_and_clear(sender))
-                    except RuntimeError:
-                        self._resolving_senders.discard(sender)
-                return
-            if message.member == "ItemsChanged" and message.path == "/":
-                items = message.body[0] if message.body else {}
-                for obj_path, props in items.items():
-                    self._dispatch(obj_path, props, service)
-            elif message.member == "PropertiesChanged":
-                props = message.body[0] if message.body else {}
-                self._dispatch(message.path, props, service)
+            if message.interface == BUSITEM_INTERFACE:
+                sender = getattr(message, "sender", None)
+                service = self._sender_service.get(sender) if sender else None
+                if sender and service is None:
+                    # Owner not yet resolved (service appeared after subscribe);
+                    # refresh the map and drop this batch — reconcile covers it.
+                    if sender not in self._resolving_senders:
+                        self._resolving_senders.add(sender)
+                        try:
+                            asyncio.ensure_future(self._refresh_and_clear(sender))
+                        except RuntimeError:
+                            self._resolving_senders.discard(sender)
+                    return
+                if message.member == "ItemsChanged" and message.path == "/":
+                    items = message.body[0] if message.body else {}
+                    for obj_path, props in items.items():
+                        self._dispatch(obj_path, props, service)
+                elif message.member == "PropertiesChanged":
+                    props = message.body[0] if message.body else {}
+                    self._dispatch(message.path, props, service)
+            elif message.interface == "org.freedesktop.DBus" and message.member == "NameOwnerChanged":
+                if len(message.body) >= 3:
+                    service_name = str(message.body[2])
+                    old_owner = str(message.body[0])
+                    new_owner = str(message.body[1])
+                    with self._handlers_lock:
+                        handlers = list(self._name_owner_handlers)
+                    for callback in handlers:
+                        callback(service_name, old_owner, new_owner)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus signal dispatch failed: %s", e)
 
