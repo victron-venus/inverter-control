@@ -418,6 +418,52 @@ class TestVictronSignalIntegration:
         v._apply_fast_value(victron.SYSTEM_SERVICE, "/Ac/Grid/L1/Power", "not-a-number")
         assert "g1" not in v._system_data  # payload ignored, cache untouched
 
+    def test_apply_fast_value_routes_mppt(self):
+        v = victron.get_victron(test_mode=True)
+        v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB1"]
+        v._apply_fast_value(v._mppt_services[0], "/Yield/Power", "1500")
+        v._apply_fast_value(v._mppt_services[0], "/Dc/0/Current", "12.5")
+        assert v.get_mppt_data() == {"mppt0": {"w": 1500.0, "a": 12.5}}
+
+    def test_apply_fast_value_routes_pv_inverter(self):
+        v = victron.get_victron(test_mode=True)
+        svc = "com.victronenergy.pvinverter.tasmota_1"
+        v._pv_inverter_services = [svc]
+        v._apply_fast_value(svc, "/Ac/Power", "-125.5")
+        assert v.get_pv_power() == [-125.5]
+
+    def test_apply_fast_value_routes_acload(self):
+        """Name+power signals compose into the named {CustomName: power} view."""
+        v = victron.get_victron(test_mode=True)
+        svc = "com.victronenergy.acload.vue_l1"
+        v._acload_services = [svc]
+        v._apply_fast_value(svc, "/CustomName", " Vue L1 \n")
+        v._apply_fast_value(svc, "/Ac/Power", "310.4")
+        assert v.get_acload_powers() == {"Vue L1": 310.4}
+
+    def test_group_signal_marks_sender_alive(self):
+        """Polled-group traffic proves the signal path alive like system/shunt."""
+        v = victron.get_victron(test_mode=True)
+        v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB1"]
+        v._last_signal_ok_monotonic = None
+        with patch("inverter_control.victron.time.monotonic", return_value=7.0):
+            v._apply_fast_value(v._mppt_services[0], "/Yield/Power", "10")
+        assert v._last_signal_ok_monotonic == 7.0
+
+    def test_stale_getter_refreshes_without_subprocess(self):
+        """TTL-miss getters refresh via the native client, never CLI forks."""
+        v = victron.get_victron(test_mode=True)
+        v._native = MagicMock()
+        v._native.get_value.side_effect = lambda _service, path: (
+            "42.0" if path == "/Yield/Power" else "2.0"
+        )
+        v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB1"]
+        v._last_mppt_time = 0.0
+        with patch.object(victron.VictronDBus, "_safe_subprocess") as p_sub:
+            data = v.get_mppt_data()
+        assert data == {"mppt0": {"w": 42.0, "a": 2.0}}
+        p_sub.assert_not_called()
+
     def test_poll_all_skipped_while_signals_healthy(self):
         v = victron.get_victron(test_mode=True)
         v._native = MagicMock()

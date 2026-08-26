@@ -37,7 +37,10 @@ def test_mppt_data_caching():
             m.stdout = ""
         return m
 
-    with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
+    with (
+        patch("inverter_control.victron.subprocess.run", side_effect=side_effect),
+        patch("inverter_control.victron.GROUP_CACHE_TTL", 0.1),
+    ):
         # First call - should trigger actual D-Bus calls
         data1 = v.get_mppt_data()
         first_call_count = call_count
@@ -46,8 +49,8 @@ def test_mppt_data_caching():
         data2 = v.get_mppt_data()
         second_call_count = call_count
 
-        # Wait a bit to see if cache expires (TTL is 0.5 seconds)
-        time.sleep(0.6)
+        # TTL patched below to keep the expiry window short
+        time.sleep(0.15)
 
         # Third call after cache should expire - should trigger new D-Bus calls
         data3 = v.get_mppt_data()
@@ -122,7 +125,10 @@ def test_pv_inverter_power_caching():
             m.stdout = ""
         return m
 
-    with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
+    with (
+        patch("inverter_control.victron.subprocess.run", side_effect=side_effect),
+        patch("inverter_control.victron.GROUP_CACHE_TTL", 0.1),
+    ):
         # First call - should trigger actual D-Bus calls
         powers1 = v.get_pv_power()
         first_call_count = call_count
@@ -131,8 +137,8 @@ def test_pv_inverter_power_caching():
         powers2 = v.get_pv_power()
         second_call_count = call_count
 
-        # Wait a bit to see if cache expires (TTL is 0.5 seconds)
-        time.sleep(0.6)
+        # TTL patched below to keep the expiry window short
+        time.sleep(0.15)
 
         # Third call after cache should expire - should trigger new D-Bus calls
         powers3 = v.get_pv_power()
@@ -192,7 +198,7 @@ def test_battery_chain_socs_caching():
         socs2 = v.get_battery_chain_socs()
         second_call_count = call_count
 
-        # Wait a bit longer than the TTL (TTL is 2.0 seconds)
+        # Wait past the getter's own 2.0s TTL
         time.sleep(2.1)
 
         # Third call after cache should expire - should trigger new D-Bus calls
@@ -258,7 +264,7 @@ def test_inverter_state_caching():
         state2 = v.get_inverter_state()
         second_call_count = call_count
 
-        # Wait a bit longer than the TTL (TTL is 2.0 seconds)
+        # Wait past the getter's own 2.0s TTL
         time.sleep(2.1)
 
         # Third call after cache should expire - should trigger new D-Bus call
