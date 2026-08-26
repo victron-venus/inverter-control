@@ -522,11 +522,13 @@ class VictronDBus:
         }
 
         # Also check for any ve bus, mptt, ac load, or pv inverter services
-        if (service_name.startswith("com.victronenergy.vebus") or
-            service_name.startswith("com.victronenergy.solarcharger") or
-            service_name.startswith("com.victronenergy.acload") or
-            service_name.startswith("com.victronenergy.pvinverter.") or
-            service_name.startswith("com.victronenergy.battery.")):
+        if service_name.startswith((
+            "com.victronenergy.vebus",
+            "com.victronenergy.solarcharger",
+            "com.victronenergy.acload",
+            "com.victronenergy.pvinverter.",
+            "com.victronenergy.battery."
+        )):
             tracked_services.add(service_name)
 
         if service_name in tracked_services:
