@@ -120,7 +120,7 @@ class NativeDbusClient:
         """Re-arm match rules after a (re)connect; signals don't survive disconnects."""
         # Bus reattachment gives services new unique names; the old map lies.
         self._sender_service.clear()
-        for rule in list(self._subscriptions):
+        for rule in self._subscriptions:
             try:
                 self._send_add_match(rule)
             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -327,7 +327,7 @@ class NativeDbusClient:
         """Map subscribed well-known names to their current unique senders."""
         from dbus_fast import Message
 
-        for svc in list(self._subscription_services):
+        for svc in self._subscription_services:
             try:
                 reply = await self._bus.call(
                     Message(
@@ -384,7 +384,7 @@ class NativeDbusClient:
                     props = message.body[0] if message.body else {}
                     self._dispatch(message.path, props, service)
             elif (
-                message.interface == "org.freedesktop.DBus" and message.member == "NameOwnerChanged"
+                message.interface == DBUS_DAEMON and message.member == "NameOwnerChanged"
             ):
                 if len(message.body) >= 3:
                     service_name = str(message.body[2])

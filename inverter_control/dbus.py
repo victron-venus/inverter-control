@@ -168,8 +168,6 @@ class VUESensorDBusClient:
                 logger.warning(f"Failed to update VUE sensor {key} via dbus-send: {e}")
             return key, None
 
-        if not self._vue_services:
-            return
         with ThreadPoolExecutor(max_workers=len(self._vue_services)) as pool:
             futures = [
                 pool.submit(_query_power, key, svc) for key, svc in self._vue_services.items()
