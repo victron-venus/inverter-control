@@ -27,7 +27,7 @@ The main control loop runs every ~0.33 seconds and performs these steps:
 | `t1`, `t2`, `tt` | D-Bus | Consumption per phase and total (W) |
 | `inv_power` | D-Bus | Current inverter AC output (W) |
 | `mppt_total` | D-Bus | Solar from MPPT controllers (W) |
-| `tasmota_total` | D-Bus | Solar from Tasmota microinverters (W) |
+| `pv_inverter_total` | D-Bus | Solar from Tasmota microinverters (W) |
 | `ev_power` | Home Assistant | EV charger consumption (W) |
 
 ### Step 2: Get Control Switches
@@ -94,7 +94,7 @@ Flag: `[NoEV]`
 **Goal:** Match Tasmota output to prevent grid export
 
 ```
-vanew = tasmota_total
+vanew = pv_inverter_total
 ```
 
 Positive setpoint consumes from grid what Tasmota exports.
@@ -105,7 +105,7 @@ Flag: `[NF]`
 **Goal:** Partial self-consumption with Tasmota
 
 ```
-vanew = tasmota_total - 300
+vanew = pv_inverter_total - 300
 ```
 
 Flag: `[HS]`

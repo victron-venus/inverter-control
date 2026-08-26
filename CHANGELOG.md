@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-08-25
+
+### Changed
+- **BREAKING (wire format)**: renamed the `tasmota_*` keys in the published
+  MQTT state and daily stats to vendor-neutral `pv_inverter_*`:
+  `tasmota_powers` → `pv_inverter_powers`, `tasmota_total` →
+  `pv_inverter_total`, `tasmota_individual` → `pv_inverter_individual`,
+  `tasmota_daily` → `pv_inverter_daily`, `tasmota_yesterday` →
+  `pv_inverter_yesterday`. Matches the D-Bus method names
+  (`get_pv_inverter_daily_yields()` etc.) and the per-device `pv_inverters`
+  list; internal names follow. Consumers already read live V/I/P from the
+  cerbo MQTT `pv_inverters` path, so dashboards are unaffected
+
 ## [1.21.3] - 2026-08-25
 
 ### Added

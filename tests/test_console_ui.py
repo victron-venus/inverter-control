@@ -128,7 +128,7 @@ class TestConsoleUI:
         # With solar data
         sys_data = {
             "mppt_data": {"mppt0": {"w": 500.0, "a": 10.5}, "mppt1": {"w": 300.0, "a": 6.2}},
-            "tasmota_powers": [200.0, 150.0],
+            "pv_inverter_powers": [200.0, 150.0],
         }
 
         solar_section = self.ui._fmt_solar_section(sys_data)
@@ -139,7 +139,7 @@ class TestConsoleUI:
         assert "150" in solar_section
 
         # Without solar data
-        sys_data2 = {"mppt_data": {}, "tasmota_powers": []}
+        sys_data2 = {"mppt_data": {}, "pv_inverter_powers": []}
         solar_section2 = self.ui._fmt_solar_section(sys_data2)
         assert "0" in solar_section2
 
@@ -233,7 +233,7 @@ class TestConsoleUIEdgeCases:
         """Test solar formatting with zero current"""
         sys_data = {
             "mppt_data": {"mppt0": {"w": 100.0, "a": 0.01}},  # Very small current
-            "tasmota_powers": [],
+            "pv_inverter_powers": [],
         }
         solar = self.ui._fmt_solar_section(sys_data)
         assert "0A" in solar  # Shows 0A when under 0.05A
