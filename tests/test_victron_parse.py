@@ -38,6 +38,17 @@ class TestParseSystemDataOutput:
         assert d["pv_total"] == 7.0
         assert d["g1"] == 0
 
+    def test_invalid_float_in_system_data(self):
+        """Invalid float in the system data should trigger the exception block and keep default."""
+        tree = (
+            '            string "Ac/Grid/L1/Power"\n'
+            "            variant                double .\n"
+        )
+        d = vp.parse_system_data_output(tree)
+        assert d["g1"] == 0  # should remain default
+        assert d["g2"] == 0  # not present in tree, so default
+        assert d["pv_total"] == 0  # not present in tree, so default
+
 
 class TestParseShuntDataOutput:
     SHUNT_TREE = (
@@ -64,6 +75,17 @@ class TestParseShuntDataOutput:
 
     def test_empty_output(self):
         assert vp.parse_shunt_data_output("") == {}
+
+    def test_invalid_float_in_shunt_data(self):
+        """Invalid float in the shunt data should trigger the exception block and keep the key absent."""
+        tree = (
+            '            string "Dc/0/Voltage"\n'
+            "            variant                double .\n"
+        )
+        d = vp.parse_shunt_data_output(tree)
+        assert "bv" not in d  # should remain absent
+        assert "bc" not in d
+        assert "bp" not in d
 
 
 class TestBatterySocFromVoltage:
@@ -93,3 +115,6 @@ class TestBatterySocFromVoltage:
 
     def test_garbage_voltage_returns_zero(self):
         assert vp.calculate_battery_soc_from_voltage("not-a-number") == 0.0  # type: ignore[arg-type]
+
+    def test_none_voltage_returns_zero(self):
+        assert vp.calculate_battery_soc_from_voltage(None) == 0.0  # type: ignore[arg-type]

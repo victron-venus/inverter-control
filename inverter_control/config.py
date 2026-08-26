@@ -95,6 +95,12 @@ MQTT_BROKER = "localhost"  # Venus OS has built-in MQTT broker
 MQTT_PORT = 1883
 MQTT_TOPIC_PREFIX = "inverter"
 
+# =============================================================================
+# ALERT STORAGE
+# =============================================================================
+# Path to JSON file for persistent alert storage
+ALERT_STORAGE_PATH = _import_local_config("ALERT_STORAGE_PATH", "/data/inverter_control_alerts.json")
+
 # When True, inverter/state MQTT payload omits Home Assistant mirror fields (booleans,
 # switch shadows, appliance flags). Use this with inverter-dashboard ha_secrets.py + HA_DIRECT_CONTROLS
 # so switch state is read from HA in the dashboard instead of duplicated over MQTT.
