@@ -869,7 +869,7 @@ class VictronDBus:
                 "--system",
                 PRINT_REPLY_LITERAL,
                 f"--dest={self._vebus_service}",
-                "/State",
+                VEBUS_STATE_PATH,
                 GET_VALUE_METHOD,
             ],
             service=self._vebus_service,
@@ -1316,7 +1316,7 @@ class VictronDBus:
         if not self._vebus_service:
             return 0, "Unknown"
 
-        val = self._dbus_get(self._vebus_service, "/State")
+        val = self._dbus_get(self._vebus_service, VEBUS_STATE_PATH)
         if val:
             try:
                 result = self._parse_inverter_state_code(val)
