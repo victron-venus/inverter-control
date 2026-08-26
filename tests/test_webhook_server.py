@@ -1,13 +1,11 @@
 """Tests for the WebhookServer class and its endpoints."""
 
 import json
-import threading
-import time
 import urllib.error
 import urllib.request
 from unittest.mock import MagicMock
 
-from inverter_control.webhook_server import WebhookServer, WebhookHandler
+from inverter_control.webhook_server import WebhookServer
 
 
 def _start_server(pre_charge_callback=None, forecast_callback=None) -> WebhookServer:
