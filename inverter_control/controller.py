@@ -740,6 +740,22 @@ class InverterController:
             out.pop(k, None)
         return out
 
+    def _update_dvcc_limits(self) -> None:
+        """Update DVCC limits if calculator is available and cache is stale."""
+        if self.dvcc_calculator is None:
+            return
+
+        now = time.time()
+        if now - self._last_cell_data_time > 30:
+            battery_data = self.victron.get_battery_cell_data()
+            self._cached_battery_cell_data = battery_data
+            self._last_cell_data_time = now
+
+        if self._cached_battery_cell_data is not None:
+            self.dvcc_limits = self.dvcc_calculator.calculate(
+                self._cached_battery_cell_data
+            )
+
     def run_cycle(self) -> bool:
         def watchdog_handler(signum, frame):
             raise WatchdogTimeoutError("Control cycle watchdog timeout")
@@ -767,16 +783,7 @@ class InverterController:
                 self.metrics.record_age((time.time() - last_update) * 1000.0)
             _stage("get_system_data")
 
-            if self.dvcc_calculator is not None:
-                now = time.time()
-                if now - self._last_cell_data_time > 30:
-                    battery_data = self.victron.get_battery_cell_data()
-                    self._cached_battery_cell_data = battery_data
-                    self._last_cell_data_time = now
-                if self._cached_battery_cell_data is not None:
-                    self.dvcc_limits = self.dvcc_calculator.calculate(
-                        self._cached_battery_cell_data
-                    )
+            self._update_dvcc_limits()
             _stage("dvcc")
 
             if self.manual_setpoint is not None:
