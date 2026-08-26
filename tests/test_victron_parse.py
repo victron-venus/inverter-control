@@ -8,23 +8,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from inverter_control import victron_parse as vp
 
 
-class TestExtractPowerFromTree:
-    def test_tree_format(self):
-        out = '         string "Ac/Power"\n        variant       double 188.0'
-        assert vp.extract_power_from_tree(out) == 188.0
-
-    def test_literal_variant_format(self):
-        assert vp.extract_power_from_tree("   variant       double 42.5") == 42.5
-
-    def test_none_and_empty(self):
-        assert vp.extract_power_from_tree(None) == 0.0
-        assert vp.extract_power_from_tree("") == 0.0
-        assert vp.extract_power_from_tree("garbage") == 0.0
-
-    def test_negative_power(self):
-        assert vp.extract_power_from_tree("variant double -125.5") == -125.5
-
-
 class TestParseSystemDataOutput:
     TREE = (
         '            string "Ac/Grid/L1/Power"\n'
@@ -81,25 +64,6 @@ class TestParseShuntDataOutput:
 
     def test_empty_output(self):
         assert vp.parse_shunt_data_output("") == {}
-
-
-class TestParseVariantAndMppt:
-    def test_parse_variant_value(self):
-        assert vp.parse_variant_value("   variant       int32 3") == 3.0
-        assert vp.parse_variant_value(None) == 0.0
-        assert vp.parse_variant_value("no value here") == 0.0
-
-    def test_parse_mppt_output(self):
-        out = (
-            '            string "Yield/Power"\n'
-            "            variant                double 454.54\n"
-            '            string "Dc/0/Current"\n'
-            "            variant                double 8.2\n"
-        )
-        assert vp.parse_mppt_output(out) == {"w": 454.54, "a": 8.2}
-
-    def test_parse_mppt_empty(self):
-        assert vp.parse_mppt_output("") == {"w": 0.0, "a": 0.0}
 
 
 class TestBatterySocFromVoltage:
