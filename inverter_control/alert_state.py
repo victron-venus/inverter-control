@@ -7,7 +7,6 @@ import json
 import os
 import threading
 from datetime import UTC, datetime
-from typing import List, Optional
 from uuid import uuid4
 
 from .config import ALERT_STORAGE_PATH
@@ -25,7 +24,7 @@ class PersistentAlert:
         source: str,
         timestamp: str,
         acknowledged: bool = False,
-        acknowledged_at: Optional[str] = None,
+        acknowledged_at: str | None = None,
     ):
         self.id = id
         self.title = title
@@ -69,7 +68,7 @@ class AlertStorage:
 
     def __init__(self, storage_path: str = ALERT_STORAGE_PATH):
         self.storage_path = storage_path
-        self.alerts: List[PersistentAlert] = []
+        self.alerts: list[PersistentAlert] = []
         self._lock = threading.RLock()
         self._load_from_disk()
 
@@ -84,7 +83,7 @@ class AlertStorage:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.alerts = [PersistentAlert.from_dict(item) for item in data]
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 # If file is corrupt, start with empty list and log error
                 # In a real application, we would log this
                 print(f"Warning: Could not load alert storage: {e}")
@@ -102,7 +101,7 @@ class AlertStorage:
                         f,
                         indent=2,
                     )
-            except IOError as e:
+            except OSError as e:
                 # In a real application, we would log this
                 print(f"Warning: Could not save alert storage: {e}")
 
@@ -129,7 +128,7 @@ class AlertStorage:
 
         return alert
 
-    def get_unacknowledged_alerts(self) -> List[PersistentAlert]:
+    def get_unacknowledged_alerts(self) -> list[PersistentAlert]:
         """Get all alerts that have not been acknowledged"""
         with self._lock:
             return [alert for alert in self.alerts if not alert.acknowledged]
@@ -145,7 +144,7 @@ class AlertStorage:
                     return True
             return False
 
-    def get_alert_history(self, limit: Optional[int] = None) -> List[PersistentAlert]:
+    def get_alert_history(self, limit: int | None = None) -> list[PersistentAlert]:
         """Get alert history, newest first"""
         with self._lock:
             # Sort by timestamp descending (newest first)
@@ -156,7 +155,7 @@ class AlertStorage:
 
 
 # Global instance for easy access
-_alert_storage: Optional[AlertStorage] = None
+_alert_storage: AlertStorage | None = None
 
 
 def get_alert_storage() -> AlertStorage:

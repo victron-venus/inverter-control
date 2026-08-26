@@ -365,9 +365,7 @@ class NativeDbusClient:
                 return
             if message.interface == BUSITEM_INTERFACE:
                 self._handle_busitem_message(message)
-            elif (
-                message.interface == DBUS_DAEMON and message.member == "NameOwnerChanged"
-            ):
+            elif message.interface == DBUS_DAEMON and message.member == "NameOwnerChanged":
                 self._handle_name_owner_changed(message)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus signal dispatch failed: %s", e)
@@ -433,6 +431,7 @@ class NativeDbusClient:
         elif message.member == "PropertiesChanged":
             props = message.body[0] if message.body else {}
             self._dispatch(message.path, props, service)
+
     async def _refresh_and_clear(self, sender: str):
         """Refresh the sender map, then stop skipping this sender."""
         await self._refresh_sender_map()

@@ -752,9 +752,7 @@ class InverterController:
             self._last_cell_data_time = now
 
         if self._cached_battery_cell_data is not None:
-            self.dvcc_limits = self.dvcc_calculator.calculate(
-                self._cached_battery_cell_data
-            )
+            self.dvcc_limits = self.dvcc_calculator.calculate(self._cached_battery_cell_data)
 
     def run_cycle(self) -> bool:
         def watchdog_handler(signum, frame):

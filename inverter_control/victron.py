@@ -479,7 +479,6 @@ class VictronDBus:
         except Exception as e:
             logger.debug("D-Bus service discovery failed: %s", e)
 
-
     def _process_discovered_lines(self, lines):
         """Process the lines from dbus -y to discover services."""
         vebus_service = None
@@ -498,7 +497,14 @@ class VictronDBus:
                 pv_inverter_services.append(line.strip())
             elif "com.victronenergy.battery." in line:
                 battery_candidates.append(line.strip())
-        return vebus_service, mppt_services, acload_services, pv_inverter_services, battery_candidates
+        return (
+            vebus_service,
+            mppt_services,
+            acload_services,
+            pv_inverter_services,
+            battery_candidates,
+        )
+
     def _check_rescan_needed(self) -> bool:
         """Check if D-Bus rescan is needed and perform it if so.
         IMPORTANT: This must NOT be called while holding _dbus_lock,
