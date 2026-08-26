@@ -836,8 +836,8 @@ class TestPollDailyYields:
 
         assert v._cached_mppt_daily_yields == [4.0]
         assert v._cached_mppt_yesterday_yields == [3.0]
-        assert v._cached_tasmota_daily_yields == [2.0]
-        assert v._cached_tasmota_yesterday_yields == [1.5]
+        assert v._cached_pv_inverter_daily_yields == [2.0]
+        assert v._cached_pv_inverter_yesterday_yields == [1.5]
 
     @patch("inverter_control.victron.subprocess.run")
     def test_lifetime_forward_path_not_polled(self, mock_run):

@@ -45,7 +45,7 @@ class TestLogic(unittest.TestCase):
             tt=0,
             inv_power=0,
             mppt_total=0,
-            tasmota_total=0,
+            pv_inverter_total=0,
             pv_total=0,
             ev_power=0,
             garage_power=0,
@@ -509,7 +509,7 @@ class TestLogic(unittest.TestCase):
 
 
 class TestNoFeedStrategy(unittest.TestCase):
-    """Test no_feed_strategy: returns tasmota_total when active, passthrough otherwise"""
+    """Test no_feed_strategy: returns pv_inverter_total when active, passthrough otherwise"""
 
     def _state(self, **kwargs):
         defaults = {
@@ -521,7 +521,7 @@ class TestNoFeedStrategy(unittest.TestCase):
             "tt": 0,
             "inv_power": 0,
             "mppt_total": 0,
-            "tasmota_total": 0,
+            "pv_inverter_total": 0,
             "pv_total": 0,
             "ev_power": 0,
             "garage_power": 0,
@@ -537,19 +537,19 @@ class TestNoFeedStrategy(unittest.TestCase):
         return SystemState(**defaults)
 
     def test_no_feed_active(self):
-        state = self._state(no_feed=True, tasmota_total=350)
+        state = self._state(no_feed=True, pv_inverter_total=350)
         result, flags = no_feed_strategy(state, -500)
         assert result == 350
         assert "[NF]" in flags
 
     def test_no_feed_inactive(self):
-        state = self._state(no_feed=False, tasmota_total=350)
+        state = self._state(no_feed=False, pv_inverter_total=350)
         result, flags = no_feed_strategy(state, -500)
         assert result == -500
         assert flags == ""
 
     def test_no_feed_zero_tasmota(self):
-        state = self._state(no_feed=True, tasmota_total=0)
+        state = self._state(no_feed=True, pv_inverter_total=0)
         result, _flags = no_feed_strategy(state, -500)
         assert result == 0
 
@@ -567,7 +567,7 @@ class TestHouseSupportStrategy(unittest.TestCase):
             "tt": 0,
             "inv_power": 0,
             "mppt_total": 0,
-            "tasmota_total": 0,
+            "pv_inverter_total": 0,
             "pv_total": 0,
             "ev_power": 0,
             "garage_power": 0,
@@ -583,24 +583,24 @@ class TestHouseSupportStrategy(unittest.TestCase):
         return SystemState(**defaults)
 
     def test_house_support_active(self):
-        state = self._state(house_support=True, tasmota_total=800)
+        state = self._state(house_support=True, pv_inverter_total=800)
         result, flags = house_support_strategy(state, -500)
         assert result == 500
         assert "[HS]" in flags
 
     def test_house_support_inactive(self):
-        state = self._state(house_support=False, tasmota_total=800)
+        state = self._state(house_support=False, pv_inverter_total=800)
         result, flags = house_support_strategy(state, -500)
         assert result == -500
         assert flags == ""
 
     def test_house_support_small_tasmota(self):
-        state = self._state(house_support=True, tasmota_total=200)
+        state = self._state(house_support=True, pv_inverter_total=200)
         result, _flags = house_support_strategy(state, -500)
         assert result == -100
 
     def test_house_support_zero_tasmota(self):
-        state = self._state(house_support=True, tasmota_total=0)
+        state = self._state(house_support=True, pv_inverter_total=0)
         result, _flags = house_support_strategy(state, -500)
         assert result == -300
 
@@ -618,7 +618,7 @@ class TestLimitToEvStrategy(unittest.TestCase):
             "tt": 0,
             "inv_power": 0,
             "mppt_total": 0,
-            "tasmota_total": 0,
+            "pv_inverter_total": 0,
             "pv_total": 0,
             "ev_power": 0,
             "garage_power": 0,
@@ -684,7 +684,7 @@ class TestDoNotSupplyChargerStrategy(unittest.TestCase):
             "tt": 0,
             "inv_power": 0,
             "mppt_total": 0,
-            "tasmota_total": 0,
+            "pv_inverter_total": 0,
             "pv_total": 0,
             "ev_power": 0,
             "garage_power": 0,
@@ -777,7 +777,7 @@ class TestGridSmoothingWithHome(unittest.TestCase):
             "tt": 0,
             "inv_power": 0,
             "mppt_total": 0,
-            "tasmota_total": 0,
+            "pv_inverter_total": 0,
             "pv_total": 0,
             "ev_power": 0,
             "garage_power": 0,
@@ -896,7 +896,7 @@ class TestDerivedTauPath(unittest.TestCase):
             "tt": 0,
             "inv_power": 0,
             "mppt_total": 0,
-            "tasmota_total": 0,
+            "pv_inverter_total": 0,
             "pv_total": 0,
             "ev_power": 0,
             "garage_power": 0,

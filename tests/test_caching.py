@@ -77,7 +77,7 @@ def test_mppt_data_caching():
         print("✓ MPPT data caching test passed")
 
 
-def test_tasmota_pv_power_caching():
+def test_pv_inverter_power_caching():
     """Test that get_pv_power caches results"""
     print("Testing Tasmota PV power caching...")
 
@@ -288,7 +288,7 @@ if __name__ == "__main__":
     print("Running caching tests...\n")
 
     test_mppt_data_caching()
-    test_tasmota_pv_power_caching()
+    test_pv_inverter_power_caching()
     test_battery_chain_socs_caching()
     test_inverter_state_caching()
 

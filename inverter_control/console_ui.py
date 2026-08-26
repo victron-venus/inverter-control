@@ -91,11 +91,11 @@ class ConsoleUI:
 
     def _fmt_solar_section(self, sys_data: dict[str, Any]) -> str:
         mppt_data = sys_data.get("mppt_data", {})
-        tasmota_powers = sys_data.get("tasmota_powers", [])
+        pv_inverter_powers = sys_data.get("pv_inverter_powers", [])
 
         mppt_total = sum(m["w"] for m in mppt_data.values())
-        tasmota_total = sum(tasmota_powers)
-        solar_total = mppt_total + tasmota_total
+        pv_inverter_total = sum(pv_inverter_powers)
+        solar_total = mppt_total + pv_inverter_total
 
         if solar_total == 0:
             return f"{C.CYAN}0{C.RESET}"
@@ -104,7 +104,7 @@ class ConsoleUI:
             return "0A" if a < 0.05 else f"{a:.1f}A"
 
         mppt_str = "+".join(f"{int(m['w'])}[{fmt_current(m['a'])}]" for m in mppt_data.values())
-        tas_str = "+".join(str(int(p)) for p in tasmota_powers if p > 0)
+        tas_str = "+".join(str(int(p)) for p in pv_inverter_powers if p > 0)
 
         solar_str = f"{C.CYAN}{int(solar_total)}("
         if tas_str:

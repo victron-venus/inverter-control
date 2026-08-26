@@ -30,7 +30,7 @@ class SystemState:
 
     # Solar data
     mppt_total: float
-    tasmota_total: float
+    pv_inverter_total: float
     pv_total: float
 
     # External data
@@ -191,7 +191,7 @@ def no_feed_strategy(
 ) -> tuple[int, str]:
     """Match Tasmota microinverter output exactly"""
     if state.no_feed:
-        return int(state.tasmota_total), "[NF] "
+        return int(state.pv_inverter_total), "[NF] "
     return current_vanew, ""
 
 
@@ -201,7 +201,7 @@ def house_support_strategy(
 ) -> tuple[int, str]:
     """Tasmota solar minus offset for house loads"""
     if state.house_support:
-        return int(state.tasmota_total - 300), "[HS] "
+        return int(state.pv_inverter_total - 300), "[HS] "
     return current_vanew, ""
 
 

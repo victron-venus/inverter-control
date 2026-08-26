@@ -164,9 +164,9 @@ class VictronDBus:
         self._pv_inverter_services: list = []
         # Cache for daily/yesterday yields (MPPT + Tasmota) and battery daily energy
         self._cached_mppt_daily_yields: list[float] = []
-        self._cached_tasmota_daily_yields: list[float] = []
+        self._cached_pv_inverter_daily_yields: list[float] = []
         self._cached_mppt_yesterday_yields: list[float] = []
-        self._cached_tasmota_yesterday_yields: list[float] = []
+        self._cached_pv_inverter_yesterday_yields: list[float] = []
         self._cached_battery_daily_energy: tuple[float, float] = (0.0, 0.0)
         self._last_daily_yields_time: float = 0.0
         self._last_battery_daily_energy_time: float = 0.0
@@ -873,10 +873,10 @@ class VictronDBus:
 
         # Tasmota: dbus-tasmota-pv publishes both counters directly from the
         # plug telemetry (ENERGY.Today / ENERGY.Yesterday) - no arithmetic here.
-        self._cached_tasmota_daily_yields = [
+        self._cached_pv_inverter_daily_yields = [
             self._get_float_nolock(s, TASMOTA_ENERGY_DAILY_PATH) for s in self._pv_inverter_services
         ]
-        self._cached_tasmota_yesterday_yields = [
+        self._cached_pv_inverter_yesterday_yields = [
             self._get_float_nolock(s, TASMOTA_ENERGY_YESTERDAY_PATH)
             for s in self._pv_inverter_services
         ]
@@ -1830,7 +1830,7 @@ class VictronDBus:
 
     def get_pv_inverter_daily_yields(self) -> list[float]:
         """Get daily yield (kWh) for each Tasmota PV inverter - instant from background cache"""
-        return list(self._cached_tasmota_daily_yields)
+        return list(self._cached_pv_inverter_daily_yields)
 
     def get_mppt_yesterday_yields(self) -> list[float]:
         """Get yesterday's yield (kWh) for each MPPT charger - instant from background cache"""
@@ -1838,7 +1838,7 @@ class VictronDBus:
 
     def get_pv_inverter_yesterday_yields(self) -> list[float]:
         """Get yesterday's yield (kWh) for each Tasmota PV inverter - instant from cache"""
-        return list(self._cached_tasmota_yesterday_yields)
+        return list(self._cached_pv_inverter_yesterday_yields)
 
     def get_battery_daily_energy(self) -> tuple[float, float]:
         """Get battery daily charge/discharge energy (kWh) - instant from background cache"""

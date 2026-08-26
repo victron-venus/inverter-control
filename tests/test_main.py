@@ -150,7 +150,7 @@ class TestCalculateSetpoint(unittest.TestCase):
         assert state_arg.tt == 300
         assert state_arg.inv_power == -800
         assert state_arg.mppt_total == 500.0
-        assert state_arg.tasmota_total == 300.0
+        assert state_arg.pv_inverter_total == 300.0
         assert state_arg.pv_total == 800.0
         assert state_arg.ev_power == 100
 
@@ -180,7 +180,7 @@ class TestCalculateSetpoint(unittest.TestCase):
 
         assert controller.filtered_gt == 42.0
 
-    def test_caches_mppt_and_tasmota_data(self):
+    def test_caches_mppt_and_pv_inverter_data(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_mppt_data.return_value = {"mppt0": {"w": 100.0, "a": 2.0}}
         mock_victron.get_pv_power.return_value = [200.0]
@@ -257,7 +257,7 @@ class TestUpdateState(unittest.TestCase):
         assert state["setpoint"] == -450
         assert state["filtered_gt"] == 25.0
         assert state["mppt_total"] == 500.0
-        assert state["tasmota_total"] == 300.0
+        assert state["pv_inverter_total"] == 300.0
         assert state["solar_total"] == 800.0
         assert state["inverter_state"] == "Inverting"
         assert state["battery_socs"] == [80.0, 75.0]
@@ -301,7 +301,7 @@ class TestUpdateState(unittest.TestCase):
         controller.update_state(sys_data, 0)
 
         assert controller.state["mppt_data"] == {"mppt0": {"w": 100.0, "a": 2.0}}
-        assert controller.state["tasmota_powers"] == [50.0]
+        assert controller.state["pv_inverter_powers"] == [50.0]
 
 
 class TestRunCycle(unittest.TestCase):
@@ -455,7 +455,7 @@ class TestGetDailyStats(unittest.TestCase):
         assert "battery_in" in stats
         assert "battery_out" in stats
         assert "mppt_daily" in stats
-        assert "tasmota_daily" in stats
+        assert "pv_inverter_daily" in stats
         assert "pv_total_daily" in stats
         assert stats["produced_today"] == 12.0  # sum([5,3,2]) + sum([1.5,0.5])
         assert stats["battery_in"] == 10.5

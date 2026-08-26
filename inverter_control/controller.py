@@ -427,12 +427,12 @@ class InverterController:
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
         mppt_total = sum(m["w"] for m in mppt_data.values())
-        tasmota_powers = self.victron.get_pv_power()
-        tasmota_total = sum(tasmota_powers)
+        pv_inverter_powers = self.victron.get_pv_power()
+        pv_inverter_total = sum(pv_inverter_powers)
 
         # Cache these reads so update_state doesn't re-query D-Bus this cycle
         self._cached_mppt_data = mppt_data
-        self._cached_pv_powers = tasmota_powers
+        self._cached_pv_powers = pv_inverter_powers
 
         # Grid smoothing with Home total (Vue via D-Bus)
         # derived_gt = home_total - pv_total (negative = export, positive = import)
@@ -442,7 +442,7 @@ class InverterController:
         if ENABLE_GRID_SMOOTHING_WITH_HOME:
             home_total = self.ha.get_vue_sensor("total", 0)
             if home_total > 0:
-                pv_total = mppt_total + tasmota_total
+                pv_total = mppt_total + pv_inverter_total
                 derived_gt = home_total - pv_total
                 # Feed the raw value to the background filter; the state gets
                 # one coherent smoothed snapshot (None until first tick).
@@ -469,8 +469,8 @@ class InverterController:
             tt=sys_data["tt"],
             inv_power=self.victron.get_inverter_power(),
             mppt_total=mppt_total,
-            tasmota_total=tasmota_total,
-            pv_total=mppt_total + tasmota_total,
+            pv_inverter_total=pv_inverter_total,
+            pv_total=mppt_total + pv_inverter_total,
             ev_power=self.ha.get_vue_sensor("ev_charger", 0),
             garage_power=self.ha.get_vue_sensor("garage", 0),
             home_total=home_total,
@@ -574,11 +574,11 @@ class InverterController:
         battery_in, battery_out = self.victron.get_battery_daily_energy()
         battery_in_y, battery_out_y = self.victron.get_battery_yesterday_energy()
         mppt_daily = self.victron.get_mppt_daily_yields()
-        tasmota_daily = self.victron.get_pv_inverter_daily_yields()
-        produced_today = sum(mppt_daily) + sum(tasmota_daily)
+        pv_inverter_daily = self.victron.get_pv_inverter_daily_yields()
+        produced_today = sum(mppt_daily) + sum(pv_inverter_daily)
         mppt_yesterday = self.victron.get_mppt_yesterday_yields()
-        tasmota_yesterday = self.victron.get_pv_inverter_yesterday_yields()
-        produced_yesterday = sum(mppt_yesterday) + sum(tasmota_yesterday)
+        pv_inverter_yesterday = self.victron.get_pv_inverter_yesterday_yields()
+        produced_yesterday = sum(mppt_yesterday) + sum(pv_inverter_yesterday)
 
         return {
             "produced_today": produced_today,
@@ -590,9 +590,9 @@ class InverterController:
             "battery_in_yesterday": battery_in_y,
             "battery_out_yesterday": battery_out_y,
             "pv_total_daily": produced_today,
-            "tasmota_daily": tasmota_daily,
+            "pv_inverter_daily": pv_inverter_daily,
             "mppt_daily": mppt_daily,
-            "tasmota_yesterday": tasmota_yesterday,
+            "pv_inverter_yesterday": pv_inverter_yesterday,
             "mppt_yesterday": mppt_yesterday,
         }
 
@@ -603,7 +603,7 @@ class InverterController:
 
         # Inject cached data into sys_data for console UI use
         sys_data["mppt_data"] = self._cached_mppt_data
-        sys_data["tasmota_powers"] = self._cached_pv_powers
+        sys_data["pv_inverter_powers"] = self._cached_pv_powers
         sys_data["battery_socs"] = self._cached_battery_socs
 
         # Full state for web UI
@@ -613,12 +613,12 @@ class InverterController:
             "filtered_gt": self.filtered_gt,
             "dry_run": self.dry_run,
             "mppt_total": sum(m["w"] for m in self._cached_mppt_data.values()),
-            "tasmota_total": sum(self._cached_pv_powers),
+            "pv_inverter_total": sum(self._cached_pv_powers),
             "solar_total": sum(m["w"] for m in self._cached_mppt_data.values())
             + sum(self._cached_pv_powers),
             "mppt_data": self._cached_mppt_data,
             "mppt_individual": [m["w"] for m in self._cached_mppt_data.values()],
-            "tasmota_individual": self._cached_pv_powers,
+            "pv_inverter_individual": self._cached_pv_powers,
             "inverter_state": self._cached_inv_state,
             "battery_socs": self._cached_battery_socs,
             "batteries": self._get_cached_batteries(),
@@ -805,7 +805,7 @@ class InverterController:
             # Inject cached data for console UI
             sys_data["battery_socs"] = self._cached_battery_socs
             sys_data["mppt_data"] = self._cached_mppt_data
-            sys_data["tasmota_powers"] = self._cached_pv_powers
+            sys_data["pv_inverter_powers"] = self._cached_pv_powers
 
             filtered_display = self.filtered_gt if self.filtered_gt is not None else sys_data["gt"]
             line = self.console.format_line(
