@@ -372,24 +372,35 @@ class NativeDbusClient:
 
     def _handle_busitem_message(self, message):
         sender = getattr(message, "sender", None)
-        service = self._sender_service.get(sender) if sender else None
-        if sender and service is None:
-            # Owner not yet resolved (service appeared after subscribe);
-            # refresh the map and drop this batch — reconcile covers it.
-            if sender not in self._resolving_senders:
-                self._resolving_senders.add(sender)
-                try:
-                    task = asyncio.ensure_future(self._refresh_and_clear(sender))
-                except RuntimeError:
-                    self._resolving_senders.discard(sender)
-            return
-        if message.member == "ItemsChanged" and message.path == "/":
-            items = message.body[0] if message.body else {}
-            for obj_path, props in items.items():
-                self._dispatch(obj_path, props, service)
-        elif message.member == "PropertiesChanged":
+        service = None
+        if sender is not None:
+            service = self._sender_service.get(sender)
+            if service is None:
+                self._handle_unresolved_sender(sender)
+                return
+        else:
+            service = None
+
+        if message.member != "ItemsChanged" or message.path != "/":
+            if message.member != "PropertiesChanged":
+                return
+            # PropertiesChanged
             props = message.body[0] if message.body else {}
             self._dispatch(message.path, props, service)
+            return
+
+        # ItemsChanged with path "/"
+        items = message.body[0] if message.body else {}
+        for obj_path, props in items.items():
+            self._dispatch(obj_path, props, service)
+
+    def _handle_unresolved_sender(self, sender: str):
+        if sender not in self._resolving_senders:
+            self._resolving_senders.add(sender)
+            try:
+                asyncio.ensure_future(self._refresh_and_clear(sender))
+            except RuntimeError:
+                self._resolving_senders.discard(sender)
 
     def _handle_name_owner_changed(self, message):
         if len(message.body) >= 3:
@@ -401,37 +412,7 @@ class NativeDbusClient:
             for callback in handlers:
                 callback(service_name, old_owner, new_owner)
 
-    def _handle_name_owner_changed(self, message):
-        if len(message.body) >= 3:
-            service_name = str(message.body[2])
-            old_owner = str(message.body[0])
-            new_owner = str(message.body[1])
-            with self._handlers_lock:
-                handlers = list(self._name_owner_handlers)
-            for callback in handlers:
-                callback(service_name, old_owner, new_owner)
-
-    def _handle_busitem_message(self, message):
-        sender = getattr(message, "sender", None)
-        service = self._sender_service.get(sender) if sender else None
-        if sender and service is None:
-            # Owner not yet resolved (service appeared after subscribe);
-            # refresh the map and drop this batch — reconcile covers it.
-            if sender not in self._resolving_senders:
-                self._resolving_senders.add(sender)
-                try:
-                    task = asyncio.ensure_future(self._refresh_and_clear(sender))
-                except RuntimeError:
-                    self._resolving_senders.discard(sender)
-            return
-        if message.member == "ItemsChanged" and message.path == "/":
-            items = message.body[0] if message.body else {}
-            for obj_path, props in items.items():
-                self._dispatch(obj_path, props, service)
-        elif message.member == "PropertiesChanged":
-            props = message.body[0] if message.body else {}
-            self._dispatch(message.path, props, service)
-
+    
     async def _refresh_and_clear(self, sender: str):
         """Refresh the sender map, then stop skipping this sender."""
         await self._refresh_sender_map()
