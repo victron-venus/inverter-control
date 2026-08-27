@@ -1230,7 +1230,9 @@ class VictronDBus:
                 self._last_success_time = time.time()
                 return True
             else:
-                logger.warning(f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}")
+                logger.warning(
+                    f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
+                )
 
         with self._dbus_lock:
             result = self._safe_subprocess(
@@ -1250,7 +1252,9 @@ class VictronDBus:
                 self._last_success_time = time.time()
                 return True
 
-            logger.warning(f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}")
+            logger.warning(
+                f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}"
+            )
             self._consecutive_errors += 1
             return False
 
