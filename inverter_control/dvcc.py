@@ -84,6 +84,8 @@ class DvccCalculator:
         self._last_ccl = self._max_charge_current
         self._last_dcl = self._max_discharge_current
         self._last_update_time: float | None = None
+        # DVCC log throttling (once per minute)
+        self._last_dvcc_log: float = 0.0
 
         logger.info(
             "DVCC initialized: %d cells, max_charge=%.1fA, max_discharge=%.1fA",
@@ -400,9 +402,12 @@ class DvccCalculator:
         # Calculate CVL (Charge Voltage Limit)
         cvl = self.cell_max_voltage * self.cell_count
 
-        logger.debug(
-            "DVCC: CCL=%.1fA (%s), DCL=%.1fA (%s), CVL=%.2fV", ccl, ccl_reason, dcl, dcl_reason, cvl
-        )
+        now = time.time()
+        if now - self._last_dvcc_log >= 60.0:
+            logger.debug(
+                "DVCC: CCL=%.1fA (%s), DCL=%.1fA (%s), CVL=%.2fV", ccl, ccl_reason, dcl, dcl_reason, cvl
+            )
+            self._last_dvcc_log = now
 
         return {
             "ccl": round(ccl, 1),

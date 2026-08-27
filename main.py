@@ -40,7 +40,7 @@ from inverter_control.controller import (
 )
 
 # =============================================================================
-# LOGGING SETUP - All errors go to file
+# LOGGING SETUP - All errors go to file, debug to stdout
 # =============================================================================
 LOG_FILE = os.environ.get("INVERTER_CONTROL_LOG_FILE", "/var/log/inverter-control.log")
 
@@ -49,13 +49,21 @@ logger.setLevel(logging.DEBUG)
 
 try:
     fh = logging.FileHandler(LOG_FILE)
-    fh.setLevel(logging.INFO)
+    fh.setLevel(logging.DEBUG)  # Changed to DEBUG to capture debug messages
     fh.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     )
     logger.addHandler(fh)
 except Exception as log_err:
     print(f"Warning: Could not create log file: {log_err}", file=sys.stderr)
+
+# Also log to stdout (captured by daemontools/multilog)
+sh = logging.StreamHandler(sys.stdout)
+sh.setLevel(logging.DEBUG)
+sh.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+)
+logger.addHandler(sh)
 
 
 class _BrokenPipeSafeStream:

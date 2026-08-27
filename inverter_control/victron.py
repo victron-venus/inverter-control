@@ -163,6 +163,10 @@ class VictronDBus:
         # Cache for battery chain SoC
         self._cached_battery_chain_socs: list = []
         self._last_battery_chain_soc_time: float = 0.0
+        # Last known-good SoC per chain service, retained so a transient read
+        # failure (e.g. mqtt_chain1 unresponsive, 2026-08-27) never collapses a
+        # live chain to a fake 0.0% that DVCC/control would act on.
+        self._last_known_chain_soc: dict[str, float] = {}
         # Cache for inverter state
         self._cached_inverter_state: tuple[int, str] = (0, "Unknown")
         self._last_inverter_state_time: float = 0.0
@@ -204,6 +208,8 @@ class VictronDBus:
         self._load_battery_daily_energy()
 
         self._test_mode = test_mode
+        # D-Bus discovery failure log throttling (once per minute)
+        self._last_discovery_failed_log: float = 0.0
 
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
@@ -477,7 +483,10 @@ class VictronDBus:
                 self._setup_fast_signals()
 
         except Exception as e:
-            logger.debug("D-Bus service discovery failed: %s", e)
+            now = time.time()
+            if now - self._last_discovery_failed_log >= 60.0:
+                logger.debug("D-Bus service discovery failed: %s", e)
+                self._last_discovery_failed_log = now
 
     def _process_discovered_lines(self, lines):
         """Process the lines from dbus -y to discover services."""
@@ -755,10 +764,17 @@ class VictronDBus:
         for service in (BATTERY_CHAIN_1, BATTERY_CHAIN_2):
             val = self._dbus_get(service, "/Soc")
             try:
-                socs.append(float(val) if val is not None else 0.0)
+                soc = float(val) if val is not None else None
             except (TypeError, ValueError):
                 logger.debug("Battery chain SoC parse failed: %s", val)
-                socs.append(0.0)
+                soc = None
+            if soc is not None:
+                self._last_known_chain_soc[service] = soc
+                socs.append(soc)
+            else:
+                # Fall back to the last known-good value for this chain instead
+                # of a fabricated 0.0 (a 0% SoC would wrongly throttle DVCC).
+                socs.append(self._last_known_chain_soc.get(service, 0.0))
         return socs
 
     def _poll_battery_chain_socs(self):
@@ -859,7 +875,14 @@ class VictronDBus:
     @staticmethod
     def _parse_inverter_state_code(raw: str) -> tuple[int, str]:
         """Parse inverter state code from raw D-Bus output."""
-        code = int(raw.strip())
+        # Extract integer from literal output, e.g., "variant       uint32 3"
+        parts = raw.strip().split()
+        if not parts:
+            raise ValueError(f"Empty inverter state output: {raw!r}")
+        try:
+            code = int(parts[-1])
+        except ValueError:
+            raise ValueError(f"No integer found in inverter state output: {raw!r}")
         return code, INVERTER_STATES.get(code, f"? ({code})")
 
     def _poll_inverter_state(self):

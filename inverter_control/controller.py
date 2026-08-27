@@ -1,7 +1,6 @@
 """Main controller for grid-zero feed-in management."""
 
 import logging
-import signal
 import time
 import traceback
 from datetime import UTC, datetime
@@ -71,7 +70,7 @@ from inverter_control.victron import (
     TOU_START_SETTING,
     get_victron,
 )
-from inverter_control.watchdog import HardwareWatchdog, WatchdogTimeoutError
+from inverter_control.watchdog import HardwareWatchdog
 from inverter_control.water import WaterSystemReader
 from inverter_control.webhook_server import get_webhook_server
 
@@ -79,6 +78,13 @@ logger = logging.getLogger("inverter-control")
 
 # How often the GUI-editable TOU settings are re-read from localsettings
 TOU_SETTING_TTL_SECONDS = 60.0
+
+# A control-cycle stage taking longer than this (ms) is flagged as slow in the
+# logs. Replaced the old SIGALRM-based cycle abort: every D-Bus call is already
+# time-boxed by its own timeout, so this is a symptom diagnostic, not a
+# signal-driven force-interrupt (which corrupted cross-thread futures on the
+# native-D-Bus reconnect path, 2026-08-27).
+STAGE_SLOW_MS = 300.0
 
 
 def log_exception(msg: str):
@@ -755,11 +761,6 @@ class InverterController:
             self.dvcc_limits = self.dvcc_calculator.calculate(self._cached_battery_cell_data)
 
     def run_cycle(self) -> bool:
-        def watchdog_handler(signum, frame):
-            raise WatchdogTimeoutError("Control cycle watchdog timeout")
-
-        old_handler = signal.signal(signal.SIGALRM, watchdog_handler)
-        signal.alarm(5)
         cycle_started = time.monotonic()
         stage_started = time.perf_counter()
 
@@ -767,8 +768,16 @@ class InverterController:
             """Record duration of the stage that just ended."""
             nonlocal stage_started
             now = time.perf_counter()
-            self.metrics.record_stage(name, (now - stage_started) * 1000.0)
+            elapsed_ms = (now - stage_started) * 1000.0
+            self.metrics.record_stage(name, elapsed_ms)
             stage_started = now
+            # Surface an unexpectedly slow stage via metrics/logging. We do NOT
+            # abort the cycle on a signal: each native/CLI D-Bus call is already
+            # time-boxed by its own timeout, so a slow stage is a symptom to
+            # debug, not a hang to force-interrupt (the old SIGALRM approach
+            # corrupted cross-thread futures on the reconnect path, 2026-08-27).
+            if elapsed_ms > STAGE_SLOW_MS:
+                logger.warning("Control cycle stage %s slow: %.0fms", name, elapsed_ms)
 
         try:
             self.last_console_line = None
@@ -834,12 +843,6 @@ class InverterController:
             return True
         except KeyboardInterrupt:
             return False
-        except WatchdogTimeoutError:
-            logger.error("WATCHDOG: Cycle timeout")
-            return True
         except Exception as e:
             log_exception(f"Error in control cycle: {e}")
             return True
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
