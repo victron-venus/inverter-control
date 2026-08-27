@@ -165,7 +165,8 @@ class NativeDbusClient:
         """Re-arm match rules after a (re)connect; signals don't survive disconnects."""
         # Bus reattachment gives services new unique names; the old map lies.
         self._sender_service.clear()
-        for rule in self._subscriptions:
+        # Snapshot: subscribe_signal can add to _subscriptions concurrently.
+        for rule in list(self._subscriptions):
             try:
                 self._send_add_match(rule)
             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -413,7 +414,10 @@ class NativeDbusClient:
         """Map subscribed well-known names to their current unique senders."""
         from dbus_fast import Message
 
-        for svc in self._subscription_services:
+        # Snapshot these shared sets: subscribe_signal/_replay_subscriptions can
+        # mutate them from another thread while this async loop iterates, which
+        # raised "Set changed size during iteration" at startup (2026-08-27).
+        for svc in list(self._subscription_services):
             try:
                 reply = await self._bus.call(
                     Message(
