@@ -10,12 +10,28 @@ load 5–7 on 4 cores.
 **Status update 2026-08-27 (in progress):** PR #168 merged (`84b4951`), then on
 `main`: `perf(controller)` `7e331b6` (state-dict build throttled off the 3 Hz hot
 path) and `fix(victron)` `f0a16fc` (discovery timeout 2→5 s + `_discovery_lock`).
-**Deployed to Cerbo 20:46 and verified closed-loop:** zero `Cycle timeout`, zero
-native failures, load 5–7 → **1.55**, ESS `Hub4Mode=3`, live setpoint changing
-(-610W → -642W). Residual: `update_state` p95 ~405ms is individual native D-Bus
-read latency, not the dict build (see P2 below) — the setpoint path is healthy
-(`setpoint_write` p95 42ms). All 483 tests pass, ruff clean. Remaining: release
-hygiene (version bump + tag).
+**Verified closed-loop at 20:46:** zero `Cycle timeout`, zero native failures,
+load 5–7 → **1.55**, ESS `Hub4Mode=3`, live setpoint changing (-610W → -642W),
+`setpoint_write` p95 42ms. All 483 tests pass, ruff clean.
+
+**Latest (22:00 round, v1.23.0 deployed 21:44): residual control-loop tail stalls
+root-caused & fixed.** StageDiagnostic instrumentation on Cerbo showed the
+`update_state` tail was NOT the dict build but *main-thread native D-Bus reads* in
+the control-loop getters plus HA `_lock` contention during `_poll_all`'s
+`update_all()`:
+- `acload` (`get_acload_powers` main-thread `_reconcile_acload_power`) up to **540ms**
+- `batteries` (`get_all_batteries` 2s-TTL 3-way native) up to **275ms**
+- `state` constructor (HA getters block on poll-thread `_lock`) up to **247ms**
+- `mppt/pv` (`get_mppt_data`/`get_pv_power` main-thread reconcile) up to **163ms**
+
+**Fix (all landed):** `victron.py` group getters (`get_mppt_data`, `get_pv_power`,
+`get_acload_powers`) + `get_ess_mode` + `get_all_batteries` are pure-cache reads
+with the reconcile moved to the 5 Hz background poll thread via
+`_reconcile_groups_if_stale`; HA `update_all` moved out of `with self._lock`.
+**Post-deploy StageDiagnostic: `state`/`calc`/`acload`/`batteries`/`ess_mode`/
+`daily`/`ha_state` all now ≈**0ms**.** Remaining known cost: `perf` snapshot
+(~55ms, 5s cadence) and startup-only spikes. Full plan + remaining steps in
+[P2 — Telemetry decoupling](#p2--telemetry-decoupling) below.
 
 ---
 
@@ -171,6 +187,91 @@ work, just no visibility.
 - [x] Commit the pending WIP (log throttling + inverter-state parse fix) separately
       from the native-client fix — done in PR #168 (`95ac30e`).
 - [ ] Bump version in `pyproject.toml` + `version` file in sync; tag `v1.23.x`.
+
+---
+
+## P2 — Telemetry decoupling: keep non-setpoint reads off the per-cycle hot path
+
+**Objective:** the values listed below are NOT used to derive the grid setpoint
+sent to the inverter, and a 2-3 second staleness is acceptable for them. They must
+therefore not be read (or composed) every control cycle (3 Hz) or even every
+telemetry rebuild (was 2 Hz). Only the setpoint-essential reads in
+`calculate_setpoint` (system data, mppt/pv totals, inverter power, grid-smoothing
+home total, and the setpoint booleans) stay at full per-cycle speed.
+
+### 1. Confirm each telemetry-only value is off the D-Bus hot path (done)
+- [x] **acloads** — `get_acload_powers()` (victron.py:1495) is a pure-cache
+      compose (`_compose_acload_powers`); the native `_reconcile_acload_power`
+      runs only in the background poll thread (gated via `_reconcile_groups_if_stale`).
+- [x] **PV inverters (Tasmota)** — `get_pv_power()` pure-cache; poll thread owns
+      reconcile. Individual/display values built from cache (`_cached_pv_powers`).
+- [x] **MPPT controllers** — `get_mppt_chargers()` (victron.py:1972) native 2s
+      TTL but wrapped by controller `_get_cached_mppt_chargers()` **10s** cache, so
+      the native query happens at most every 10s. (See step 4 for optional parity.)
+- [x] **Water level / valve / pump** — `water.read()` (water.py:64) guarded by
+      `CACHE_TTL = 2.0` (native read at most every 2s).
+- [x] **Car charge** — `_get_ev_state()` reads HA caches (`car_soc`,
+      `ev_charging_kw`, `ev_power`) — cheap dict lookups, only composed at the
+      telemetry cadence.
+- [x] **Non-setpoint HA booleans** — `_get_ha_state()` / `get_all_booleans()`
+      are cached dict copies (laundry/recliner/garage/uptime/connected) composed
+      at the telemetry cadence. The setpoint booleans (`only_charging`, `no_feed`,
+      `house_support`, `do_not_supply_charger`, `set_limit_to_ev_charger`,
+      `charge_battery`) stay in `calculate_setpoint` SystemState.
+- [x] **ESS mode** — `get_ess_mode()` (victron.py:1537) pure-cache read;
+      `_reconcile_ess_mode()` in the poll thread (5s gate). Only feeds the
+      ESS-external warning + display, both fine at 2-3s.
+- [x] **Daily stats** — `get_mppt_daily_yields`/`get_pv_inverter_daily_yields`/
+      `get_battery_daily_energy`/yesterday variants all return background-cache
+      (victron.py:2002-2025).
+- [x] **Full battery detail** — `get_all_batteries()` (victron.py:1681)
+      pure-cache read; `_reconcile_all_batteries()` (3-way parallel native) only in
+      the poll thread (2s gate).
+
+### 2. Decouple the whole `update_state` telemetry sweep from the hot path (done)
+- [x] `UPDATE_STATE_INTERVAL` raised **0.5s → 4.0s** (controller.py). The
+      telemetry state-dict (web UI / MQTT only) — and all of the telemetry-only
+      reads/compositions in step 1 (acloads, MPPT detail, PV inverters, water,
+      car/EV, HA booleans, ESS mode, daily stats) — now run every **4s** instead
+      of every cycle, well inside the acceptable 3-5s staleness for these
+      non-setpoint values. The setpoint decision in `calculate_setpoint` is
+      untouched (still every cycle, pure background-cache reads).
+- [x] Confirm no setpoint path depends on `self.state` freshness — verified:
+      `calculate_setpoint`, `handle_minimize_charging`, and the console line all
+      read `sys_data` + `victron`/`ha` getters directly, not `self.state`.
+- [x] `_check_ess_external()` (inside `update_state`) reacts within 4s — acceptable
+      for a sustained (minutes) control-mode mismatch warning.
+
+### 3. HA poll-thread lock contention fix (done)
+- [x] Moved `self._vue_dbus_client.update_all(self._vue_sensors)` outside
+      `with self._lock` in `homeassistant.py::_poll_all` so the poll thread's
+      `dbus-send` subprocesses no longer block main-thread HA getters. In-place
+      single-key writes are safe for concurrent cached readers.
+
+### 4. Remaining: optional harden + cleanup + verify + ship
+- [ ] **Optional:** move `get_mppt_chargers()` native query off the main thread for
+      parity with the other group getters (it currently re-reads natively every 10s
+      via the controller-level 10s TTL; make it pure-cache + background
+      `_reconcile_mppt_chargers`). Low priority now — 10s cadence already exceeds
+      the 4s target; only do it if StageDiagnostic still flags `mppt_chargers`.
+- [x] **Verify on-device after the `UPDATE_STATE_INTERVAL=4.0` deploy:** confirmed
+      closed-loop healthy on Cerbo — setpoint changing live (-1480W → -500W, ESS
+      External/Hub4Mode=3), no `WATCHDOG: Cycle timeout`, no wedge. Occasional
+      slow-stage warnings only during the startup window; settled window clean.
+- [x] **Remove the temporary `_StageTimer` instrumentation** from `controller.py`
+      (the sequential-checkpoint marks `state_build`/`calc`/`calc_done`/... and the
+      `update_state` timed-locals refactor) — done; only the production per-stage
+      slow-warning (`_stage()` / `record_stage`) remains. `ruff` + full suite pass.
+- [x] **Remove the terminal-title OSC status line** that spammed the log/screen
+      (`]2;10.6kWh B.I:1.6kWh O:0.3kWh`): deleted `ConsoleUI.update_terminal_title`
+      + `title_update_counter` and the `run_cycle` call; removed the test.
+- [x] **Tests:** `tests/test_caching.py::test_mppt_data_caching` and
+      `test_pv_inverter_power_caching` updated to the pure-cache semantics
+      (first call populates; later calls never re-read even after TTL expiry;
+      reconcile only via `_reconcile_groups_if_stale` in background). All 483 tests
+      pass, ruff clean.
+- [ ] **Release hygiene:** bump `pyproject.toml` version + `version` file + Git tag
+      `v1.23.x` in sync (see CLAUDE.md versioning section).
 
 ---
 

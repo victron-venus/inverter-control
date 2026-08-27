@@ -30,7 +30,6 @@ class ConsoleUI:
         self.ha = ha_client
         self.victron = victron_interface
         self.water = water_reader  # WaterSystemReader or None (test mode)
-        self.title_update_counter = 0
 
     def format_line(  # pylint: disable=too-many-arguments
         self,
@@ -157,19 +156,6 @@ class ConsoleUI:
             parts.append(fmt_appliance_time(self.ha.get_sensor("dishwasher_duration", "")))
 
         return "".join(parts)
-
-    def update_terminal_title(self):
-        """Update terminal title with daily stats from D-Bus"""
-        self.title_update_counter += 1
-        if self.title_update_counter < 10:
-            return
-        self.title_update_counter = 0
-
-        produced = self.victron.get_total_solar_yield_today()
-        bin_kwh, bout_kwh = self.victron.get_battery_daily_energy()
-
-        title = f"{produced:.1f}kWh B.I:{bin_kwh:.1f}kWh O:{bout_kwh:.1f}kWh"
-        print(f"\033]2;{title}\007", end="", flush=True)
 
 
 def fmt_appliance_time(t):
