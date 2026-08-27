@@ -48,7 +48,7 @@ class TestVictronCoverage:
         v._acload_services = []
         targets = v._fast_targets()
         assert any(t[0] == v._vebus_service for t in targets)
-        from inverter_control.victron import VEBUS_STATE_PATH, VEBUS_INV_POWER_PATH
+        from inverter_control.victron import VEBUS_INV_POWER_PATH, VEBUS_STATE_PATH
 
         for service, path in targets:
             if service == v._vebus_service:
@@ -96,7 +96,7 @@ class TestVictronCoverage:
         v._acload_services = ["com.victronenergy.acload.ttyUSB0"]
         targets = v._fast_targets()
         assert any(t[0] == v._acload_services[0] for t in targets)
-        from inverter_control.victron import ACLOAD_NAME_PATH, AC_POWER_PATH
+        from inverter_control.victron import AC_POWER_PATH, ACLOAD_NAME_PATH
 
         for service, path in targets:
             if service == v._acload_services[0]:
@@ -153,7 +153,7 @@ class TestVictronCoverage:
             v._acload_services = []
             v._setup_fast_signals()
             # Check that the vebus service calls were made
-            from inverter_control.victron import VEBUS_STATE_PATH, VEBUS_INV_POWER_PATH
+            from inverter_control.victron import VEBUS_INV_POWER_PATH, VEBUS_STATE_PATH
 
             mock_native_instance.subscribe_service_items.assert_any_call(v._vebus_service)
             mock_native_instance.subscribe_busitem.assert_any_call(
