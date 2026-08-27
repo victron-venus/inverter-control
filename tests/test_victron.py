@@ -196,7 +196,31 @@ class TestVictronDBus:
         assert data["gt"] == 0
         assert data["tt"] == 0
 
-    def test_get_inverter_state(self):
+    def test_get_system_data_partial_cache_has_defaults(self):
+        """A partially-populated signal cache must not KeyError hot-path keys.
+
+        The fast-signal path updates _system_data one key at a time; on the very
+        first control cycle the cache can hold only g1 (and no g2/t1/t2/tt/bv/
+        bc/bp) yet still be considered fresh. get_system_data must merge the
+        missing core keys over defaults so calculate_setpoint's sys_data["g2"]
+        never raises KeyError at startup (2026-08-27)."""
+        victron.reset_victron_for_testing()
+        v = victron.get_victron(test_mode=True)
+        # Signal path armed + a recent _last_update => cache-fresh path used.
+        v._native = object()
+        v._signal_paths_subscribed = True
+        v._system_data = {"g1": 500, "_last_update": time.time()}
+
+        data = v.get_system_data()
+
+        assert data["g2"] == 0
+        assert data["t1"] == 0
+        assert data["tt"] == 0
+        assert data["bv"] == 0
+        assert data["gt"] == 0
+        # Real signal value preserved.
+        assert data["g1"] == 500
+
         """Test getting inverter state"""
         with patch("inverter_control.victron.VictronDBus._dbus_get_native_only") as mock_get:
             mock_get.return_value = "9"

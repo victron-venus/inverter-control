@@ -76,6 +76,11 @@ SHUNT_SIGNAL_PATHS = {
     "/Dc/0/Current": "bc",
     "/Dc/0/Power": "bp",
 }
+# Core keys hot-path consumers (calculate_setpoint, console format_line) index
+# directly with []. The signal path updates _system_data one key at a time, so
+# the cached dict can hold only a subset briefly at startup; get_system_data
+# merges over these defaults so a partial cache never KeyErrors.
+_SYSTEM_DATA_KEYS = frozenset({"g1", "g2", "gt", "t1", "t2", "tt", "bv", "bc", "bp"})
 # MPPT chargers, Tasmota PV inverters and Vue acloads are signal-driven too;
 # their single-value reads remain only as a slow reconciliation pass.
 MPPT_SIGNAL_PATHS = {
@@ -1365,7 +1370,14 @@ class VictronDBus:
             or (self._signals_healthy() and self._system_data.get("_last_update", 0) > 0)
         )
         if cache_fresh:
-            return dict(self._system_data)
+            # The signal path can update _system_data one key at a time, so on
+            # the very first cycle the cached dict may hold only a subset of
+            # keys. Merge over full defaults so hot-path consumers (which index
+            # g1/g2/t1/t2/gt/tt/bv/bc/bp directly) never KeyError on startup.
+            data = dict(self._system_data)
+            for k in _SYSTEM_DATA_KEYS:
+                data.setdefault(k, 0)
+            return data
 
         # Fallback: synchronous call if cache stale (should rarely happen)
         data = {
