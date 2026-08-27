@@ -40,7 +40,7 @@ def _accept_clients():
             except Exception:
                 pass
 
-        except socket.timeout:
+        except TimeoutError:
             continue
         except Exception as e:
             if _running:
