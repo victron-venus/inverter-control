@@ -59,35 +59,44 @@ def _send_loop():
     All socket I/O happens here so broadcast_line never blocks the control
     main thread on a slow client or on _clients_lock contention."""
     while True:
-        try:
-            line = _sender_queue.get(timeout=0.5)
-        except queue.Empty:
-            if not _running and _sender_queue.empty():
-                return
-            continue
-        except Exception:
+        if _next_line_done():
             return
 
-        try:
-            data = (line + "\n").encode("utf-8")
-            dead_clients = set()
 
-            with _clients_lock:
-                clients = _clients.copy()
-                for client in clients:
-                    try:
-                        client.sendall(data)
-                    except Exception:
-                        dead_clients.add(client)
+def _next_line_done() -> bool:
+    """Wait for a console line and stream it; True when the sender should exit."""
+    try:
+        line = _sender_queue.get(timeout=0.5)
+    except queue.Empty:
+        return bool(not _running and _sender_queue.empty())
+    except Exception:
+        return True
 
-                for client in dead_clients:
-                    _clients.discard(client)
-                    try:
-                        client.close()
-                    except Exception:
-                        pass
-        finally:
-            _sender_queue.task_done()
+    try:
+        _send_to_clients(line)
+    finally:
+        _sender_queue.task_done()
+    return False
+
+
+def _send_to_clients(line: str) -> None:
+    """Stream one line to all connected clients and drop dead sockets."""
+    data = (line + "\n").encode("utf-8")
+    dead_clients = set()
+
+    with _clients_lock:
+        for client in _clients.copy():
+            try:
+                client.sendall(data)
+            except Exception:
+                dead_clients.add(client)
+
+        for client in dead_clients:
+            _clients.discard(client)
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 def broadcast_line(line: str):

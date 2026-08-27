@@ -151,8 +151,8 @@ class HardwareWatchdog:
             self.victron.set_grid_setpoint(0)
             self._hardware_forced = True
             logger.warning("WATCHDOG: stalled loop detected - forced 0W grid setpoint")
-        except Exception as e:
-            logger.error("WATCHDOG: failsafe write failed: %s", e)
+        except Exception:
+            logger.exception("WATCHDOG: failsafe write failed")
 
     def _recover_from_failsafe(self):
         """Telemetry recovered - re-arm watchdog and restore the prior setpoint"""
@@ -160,8 +160,8 @@ class HardwareWatchdog:
         if self._hardware_forced:
             try:
                 self.victron.set_grid_setpoint(self._pre_forced_setpoint)
-            except Exception as e:
-                logger.error("WATCHDOG: setpoint restore failed: %s", e)
+            except Exception:
+                logger.exception("WATCHDOG: setpoint restore failed")
             self._hardware_forced = False
         self._pre_forced_setpoint = 0
         logger.info("hardware watchdog re-armed after telemetry recovery")

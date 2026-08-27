@@ -448,68 +448,11 @@ class VictronDBus:
             return
         try:
             self._last_scan_time = time.time()
-            old_vebus = self._vebus_service
-
-            try:
-                result = subprocess.run(
-                    ["dbus", "-y"],
-                    capture_output=True,
-                    text=True,
-                    timeout=self.DISCOVERY_TIMEOUT,
-                    check=False,
-                )
-            except Exception as e:
-                now = time.time()
-                if now - self._last_discovery_failed_log >= 60.0:
-                    logger.debug("D-Bus service discovery failed: %s", e)
-                    self._last_discovery_failed_log = now
+            result = self._run_discovery_command()
+            if result is None:
                 return
-            lines = result.stdout.strip().split("\n")
 
-            self._vebus_service = None
-            self._mppt_services = []
-            self._acload_services = []
-            self._pv_inverter_services = []
-            battery_candidates: list[str] = []
-
-            (
-                self._vebus_service,
-                self._mppt_services,
-                self._acload_services,
-                self._pv_inverter_services,
-                battery_candidates,
-            ) = self._process_discovered_lines(lines)
-            self._mppt_services.sort()
-            self._acload_services.sort()
-            self._pv_inverter_services.sort()
-
-            # The SmartShunt's bus-name suffix (ttyUSB4 today) can change
-            # across GX reboots, so match by ProductName, never by instance.
-            old_shunt = self._shunt_service
-            self._shunt_service = None
-            for candidate in battery_candidates:
-                if "shunt" in self._read_product_name(candidate).lower():
-                    self._shunt_service = candidate
-                    break
-
-            # Log if service changed
-            if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
-                print(f"  [D-Bus] VE.Bus service changed: {old_vebus} -> {self._vebus_service}")
-            elif not old_vebus and self._vebus_service:
-                print(f"  [D-Bus] VE.Bus service found: {self._vebus_service}")
-
-            if old_shunt != self._shunt_service:
-                if self._shunt_service:
-                    print(f"  [D-Bus] SmartShunt service found: {self._shunt_service}")
-                else:
-                    print("  [D-Bus] SmartShunt service not found")
-
-            if self._acload_services:
-                print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
-
-            if self._pv_inverter_services:
-                print(f"  [D-Bus] PV inverters found: {self._pv_inverter_services}")
-
+            self._apply_discovery(result.stdout)
             self._consecutive_errors = 0
 
             if self._native is not None:
@@ -517,14 +460,77 @@ class VictronDBus:
                 # immediate reconcile so fresh services seed their caches.
                 self._last_signal_reconcile = 0.0
                 self._setup_fast_signals()
-
         except Exception as e:
-            now = time.time()
-            if now - self._last_discovery_failed_log >= 60.0:
-                logger.debug("D-Bus service discovery failed: %s", e)
-                self._last_discovery_failed_log = now
+            self._log_discovery_failure(e)
         finally:
             self._discovery_lock.release()
+
+    def _run_discovery_command(self):
+        """Run `dbus -y`; returns the completed process or None on failure."""
+        try:
+            return subprocess.run(
+                ["dbus", "-y"],
+                capture_output=True,
+                text=True,
+                timeout=self.DISCOVERY_TIMEOUT,
+                check=False,
+            )
+        except Exception as e:
+            self._log_discovery_failure(e)
+            return None
+
+    def _apply_discovery(self, stdout: str):
+        """Update the service maps from a `dbus -y` listing and log changes."""
+        old_vebus = self._vebus_service
+        old_shunt = self._shunt_service
+        lines = stdout.strip().split("\n")
+
+        (
+            self._vebus_service,
+            self._mppt_services,
+            self._acload_services,
+            self._pv_inverter_services,
+            battery_candidates,
+        ) = self._process_discovered_lines(lines)
+        self._mppt_services.sort()
+        self._acload_services.sort()
+        self._pv_inverter_services.sort()
+
+        # The SmartShunt's bus-name suffix (ttyUSB4 today) can change
+        # across GX reboots, so match by ProductName, never by instance.
+        self._shunt_service = None
+        for candidate in battery_candidates:
+            if "shunt" in self._read_product_name(candidate).lower():
+                self._shunt_service = candidate
+                break
+
+        self._log_service_changes(old_vebus, old_shunt)
+
+    def _log_service_changes(self, old_vebus, old_shunt):
+        """Print service discovery changes to the console."""
+        if old_vebus and self._vebus_service and old_vebus != self._vebus_service:
+            print(f"  [D-Bus] VE.Bus service changed: {old_vebus} -> {self._vebus_service}")
+        elif not old_vebus and self._vebus_service:
+            print(f"  [D-Bus] VE.Bus service found: {self._vebus_service}")
+
+        if old_shunt != self._shunt_service:
+            if self._shunt_service:
+                print(f"  [D-Bus] SmartShunt service found: {self._shunt_service}")
+            else:
+                print("  [D-Bus] SmartShunt service not found")
+
+        if self._acload_services:
+            print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
+
+        if self._pv_inverter_services:
+            print(f"  [D-Bus] PV inverters found: {self._pv_inverter_services}")
+
+    def _log_discovery_failure(self, e):
+        """Throttled discovery-failure log (once per minute)."""
+        now = time.time()
+        if now - self._last_discovery_failed_log >= 60.0:
+            logger.debug("D-Bus service discovery failed: %s", e)
+            self._last_discovery_failed_log = now
 
     def _process_discovered_lines(self, lines):
         """Process the lines from dbus -y to discover services."""
