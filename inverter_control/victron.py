@@ -122,6 +122,12 @@ class VictronDBus:
         1800  # Rescan every 30 minutes regardless (fallback for event-driven discovery)
     )
     RESCAN_COOLDOWN_SECONDS = 60  # Minimum time between error-triggered rescans
+    # Timeout for the `dbus -y` service-listing subprocess. Generous: on a
+    # heavily loaded GX the D-Bus daemon answers slowly (2 s timed out during
+    # the 2026-08-27 load 5-7 incident), which was logged as a false
+    # "discovery failed" every minute. Discovery runs off the control-loop hot
+    # path, so a few seconds here does not delay setpoints.
+    DISCOVERY_TIMEOUT = 5.0
 
     # Service health tracking: after N consecutive timeouts, back off
     SERVICE_FAIL_THRESHOLD = 3  # Consecutive failures before backing off
@@ -141,6 +147,10 @@ class VictronDBus:
         # Setpoint writes get their own lock so a telemetry read holding
         # _dbus_lock can never delay the control-loop write path.
         self._set_lock = threading.Lock()
+        # Serializes background service discovery (startup, NameOwnerChanged on
+        # the native signal thread, and the poll-thread rescan can otherwise
+        # run overlapping `dbus -y` subprocesses and race the service maps).
+        self._discovery_lock = threading.Lock()
         # Persistent native D-Bus connection (None in test mode / disabled)
         self._native: NativeDbusClient | None = None
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
@@ -419,15 +429,36 @@ class VictronDBus:
         }
 
     def _discover_services(self):
-        """Discover VE.Bus, MPPT, acload, and Tasmota PV inverter services"""
+        """Discover VE.Bus, MPPT, acload, and Tasmota PV inverter services.
 
-        self._last_scan_time = time.time()
-        old_vebus = self._vebus_service
+        Runs a blocking `dbus -y` subprocess (bounded by DISCOVERY_TIMEOUT) that
+        takes the discovery lock; concurrent callers (startup, NameOwnerChanged,
+        poll-thread rescan) are skipped rather than queued so a slow daemon never
+        piles up overlapping subprocesses. Must NOT be called while holding
+        _dbus_lock."""
 
+        if not self._discovery_lock.acquire(blocking=False):
+            # Another discovery is already in flight; skip rather than queue so
+            # a loaded daemon can't trigger a backlog of duplicate scans.
+            return
         try:
-            result = subprocess.run(
-                ["dbus", "-y"], capture_output=True, text=True, timeout=2, check=False
-            )
+            self._last_scan_time = time.time()
+            old_vebus = self._vebus_service
+
+            try:
+                result = subprocess.run(
+                    ["dbus", "-y"],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.DISCOVERY_TIMEOUT,
+                    check=False,
+                )
+            except Exception as e:
+                now = time.time()
+                if now - self._last_discovery_failed_log >= 60.0:
+                    logger.debug("D-Bus service discovery failed: %s", e)
+                    self._last_discovery_failed_log = now
+                return
             lines = result.stdout.strip().split("\n")
 
             self._vebus_service = None
@@ -487,6 +518,8 @@ class VictronDBus:
             if now - self._last_discovery_failed_log >= 60.0:
                 logger.debug("D-Bus service discovery failed: %s", e)
                 self._last_discovery_failed_log = now
+        finally:
+            self._discovery_lock.release()
 
     def _process_discovered_lines(self, lines):
         """Process the lines from dbus -y to discover services."""
