@@ -21,8 +21,11 @@ class TestConsoleServer:
         console_server._clients.clear()
         console_server._server_socket = None
         console_server._server_thread = None
+        console_server._sender_thread = None
         console_server._running = False
         console_server._console_buffer.clear()
+        while not console_server._sender_queue.empty():
+            console_server._sender_queue.get_nowait()
 
     def test_globals_initialized(self):
         """Test global variables are initialized"""
@@ -32,6 +35,7 @@ class TestConsoleServer:
         assert console_server._running is False
         assert console_server.TCP_CONSOLE_PORT == 9999
         assert len(console_server._console_buffer) == 0
+        assert console_server._sender_queue.empty()
 
     @patch("inverter_control.console_server.socket.socket")
     @patch("inverter_control.console_server.threading.Thread")
@@ -48,8 +52,9 @@ class TestConsoleServer:
         mock_sock.listen.assert_called_once_with(5)
         assert console_server._running is True
         assert console_server._server_socket == mock_sock
-        mock_thread.assert_called_once()
-        mock_thread.return_value.start.assert_called_once()
+        # One thread for accept loop, one for the send loop
+        assert mock_thread.call_count == 2
+        assert mock_thread.return_value.start.call_count == 2
 
     def test_start_server_already_running(self):
         """Test start_server doesn't start twice"""
@@ -110,16 +115,24 @@ class TestConsoleServer:
         # Line should still be buffered
         assert len(console_server._console_buffer) == initial_buffer_len + 1
 
-    @patch("inverter_control.console_server.socket.socket")
-    def test_broadcast_line(self, mock_socket):
-        """Test broadcast line to clients"""
+    def test_broadcast_line_enqueues(self):
+        """Test broadcast_line enqueues the line without blocking on clients"""
+        console_server._clients = set()
+        console_server.broadcast_line("hello")
+        assert console_server._sender_queue.get_nowait() == "hello"
+        assert console_server._sender_queue.empty()
+
+    def test_send_loop_streams_to_clients(self):
+        """Test _send_loop sends lines to clients and drops dead ones"""
         mock_client1 = MagicMock()
         mock_client2 = MagicMock()
         mock_client2.sendall.side_effect = Exception("Broken pipe")
 
         console_server._clients = {mock_client1, mock_client2}
+        console_server._running = False  # let _send_loop exit after draining
 
         console_server.broadcast_line("hello")
+        console_server._send_loop()  # drains the single queued line synchronously
 
         mock_client1.sendall.assert_called_once_with(b"hello\n")
         mock_client2.sendall.assert_called_once_with(b"hello\n")

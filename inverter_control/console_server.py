@@ -6,6 +6,7 @@ Uses threading for compatibility with synchronous main loop
 """
 
 import logging
+import queue
 import socket
 import threading
 from collections import deque
@@ -17,6 +18,8 @@ _clients: set[socket.socket] = set()
 _clients_lock = threading.Lock()
 _server_socket = None
 _server_thread = None
+_sender_thread = None
+_sender_queue: queue.Queue[str] = queue.Queue(maxsize=200)
 _running = False
 _console_buffer: deque = deque(maxlen=100)
 
@@ -33,7 +36,9 @@ def _accept_clients():
             with _clients_lock:
                 _clients.add(client)
 
-            # Send buffered lines
+            # Send buffered lines on a non-blocking socket; a full send buffer
+            # raises immediately and is swallowed. This runs on the accept
+            # thread (never the control main thread).
             try:
                 for line in _console_buffer:
                     client.sendall((line + "\n").encode("utf-8"))
@@ -48,36 +53,55 @@ def _accept_clients():
             break
 
 
+def _send_loop():
+    """Background thread that drains the send queue and streams to clients.
+
+    All socket I/O happens here so broadcast_line never blocks the control
+    main thread on a slow client or on _clients_lock contention."""
+    while True:
+        try:
+            line = _sender_queue.get(timeout=0.5)
+        except queue.Empty:
+            if not _running and _sender_queue.empty():
+                return
+            continue
+        except Exception:
+            return
+
+        try:
+            data = (line + "\n").encode("utf-8")
+            dead_clients = set()
+
+            with _clients_lock:
+                clients = _clients.copy()
+                for client in clients:
+                    try:
+                        client.sendall(data)
+                    except Exception:
+                        dead_clients.add(client)
+
+                for client in dead_clients:
+                    _clients.discard(client)
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+        finally:
+            _sender_queue.task_done()
+
+
 def broadcast_line(line: str):
-    """Send a line to all connected console clients (thread-safe)"""
-    # Buffer the line
+    """Enqueue a line for all connected console clients (never blocks main thread)"""
     _console_buffer.append(line)
-
-    if not _clients:
-        return
-
-    data = (line + "\n").encode("utf-8")
-    dead_clients = set()
-
-    with _clients_lock:
-        for client in _clients.copy():
-            try:
-                client.sendall(data)
-            except Exception:
-                dead_clients.add(client)
-
-        # Clean up dead clients
-        for client in dead_clients:
-            _clients.discard(client)
-            try:
-                client.close()
-            except Exception:
-                pass
+    try:
+        _sender_queue.put_nowait(line)
+    except queue.Full:
+        pass  # Drop console lines silently when the sender queue is full
 
 
 def start_server():
     """Start the TCP console server in background thread"""
-    global _server_socket, _server_thread, _running
+    global _server_socket, _server_thread, _sender_thread, _running
 
     if _running:
         return
@@ -92,6 +116,8 @@ def start_server():
         _running = True
         _server_thread = threading.Thread(target=_accept_clients, daemon=True)
         _server_thread.start()
+        _sender_thread = threading.Thread(target=_send_loop, daemon=True)
+        _sender_thread.start()
 
         logger.info(f"TCP console server started on port {TCP_CONSOLE_PORT}")
         print(f"  TCP console: port {TCP_CONSOLE_PORT} (nc Cerbo {TCP_CONSOLE_PORT})")
@@ -101,7 +127,7 @@ def start_server():
 
 def stop_server():
     """Stop the TCP console server"""
-    global _server_socket, _server_thread, _running
+    global _server_socket, _server_thread, _sender_thread, _running
 
     _running = False
 
@@ -124,3 +150,8 @@ def stop_server():
     if _server_thread:
         _server_thread.join(timeout=2)
         _server_thread = None
+
+    # Drain the outstanding queue, then let the sender thread exit on the next
+    # idle timeout (it checks _running). Daemon threads would stop on process
+    # exit regardless; joining here keeps shutdown clean.
+    _sender_thread = None
