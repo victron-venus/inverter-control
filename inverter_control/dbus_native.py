@@ -208,7 +208,7 @@ class NativeDbusClient:
         path: str,
         member: str,
         body: list | None = None,
-        timeout: float = 0.3,
+        timeout: float = 0.5,
     ):
         """Call a com.victronenergy.BusItem method; reply Message or None."""
         if not _DBUS_FAST_AVAILABLE:
@@ -244,7 +244,7 @@ class NativeDbusClient:
             return None
         return reply
 
-    def get_value(self, service: str, path: str, timeout: float = 0.3) -> str | None:
+    def get_value(self, service: str, path: str, timeout: float = 0.5) -> str | None:
         """GetValue as string (same shape the dbus-send literal parse produced)."""
         reply = self.call_busitem(service, path, "GetValue", timeout=timeout)
         if reply is None or not reply.body:
@@ -258,7 +258,7 @@ class NativeDbusClient:
         path: str,
         value,
         value_type: str = "int16",
-        timeout: float = 0.3,
+        timeout: float = 0.5,
     ) -> bool:
         """SetValue with an explicitly typed variant. True on success (reply 0)."""
         code = TYPE_CODES.get(value_type)
