@@ -736,6 +736,9 @@ class VictronDBus:
             value = self._native.get_value(service, "/ProductName")
             if value:
                 return str(value)
+            logger.debug(
+                "D-Bus native read failed, falling back to dbus-send: %s /ProductName", service
+            )
         result = self._safe_subprocess(
             [
                 "dbus-send",
@@ -1248,6 +1251,9 @@ class VictronDBus:
                 self._last_success_time = time.time()
                 self._record_service_success(service)
                 return value
+            logger.debug(
+                "D-Bus native read failed, falling back to dbus-send: %s %s", service, path
+            )
 
         with self._dbus_lock:
             result = self._safe_subprocess(
@@ -1288,6 +1294,11 @@ class VictronDBus:
             else:
                 logger.warning(
                     f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
+                )
+                logger.debug(
+                    "Native D-Bus set failed, falling back to dbus-send: %s %s",
+                    service,
+                    path,
                 )
 
         with self._dbus_lock:
@@ -1585,6 +1596,9 @@ class VictronDBus:
                     return float(val)
                 except (TypeError, ValueError):
                     return 0.0
+            logger.debug(
+                "D-Bus native read failed, falling back to dbus-send: %s %s", service, path
+            )
         output = self._safe_subprocess_tracked(
             [
                 "dbus-send",
