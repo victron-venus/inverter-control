@@ -7,13 +7,16 @@ control cycle burns the full 5 s SIGALRM budget and times out; DVCC line still
 sneaks through every ~60 s (a cycle occasionally completes far enough). System
 load 5–7 on 4 cores.
 
-**Status update 2026-08-27 (work in progress):** service restarted on Cerbo
-(`kill -9`, daemontools restarted it clean — no new `Cycle timeout` since).
-Code fixes implemented and unit-tested locally (483 pass), then **deployed to
-Cerbo** (commits `7b98e75`, `95ac30e`; deployed 20:31:56). Post-deploy soak:
-zero `Cycle timeout`, zero native failures, load 5–7 → ~3.9. The new per-stage
-slow-warning surfaced a separate pre-existing `update_state` latency
-(300–670 ms) — see P2 below.
+**Status update 2026-08-27 (work in progress):** PR #168 (native-D-Bus wedge
+fix + log throttling) was **merged** (`84b4951`). Continuing the repair plan on
+`main`. Done since merge:
+- `perf(controller)` `7e331b6` — telemetry state-dict build throttled off the
+  3 Hz hot path (`UPDATE_STATE_INTERVAL=0.5`) after profiling on Cerbo via
+  prometheus (`update_state` p95 ~377 ms on TTL-expiry D-Bus reads).
+- `fix(victron)` `f0a16fc` — discovery timeout 2→5 s + `_discovery_lock`
+  serialization.
+All 483 unit tests pass; ruff clean. Remaining: closed-loop re-measure on Cerbo,
+ESS/setpoint verify, and release hygiene (version bump + tag).
 
 ---
 
@@ -117,8 +120,12 @@ is slow/heavily loaded; and frequent `Native D-Bus set failed` for
 - [x] `_query_battery_chain_socs` (victron.py) retains **last-known-good** SoC
       per chain and falls back to it (not a fabricated 0.0%) on a transient
       read failure; existing per-service backoff short-circuits repeat calls.
-- [ ] Investigate the `dbus -y` discovery timeout (2 s) — raise timeout / run on
-      background thread / cache discovered map longer under load (load was 5–7).
+- [x] Investigate the `dbus -y` discovery timeout: raised `DISCOVERY_TIMEOUT`
+      2 s → 5 s (it timed out under the load 5-7 incident), and serialized
+      discovery with a non-blocking `_discovery_lock` so startup /
+      `NameOwnerChanged` / poll-thread rescan can't run overlapping subprocesses
+      or race the service maps (commit `f0a16fc`). Discovery is off the control
+      loop already, so a few s here doesn't delay setpoints.
 
 ## P2 — Post-fix observation (2026-08-27 deploy): slow control-cycle stages
 
@@ -129,15 +136,15 @@ wedge (no cycle-timeout, setpoints still written) but it means the real loop
 stays above the ~330 ms budget. Not a regression — the old build had the same
 work, just no visibility.
 
-- [ ] Profile `update_state` build: `get_ess_mode()` takes `_dbus_lock`+reads,
-      `get_battery_soc_local`, `get_acload_powers` (Vue, HA cloud), `_get_ha_state()`
-      all run per cycle. Confirm which getters block and whether their caches
-      (TTL) are actually hit or they fall through to sync reads every cycle.
-- [ ] Reduce redundant work: e.g. `get_ess_mode` is called per cycle but only
-      needs a 5s refresh; `_get_ha_state`/`get_acload_powers` may tolerate a
-      longer TTL; consider moving the state-dict build off the 3 Hz hot path
-      (publish a throttled snapshot) while setpoint computation stays fast.
-- [ ] Re-measure `perf.stage_ms.update_state.{p50,p95}` after any change.
+- [x] Profile `update_state` build: measured live on Cerbo via prometheus —
+      `update_state` p50 ~1ms but p95 ~377ms, max ~1.1s; `cycle_ms` p95 ~579ms.
+      All getters are TTL-cached; the tail spikes come from 2s/5s/10s TTLs
+      occasionally expiring in the same cycle, each doing a D-Bus read under load.
+- [x] Reduce redundant work: `UPDATE_STATE_INTERVAL=0.5` — the telemetry state-dict
+      (feeds web UI/MQTT, not the setpoint decision) is now rebuilt at most every
+      0.5 s instead of every 333 ms cycle (commit `7e331b6`). Loop control path
+      untouched.
+- [ ] Re-measure `perf.stage_ms.update_state.{p50,p95}` after redeploy.
 
 ## P2 — Downstream correctness after the fix
 - [ ] Re-observe closed-loop under the fixed client: `perf.stage_ms.*`
@@ -145,16 +152,15 @@ work, just no visibility.
       `WATCHDOG: Cycle timeout`, zero `Native D-Bus ... failed` bursts.
 - [ ] Verify ESS remains in External control (`Hub4Mode=3`) and setpoints are
       actually applied (no `Native D-Bus set failed: vebus` spam).
-- [ ] Confirm unit tests still pass (186 non-D-Bus tests; native tests use
-      `test_mode=True`). Add a regression test covering: (a) `on_reconnect`
-      seeding from the non-loop thread, (b) `call_busitem` from the loop thread
-      doesn't deadlock, (c) `_mark_failure` on an already-disconnected bus
-      doesn't raise "A coroutine object is required".
+- [x] Confirm unit tests pass: 483 pass (incl. the native regression tests from
+      PR #168 — (a) `on_reconnect`/seeding from the non-loop thread,
+      (b) `call_busitem` from the loop thread doesn't deadlock,
+      (c) `_mark_failure` on an already-disconnected bus is safe).
+      `test_mode=True` used throughout for D-Bus isolation.
 
 ## P2 — Repo / release hygiene
-- [ ] Commit the pending WIP (currently uncommitted `dvcc.py`, `victron.py`,
-      `main.py` logging/throttle + inverter-state parse fix) separately from the
-      native-client fix so the two are bisectable.
+- [x] Commit the pending WIP (log throttling + inverter-state parse fix) separately
+      from the native-client fix — done in PR #168 (`95ac30e`).
 - [ ] Bump version in `pyproject.toml` + `version` file in sync; tag `v1.23.x`.
 
 ---
