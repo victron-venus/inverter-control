@@ -1280,6 +1280,19 @@ class VictronDBus:
             self._record_service_failure(service)
             return None
 
+    def _dbus_get_native_only(self, service: str, path: str) -> str | None:
+        """Best-effort native read with NO dbus-send fallback.
+
+        For optional, display-only paths (e.g. /TimeToGo on the mqtt-chain and
+        virtual batteries that simply do not export it): native is a full bus
+        client, so if it returns ``None`` the path is absent. Spawning a
+        dbus-send subprocess that also fails (0.5 s x N under _dbus_lock) is
+        pure waste — this was the per-cycle source of the update_state tail
+        spikes observed on 2026-08-27."""
+        if self._native is not None and self._service_healthy(service):
+            return self._native.get_value(service, path)
+        return None
+
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
         """Set a value on D-Bus (native connection, CLI fallback).
         Uses _set_lock so writes never wait behind telemetry reads."""
@@ -1660,7 +1673,10 @@ class VictronDBus:
             current = self._get_float(service, DC_CURRENT_PATH)
             state = self._battery_state(current)
             ttg_sec = None
-            ttg_raw = self._dbus_get(service, "/TimeToGo")
+            # Native-only: these chain/virtual battery services do not export
+            # /TimeToGo, so a dbus-send fallback would fail too — but at 0.5s x
+            # chain under _dbus_lock, causing the update_state tail spikes.
+            ttg_raw = self._dbus_get_native_only(service, "/TimeToGo")
             if ttg_raw is not None:
                 try:
                     ttg_sec = max(0, int(float(ttg_raw)))
