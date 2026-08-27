@@ -412,7 +412,6 @@ class NativeDbusClient:
             for callback in handlers:
                 callback(service_name, old_owner, new_owner)
 
-    
     async def _refresh_and_clear(self, sender: str):
         """Refresh the sender map, then stop skipping this sender."""
         await self._refresh_sender_map()
