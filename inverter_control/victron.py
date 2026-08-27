@@ -682,12 +682,31 @@ class VictronDBus:
         # Poll inverter state (native-first; keeps the main-thread getter pure-cache)
         self._poll_inverter_state()
 
+        # Gated group reconciles (MPPT/PV/acload) run every pass in the
+        # BACKGROUND thread. Signals keep _last_*_time fresh while responsive;
+        # the gate skips redundant work then. When signals are quiet, the cache
+        # timestamp goes stale and this refresh happens HERE instead of the main
+        # control thread falling into a synchronous reconcile in a getter.
+        self._reconcile_groups_if_stale()
+
         # Poll battery chain cell data (throttled to every 30s)
         self._poll_battery_cell_data_tree()
 
         # Poll daily yields and battery energy (throttled to every 5s)
         self._poll_daily_yields()
         self._poll_battery_daily_energy()
+
+    def _reconcile_groups_if_stale(self):
+        """Refresh MPPT/PV/acload caches in the poll thread when their getter
+        cache TTL (GROUP_CACHE_TTL) has lapsed. Keeps the control loop getters
+        pure-cache: the main thread never performs a synchronous reconcile."""
+        now = time.time()
+        if self._mppt_services and now - self._last_mppt_time >= GROUP_CACHE_TTL:
+            self._reconcile_mppt_data()
+        if self._pv_inverter_services and now - self._last_pv_time >= GROUP_CACHE_TTL:
+            self._reconcile_pv_power()
+        if self._acload_services and now - self._last_acload_time >= GROUP_CACHE_TTL:
+            self._reconcile_acload_power()
 
     def _poll_system_data(self):
         """Poll system data using tree query"""
