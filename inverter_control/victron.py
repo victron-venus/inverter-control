@@ -208,6 +208,8 @@ class VictronDBus:
         self._load_battery_daily_energy()
 
         self._test_mode = test_mode
+        # D-Bus discovery failure log throttling (once per minute)
+        self._last_discovery_failed_log: float = 0.0
 
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
@@ -481,7 +483,10 @@ class VictronDBus:
                 self._setup_fast_signals()
 
         except Exception as e:
-            logger.debug("D-Bus service discovery failed: %s", e)
+            now = time.time()
+            if now - self._last_discovery_failed_log >= 60.0:
+                logger.debug("D-Bus service discovery failed: %s", e)
+                self._last_discovery_failed_log = now
 
     def _process_discovered_lines(self, lines):
         """Process the lines from dbus -y to discover services."""
@@ -870,7 +875,14 @@ class VictronDBus:
     @staticmethod
     def _parse_inverter_state_code(raw: str) -> tuple[int, str]:
         """Parse inverter state code from raw D-Bus output."""
-        code = int(raw.strip())
+        # Extract integer from literal output, e.g., "variant       uint32 3"
+        parts = raw.strip().split()
+        if not parts:
+            raise ValueError(f"Empty inverter state output: {raw!r}")
+        try:
+            code = int(parts[-1])
+        except ValueError:
+            raise ValueError(f"No integer found in inverter state output: {raw!r}")
         return code, INVERTER_STATES.get(code, f"? ({code})")
 
     def _poll_inverter_state(self):
