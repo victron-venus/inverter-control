@@ -340,9 +340,93 @@ class TestReconnectReplay:
         fired = []
         client.on_reconnect = lambda: fired.append(True)
         assert client._get_bus() is bus
-        # original AddMatch + replayed AddMatch + sender-map GetNameOwner
-        assert bus.call_count == 3
+        # Reconnect re-arms the match rule (AddMatch is synchronous); the
+        # sender-map GetNameOwner is fire-and-forget, so don't count it
+        # (async timing, not deterministic).
+        addmatches = [m for m in bus.messages if m.member == "AddMatch"]
+        assert len(addmatches) == 2
+        # on_reconnect is deferred to a worker thread so the hot path / control
+        # cycle is never blocked by signal re-seeding (2026-08-27 wedge)
+        deadline = time.time() + 5.0
+        while not fired and time.time() < deadline:
+            time.sleep(0.01)
         assert fired == [True]
+
+    def test_reconnect_hook_does_not_block_caller(self, client):
+        """on_reconnect must not run synchronously inside _replay_subscriptions:
+        it does blocking get_value() waits that previously tripped the control
+        cycle's SIGALRM watchdog (2026-08-27)."""
+        bus = FakeBus(_return(None))
+        client._bus = bus
+        client.subscribe_busitem("svc.a", "/p")
+
+        hook_thread_id = []
+        called = []
+
+        def hook():
+            called.append(True)
+            hook_thread_id.append(threading.get_ident())
+
+        client.on_reconnect = hook
+        client._replay_subscriptions()
+
+        # The hook is deferred to a thread (not synchronous), so it may not have
+        # run yet; wait for it, then assert it ran on a thread other than the
+        # caller (i.e. it cannot block the control cycle's hot path).
+        deadline = time.time() + 5.0
+        while not called and time.time() < deadline:
+            time.sleep(0.01)
+        assert called == [True]
+        assert hook_thread_id and hook_thread_id[0] != threading.get_ident()
+
+
+class TestDisconnectSafety:
+    """A torn-down bus must never block or raise during disconnect (the
+    "A coroutine object is required" crash from dbus_fast's one-shot
+    disconnect() seen in the 2026-08-27 incident)."""
+
+    class NonCoroutineBus(FakeBus):
+        def disconnect(self):
+            # dbus_fast returns a non-coroutine on an already-closed bus, which
+            # previously made run_coroutine_threadsafe raise.
+            return "not a coroutine"
+
+    def test_mark_failure_noncoroutine_disconnect_is_safe(self, client):
+        client._bus = self.NonCoroutineBus(TimeoutError("boom"))
+        client._loop = client._ensure_loop()
+        # A failed call marks _mark_failure; it must not raise and must cooldown.
+        assert client.get_value("com.victronenergy.test", "/x") is None
+        assert client._fail_until > 0
+
+    def test_close_noncoroutine_disconnect_is_safe(self, client):
+        client._bus = self.NonCoroutineBus(_return(None))
+        client._loop = client._ensure_loop()
+        client.close()  # must not raise
+
+    def test_loop_self_call_does_not_deadlock(self, client):
+        """Running a busitem call from the loop thread must not deadlock the loop."""
+        client._loop = client._ensure_loop()
+
+        async def _ident():
+            return threading.get_ident()
+
+        client._loop_thread_id = asyncio.run_coroutine_threadsafe(_ident(), client._loop).result(
+            1.0
+        )
+
+        # The call is awaited on the loop thread itself (the pre-fix behaviour
+        # would submit to our own loop and hang it). The guard must return None
+        # quickly instead of deadlocking.
+        async def _probe():
+            called = []
+            start = time.monotonic()
+            result = client._call_on_loop(lambda: asyncio.sleep(1.0), 2.0)
+            called.append((result, time.monotonic() - start))
+            return called
+
+        called = asyncio.run_coroutine_threadsafe(_probe(), client._loop).result(2.0)
+        assert called[0][0] is None
+        assert called[0][1] < 1.0  # returns promptly, no full sleep wait
 
 
 class TestVictronSignalIntegration:

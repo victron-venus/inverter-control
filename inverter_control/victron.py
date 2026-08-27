@@ -163,6 +163,10 @@ class VictronDBus:
         # Cache for battery chain SoC
         self._cached_battery_chain_socs: list = []
         self._last_battery_chain_soc_time: float = 0.0
+        # Last known-good SoC per chain service, retained so a transient read
+        # failure (e.g. mqtt_chain1 unresponsive, 2026-08-27) never collapses a
+        # live chain to a fake 0.0% that DVCC/control would act on.
+        self._last_known_chain_soc: dict[str, float] = {}
         # Cache for inverter state
         self._cached_inverter_state: tuple[int, str] = (0, "Unknown")
         self._last_inverter_state_time: float = 0.0
@@ -755,10 +759,17 @@ class VictronDBus:
         for service in (BATTERY_CHAIN_1, BATTERY_CHAIN_2):
             val = self._dbus_get(service, "/Soc")
             try:
-                socs.append(float(val) if val is not None else 0.0)
+                soc = float(val) if val is not None else None
             except (TypeError, ValueError):
                 logger.debug("Battery chain SoC parse failed: %s", val)
-                socs.append(0.0)
+                soc = None
+            if soc is not None:
+                self._last_known_chain_soc[service] = soc
+                socs.append(soc)
+            else:
+                # Fall back to the last known-good value for this chain instead
+                # of a fabricated 0.0 (a 0% SoC would wrongly throttle DVCC).
+                socs.append(self._last_known_chain_soc.get(service, 0.0))
         return socs
 
     def _poll_battery_chain_socs(self):

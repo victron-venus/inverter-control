@@ -64,6 +64,7 @@ class NativeDbusClient:
 
     def __init__(self):
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread_id: int | None = None
         self._bus = None
         # Thread-safe lock for bus connection state. We use a simple Lock
         # because none of our methods that hold _state_lock call another
@@ -97,21 +98,65 @@ class NativeDbusClient:
         if self._loop is not None and self._loop.is_running():
             return self._loop
         loop = asyncio.new_event_loop()
-        threading.Thread(target=loop.run_forever, daemon=True, name="dbus-native").start()
+
+        def _run():
+            self._loop_thread_id = threading.get_ident()
+            loop.run_forever()
+
+        threading.Thread(target=_run, daemon=True, name="dbus-native").start()
         self._loop = loop
         return loop
+
+    def _call_on_loop(self, async_fn, timeout: float):
+        """Run a coroutine factory on the loop, cross-thread safe.
+
+        Submits ``async_fn()`` onto the dedicated event-loop thread and waits up
+        to ``timeout`` seconds for the result. Safe to call from any thread -
+        including the loop thread itself (a self-``run_coroutine_threadsafe``
+        would deadlock the loop, see the 2026-08-27 wedge). Returns the
+        coroutine's result, or None on timeout/failure.
+        """
+        if self._loop is None:
+            self._ensure_loop()
+        if self._loop_thread_id == threading.get_ident():
+            # Already on the loop thread. It is running (run_forever), so a
+            # synchronous wait is impossible here - schedule and give up rather
+            # than submit to our own loop and deadlock.
+            asyncio.ensure_future(async_fn())
+            return None
+        try:
+            future = asyncio.run_coroutine_threadsafe(async_fn(), self._loop)
+            return future.result(timeout)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Native D-Bus loop call failed: %s", e)
+            return None
+
+    def _submit_on_loop(self, async_fn) -> None:
+        """Fire-and-forget a coroutine on the loop (no result wait).
+
+        Guards the self-thread case: `run_coroutine_threadsafe` from the loop
+        thread would never execute (the loop is busy), so use ensure_future.
+        """
+        if self._loop is None:
+            self._ensure_loop()
+        if self._loop_thread_id == threading.get_ident():
+            asyncio.ensure_future(async_fn())
+        else:
+            try:
+                asyncio.run_coroutine_threadsafe(async_fn(), self._loop)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.debug("Native D-Bus background submit failed: %s", e)
 
     def _connect(self):
         from dbus_fast.aio.message_bus import MessageBus
 
-        async def _connect():
+        async def _connect_data():
             bus = await MessageBus(bus_address=SYSTEM_BUS_ADDRESS).connect()
             bus.add_message_handler(self._handle_message)
             return bus
 
-        self._bus = asyncio.run_coroutine_threadsafe(_connect(), self._ensure_loop()).result(
-            CONNECT_TIMEOUT
-        )
+        self._loop = self._ensure_loop()
+        self._bus = self._call_on_loop(lambda: _connect_data(), CONNECT_TIMEOUT)
         if self._subscriptions:
             # Re-arm match rules; signals don't survive a disconnect
             self._replay_subscriptions()
@@ -126,15 +171,24 @@ class NativeDbusClient:
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Native D-Bus re-subscribe failed (%s): %s", rule, e)
         if self._subscription_services and self._loop is not None and self._bus is not None:
-            try:
-                asyncio.run_coroutine_threadsafe(self._refresh_sender_map(), self._loop)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Sender map refresh failed: %s", e)
+            self._submit_on_loop(self._refresh_sender_map)
+        # Fire the reconnect seeding hook off-thread. It performs blocking
+        # get_value() reads (one future.result() wait each) that previously ran
+        # inline on the caller - the control cycle - so a slow seeding could
+        # burn the whole SIGALRM cycle budget and trip "WATCHDOG: Cycle timeout"
+        # mid-reconnect (2026-08-27). Defer it so the reconnect never holds the
+        # hot path.
         if self.on_reconnect is not None:
             try:
-                self.on_reconnect()
+                threading.Thread(target=self._run_reconnect_hook, daemon=True, name="dbus-reconnect").start()
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Native D-Bus on_reconnect handler failed: %s", e)
+                logger.debug("Failed to schedule on_reconnect: %s", e)
+
+    def _run_reconnect_hook(self):
+        try:
+            self.on_reconnect()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Native D-Bus on_reconnect handler failed: %s", e)
 
     def _build_rule(self, service: str, member: str, path: str) -> str:
         return (
@@ -153,8 +207,20 @@ class NativeDbusClient:
             body=[rule],
             signature="s",
         )
-        future = asyncio.run_coroutine_threadsafe(self._bus.call(message), self._loop)
-        reply = future.result(MATCH_TIMEOUT)
+
+        def _call():
+            return self._bus.call(message)
+
+        if self._loop_thread_id == threading.get_ident():
+            # On the loop thread (reconnect path) - cannot wait synchronously.
+            asyncio.ensure_future(self._send_add_match_async(message))
+            return
+        reply = self._call_on_loop(_call, MATCH_TIMEOUT)
+        if reply is None or reply.message_type != MessageType.METHOD_RETURN:
+            raise ConnectionError(f"AddMatch rejected: {getattr(reply, 'message_type', reply)}")
+
+    async def _send_add_match_async(self, message):
+        reply = await self._bus.call(message)
         if reply.message_type != MessageType.METHOD_RETURN:
             raise ConnectionError(f"AddMatch rejected: {reply.message_type}")
 
@@ -173,16 +239,30 @@ class NativeDbusClient:
                 self._bus = None
                 return None
 
+    def _try_disconnect(self, bus, loop) -> None:
+        """Best-effort, bounded bus disconnect that never raises.
+
+        dbus_fast's disconnect() is a coroutine only while the bus is open; a
+        second call on a torn-down bus returns a non-coroutine and made
+        `run_coroutine_threadsafe` raise "A coroutine object is required"
+        (seen 2026-08-27). Guard against it and never block the caller long.
+        """
+        if bus is None or loop is None or not loop.is_running():
+            return
+        try:
+            coro = bus.disconnect()
+            if asyncio.iscoroutine(coro):
+                asyncio.run_coroutine_threadsafe(coro, loop).result(0.2)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.debug("Native D-Bus disconnect failed: %s", e)
+
     def _mark_failure(self):
         """Enter reconnect cooldown and drop the broken connection."""
         with self._state_lock:
             self._fail_until = time.time() + RECONNECT_COOLDOWN
             bus, self._bus = self._bus, None
-        if bus is not None and self._loop is not None:
-            try:
-                asyncio.run_coroutine_threadsafe(bus.disconnect(), self._loop).result(1.0)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Native D-Bus disconnect failed: %s", e)
+        if bus is not None:
+            self._try_disconnect(bus, self._loop)
 
     def close(self):
         """Stop the event-loop thread and release the connection."""
@@ -190,11 +270,8 @@ class NativeDbusClient:
             bus, self._bus = self._bus, None
             self._fail_until = float("inf")
             loop, self._loop = self._loop, None
-        if bus is not None and loop is not None:
-            try:
-                asyncio.run_coroutine_threadsafe(bus.disconnect(), loop).result(1.0)
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Native D-Bus disconnect failed: %s", e)
+        if bus is not None:
+            self._try_disconnect(bus, loop)
         if loop is not None:
             loop.call_soon_threadsafe(loop.stop)
 
@@ -227,8 +304,15 @@ class NativeDbusClient:
                 member=member,
                 **kwargs,
             )
-            future = asyncio.run_coroutine_threadsafe(bus.call(message), self._loop)
-            reply = future.result(timeout)
+
+            def _call():
+                return bus.call(message)
+
+            reply = self._call_on_loop(_call, timeout)
+            if reply is None:
+                # Timeout/failure: the request never completed
+                self._mark_failure()
+                return None
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus %s %s/%s failed: %s", service, member, path, e)
             self._mark_failure()
@@ -318,7 +402,7 @@ class NativeDbusClient:
         # service tag; lazy refresh below covers services that come up later.
         if self._loop is not None and self._bus is not None:
             try:
-                asyncio.run_coroutine_threadsafe(self._refresh_sender_map(), self._loop)
+                self._submit_on_loop(self._refresh_sender_map)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Sender resolve scheduling failed: %s", e)
         return True
