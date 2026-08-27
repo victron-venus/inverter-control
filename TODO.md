@@ -9,11 +9,11 @@ load 5–7 on 4 cores.
 
 **Status update 2026-08-27 (work in progress):** service restarted on Cerbo
 (`kill -9`, daemontools restarted it clean — no new `Cycle timeout` since).
-Code fixes implemented and unit-tested locally (483 pass): see P1 below —
-reconnect no longer self-deadlocks, `on_reconnect` seeding deferred off the hot
-path, disconnect guarded against dbus_fast's one-shot coroutine, SIGALRM cycle
-abort replaced with per-stage slow-warning, battery-chain SoC retains
-last-known-good. **Pending: deploy to Cerbo + soak.**
+Code fixes implemented and unit-tested locally (483 pass), then **deployed to
+Cerbo** (commits `7b98e75`, `95ac30e`; deployed 20:31:56). Post-deploy soak:
+zero `Cycle timeout`, zero native failures, load 5–7 → ~3.9. The new per-stage
+slow-warning surfaced a separate pre-existing `update_state` latency
+(300–670 ms) — see P2 below.
 
 ---
 
@@ -119,6 +119,25 @@ is slow/heavily loaded; and frequent `Native D-Bus set failed` for
       read failure; existing per-service backoff short-circuits repeat calls.
 - [ ] Investigate the `dbus -y` discovery timeout (2 s) — raise timeout / run on
       background thread / cache discovered map longer under load (load was 5–7).
+
+## P2 — Post-fix observation (2026-08-27 deploy): slow control-cycle stages
+
+The new per-stage slow-warning (STAGE_SLOW_MS=300) surfaced a **pre-existing**
+latency, previously hidden: `update_state` regularly takes 300–670 ms and
+`calculate_setpoint` 300–420 ms at 3 Hz (load ~3.9 on 4 cores). This is NOT the
+wedge (no cycle-timeout, setpoints still written) but it means the real loop
+stays above the ~330 ms budget. Not a regression — the old build had the same
+work, just no visibility.
+
+- [ ] Profile `update_state` build: `get_ess_mode()` takes `_dbus_lock`+reads,
+      `get_battery_soc_local`, `get_acload_powers` (Vue, HA cloud), `_get_ha_state()`
+      all run per cycle. Confirm which getters block and whether their caches
+      (TTL) are actually hit or they fall through to sync reads every cycle.
+- [ ] Reduce redundant work: e.g. `get_ess_mode` is called per cycle but only
+      needs a 5s refresh; `_get_ha_state`/`get_acload_powers` may tolerate a
+      longer TTL; consider moving the state-dict build off the 3 Hz hot path
+      (publish a throttled snapshot) while setpoint computation stays fast.
+- [ ] Re-measure `perf.stage_ms.update_state.{p50,p95}` after any change.
 
 ## P2 — Downstream correctness after the fix
 - [ ] Re-observe closed-loop under the fixed client: `perf.stage_ms.*`
