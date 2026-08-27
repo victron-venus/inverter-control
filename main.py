@@ -6,6 +6,7 @@ Grid-zero feed-in control for Victron system with split-phase compensation
 
 import argparse
 import atexit
+import errno
 import gc
 import logging
 import os
@@ -63,6 +64,8 @@ class _BrokenPipeSafeStream:
     Venus OS runs us under daemontools with stdout piped to multilog. If that
     pipe breaks (e.g. the log service is restarted), a plain print() raises
     BrokenPipeError which previously killed the control cycle mid-run.
+    Also handles EAGAIN/EWOULDBLOCK when pipe buffer is full to prevent
+    blocking the control loop.
     """
 
     def __init__(self, stream):
@@ -71,8 +74,11 @@ class _BrokenPipeSafeStream:
     def write(self, data: str) -> int:
         try:
             return self._stream.write(data)
-        except BrokenPipeError:
-            return len(data)
+        except (BrokenPipeError, OSError) as e:
+            if isinstance(e, BrokenPipeError) or e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                return len(data)
+            # Re-raise if it's some other OSError
+            raise
 
     def flush(self) -> None:
         try:

@@ -817,7 +817,6 @@ class InverterController:
                 sys_data, setpoint, self.previous_setpoint, flags, filtered_display
             )
             self.last_console_line = line
-            print(line)
             broadcast_line(line)
             _stage("console_render")
 

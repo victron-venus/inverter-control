@@ -703,7 +703,7 @@ class VictronDBus:
                 "/ProductName",
                 GET_VALUE_METHOD,
             ],
-            timeout=0.3,
+            timeout=0.5,
         )
         match = re.search(r'string\s+"([^"]*)"', result or "")
         return match.group(1) if match else ""
@@ -879,7 +879,7 @@ class VictronDBus:
                 GET_VALUE_METHOD,
             ],
             service=self._vebus_service,
-            timeout=0.3,
+            timeout=0.5,
         )
         if output:
             try:
@@ -909,7 +909,7 @@ class VictronDBus:
                 GET_VALUE_METHOD,
             ],
             service=self._vebus_service,
-            timeout=0.3,
+            timeout=0.5,
         )
         if output:
             try:
@@ -1115,7 +1115,7 @@ class VictronDBus:
     def mppt_services(self) -> list:
         return self._mppt_services
 
-    def _safe_subprocess(self, cmd: list, timeout: float = 0.3) -> str | None:
+    def _safe_subprocess(self, cmd: list, timeout: float = 0.5) -> str | None:
         """Run subprocess with strict timeout and error handling"""
         self.subprocess_calls += 1
         try:
@@ -1163,7 +1163,7 @@ class VictronDBus:
                 backoff,
             )
 
-    def _safe_subprocess_tracked(self, cmd: list, service: str, timeout: float = 0.3) -> str | None:
+    def _safe_subprocess_tracked(self, cmd: list, service: str, timeout: float = 0.5) -> str | None:
         """Run subprocess with service health tracking (for background poll).
         Returns None immediately if service is in backoff period."""
         if not self._service_healthy(service):
@@ -1203,7 +1203,7 @@ class VictronDBus:
                     path,
                     GET_VALUE_METHOD,
                 ],
-                timeout=0.3,
+                timeout=0.5,
             )
             if result:
                 parts = result.split()
@@ -1230,7 +1230,9 @@ class VictronDBus:
                 self._last_success_time = time.time()
                 return True
             else:
-                logger.warning(f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}")
+                logger.warning(
+                    f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
+                )
 
         with self._dbus_lock:
             result = self._safe_subprocess(
@@ -1243,14 +1245,16 @@ class VictronDBus:
                     "com.victronenergy.BusItem.SetValue",
                     f"variant:{value_type}:{value}",
                 ],
-                timeout=0.3,
+                timeout=0.5,
             )
             if result is not None:
                 self._consecutive_errors = 0
                 self._last_success_time = time.time()
                 return True
 
-            logger.warning(f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}")
+            logger.warning(
+                f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}"
+            )
             self._consecutive_errors += 1
             return False
 
@@ -1535,7 +1539,7 @@ class VictronDBus:
                 GET_VALUE_METHOD,
             ],
             service=service,
-            timeout=0.3,
+            timeout=0.5,
         )
         # dbus-send --print-reply=literal prints "variant double <val>"; take last token
         parts = output.split()
@@ -1846,6 +1850,8 @@ class VictronDBus:
         """Get detailed data for all MPPT chargers.
         Cached for 2s, queries services in parallel."""
         now = time.time()
+        if not self._mppt_services:
+            return self._cached_mppt_chargers
         if self._cached_mppt_chargers and now - self._last_mppt_chargers_time < 2.0:
             return self._cached_mppt_chargers
 
