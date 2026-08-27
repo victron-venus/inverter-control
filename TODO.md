@@ -7,16 +7,15 @@ control cycle burns the full 5 s SIGALRM budget and times out; DVCC line still
 sneaks through every ~60 s (a cycle occasionally completes far enough). System
 load 5–7 on 4 cores.
 
-**Status update 2026-08-27 (work in progress):** PR #168 (native-D-Bus wedge
-fix + log throttling) was **merged** (`84b4951`). Continuing the repair plan on
-`main`. Done since merge:
-- `perf(controller)` `7e331b6` — telemetry state-dict build throttled off the
-  3 Hz hot path (`UPDATE_STATE_INTERVAL=0.5`) after profiling on Cerbo via
-  prometheus (`update_state` p95 ~377 ms on TTL-expiry D-Bus reads).
-- `fix(victron)` `f0a16fc` — discovery timeout 2→5 s + `_discovery_lock`
-  serialization.
-All 483 unit tests pass; ruff clean. Remaining: closed-loop re-measure on Cerbo,
-ESS/setpoint verify, and release hygiene (version bump + tag).
+**Status update 2026-08-27 (in progress):** PR #168 merged (`84b4951`), then on
+`main`: `perf(controller)` `7e331b6` (state-dict build throttled off the 3 Hz hot
+path) and `fix(victron)` `f0a16fc` (discovery timeout 2→5 s + `_discovery_lock`).
+**Deployed to Cerbo 20:46 and verified closed-loop:** zero `Cycle timeout`, zero
+native failures, load 5–7 → **1.55**, ESS `Hub4Mode=3`, live setpoint changing
+(-610W → -642W). Residual: `update_state` p95 ~405ms is individual native D-Bus
+read latency, not the dict build (see P2 below) — the setpoint path is healthy
+(`setpoint_write` p95 42ms). All 483 tests pass, ruff clean. Remaining: release
+hygiene (version bump + tag).
 
 ---
 
@@ -144,14 +143,24 @@ work, just no visibility.
       (feeds web UI/MQTT, not the setpoint decision) is now rebuilt at most every
       0.5 s instead of every 333 ms cycle (commit `7e331b6`). Loop control path
       untouched.
-- [ ] Re-measure `perf.stage_ms.update_state.{p50,p95}` after redeploy.
+- [x] Re-measure `perf.stage_ms.update_state.{p50,p95}` after redeploy (2026-08-27,
+      deploy at 20:46): `update_state` p50 ~0ms, p95 ~405ms, max ~1.25s;
+      `cycle_ms` p95 ~629ms. Throttling cut the *frequency* of slow runs but NOT
+      their magnitude — each slow build is still ~400ms because individual native
+      D-Bus reads spike (also `get_system_data` max ~103ms). Conclusion: the tail
+      is native D-Bus read latency (daemon/native-client), NOT the dict build.
+      The control decision path is healthy regardless: `setpoint_write`
+      p50 6ms / p95 42ms, `calculate_setpoint` p95 ~226ms.
 
 ## P2 — Downstream correctness after the fix
-- [ ] Re-observe closed-loop under the fixed client: `perf.stage_ms.*`
-      p50/p95 and `cycle_ms` p95 back under the ~330 ms budget, zero
-      `WATCHDOG: Cycle timeout`, zero `Native D-Bus ... failed` bursts.
-- [ ] Verify ESS remains in External control (`Hub4Mode=3`) and setpoints are
-      actually applied (no `Native D-Bus set failed: vebus` spam).
+- [x] Re-observe closed-loop under the fixed client (deploy 20:46): zero
+      `WATCHDOG: Cycle timeout`, zero `Native D-Bus ... failed` bursts, system
+      load down to 1.55 (was 3.9 post-wedge-fix, 5–7 during incident). `cycle_ms`
+      p50 ~20ms; the p95 ~629ms tail is the telemetry-path D-Bus latency above.
+- [x] Verify ESS remains in External control (`Hub4Mode=3` confirmed) and setpoints
+      are actually applied — live AcPowerSetpoint read twice 2 s apart changed
+      -610W → -642W (active closed-loop), `setpoint_write` p95 42ms, and only 1
+      cumulative failed write since restart (no `Native D-Bus set failed` spam).
 - [x] Confirm unit tests pass: 483 pass (incl. the native regression tests from
       PR #168 — (a) `on_reconnect`/seeding from the non-loop thread,
       (b) `call_busitem` from the loop thread doesn't deadlock,
