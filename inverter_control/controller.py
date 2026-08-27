@@ -86,6 +86,13 @@ TOU_SETTING_TTL_SECONDS = 60.0
 # native-D-Bus reconnect path, 2026-08-27).
 STAGE_SLOW_MS = 300.0
 
+# How often (seconds) the full telemetry state-dict is rebuilt for the web UI /
+# MQTT. The setpoint control decision runs every cycle; only this heavier build
+# is throttled, cutting the per-cycle exposure to TTL-expiring D-Bus reads (and
+# their occasional multi-hundred-ms tail spikes) roughly 3x. update_state p50 is
+# ~1ms (caches hot) but p95 ~377ms when 2s/5s/10s TTLs all fire at once under load.
+UPDATE_STATE_INTERVAL = 0.5
+
 
 def log_exception(msg: str):
     """Log exception with full traceback"""
@@ -204,6 +211,7 @@ class InverterController:
         self._last_cell_data_time = 0.0
         self._last_batteries_time = 0.0
         self._last_chargers_time = 0.0
+        self._last_update_state_time = 0.0
 
         # Dynamic settings (overridable)
         self.power_limit_min = POWER_LIMIT_MIN
@@ -829,8 +837,13 @@ class InverterController:
             broadcast_line(line)
             _stage("console_render")
 
-            self.update_state(sys_data, setpoint)
-            self.console.update_terminal_title()
+            # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL,
+            # not every cycle. It feeds the web UI / MQTT (fresh enough at 2 Hz);
+            # the control decision already ran in calculate_setpoint above.
+            if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
+                self.update_state(sys_data, setpoint)
+                self.console.update_terminal_title()
+                self._last_update_state_time = time.monotonic()
             self.previous_setpoint = setpoint
             _stage("update_state")
 
