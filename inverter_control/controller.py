@@ -87,11 +87,17 @@ TOU_SETTING_TTL_SECONDS = 60.0
 STAGE_SLOW_MS = 300.0
 
 # How often (seconds) the full telemetry state-dict is rebuilt for the web UI /
-# MQTT. The setpoint control decision runs every cycle; only this heavier build
-# is throttled, cutting the per-cycle exposure to TTL-expiring D-Bus reads (and
-# their occasional multi-hundred-ms tail spikes) roughly 3x. update_state p50 is
-# ~1ms (caches hot) but p95 ~377ms when 2s/5s/10s TTLs all fire at once under load.
-UPDATE_STATE_INTERVAL = 0.5
+# MQTT. The setpoint control decision runs every cycle in calculate_setpoint and
+# reads only the values it truly needs (system data, mppt/pv totals, inverter
+# power, grid-smoothing home total, and the setpoint booleans) at full speed.
+# Everything else in update_state is telemetry/display-only — acloads, full
+# battery & MPPT charger detail, EV/car charge, water level, non-setpoint HA
+# booleans, ESS mode, and daily stats — which is NOT used to derive the setpoint,
+# so a 3-5 second staleness is acceptable. This cadence decouples that non-critical
+# work from the hot path: the heavy reads behind it already refresh on their own
+# 2s/5s/10s TTLs in the background poll thread, and the remaining per-build
+# composition (dict builds, acload compose) is now ~4-6x rarer than the old 0.5s.
+UPDATE_STATE_INTERVAL = 4.0
 
 
 def log_exception(msg: str):
@@ -437,7 +443,6 @@ class InverterController:
 
     def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""
-
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
         mppt_total = sum(m["w"] for m in mppt_data.values())
@@ -474,6 +479,7 @@ class InverterController:
                 charge_battery = True
                 logger.info("Pre-charge triggered by solar forecast")
 
+        # HA-heavy SystemState snapshot
         state = SystemState(
             g1=sys_data["g1"],
             g2=sys_data["g2"],
@@ -620,33 +626,45 @@ class InverterController:
         sys_data["pv_inverter_powers"] = self._cached_pv_powers
         sys_data["battery_socs"] = self._cached_battery_socs
 
+        # ---- D-Bus / HA heavy getters (all telemetry-only; 2s sweep cadence) ----
+        batteries = self._get_cached_batteries()
+        mppt_chargers = self._get_cached_mppt_chargers()
+        ev_state = self._get_ev_state()
+        water_state = self._get_water_state()
+        ha_state = self._get_ha_state()
+        loads = self.victron.get_acload_powers() if ENABLE_HA_LOADS else {}
+        ess_mode = self.victron.get_ess_mode()
+        daily_stats = self._get_daily_stats()
+
+        mppt_total = sum(m["w"] for m in self._cached_mppt_data.values())
+        pv_total = sum(self._cached_pv_powers)
+
         # Full state for web UI
         self.state = {
             **sys_data,
             "setpoint": setpoint,
             "filtered_gt": self.filtered_gt,
             "dry_run": self.dry_run,
-            "mppt_total": sum(m["w"] for m in self._cached_mppt_data.values()),
-            "pv_inverter_total": sum(self._cached_pv_powers),
-            "solar_total": sum(m["w"] for m in self._cached_mppt_data.values())
-            + sum(self._cached_pv_powers),
+            "mppt_total": mppt_total,
+            "pv_inverter_total": pv_total,
+            "solar_total": mppt_total + pv_total,
             "mppt_data": self._cached_mppt_data,
             "mppt_individual": [m["w"] for m in self._cached_mppt_data.values()],
             "pv_inverter_individual": self._cached_pv_powers,
             "inverter_state": self._cached_inv_state,
             "battery_socs": self._cached_battery_socs,
-            "batteries": self._get_cached_batteries(),
-            "mppt_chargers": self._get_cached_mppt_chargers(),
-            **self._get_ev_state(),
-            **self._get_water_state(),
-            **self._get_ha_state(),
-            "loads": self.victron.get_acload_powers() if ENABLE_HA_LOADS else {},
-            "ess_mode": self.victron.get_ess_mode(),
+            "batteries": batteries,
+            "mppt_chargers": mppt_chargers,
+            **ev_state,
+            **water_state,
+            **ha_state,
+            "loads": loads,
+            "ess_mode": ess_mode,
             "battery_power": sys_data.get("bp", 0),
             "battery_voltage": sys_data.get("bv", 0),
             "battery_current": sys_data.get("bc", 0),
             "battery_soc": self.victron.get_battery_soc_local(sys_data),
-            "daily_stats": self._get_daily_stats(),
+            "daily_stats": daily_stats,
             "solar_forecast": self._solar_forecast,
             "limits": {"min": self.power_limit_min, "max": self.power_limit_max},
             "loop_interval": self.loop_interval,
@@ -667,7 +685,6 @@ class InverterController:
             self.state["perf"] = perf
             prom_metrics_publish(perf)
             self._last_perf_snapshot = now
-
         self._check_ess_external()
 
     def _check_ess_external(self) -> None:
@@ -842,7 +859,6 @@ class InverterController:
             # the control decision already ran in calculate_setpoint above.
             if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
                 self.update_state(sys_data, setpoint)
-                self.console.update_terminal_title()
                 self._last_update_state_time = time.monotonic()
             self.previous_setpoint = setpoint
             _stage("update_state")

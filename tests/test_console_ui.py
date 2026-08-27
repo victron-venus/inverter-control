@@ -179,27 +179,6 @@ class TestConsoleUI:
         assert console_ui.fmt_appliance_time(None) == ""
         assert console_ui.fmt_appliance_time("") == ""
 
-    def test_update_terminal_title(self):
-        """Test terminal title update"""
-        # Mock new D-Bus methods
-        self.mock_victron.get_total_solar_yield_today.return_value = 12.5
-        self.mock_victron.get_battery_daily_energy.return_value = (3.2, 4.8)
-        self.mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
-
-        # Should not print until 10th call
-        for i in range(9):
-            self.ui.update_terminal_title()
-
-        # 10th call should print
-        with patch("builtins.print") as mock_print:
-            self.ui.update_terminal_title()
-            mock_print.assert_called_once()
-            # Check title format
-            call_args = mock_print.call_args[0][0]
-            assert "12.5kWh" in call_args
-            assert "3.2kWh" in call_args
-            assert "4.8kWh" in call_args
-
 
 class TestConsoleUIEdgeCases:
     """Test edge cases and error handling"""

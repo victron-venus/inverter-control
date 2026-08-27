@@ -405,7 +405,12 @@ class DvccCalculator:
         now = time.time()
         if now - self._last_dvcc_log >= 60.0:
             logger.debug(
-                "DVCC: CCL=%.1fA (%s), DCL=%.1fA (%s), CVL=%.2fV", ccl, ccl_reason, dcl, dcl_reason, cvl
+                "DVCC: CCL=%.1fA (%s), DCL=%.1fA (%s), CVL=%.2fV",
+                ccl,
+                ccl_reason,
+                dcl,
+                dcl_reason,
+                cvl,
             )
             self._last_dvcc_log = now
 

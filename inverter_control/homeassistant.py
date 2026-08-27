@@ -251,8 +251,13 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             self._parse_boolean_sensors(data)
             self._parse_switches(data)
 
-            # Update VUE sensors from dbus services if available
-            self._vue_dbus_client.update_all(self._vue_sensors)
+        # Update VUE sensors from dbus services. Deliberately OUTSIDE the lock:
+        # update_all runs dbus-send subprocesses (up to 2s each) which would
+        # otherwise block every main-thread ha.get_* cache read for that
+        # duration (source of the control-loop update_state tail spikes). The
+        # in-place dict writes are single-key assignments, safe for concurrent
+        # readers under the lock.
+        self._vue_dbus_client.update_all(self._vue_sensors)
 
     def _fetch_template_data(self) -> dict:
         """Fetch all entity data via template API"""

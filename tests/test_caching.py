@@ -41,7 +41,7 @@ def test_mppt_data_caching():
         patch("inverter_control.victron.subprocess.run", side_effect=side_effect),
         patch("inverter_control.victron.GROUP_CACHE_TTL", 0.1),
     ):
-        # First call - should trigger actual D-Bus calls
+        # First call - cache unpopulated, so triggers actual D-Bus calls
         data1 = v.get_mppt_data()
         first_call_count = call_count
 
@@ -49,10 +49,11 @@ def test_mppt_data_caching():
         data2 = v.get_mppt_data()
         second_call_count = call_count
 
-        # TTL patched below to keep the expiry window short
+        # Wait well past the refresh window
         time.sleep(0.15)
 
-        # Third call after cache should expire - should trigger new D-Bus calls
+        # Third call - getter is now pure-cache (5Hz poll thread owns refresh),
+        # so it must NOT re-read D-Bus even after time passes.
         data3 = v.get_mppt_data()
         third_call_count = call_count
 
@@ -72,9 +73,9 @@ def test_mppt_data_caching():
         assert second_call_count == 4, (
             f"Expected 4 calls total after second invocation (cached), got {second_call_count}"
         )
-        # Third call: after TTL expiry, should make new calls
-        assert third_call_count == 8, (
-            f"Expected 8 calls total after third invocation (cache expired), got {third_call_count}"
+        # Third call: pure-cache - no additional D-Bus calls even after expiry
+        assert third_call_count == 4, (
+            f"Expected 4 calls total after third invocation (pure cache), got {third_call_count}"
         )
 
         print("✓ MPPT data caching test passed")
@@ -129,7 +130,7 @@ def test_pv_inverter_power_caching():
         patch("inverter_control.victron.subprocess.run", side_effect=side_effect),
         patch("inverter_control.victron.GROUP_CACHE_TTL", 0.1),
     ):
-        # First call - should trigger actual D-Bus calls
+        # First call - cache unpopulated, so triggers actual D-Bus calls
         powers1 = v.get_pv_power()
         first_call_count = call_count
 
@@ -137,10 +138,11 @@ def test_pv_inverter_power_caching():
         powers2 = v.get_pv_power()
         second_call_count = call_count
 
-        # TTL patched below to keep the expiry window short
+        # Wait well past the refresh window
         time.sleep(0.15)
 
-        # Third call after cache should expire - should trigger new D-Bus calls
+        # Third call - getter is now pure-cache (5Hz poll thread owns refresh),
+        # so it must NOT re-read D-Bus even after time passes.
         powers3 = v.get_pv_power()
         third_call_count = call_count
 
@@ -157,9 +159,9 @@ def test_pv_inverter_power_caching():
         assert second_call_count == 2, (
             f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
         )
-        # Third call: after TTL expiry, should make new calls
-        assert third_call_count == 4, (
-            f"Expected 4 calls total after third invocation (cache expired), got {third_call_count}"
+        # Third call: pure-cache - no additional D-Bus calls even after expiry
+        assert third_call_count == 2, (
+            f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
         )
 
         print("✓ Tasmota PV power caching test passed")

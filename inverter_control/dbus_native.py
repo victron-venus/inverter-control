@@ -180,7 +180,9 @@ class NativeDbusClient:
         # hot path.
         if self.on_reconnect is not None:
             try:
-                threading.Thread(target=self._run_reconnect_hook, daemon=True, name="dbus-reconnect").start()
+                threading.Thread(
+                    target=self._run_reconnect_hook, daemon=True, name="dbus-reconnect"
+                ).start()
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Failed to schedule on_reconnect: %s", e)
 

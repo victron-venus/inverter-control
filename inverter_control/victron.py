@@ -697,9 +697,9 @@ class VictronDBus:
         self._poll_battery_daily_energy()
 
     def _reconcile_groups_if_stale(self):
-        """Refresh MPPT/PV/acload caches in the poll thread when their getter
-        cache TTL (GROUP_CACHE_TTL) has lapsed. Keeps the control loop getters
-        pure-cache: the main thread never performs a synchronous reconcile."""
+        """Refresh MPPT/PV/acload/ESS/battery caches in the poll thread when their
+        getter cache TTL has lapsed. Keeps the control loop getters pure-cache:
+        the main thread never performs a synchronous reconcile."""
         now = time.time()
         if self._mppt_services and now - self._last_mppt_time >= GROUP_CACHE_TTL:
             self._reconcile_mppt_data()
@@ -707,6 +707,12 @@ class VictronDBus:
             self._reconcile_pv_power()
         if self._acload_services and now - self._last_acload_time >= GROUP_CACHE_TTL:
             self._reconcile_acload_power()
+        if self._ess_mode_cache and now - self._ess_mode_cache_time >= 5.0:
+            self._reconcile_ess_mode()
+        if (self._cached_all_batteries or self._last_all_batteries_time == 0) and (
+            now - self._last_all_batteries_time >= 2.0
+        ):
+            self._reconcile_all_batteries()
 
     def _poll_system_data(self):
         """Poll system data using tree query"""
@@ -1463,36 +1469,38 @@ class VictronDBus:
         return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16")
 
     def get_mppt_data(self) -> dict[str, dict[str, float]]:
-        """Get power and current from all MPPT chargers - instant from cache.
+        """Get power and current from all MPPT chargers - pure background-cache read.
 
-        TTL exceeds the worst-case background cadence (see GROUP_CACHE_TTL);
-        a miss refreshes through native-first reads instead of CLI forks."""
-        if time.time() - self._last_mppt_time < GROUP_CACHE_TTL:
+        The 5Hz poll thread refreshes via _reconcile_groups_if_stale every
+        GROUP_CACHE_TTL pass. A main-thread reconcile here would contend with
+        the poll on the same native bus, which was a source of the
+        calculate_setpoint tail spikes. The only synchronous reconcile is a
+        one-shot on startup before the poll thread first populates the map."""
+        if self._last_mppt_time > 0:
             return self._cached_mppt_data
-
         if not self._mppt_services:
             return {}
-
         self._reconcile_mppt_data()
         return self._cached_mppt_data
 
     def get_pv_power(self) -> list:
-        """Get power from PV inverters (Tasmota, ESPHome, etc.) - instant from cache."""
-        if time.time() - self._last_pv_time < GROUP_CACHE_TTL:
+        """Get power from PV inverters (Tasmota, ESPHome, etc.) - pure cache."""
+        if self._last_pv_time > 0:
             return self._cached_pv_powers
-
         if not self._pv_inverter_services:
             return []
-
         self._reconcile_pv_power()
         return self._cached_pv_powers
 
     def get_acload_powers(self) -> dict[str, float]:
-        """Get power from Emporia Vue channels (acload services) - instant from cache."""
-        if time.time() - self._last_acload_time >= GROUP_CACHE_TTL and self._acload_services:
-            self._reconcile_acload_power()
+        """Get power from Emporia Vue channels (acload services) - pure cache.
+
+        Reconcile happens only in the background poll thread; this is a read
+        of the per-service cache so the control loop never blocks on D-Bus."""
         if not self._acload_services:
             return {}
+        if self._last_acload_time == 0:
+            self._reconcile_acload_power()
         # Compose on read: signals update the per-service layer directly.
         return self._compose_acload_powers()
 
@@ -1527,12 +1535,21 @@ class VictronDBus:
         return dict(self._chain_cell_counts)
 
     def get_ess_mode(self) -> dict[str, Any]:
-        """Get current ESS mode"""
-        now = time.time()
-        with self._dbus_lock:
-            if self._ess_mode_cache is not None and now - self._ess_mode_cache_time < 5.0:
-                return dict(self._ess_mode_cache)
+        """Get current ESS mode - pure background-cache read.
 
+        The 5Hz poll thread refreshes via _reconcile_ess_mode every 5s; a
+        main-thread native read here contended with the poll on the same bus,
+        contributing to the update_state tail spikes. The only synchronous
+        read is a one-shot on startup."""
+        with self._dbus_lock:
+            if self._ess_mode_cache is not None and self._ess_mode_cache_time > 0:
+                return dict(self._ess_mode_cache)
+        self._reconcile_ess_mode()
+        with self._dbus_lock:
+            return dict(self._ess_mode_cache)
+
+    def _reconcile_ess_mode(self) -> None:
+        """Refresh the ESS mode cache from settings (poll thread only)."""
         hub4_mode = 0
         bl_state = 0
 
@@ -1573,8 +1590,7 @@ class VictronDBus:
         }
         with self._dbus_lock:
             self._ess_mode_cache = result
-            self._ess_mode_cache_time = now
-        return result
+            self._ess_mode_cache_time = time.time()
 
     def set_ess_mode(self, external: bool) -> bool:
         """Set ESS mode"""
@@ -1663,12 +1679,19 @@ class VictronDBus:
         return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
 
     def get_all_batteries(self) -> list:
-        """Get detailed data for all battery chains including SmartShunt.
-        Cached for 2s, queries services in parallel to avoid 4+ second freezes."""
-        now = time.time()
-        if self._cached_all_batteries and now - self._last_all_batteries_time < 2.0:
-            return self._cached_all_batteries
+        """Get detailed data for all battery chains - pure background-cache read.
 
+        The 5Hz poll thread refreshes via _reconcile_all_batteries every 2s;
+        querying services in parallel on the main thread caused multi-hundred-ms
+        update_state tail spikes. The only synchronous query is a one-shot on
+        startup before the poll thread first populates the cache."""
+        if self._cached_all_batteries:
+            return self._cached_all_batteries
+        self._reconcile_all_batteries()
+        return self._cached_all_batteries
+
+    def _reconcile_all_batteries(self) -> None:
+        """Refresh all-battery-chain detail (poll thread only)."""
         battery_services = [
             (BATTERY_CHAIN_1, "JBD Chain 1"),
             (BATTERY_CHAIN_2, "JBD Chain 2"),
@@ -1710,15 +1733,12 @@ class VictronDBus:
                 "time_to_go_sec": ttg_sec,
             }
 
-        if not battery_services:
-            return []
         with ThreadPoolExecutor(max_workers=len(battery_services)) as pool:
             futures = [pool.submit(_query_battery, svc, name) for svc, name in battery_services]
             batteries = [f.result() for f in futures]
 
         self._cached_all_batteries = batteries
-        self._last_all_batteries_time = now
-        return batteries
+        self._last_all_batteries_time = time.time()
 
     def _read_chain_cell_voltages(self, service: str, offset: int) -> list[tuple[float, int]]:
         """Probe cell voltage paths for a chain, updating the cached cell count."""
