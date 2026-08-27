@@ -60,3 +60,4 @@ CLAUDE.md
 .mcp.json
 inverter-monitoring
 release.txt
+*.backup
