@@ -85,6 +85,9 @@ class NativeDbusClient:
         # own /Dc/0/* items), so handlers must know WHO sent a signal.
         self._sender_service: dict[str, str] = {}
         self._resolving_senders: set[str] = set()
+        # Fire-and-forget task registry (see _track_task): keeps references to
+        # background tasks so GC can't collect them mid-run.
+        self._tasks: set[asyncio.Future] = set()
         # Called after a lost connection is re-established, so the owner can
         # refetch initial values (signals only fire on change).
         self.on_reconnect = None
@@ -122,7 +125,7 @@ class NativeDbusClient:
             # Already on the loop thread. It is running (run_forever), so a
             # synchronous wait is impossible here - schedule and give up rather
             # than submit to our own loop and deadlock.
-            asyncio.ensure_future(async_fn())
+            self._track_task(async_fn())
             return None
         try:
             future = asyncio.run_coroutine_threadsafe(async_fn(), self._loop)
@@ -140,12 +143,20 @@ class NativeDbusClient:
         if self._loop is None:
             self._ensure_loop()
         if self._loop_thread_id == threading.get_ident():
-            asyncio.ensure_future(async_fn())
+            self._track_task(async_fn())
         else:
             try:
                 asyncio.run_coroutine_threadsafe(async_fn(), self._loop)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Native D-Bus background submit failed: %s", e)
+
+    def _track_task(self, coroutine) -> asyncio.Task:
+        """Schedule a fire-and-forget coroutine, keeping a reference so GC
+        can't collect the task before it finishes (see _tasks)."""
+        task = asyncio.ensure_future(coroutine)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
 
     def _connect(self):
         from dbus_fast.aio.message_bus import MessageBus
@@ -166,7 +177,7 @@ class NativeDbusClient:
         # Bus reattachment gives services new unique names; the old map lies.
         self._sender_service.clear()
         # Snapshot: subscribe_signal can add to _subscriptions concurrently.
-        for rule in list(self._subscriptions):
+        for rule in self._subscriptions.copy():
             try:
                 self._send_add_match(rule)
             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -205,7 +216,7 @@ class NativeDbusClient:
         message = Message(
             destination=DBUS_DAEMON,
             path=DBUS_DAEMON_PATH,
-            interface="org.freedesktop.DBus",
+            interface=DBUS_DAEMON,
             member="AddMatch",
             body=[rule],
             signature="s",
@@ -216,7 +227,7 @@ class NativeDbusClient:
 
         if self._loop_thread_id == threading.get_ident():
             # On the loop thread (reconnect path) - cannot wait synchronously.
-            asyncio.ensure_future(self._send_add_match_async(message))
+            self._track_task(self._send_add_match_async(message))
             return
         reply = self._call_on_loop(_call, MATCH_TIMEOUT)
         if reply is None or reply.message_type != MessageType.METHOD_RETURN:
@@ -417,13 +428,13 @@ class NativeDbusClient:
         # Snapshot these shared sets: subscribe_signal/_replay_subscriptions can
         # mutate them from another thread while this async loop iterates, which
         # raised "Set changed size during iteration" at startup (2026-08-27).
-        for svc in list(self._subscription_services):
+        for svc in self._subscription_services.copy():
             try:
                 reply = await self._bus.call(
                     Message(
                         destination=DBUS_DAEMON,
                         path=DBUS_DAEMON_PATH,
-                        interface="org.freedesktop.DBus",
+                        interface=DBUS_DAEMON,
                         member="GetNameOwner",
                         body=[svc],
                         signature="s",
@@ -488,7 +499,7 @@ class NativeDbusClient:
         if sender not in self._resolving_senders:
             self._resolving_senders.add(sender)
             try:
-                asyncio.ensure_future(self._refresh_and_clear(sender))
+                self._track_task(self._refresh_and_clear(sender))
             except RuntimeError:
                 self._resolving_senders.discard(sender)
 

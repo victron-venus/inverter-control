@@ -61,54 +61,59 @@ def start() -> bool:
     return True
 
 
-def publish(snapshot: dict[str, Any]) -> None:
-    """Push a CycleMetrics.snapshot() dict into the gauges (no-op if disabled)."""
+def _set_gauge(name: str, value: Any, *label_values: str) -> None:
+    """Set one gauge; never raise (metrics export must not break the loop)."""
+    if value is None:
+        return
+    try:
+        gauge = _gauges[name]
+        if label_values:
+            gauge.labels(*label_values).set(float(value))
+        else:
+            gauge.set(float(value))
+    except (KeyError, TypeError, ValueError):
+        pass  # Metrics export must never break the control loop
+
+
+def _set_stage_metrics(snapshot: dict[str, Any]) -> None:
+    """Push the per-stage percentile gauges."""
+    for stage, stats in snapshot.get("stage_ms", {}).items():
+        for quantile in ("p50", "p95", "max"):
+            value = stats.get(quantile)
+            if value is None:
+                continue
+            _set_gauge("stage", value, stage, quantile)
+
+
+def _publish(snapshot: dict[str, Any]) -> None:
     if _gauges is None or not snapshot:
         return
 
-    def _set(name: str, value: Any, quantile: str | None = None) -> None:
-        if value is None:
-            return
-        try:
-            gauge = _gauges[name]
-            if quantile is not None:
-                gauge.labels(quantile).set(float(value))
-            else:
-                gauge.set(float(value))
-        except (KeyError, TypeError, ValueError):
-            pass
-
-    def _set_stage_metrics(snapshot, gauges):
-        for stage, stats in snapshot.get("stage_ms", {}).items():
-            for quantile in ("p50", "p95", "max"):
-                value = stats.get(quantile)
-                if value is None:
-                    continue
-                try:
-                    gauges["stage"].labels(stage, quantile).set(float(value))
-                except (KeyError, TypeError, ValueError):
-                    pass  # Metrics export must never break the control loop
-
     cycles = snapshot.get("cycle_ms", {})
-    _set("cycle", cycles.get("p50"), "p50")
-    _set("cycle", cycles.get("p95"), "p95")
-    _set("cycle", cycles.get("max"), "max")
-    _set("missed_deadlines", cycles.get("missed_deadlines"))
+    _set_gauge("cycle", cycles.get("p50"), "p50")
+    _set_gauge("cycle", cycles.get("p95"), "p95")
+    _set_gauge("cycle", cycles.get("max"), "max")
+    _set_gauge("missed_deadlines", cycles.get("missed_deadlines"))
 
     writes = snapshot.get("setvalue_ms", {})
-    _set("write", writes.get("p50"), "p50")
-    _set("write", writes.get("p95"), "p95")
-    _set("write", writes.get("max"), "max")
-    _set("failed_writes", writes.get("failed"))
+    _set_gauge("write", writes.get("p50"), "p50")
+    _set_gauge("write", writes.get("p95"), "p95")
+    _set_gauge("write", writes.get("max"), "max")
+    _set_gauge("failed_writes", writes.get("failed"))
 
     ages = snapshot.get("snapshot_age_ms", {})
-    _set("age", ages.get("p50"), "p50")
-    _set("age", ages.get("max"), "max")
+    _set_gauge("age", ages.get("p50"), "p50")
+    _set_gauge("age", ages.get("max"), "max")
 
-    _set("signals", snapshot.get("signals_healthy"))
-    _set("subprocess", snapshot.get("dbus_subprocess_calls"))
+    _set_gauge("signals", snapshot.get("signals_healthy"))
+    _set_gauge("subprocess", snapshot.get("dbus_subprocess_calls"))
 
-    _set_stage_metrics(snapshot, _gauges)
+    _set_stage_metrics(snapshot)
 
-    _set("cpu", snapshot.get("cpu_percent"))
-    _set("rss", snapshot.get("rss_mb"))
+    _set_gauge("cpu", snapshot.get("cpu_percent"))
+    _set_gauge("rss", snapshot.get("rss_mb"))
+
+
+def publish(snapshot: dict[str, Any]) -> None:
+    """Push a CycleMetrics.snapshot() dict into the gauges (no-op if disabled)."""
+    _publish(snapshot)
