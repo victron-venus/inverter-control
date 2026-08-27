@@ -190,7 +190,7 @@ def test_battery_chain_socs_caching():
         return m
 
     with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
-        # First call - should trigger actual D-Bus calls
+        # First call - cache unpopulated, so triggers actual D-Bus calls
         socs1 = v.get_battery_chain_socs()
         first_call_count = call_count
 
@@ -198,10 +198,11 @@ def test_battery_chain_socs_caching():
         socs2 = v.get_battery_chain_socs()
         second_call_count = call_count
 
-        # Wait past the getter's own 2.0s TTL
+        # Wait well past what was the old 2.0s getter TTL
         time.sleep(2.1)
 
-        # Third call after cache should expire - should trigger new D-Bus calls
+        # Third call - getter is now pure-cache (5Hz poll thread owns refresh),
+        # so it must NOT re-read D-Bus even after time passes.
         socs3 = v.get_battery_chain_socs()
         third_call_count = call_count
 
@@ -218,9 +219,9 @@ def test_battery_chain_socs_caching():
         assert second_call_count == 2, (
             f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
         )
-        # Third call: after TTL expiry, should make new calls
-        assert third_call_count == 4, (
-            f"Expected 4 calls total after third invocation (cache expired), got {third_call_count}"
+        # Third call: pure-cache getter must not re-read, so still 2 calls total
+        assert third_call_count == 2, (
+            f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
         )
 
         print("✓ Battery chain SoC caching test passed")
@@ -235,28 +236,20 @@ def test_inverter_state_caching():
     v = victron.VictronDBus(test_mode=True)
     v._vebus_service = "test.service"
 
+    # The getter is now pure-cache: it reads natively only on the very first
+    # (unpopulated) call. Count native reads to verify it never re-reads.
     call_count = 0
 
-    def side_effect(*args, **kwargs):
+    def native_side_effect(*args, **kwargs):
         nonlocal call_count
         call_count += 1
-        m = MagicMock()
-        m.returncode = 0
-        if args[0] == [
-            "dbus-send",
-            "--system",
-            "--print-reply=literal",
-            "--dest=test.service",
-            "/State",
-            "com.victronenergy.BusItem.GetValue",
-        ]:
-            m.stdout = "variant       int32 9\n"
-        else:
-            m.stdout = ""
-        return m
+        return "9"
 
-    with patch("inverter_control.victron.subprocess.run", side_effect=side_effect):
-        # First call - should trigger actual D-Bus call
+    with patch(
+        "inverter_control.victron.VictronDBus._dbus_get_native_only",
+        side_effect=native_side_effect,
+    ):
+        # First call - cache unpopulated, so triggers a native read
         state1 = v.get_inverter_state()
         first_call_count = call_count
 
@@ -264,10 +257,11 @@ def test_inverter_state_caching():
         state2 = v.get_inverter_state()
         second_call_count = call_count
 
-        # Wait past the getter's own 2.0s TTL
+        # Wait well past what was the old 2.0s getter TTL
         time.sleep(2.1)
 
-        # Third call after cache should expire - should trigger new D-Bus call
+        # Third call - getter is now pure-cache (5Hz poll thread owns refresh),
+        # so it must NOT re-read even after time passes.
         state3 = v.get_inverter_state()
         third_call_count = call_count
 
@@ -276,15 +270,17 @@ def test_inverter_state_caching():
         assert state1 == (9, "Inverting")
 
         # Verify caching behavior
-        # First call: 1 subprocess call
-        assert first_call_count == 1, f"Expected 1 call on first invocation, got {first_call_count}"
-        # Second call: should use cache, so no additional calls
-        assert second_call_count == 1, (
-            f"Expected 1 call total after second invocation (cached), got {second_call_count}"
+        # First call: exactly one native read (populates the cache)
+        assert first_call_count == 1, (
+            f"Expected 1 native read on first invocation, got {first_call_count}"
         )
-        # Third call: after TTL expiry, should make new call
-        assert third_call_count == 2, (
-            f"Expected 2 calls total after third invocation (cache expired), got {third_call_count}"
+        # Second call: cached, no additional reads
+        assert second_call_count == 1, (
+            f"Expected 1 native read total after second invocation, got {second_call_count}"
+        )
+        # Third call: pure-cache getter must not re-read, so still 1 total
+        assert third_call_count == 1, (
+            f"Expected 1 native read total after third invocation, got {third_call_count}"
         )
 
         print("✓ Inverter state caching test passed")

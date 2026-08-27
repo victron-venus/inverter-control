@@ -653,7 +653,6 @@ class VictronDBus:
             if time.time() - self._last_signal_reconcile >= SIGNAL_RECONCILE_INTERVAL:
                 self._poll_system_data()
                 self._poll_shunt_data()
-                self._poll_inverter_state()
                 self._poll_inverter_power()
                 self._reconcile_mppt_data()
                 self._reconcile_pv_power()
@@ -679,6 +678,9 @@ class VictronDBus:
 
         # Poll battery chain SoCs (already fork-free native reads)
         self._poll_battery_chain_socs()
+
+        # Poll inverter state (native-first; keeps the main-thread getter pure-cache)
+        self._poll_inverter_state()
 
         # Poll battery chain cell data (throttled to every 30s)
         self._poll_battery_cell_data_tree()
@@ -922,35 +924,24 @@ class VictronDBus:
         return code, INVERTER_STATES.get(code, f"? ({code})")
 
     def _poll_inverter_state(self):
-        """Poll inverter state (uses _safe_subprocess directly to avoid lock contention)"""
+        """Poll inverter state (native-first read; refreshes the cache each pass)
+
+        Runs every 5Hz poll pass so the main-thread getter never has to do a
+        synchronous D-Bus read (or subprocess) for /State."""
         if not self._vebus_service:
             self._cached_inverter_state = (0, "Unknown")
             self._last_inverter_state_time = time.time()
             return
 
-        output = self._safe_subprocess_tracked(
-            [
-                "dbus-send",
-                "--system",
-                PRINT_REPLY_LITERAL,
-                f"--dest={self._vebus_service}",
-                VEBUS_STATE_PATH,
-                GET_VALUE_METHOD,
-            ],
-            service=self._vebus_service,
-            timeout=0.5,
-        )
-        if output:
+        val = self._dbus_get_native_only(self._vebus_service, VEBUS_STATE_PATH)
+        if val:
             try:
-                result = self._parse_inverter_state_code(output)
+                result = self._parse_inverter_state_code(val)
                 self._cached_inverter_state = result
                 self._consecutive_errors = 0
             except (ValueError, TypeError) as e:
                 logger.debug("Inverter state parse failed: %s", e)
                 self._consecutive_errors += 1
-        else:
-            self._consecutive_errors += 1
-
         self._last_inverter_state_time = time.time()
 
     def _poll_inverter_power(self):
@@ -1401,27 +1392,29 @@ class VictronDBus:
         return data
 
     def get_inverter_state(self) -> tuple[int, str]:
-        """Get inverter state code and description - instant from background cache"""
-        now = time.time()
-        if now - self._last_inverter_state_time < 2.0:  # TTL 2 seconds
+        """Get inverter state code and description - pure background-cache read.
+
+        The 5Hz poll thread refreshes _cached_inverter_state every pass via
+        _poll_inverter_state. A main-thread read here would contend with the
+        poll on the same native bus (a per-2s source of update_state tail
+        spikes); the only synchronous read is a one-shot on startup before the
+        poll thread has populated the cache."""
+        if self._last_inverter_state_time > 0:
             return self._cached_inverter_state
 
         if not self._vebus_service:
-            return 0, "Unknown"
+            self._cached_inverter_state = (0, "Unknown")
+            self._last_inverter_state_time = time.time()
+            return self._cached_inverter_state
 
-        val = self._dbus_get(self._vebus_service, VEBUS_STATE_PATH)
+        val = self._dbus_get_native_only(self._vebus_service, VEBUS_STATE_PATH)
         if val:
             try:
-                result = self._parse_inverter_state_code(val)
-                self._cached_inverter_state = result
-                self._last_inverter_state_time = now
-                return result
-            except (ValueError, TypeError) as e:
-                logger.debug("Inverter state parse failed: %s", e)
-        result = (0, "Unknown")
-        self._cached_inverter_state = result
-        self._last_inverter_state_time = now
-        return result
+                self._cached_inverter_state = self._parse_inverter_state_code(val)
+            except (ValueError, TypeError):
+                pass
+        self._last_inverter_state_time = time.time()
+        return self._cached_inverter_state
 
     def get_battery_soc_local(self, sys_data: dict[str, Any] | None = None) -> float:
         """
@@ -1495,9 +1488,14 @@ class VictronDBus:
         return None
 
     def get_battery_chain_socs(self) -> list:
-        """Get SoC for each battery chain from D-Bus - instant from background cache"""
-        now = time.time()
-        if now - self._last_battery_chain_soc_time < 2.0:  # TTL 2 seconds
+        """Get SoC for each battery chain - pure background-cache read.
+
+        The 5Hz poll thread refreshes _cached_battery_chain_socs every pass
+        (_poll_battery_chain_socs); a main-thread read here is redundant and
+        contended with the poll on the same native bus, which was a per-2s
+        source of the update_state tail spikes. The only synchronous read is a
+        one-shot on startup before the poll thread has populated the cache."""
+        if self._last_battery_chain_soc_time > 0:
             return self._cached_battery_chain_socs
 
         socs = self._query_battery_chain_socs()

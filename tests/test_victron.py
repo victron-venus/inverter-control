@@ -198,7 +198,7 @@ class TestVictronDBus:
 
     def test_get_inverter_state(self):
         """Test getting inverter state"""
-        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+        with patch("inverter_control.victron.VictronDBus._dbus_get_native_only") as mock_get:
             mock_get.return_value = "9"
 
             victron.reset_victron_for_testing()
@@ -211,7 +211,7 @@ class TestVictronDBus:
 
     def test_get_inverter_state_unknown(self):
         """Test getting unknown inverter state"""
-        with patch("inverter_control.victron.VictronDBus._dbus_get") as mock_get:
+        with patch("inverter_control.victron.VictronDBus._dbus_get_native_only") as mock_get:
             mock_get.return_value = "999"
 
             victron.reset_victron_for_testing()
