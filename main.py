@@ -82,7 +82,7 @@ class _BrokenPipeSafeStream:
     def write(self, data: str) -> int:
         try:
             return self._stream.write(data)
-        except (BrokenPipeError, OSError) as e:
+        except OSError as e:
             if isinstance(e, BrokenPipeError) or e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
                 return len(data)
             # Re-raise if it's some other OSError
@@ -216,6 +216,46 @@ def _next_slot(next_deadline: float, interval: float) -> tuple[float, float]:
     return max(0.0, delay), next_deadline + interval
 
 
+def _publish_state(controller, mqtt_bridge) -> None:
+    """Publish current state + latest console line over MQTT."""
+    if not mqtt_bridge or not mqtt_bridge.connected:
+        return
+    mqtt_bridge.publish_state(controller.get_state_for_mqtt())
+    # Mark MQTT telemetry as fresh for hardware watchdog
+    controller._watchdog.mark_mqtt_update()
+    # Publish console line if available
+    if controller.last_console_line:
+        mqtt_bridge.publish_console(controller.last_console_line)
+
+
+def _maybe_run_gc(last_gc_time: float, gc_interval: float) -> float:
+    """Run gc.collect() once the interval has elapsed; return the updated mark."""
+    now = time.time()
+    if now - last_gc_time <= gc_interval:
+        return last_gc_time
+    gc.collect()
+    return now
+
+
+def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread) -> None:
+    """Orderly teardown: heartbeat, filters, watchdog, console, MQTT, HA."""
+    hb_stop.set()
+    hb_thread.join(timeout=HEARTBEAT_INTERVAL + 2.0)
+    if controller.grid_filter:
+        controller.grid_filter.stop()
+    if controller.derived_grid_filter:
+        controller.derived_grid_filter.stop()
+    # Stop hardware watchdog
+    try:
+        controller._watchdog.stop()
+    except Exception:
+        pass  # Best effort - shutdown must proceed even if watchdog stop fails
+    stop_console_server()
+    if mqtt_bridge:
+        mqtt_bridge.disconnect()
+    controller.ha.stop()
+
+
 def _run_main_loop(controller, mqtt_bridge):
     """Run the main control loop until exit or error."""
     gc_interval = 300
@@ -254,19 +294,8 @@ def _run_main_loop(controller, mqtt_bridge):
             if not controller.run_cycle():
                 logger.info("run_cycle returned False - exiting main loop")
                 break
-            if mqtt_bridge and mqtt_bridge.connected:
-                mqtt_bridge.publish_state(controller.get_state_for_mqtt())
-                # Mark MQTT telemetry as fresh for hardware watchdog
-                controller._watchdog.mark_mqtt_update()
-                # Publish console line if available
-                if controller.last_console_line:
-                    mqtt_bridge.publish_console(controller.last_console_line)
-
-            now = time.time()
-            if now - last_gc_time > gc_interval:
-                last_gc_time = now
-                gc.collect()
-
+            _publish_state(controller, mqtt_bridge)
+            last_gc_time = _maybe_run_gc(last_gc_time, gc_interval)
             delay, next_deadline = _next_slot(next_deadline, controller.loop_interval)
             if delay > 0:
                 time.sleep(delay)
@@ -275,21 +304,7 @@ def _run_main_loop(controller, mqtt_bridge):
         print("\nShutting down...")
     finally:
         logger.info("Inverter Control shutting down")
-        hb_stop.set()
-        hb_thread.join(timeout=HEARTBEAT_INTERVAL + 2.0)
-        if controller.grid_filter:
-            controller.grid_filter.stop()
-        if controller.derived_grid_filter:
-            controller.derived_grid_filter.stop()
-        # Stop hardware watchdog
-        try:
-            controller._watchdog.stop()
-        except Exception:
-            pass  # Best effort - shutdown must proceed even if watchdog stop fails
-        stop_console_server()
-        if mqtt_bridge:
-            mqtt_bridge.disconnect()
-        controller.ha.stop()
+        _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread)
 
 
 def _main_inner():
