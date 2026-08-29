@@ -132,7 +132,7 @@ class InverterController:
         self.dry_run = dry_run if dry_run is not None else DRY_RUN
         self.victron = get_victron()
         self.ha = get_ha()
-        self._internal_booleans = {k: False for k in CONTROL_FLAG_KEYS}
+        self._internal_booleans = dict.fromkeys(CONTROL_FLAG_KEYS, False)
 
         # Water comes from dbus-pump D-Bus services (no HA). In test mode the
         # victron client never touches the bus, so skip the reader entirely.
@@ -589,9 +589,9 @@ class InverterController:
 
     def _load_control_flags(self) -> None:
         """Cold-start all flags False. Register Settings (default 0). No HA/Settings restore."""
-        self._internal_booleans = {k: False for k in CONTROL_FLAG_KEYS}
+        self._internal_booleans = dict.fromkeys(CONTROL_FLAG_KEYS, False)
         try:
-            self.victron.ensure_control_flag_settings({k: 0 for k in CONTROL_FLAG_KEYS})
+            self.victron.ensure_control_flag_settings(dict.fromkeys(CONTROL_FLAG_KEYS, 0))
         except Exception:
             logger.exception("Failed to register control flag Settings")
         # Keep Venus UI / N/settings in sync with cold-start all-off.
