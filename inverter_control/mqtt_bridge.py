@@ -159,36 +159,16 @@ class MQTTBridge:
         try:
             topic = msg.topic
 
-            # Handle solar forecast
             if topic == "solar/forecast":
-                if msg.payload:
-                    try:
-                        payload = json.loads(msg.payload.decode())
-                        # Call registered callback for forecast if available
-                        if "forecast" in self._callbacks:
-                            self._callbacks["forecast"](payload)
-                        else:
-                            logger.debug("No forecast callback registered")
-                    except json.JSONDecodeError:
-                        logger.warning(f"Invalid JSON in forecast message: {msg.payload.decode()}")
+                self._handle_forecast(msg.payload)
                 return
 
-            # Handle alert acknowledgments
             if topic == f"{self.prefix}/alert/ack":
                 self._handle_acknowledgment(msg.payload.decode().strip())
                 return
 
-            # Handle other command topics
             cmd = topic.split("/")[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
-
-            payload = {}
-            if msg.payload:
-                try:
-                    payload = json.loads(msg.payload.decode())
-                except json.JSONDecodeError:
-                    payload = {"value": msg.payload.decode()}
-
-            # Call registered callback
+            payload = self._parse_payload(msg.payload)
             if cmd in self._callbacks:
                 self._callbacks[cmd](payload)
             else:
@@ -196,6 +176,31 @@ class MQTTBridge:
 
         except Exception as e:
             logger.exception(f"MQTT message error: {e}")
+
+    @staticmethod
+    def _parse_payload(raw: bytes | bytearray | None) -> dict:
+        """Decode MQTT payload to dict; fall back to {"value": text} on bad JSON."""
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw.decode())
+        except json.JSONDecodeError:
+            return {"value": raw.decode()}
+
+    def _handle_forecast(self, payload: bytes | bytearray | None) -> None:
+        """Dispatch a solar/forecast payload to the registered callback."""
+        if not payload:
+            return
+        try:
+            data = json.loads(payload.decode())
+        except json.JSONDecodeError:
+            logger.warning(f"Invalid JSON in forecast message: {payload.decode()}")
+            return
+        callback = self._callbacks.get("forecast")
+        if callback:
+            callback(data)
+        else:
+            logger.debug("No forecast callback registered")
 
     def register_callback(self, command: str, callback: Callable[[dict], None]):
         """Register callback for command"""

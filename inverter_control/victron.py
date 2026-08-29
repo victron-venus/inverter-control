@@ -29,7 +29,8 @@ logger = logging.getLogger("inverter-control")
 # D-Bus path constants
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
-HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
+_SETTINGS_PREFIX = "/Settings/"
+HUB4_MODE_PATH = f"{_SETTINGS_PREFIX}CGwacs/Hub4Mode"
 TOU_START_SETTING = "/Settings/InverterControl/TouExpensiveStartHour"
 TOU_END_SETTING = "/Settings/InverterControl/TouExpensiveEndHour"
 
@@ -1135,7 +1136,7 @@ class VictronDBus:
             if self._dbus_get(SETTINGS_SERVICE, path) is not None:
                 continue
             group, name = path.rstrip("/").rsplit("/", 1)
-            group = group.removeprefix("/Settings/")
+            group = group.removeprefix(_SETTINGS_PREFIX)
             if self._dbus_add_setting(group, name, default):
                 logger.info("Created TOU setting %s = %d", path, default)
 
@@ -1154,7 +1155,7 @@ class VictronDBus:
         value = 1 if value else 0
         if self._dbus_get(SETTINGS_SERVICE, path) is None:
             group, name = path.rstrip("/").rsplit("/", 1)
-            group = group.removeprefix("/Settings/")
+            group = group.removeprefix(_SETTINGS_PREFIX)
             if self._dbus_add_setting(group, name, value, min_val=0, max_val=1):
                 logger.info("Created control flag setting %s = %d", path, value)
                 return True
@@ -1176,7 +1177,7 @@ class VictronDBus:
                 continue
             default = 1 if defaults.get(key) else 0
             group, name = path.rstrip("/").rsplit("/", 1)
-            group = group.removeprefix("/Settings/")
+            group = group.removeprefix(_SETTINGS_PREFIX)
             if self._dbus_add_setting(group, name, default, min_val=0, max_val=1):
                 logger.info("Created control flag setting %s = %d", path, default)
                 created.append(key)
