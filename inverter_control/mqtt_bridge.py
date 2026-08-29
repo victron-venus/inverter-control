@@ -129,6 +129,8 @@ class MQTTBridge:
         client.subscribe(f"{self.prefix}/cmd/#")
         # Subscribe to alert acknowledgments
         client.subscribe(f"{self.prefix}/alert/ack")
+        # Subscribe to solar forecast
+        client.subscribe("solar/forecast")
         self._publish_portal_id(client)
         # Resend any unacknowledged alerts on (re)connection
         self.resend_unacknowledged_alerts()
@@ -156,6 +158,20 @@ class MQTTBridge:
         """Received message"""
         try:
             topic = msg.topic
+
+            # Handle solar forecast
+            if topic == "solar/forecast":
+                if msg.payload:
+                    try:
+                        payload = json.loads(msg.payload.decode())
+                        # Call registered callback for forecast if available
+                        if "forecast" in self._callbacks:
+                            self._callbacks["forecast"](payload)
+                        else:
+                            logger.debug("No forecast callback registered")
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON in forecast message: {msg.payload.decode()}")
+                return
 
             # Handle alert acknowledgments
             if topic == f"{self.prefix}/alert/ack":

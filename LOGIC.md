@@ -32,7 +32,12 @@ The main control loop runs every ~0.33 seconds and performs these steps:
 
 ### Step 2: Get Control Switches
 
-All switches are read from Home Assistant `input_boolean` entities:
+All switches are in-process flags (`InverterController.get_boolean`).
+On start they are all False — not restored from Settings or Home Assistant.
+After start they change only via MQTT (`inverter/cmd/toggle` from Inverter Desktop
+or HA as another MQTT client). Settings `/Settings/InverterControl/<Flag>` (0/1)
+are registered (default 0) and written when a flag changes so Venus UI stays in
+sync. Published on `inverter/state` as status (`booleans`).
 
 | Switch | Purpose |
 |--------|---------|

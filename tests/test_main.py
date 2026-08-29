@@ -536,18 +536,28 @@ class TestGetHaState(unittest.TestCase):
     """Test InverterController._get_ha_state()"""
 
     def test_returns_ha_data_when_enabled(self):
-        controller, _mock_victron, mock_ha, _ = _make_controller()
-        mock_ha.get_all_booleans.return_value = {"only_charging": True}
-        mock_ha.laundry_outlet_on = True
-        mock_ha.home_recliner_on = False
-        mock_ha.home_garage_on = True
-        mock_ha.connected = True
-        mock_ha.uptime = 3600
-
         with patch(f"{_MOD}.ENABLE_HA", True):
+            controller, _mock_victron, mock_ha, _ = _make_controller()
+            mock_ha.laundry_outlet_on = True
+            mock_ha.home_recliner_on = False
+            mock_ha.home_garage_on = True
+            mock_ha.connected = True
+            mock_ha.uptime = 3600
+
+            # Set the internal booleans
+            controller.set_boolean("only_charging", True)
+
             state = controller._get_ha_state()
 
-        assert state["booleans"] == {"only_charging": True}
+        assert state["booleans"] == {
+            "only_charging": True,
+            "no_feed": False,
+            "house_support": False,
+            "charge_battery": False,
+            "do_not_supply_charger": False,
+            "set_limit_to_ev_charger": False,
+            "minimize_charging": False,
+        }
         assert state["laundry_outlet"] is True
         assert state["home_recliner"] is False
         assert state["home_garage"] is True
@@ -558,7 +568,15 @@ class TestGetHaState(unittest.TestCase):
         with patch(f"{_MOD}.ENABLE_HA", False):
             controller, _, _, _ = _make_controller()
             state = controller._get_ha_state()
-            assert state["booleans"] == {}
+            assert state["booleans"] == {
+                "only_charging": False,
+                "no_feed": False,
+                "house_support": False,
+                "charge_battery": False,
+                "do_not_supply_charger": False,
+                "set_limit_to_ev_charger": False,
+                "minimize_charging": False,
+            }
             assert state["ha_connected"] is False
             assert state["ha_uptime"] == 0
 

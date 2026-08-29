@@ -123,7 +123,7 @@ class TestHomeAssistantClient:
         template = self.client._build_template()
         assert '"sensor1": "{{ states("entity1") }}"' in template
         assert '"sensor2": "{{ states("entity2") }}"' in template
-        assert '"bool1": "{{ states("entity_bool1") }}"' in template
+        assert '"bool1"' not in template  # control flags no longer polled from HA
         assert '"binary1": "{{ states("entity_binary1") }}"' in template
         assert '"washer_power": "{{ states("washer_power") }}"' in template
         assert '"dryer_power": "{{ states("dryer_power") }}"' in template
@@ -222,7 +222,8 @@ class TestHomeAssistantClient:
             "binary1": "off",
         }
         self.client._parse_boolean_sensors(data)
-        assert self.client._booleans["bool1"] is True
+        # Control flags are no longer parsed from the HA template
+        assert self.client._booleans["bool1"] is False
         assert self.client._binary_sensors["binary1"] is False
 
     def test_parse_switches(self):
@@ -255,7 +256,7 @@ class TestHomeAssistantClient:
         # _connected is set by _poll_loop, not _poll_all
         # Check that data was parsed correctly
         assert self.client._sensors["sensor1"] == 150
-        assert self.client._booleans["bool1"] is True
+        assert self.client._booleans["bool1"] is False
         assert self.client._binary_sensors["binary1"] is False
         assert self.client._vue_sensors["vue1"] == 200
 

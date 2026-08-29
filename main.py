@@ -120,6 +120,57 @@ def main():
         raise
 
 
+_TRUE_MQTT = frozenset({"on", "true", "1"})
+_FALSE_MQTT = frozenset({"off", "false", "0"})
+
+
+def _parse_mqtt_bool(value) -> bool | None:
+    """Normalize true/false, on/off, 0/1, True/False. None if unrecognized."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(int(value))
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in _TRUE_MQTT:
+            return True
+        if lowered in _FALSE_MQTT:
+            return False
+    return None
+
+
+def _control_flag_key(entity: str) -> str | None:
+    """Accept input_boolean.<key> or a bare control-flag key."""
+    from inverter_control.victron import CONTROL_FLAG_KEYS
+
+    if not entity:
+        return None
+    key = entity.removeprefix("input_boolean.")
+    if key in CONTROL_FLAG_KEYS:
+        return key
+    return None
+
+
+def _handle_toggle(controller, payload: dict) -> None:
+    """MQTT toggle: control flags stay in-process; everything else goes to HA."""
+    entity = payload.get("entity", "")
+    key = _control_flag_key(entity)
+    if key:
+        if "state" not in payload:
+            controller.set_boolean(key, not controller.get_boolean(key))
+            return
+        parsed = _parse_mqtt_bool(payload.get("state"))
+        if parsed is None:
+            logger.warning(
+                "MQTT toggle ignored: unparseable state %r for %s", payload.get("state"), key
+            )
+            return
+        controller.set_boolean(key, parsed)
+        return
+    if entity:
+        controller.ha.toggle_entity(entity)
+
+
 def _setup_mqtt_bridge(controller):
     """Set up MQTT bridge and register command callbacks. Returns bridge or None."""
     from inverter_control.config import (  # pylint: disable=import-outside-toplevel
@@ -136,7 +187,7 @@ def _setup_mqtt_bridge(controller):
         return None
 
     bridge.connect()
-    bridge.register_callback("toggle", lambda p: controller.ha.toggle_entity(p.get("entity", "")))
+    bridge.register_callback("toggle", lambda p: _handle_toggle(controller, p))
     bridge.register_callback("press", lambda p: controller.ha.press_button(p.get("entity", "")))
 
     def _safe_setpoint(p):

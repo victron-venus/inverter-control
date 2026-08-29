@@ -32,6 +32,28 @@ SETTINGS_SERVICE = "com.victronenergy.settings"
 HUB4_MODE_PATH = "/Settings/CGwacs/Hub4Mode"
 TOU_START_SETTING = "/Settings/InverterControl/TouExpensiveStartHour"
 TOU_END_SETTING = "/Settings/InverterControl/TouExpensiveEndHour"
+
+# Control flags persisted like TOU hours (0/1). Venus mqtt-bridge then exposes
+# N/<portal>/settings/.../Settings/InverterControl/<Name>
+CONTROL_FLAG_KEYS = (
+    "only_charging",
+    "no_feed",
+    "house_support",
+    "charge_battery",
+    "do_not_supply_charger",
+    "set_limit_to_ev_charger",
+    "minimize_charging",
+)
+
+
+def _control_flag_setting_name(key: str) -> str:
+    return "".join(part.capitalize() for part in key.split("_"))
+
+
+CONTROL_FLAG_SETTINGS = {
+    key: f"/Settings/InverterControl/{_control_flag_setting_name(key)}" for key in CONTROL_FLAG_KEYS
+}
+
 SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
@@ -1066,12 +1088,15 @@ class VictronDBus:
         """Read an integer InverterControl setting (None if missing/unreadable)."""
         return self._tou_setting_int(self._dbus_get(SETTINGS_SERVICE, path))
 
-    def _dbus_add_setting(self, group: str, name: str, value: int) -> bool:
+    def _dbus_add_setting(
+        self, group: str, name: str, value: int, min_val: int = -1, max_val: int = 24
+    ) -> bool:
         """Create a localsettings entry via com.victronenergy.Settings.AddSetting.
 
         SetValue on a nonexistent path is rejected - new settings must be
         registered through AddSetting (group, name, default variant:int32,
         type 'i', min/max variant:int32). Returns True on completion code 0.
+        Defaults min/max (-1/24) match the TOU hour range; 0/1 flags pass 0/1.
         """
         with self._dbus_lock:
             result = self._safe_subprocess(
@@ -1087,8 +1112,8 @@ class VictronDBus:
                     f"string:{name}",
                     f"variant:int32:{value}",
                     "string:i",
-                    "variant:int32:-1",
-                    "variant:int32:24",
+                    f"variant:int32:{min_val}",
+                    f"variant:int32:{max_val}",
                 ],
                 timeout=0.5,
             )
@@ -1113,6 +1138,51 @@ class VictronDBus:
             group = group.removeprefix("/Settings/")
             if self._dbus_add_setting(group, name, default):
                 logger.info("Created TOU setting %s = %d", path, default)
+
+    def get_control_flag(self, key: str) -> int | None:
+        """Read a 0/1 InverterControl flag (None if missing/unreadable)."""
+        path = CONTROL_FLAG_SETTINGS.get(key)
+        if not path:
+            return None
+        return self.get_tou_setting(path)
+
+    def set_control_flag(self, key: str, value: int) -> bool:
+        """Write a 0/1 InverterControl flag, creating it if missing."""
+        path = CONTROL_FLAG_SETTINGS.get(key)
+        if not path:
+            return False
+        value = 1 if value else 0
+        if self._dbus_get(SETTINGS_SERVICE, path) is None:
+            group, name = path.rstrip("/").rsplit("/", 1)
+            group = group.removeprefix("/Settings/")
+            if self._dbus_add_setting(group, name, value, min_val=0, max_val=1):
+                logger.info("Created control flag setting %s = %d", path, value)
+                return True
+            logger.warning("Failed to create control flag setting %s", path)
+            return False
+        return self._dbus_set(SETTINGS_SERVICE, path, value, "int32")
+
+    def ensure_control_flag_settings(self, defaults: dict[str, int] | None = None) -> list[str]:
+        """Create missing 0/1 control-flag settings. Returns keys that were created.
+
+        Existing values are never overwritten (same rule as TOU hours). When
+        D-Bus/localsettings is unavailable the AddSetting calls no-op (False)
+        and the process keeps running.
+        """
+        created: list[str] = []
+        defaults = defaults or {}
+        for key, path in CONTROL_FLAG_SETTINGS.items():
+            if self._dbus_get(SETTINGS_SERVICE, path) is not None:
+                continue
+            default = 1 if defaults.get(key) else 0
+            group, name = path.rstrip("/").rsplit("/", 1)
+            group = group.removeprefix("/Settings/")
+            if self._dbus_add_setting(group, name, default, min_val=0, max_val=1):
+                logger.info("Created control flag setting %s = %d", path, default)
+                created.append(key)
+            else:
+                logger.warning("Could not create control flag setting %s", path)
+        return created
 
     def _local_today(self) -> int:
         """Day-of-year in the user's timezone (/Settings/System/TimeZone).
