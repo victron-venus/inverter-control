@@ -103,7 +103,8 @@ class TestMQTTBridge:
         # Should subscribe to command topics and alert acknowledgments
         mock_client.subscribe.assert_any_call("test/cmd/#")
         mock_client.subscribe.assert_any_call("test/alert/ack")
-        assert mock_client.subscribe.call_count == 2
+        mock_client.subscribe.assert_any_call("solar/forecast")
+        assert mock_client.subscribe.call_count == 3
         mock_client.publish.assert_called_once_with("test/portal", "portal123", qos=0, retain=True)
 
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
@@ -169,6 +170,24 @@ class TestMQTTBridge:
         bridge._on_message(mock_client, None, mock_msg)
 
         callback.assert_called_once_with({"value": "raw_value"})
+
+    @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
+    @patch("inverter_control.mqtt_bridge.mqtt")
+    def test_on_message_solar_forecast(self, mock_mqtt):
+        """WIP solar/forecast subscription dispatches the forecast callback."""
+        mock_client = MagicMock()
+        mock_mqtt.Client.return_value = mock_client
+
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
+        callback = MagicMock()
+        bridge.register_callback("forecast", callback)
+
+        mock_msg = MagicMock()
+        mock_msg.topic = "solar/forecast"
+        mock_msg.payload = b'{"today_kwh": 12.5}'
+
+        bridge._on_message(mock_client, None, mock_msg)
+        callback.assert_called_once_with({"today_kwh": 12.5})
 
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
     @patch("inverter_control.mqtt_bridge.mqtt")

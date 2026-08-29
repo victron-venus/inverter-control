@@ -294,11 +294,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                 )
 
     def _parse_boolean_sensors(self, data: dict):
-        """Parse boolean and binary sensor states"""
-        for key in HA_BOOLEANS:
-            if key in data:
-                self._booleans[key] = data[key] == "on"
-
+        """Parse binary sensor states (control flags are no longer polled from HA)."""
         for key in HA_BINARY_SENSORS:
             if key in data:
                 self._binary_sensors[key] = data[key] == "on"
@@ -341,9 +337,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         for key, entity in HA_SENSORS.items():
             if key not in skip_sensors:
                 items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
-
-        for key, entity in HA_BOOLEANS.items():
-            items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
 
         for key, entity in HA_BINARY_SENSORS.items():
             if key not in skip_binary:
