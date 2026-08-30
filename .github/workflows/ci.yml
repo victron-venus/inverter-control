@@ -17,6 +17,82 @@ jobs:
       python-version: '3.11'
       run-type-check: false
 
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    # The victron-venus/integration-tests repo holds shared mock D-Bus / battery / PV
+    # Docker services that simulate Venus OS hardware over MQTT.  It also contains
+    # pytest suites that verify the mock publishers are behaving correctly.
+    #
+    # Required check name (displayed in PR status): "Integration Tests"
+    #
+    # NOTE: the integration-tests/.github/workflows/integration.yml has
+    # workflow_call but assumes a sibling layout (../inverter-dashboard).  We
+    # implement the pattern locally instead of calling it via workflow_call.
+    #
+    # The mock services (mock-dbus, mock-battery, mock-pv) do NOT require
+    # inverter-control to be running; the test suite verifies the mock publishers
+    # and the MQTT broker.  A follow-up will add a Dockerfile.test for
+    # inverter-control so the full end-to-end path can be exercised.
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout this repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout integration-tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: victron-venus/integration-tests
+          path: integration-tests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@5bc4a28d0eed8531e4dfa2da3ab1a5e2e6c5df3a # v3.10.0
+
+      - name: Build test-runner image
+        run: |
+          docker build \
+            -f integration-tests/Dockerfile.test-runner \
+            -t test-runner \
+            .
+
+      - name: Start mock services
+        run: |
+          docker compose \
+            -f integration-tests/docker-compose.yml \
+            -f integration-tests/docker-compose.test.yml \
+            up -d --build mqtt-broker mock-dbus mock-battery mock-pv
+          sleep 5
+
+      - name: Run integration tests
+        run: |
+          docker compose \
+            -f integration-tests/docker-compose.yml \
+            -f integration-tests/docker-compose.test.yml \
+            run --rm \
+            -e MQTT_HOST=mqtt-broker \
+            -e MQTT_PORT=1883 \
+            test-runner python -m pytest tests/integration/ -v --tb=short
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-test-report
+          path: report.html
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose \
+            -f integration-tests/docker-compose.yml \
+            -f integration-tests/docker-compose.test.yml \
+            down -v
+
   validate-secrets-template:
     name: Validate Secrets Template
     runs-on: ubuntu-latest
