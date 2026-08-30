@@ -66,17 +66,17 @@ def test_mppt_data_caching():
 
         # Verify caching behavior
         # First call: 2 services * 2 calls each (power + current) = 4 subprocess calls
-        assert first_call_count == 4, (
-            f"Expected 4 calls on first invocation, got {first_call_count}"
-        )
+        assert (
+            first_call_count == 4
+        ), f"Expected 4 calls on first invocation, got {first_call_count}"
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 4, (
-            f"Expected 4 calls total after second invocation (cached), got {second_call_count}"
-        )
+        assert (
+            second_call_count == 4
+        ), f"Expected 4 calls total after second invocation (cached), got {second_call_count}"
         # Third call: pure-cache - no additional D-Bus calls even after expiry
-        assert third_call_count == 4, (
-            f"Expected 4 calls total after third invocation (pure cache), got {third_call_count}"
-        )
+        assert (
+            third_call_count == 4
+        ), f"Expected 4 calls total after third invocation (pure cache), got {third_call_count}"
 
         print("✓ MPPT data caching test passed")
 
@@ -152,17 +152,17 @@ def test_pv_inverter_power_caching():
 
         # Verify caching behavior
         # First call: 2 services * 1 call each = 2 subprocess calls
-        assert first_call_count == 2, (
-            f"Expected 2 calls on first invocation, got {first_call_count}"
-        )
+        assert (
+            first_call_count == 2
+        ), f"Expected 2 calls on first invocation, got {first_call_count}"
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 2, (
-            f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
-        )
+        assert (
+            second_call_count == 2
+        ), f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
         # Third call: pure-cache - no additional D-Bus calls even after expiry
-        assert third_call_count == 2, (
-            f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
-        )
+        assert (
+            third_call_count == 2
+        ), f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
 
         print("✓ Tasmota PV power caching test passed")
 
@@ -214,17 +214,17 @@ def test_battery_chain_socs_caching():
 
         # Verify caching behavior
         # First call: 2 services * 1 call each = 2 subprocess calls
-        assert first_call_count == 2, (
-            f"Expected 2 calls on first invocation, got {first_call_count}"
-        )
+        assert (
+            first_call_count == 2
+        ), f"Expected 2 calls on first invocation, got {first_call_count}"
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 2, (
-            f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
-        )
+        assert (
+            second_call_count == 2
+        ), f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
         # Third call: pure-cache getter must not re-read, so still 2 calls total
-        assert third_call_count == 2, (
-            f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
-        )
+        assert (
+            third_call_count == 2
+        ), f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
 
         print("✓ Battery chain SoC caching test passed")
 
@@ -273,17 +273,17 @@ def test_inverter_state_caching():
 
         # Verify caching behavior
         # First call: exactly one native read (populates the cache)
-        assert first_call_count == 1, (
-            f"Expected 1 native read on first invocation, got {first_call_count}"
-        )
+        assert (
+            first_call_count == 1
+        ), f"Expected 1 native read on first invocation, got {first_call_count}"
         # Second call: cached, no additional reads
-        assert second_call_count == 1, (
-            f"Expected 1 native read total after second invocation, got {second_call_count}"
-        )
+        assert (
+            second_call_count == 1
+        ), f"Expected 1 native read total after second invocation, got {second_call_count}"
         # Third call: pure-cache getter must not re-read, so still 1 total
-        assert third_call_count == 1, (
-            f"Expected 1 native read total after third invocation, got {third_call_count}"
-        )
+        assert (
+            third_call_count == 1
+        ), f"Expected 1 native read total after third invocation, got {third_call_count}"
 
         print("✓ Inverter state caching test passed")
 
