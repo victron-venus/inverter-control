@@ -217,11 +217,13 @@ LOOP_INTERVAL = 0.33  # 3 times per second
 
 ## Optional Features
 
-Features can be enabled/disabled in `config.py`. They auto-disable if `HA_TOKEN` is not configured:
+Features can be enabled/disabled in `config.py`. HA-backed features
+auto-disable if `HA_TOKEN` is not configured; EV and water are
+D-Bus based and stay enabled:
 
 ```python
-ENABLE_EV = True  # EV charging monitoring (car SoC, charger power)
-ENABLE_WATER = True  # Water level, pump and valve control
+ENABLE_EV = True  # EV charging monitoring (car SoC, charger power) — D-Bus, no HA
+ENABLE_WATER = True  # Water level, pump and valve control — D-Bus (dbus-pump), no HA
 ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
 ENABLE_HA = True  # Home Assistant integration entirely
 ```

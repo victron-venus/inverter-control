@@ -89,7 +89,7 @@ Home Assistant integration:
 
 All configuration constants:
 - Power limits, deadbands
-- Feature flags (ENABLE_EV, ENABLE_WATER — water is D-Bus-based via dbus-pump)
+- Feature flags (ENABLE_EV, ENABLE_WATER — both D-Bus-based: evcharger.py reads com.victronenergy.evcharger / com.victronenergy.ev; water reads com.victronenergy.tank / com.victronenergy.pump)
 - Water D-Bus instances (WATER_TANK_INSTANCE / WATER_PUMP_INSTANCE / WATER_VALVE_INSTANCE)
 - HA entity mappings (non-water features)
 - UI settings
