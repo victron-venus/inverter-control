@@ -31,11 +31,8 @@ def fresh_victron():
     """
     from tests.stubs import FakeVictronDBus
 
-    fake = FakeVictronDBus()
-    try:
+    with FakeVictronDBus() as fake:
         yield fake
-    finally:
-        fake.close()
 
 
 @pytest.fixture

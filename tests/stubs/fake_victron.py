@@ -41,7 +41,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from inverter_control import victron
+from inverter_control import victron  # noqa: E402
 
 
 class FakeVictronDBus:
@@ -71,16 +71,28 @@ class FakeVictronDBus:
         "ac_out": 0.0,
         # MPPT chargers: list of (service, {"power": W, "current": A, "yield_kwh": kWh})
         "mppt": [
-            ("com.victronenergy.solarcharger.ttyUSB0", {"power": 500.0, "current": 4.0, "yield": 3.5}),
-            ("com.victronenergy.solarcharger.ttyUSB1", {"power": 543.0, "current": 4.5, "yield": 4.0}),
+            (
+                "com.victronenergy.solarcharger.ttyUSB0",
+                {"power": 500.0, "current": 4.0, "yield": 3.5},
+            ),
+            (
+                "com.victronenergy.solarcharger.ttyUSB1",
+                {"power": 543.0, "current": 4.5, "yield": 4.0},
+            ),
         ],
         # Tasmota PV inverters: list of (service, {"power": W, "voltage": V, "current": A})
         "pv_inverter": [
-            ("com.victronenergy.pvinverter.tasmota_1", {"power": 350.0, "voltage": 230.0, "current": 1.5}),
+            (
+                "com.victronenergy.pvinverter.tasmota_1",
+                {"power": 350.0, "voltage": 230.0, "current": 1.5},
+            ),
         ],
         # Battery chain: list of (service, {"soc": pct, "voltage": V, "current": A, "power": W})
         "battery": [
-            ("com.victronenergy.battery.ttyUSB0", {"soc": 85.0, "voltage": 53.2, "current": 10.0, "power": 532.0}),
+            (
+                "com.victronenergy.battery.ttyUSB0",
+                {"soc": 85.0, "voltage": 53.2, "current": 10.0, "power": 532.0},
+            ),
         ],
         # Emporia Vue / acload: list of (service, {"name": str, "power": W})
         "acload": [
@@ -207,23 +219,25 @@ class FakeVictronDBus:
         self._v._cached_inverter_state = (int(cv["vebus_state"]), str(cv["vebus_state_label"]))
         self._v._cached_inverter_state_time = 1e18  # never stale
         # MPPT
-        self._v._cached_mppt_data = {
-            svc: dict(reading) for svc, reading in cv["mppt"]
-        }
+        self._v._cached_mppt_data = {svc: dict(reading) for svc, reading in cv["mppt"]}
         self._v._last_mppt_time = 1e18
         # PV inverters (Tasmota)
         self._v._cached_pv_powers = [dict(reading) for _, reading in cv["pv_inverter"]]
         self._v._last_pv_time = 1e18
         # Battery chains
         self._v._cached_battery_chain_socs = [
-            {"service": svc, "soc": r["soc"], "voltage": r["voltage"], "current": r["current"], "power": r["power"]}
+            {
+                "service": svc,
+                "soc": r["soc"],
+                "voltage": r["voltage"],
+                "current": r["current"],
+                "power": r["power"],
+            }
             for svc, r in cv["battery"]
         ]
         self._v._last_battery_chain_soc_time = 1e18
         # acload
-        self._v._acload_powers_by_service = {
-            svc: r["power"] for svc, r in cv["acload"]
-        }
+        self._v._acload_powers_by_service = {svc: r["power"] for svc, r in cv["acload"]}
         self._v._acload_names = {svc: r["name"] for svc, r in cv["acload"]}
         self._v._last_acload_time = 1e18
         # Daily energy
