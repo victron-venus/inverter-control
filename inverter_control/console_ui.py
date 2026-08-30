@@ -12,9 +12,8 @@ except ImportError:
     from backports.zoneinfo import ZoneInfo
 
 from .config import (
-    ENABLE_DISHWASHER,
+    ENABLE_ACLOADS,
     ENABLE_EV,
-    ENABLE_HA_LOADS,
     ENABLE_WATER,
     TIMEZONE,
 )
@@ -113,7 +112,7 @@ class ConsoleUI:
         return solar_str
 
     def _fmt_loads_section(self) -> str:
-        if not ENABLE_HA_LOADS:
+        if not ENABLE_ACLOADS:
             return ""
         loads_parts = []
         for name, key in [
@@ -153,13 +152,6 @@ class ConsoleUI:
                 parts.append(f"{C.YELLOW}{int(car_soc)}%{C.RESET}")
         elif ENABLE_EV:
             parts.append(f"{C.YELLOW}--%{C.RESET}")
-
-        # Appliances
-        parts.append(fmt_appliance_time(self.ha.get_sensor("washer_time", "")))
-        parts.append(fmt_appliance_time(self.ha.get_sensor("dryer_time", "")))
-
-        if ENABLE_DISHWASHER and self.ha.get_binary_sensor("dishwasher_running"):
-            parts.append(fmt_appliance_time(self.ha.get_sensor("dishwasher_duration", "")))
 
         return "".join(parts)
 

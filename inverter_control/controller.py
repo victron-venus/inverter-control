@@ -38,7 +38,7 @@ from inverter_control.config import (
     ENABLE_EV,
     ENABLE_GRID_SMOOTHING_WITH_HOME,
     ENABLE_HA,
-    ENABLE_HA_LOADS,
+    ENABLE_ACLOADS,
     ENABLE_WATER,
     ESS_EXTERNAL_WARN_MINUTES,
     GRID_FILTER_TAU,
@@ -587,9 +587,6 @@ class InverterController:
     def _get_ha_state(self) -> dict[str, Any]:
         return {
             "booleans": self._internal_booleans,
-            "laundry_outlet": self.ha.laundry_outlet_on if ENABLE_HA else False,
-            "home_recliner": self.ha.home_recliner_on if ENABLE_HA else False,
-            "home_garage": self.ha.home_garage_on if ENABLE_HA else False,
             "ha_connected": self.ha.connected if ENABLE_HA else False,
             "ha_uptime": self.ha.uptime if ENABLE_HA else 0,
         }
@@ -649,12 +646,9 @@ class InverterController:
         return {
             "produced_today": produced_today,
             "produced_yesterday": produced_yesterday,
-            "produced_dollars": 0.0,  # No HA - compute locally if needed
             "grid_kwh": 0.0,  # No D-Bus equivalent yet
             "battery_in": battery_in,
             "battery_out": battery_out,
-            "battery_in_yesterday": battery_in_y,
-            "battery_out_yesterday": battery_out_y,
             "pv_total_daily": produced_today,
             "pv_inverter_daily": pv_inverter_daily,
             "mppt_daily": mppt_daily,
@@ -678,7 +672,7 @@ class InverterController:
         ev_state = self._get_ev_state()
         water_state = self._get_water_state()
         ha_state = self._get_ha_state()
-        loads = self.victron.get_acload_powers() if ENABLE_HA_LOADS else {}
+        loads = self.victron.get_acload_powers() if ENABLE_ACLOADS else {}
         ess_mode = self.victron.get_ess_mode()
         daily_stats = self._get_daily_stats()
 

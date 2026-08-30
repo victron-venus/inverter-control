@@ -27,11 +27,7 @@ class TestConsoleUI:
             "home_total": 500,
             "compensation_voltage": 48,
             "car_soc": 80,
-            "washer_time": "01:30:00",
-            "dryer_time": "00:45:00",
-            "dishwasher_duration": "02:15:00",
             "produced_today": 20,
-            "produced_dollars": 5.50,
             "grid_kwh_today": 10,
             "battery_in_today": 15,
             "battery_out_today": 12,
@@ -63,10 +59,6 @@ class TestConsoleUI:
             "car_soc": 80,
             "ev_charging_kw": 1.5,
         }
-
-        # Setup mock returns
-        self.mock_ha.home_recliner_on = False
-        self.mock_ha.home_garage_on = False
 
         self.mock_victron.get_inverter_state.return_value = (9, "Inverting")
 
@@ -154,35 +146,27 @@ class TestConsoleUI:
         assert "0" in solar_section2
 
     def test_format_loads_section(self):
-        """Test loads section formatting"""
-        # Enable HA loads
-        with patch("inverter_control.console_ui.ENABLE_HA_LOADS", True):
+        """Test loads section formatting (D-Bus acload, gated by ENABLE_ACLOADS)"""
+        with patch("inverter_control.console_ui.ENABLE_ACLOADS", True):
             loads_section = self.ui._fmt_loads_section()
-            # Check some expected loads appear with values > 19
-            # garage=50, fridge=100 should appear
+            # garage=50, fridge=100 should appear with short suffixes
             assert "50g" in loads_section
             assert "100f" in loads_section
 
-        # Disable HA loads
-        with patch("inverter_control.console_ui.ENABLE_HA_LOADS", False):
+        with patch("inverter_control.console_ui.ENABLE_ACLOADS", False):
             loads_section = self.ui._fmt_loads_section()
             assert loads_section == ""
 
     def test_format_extra_info(self):
-        """Test extra info formatting"""
-        # Note: ENABLE_WASHER and ENABLE_DRYER are not imported in console_ui.py
-        # so washer_time and dryer_time are always included
+        """Test extra info formatting (water from dbus-pump, car SoC from dbus-ev)."""
         with patch("inverter_control.console_ui.ENABLE_WATER", True):
             with patch("inverter_control.console_ui.ENABLE_EV", True):
-                with patch("inverter_control.console_ui.ENABLE_DISHWASHER", False):
-                    extra = self.ui._fmt_extra_info()
-                    # Water level (%, from dbus-pump)
-                    assert "66%" in extra
-                    # Car SOC
-                    assert "80%" in extra
+                extra = self.ui._fmt_extra_info()
+                assert "66%" in extra  # water level
+                assert "80%" in extra  # car SoC
 
     def test_fmt_appliance_time(self):
-        """Test appliance time formatting"""
+        """Test appliance time formatting (kept for parity; no longer rendered)."""
         assert console_ui.fmt_appliance_time("01:30:00") == "1:30"
         assert console_ui.fmt_appliance_time("00:45:00") == "45"
         assert console_ui.fmt_appliance_time("0") == ""

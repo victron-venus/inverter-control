@@ -16,24 +16,16 @@ import urllib3
 # Pre-compiled regex for _parse_numeric (called ~10x per 1.5s poll cycle)
 _NUMERIC_RE = re.compile(r"^([+-]?\d+\.?\d*)")
 
-from .config import (
-    ENABLE_DISHWASHER,
-    ENABLE_DRYER,
-    ENABLE_WASHER,
-    HA_BINARY_SENSORS,
-    HA_BOOLEANS,
-    HA_DRYER_POWER,
+from .config import (  # noqa: E402
     HA_DUMP_LOADS,
-    HA_LAUNDRY_OUTLET,
     HA_POLL_INTERVAL,
     HA_SENSORS,
     HA_TIMEOUT,
     HA_TOKEN,
     HA_URL,
-    HA_WASHER_POWER,
     VUE_SENSORS,
 )
-from .dbus import VUESensorDBusClient
+from .dbus import VUESensorDBusClient  # noqa: E402
 
 logger = logging.getLogger("inverter-control")
 
@@ -93,13 +85,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         # Cached values (persist until HA reconnects)
         self._sensors: dict[str, Any] = dict.fromkeys(HA_SENSORS, 0)
         self._vue_sensors: dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
-        self._booleans: dict[str, bool] = dict.fromkeys(HA_BOOLEANS, False)
-        self._binary_sensors: dict[str, bool] = dict.fromkeys(HA_BINARY_SENSORS, False)
-        self._washer_power: bool = False
-        self._dryer_power: bool = False
-        self._laundry_outlet: bool = False
-        self._home_recliner: bool = False
-        self._home_garage: bool = False
 
         # D-Bus client for VUE sensors (if available)
         self._vue_dbus_client = VUESensorDBusClient(VUE_SENSORS)
@@ -248,8 +233,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
         with self._lock:
             self._parse_sensors(data)
-            self._parse_boolean_sensors(data)
-            self._parse_switches(data)
 
         # Update VUE sensors from dbus services. Deliberately OUTSIDE the lock:
         # update_all runs dbus-send subprocesses (up to 2s each) which would
@@ -294,70 +277,16 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                 )
 
     def _parse_boolean_sensors(self, data: dict):
-        """Parse binary sensor states (control flags are no longer polled from HA)."""
-        for key in HA_BINARY_SENSORS:
-            if key in data:
-                self._binary_sensors[key] = data[key] == "on"
-
-    def _parse_switches(self, data: dict):
-        """Parse switch states into attributes"""
-        switch_map = {
-            "washer_power": "_washer_power",
-            "dryer_power": "_dryer_power",
-            "laundry_outlet": "_laundry_outlet",
-            "home_recliner": "_home_recliner",
-            "home_garage": "_home_garage",
-        }
-
-        for key, attr in switch_map.items():
-            if key in data:
-                setattr(self, attr, data[key] == "on")
+        """Placeholder for parity with the historical parser. No binary
+        sensors are polled anymore (was dishwasher_running)."""
+        return
 
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
-        skip_sensors = {
-            k
-            for enabled, k in [
-                (ENABLE_DISHWASHER, "dishwasher_duration"),
-                (ENABLE_WASHER, "washer_time"),
-                (ENABLE_DRYER, "dryer_time"),
-            ]
-            if not enabled
-        }
-        skip_binary = {
-            k
-            for enabled, k in [
-                (ENABLE_DISHWASHER, "dishwasher_running"),
-            ]
-            if not enabled
-        }
-
-        items = []
-
-        for key, entity in HA_SENSORS.items():
-            if key not in skip_sensors:
-                items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
-
-        for key, entity in HA_BINARY_SENSORS.items():
-            if key not in skip_binary:
-                items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
-
-        conditional_switches = [
-            (ENABLE_WASHER and HA_WASHER_POWER, HA_WASHER_POWER, "washer_power"),
-            (ENABLE_DRYER and HA_DRYER_POWER, HA_DRYER_POWER, "dryer_power"),
-            (
-                (ENABLE_WASHER or ENABLE_DRYER) and HA_LAUNDRY_OUTLET,
-                HA_LAUNDRY_OUTLET,
-                "laundry_outlet",
-            ),
+        items = [
+            f'  "{key}": "{{{{ states("{entity}") }}}}"'
+            for key, entity in HA_SENSORS.items()
         ]
-        for condition, entity, key in conditional_switches:
-            if condition:
-                items.append(f'  "{key}": "{{{{ states("{entity}") }}}}"')
-
-        items.append('  "home_recliner": "{{ states(\'switch.recliner_recliner\') }}"')
-        items.append('  "home_garage": "{{ states(\'switch.garage_opener_l\') }}"')
-
         return "{\n" + ",\n".join(items) + "\n}"
 
     # === Public API ===
@@ -396,39 +325,13 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             return dict(self._vue_sensors)
 
     def get_boolean(self, key: str) -> bool:
-        """Get cached boolean value"""
-        with self._lock:
-            return self._booleans.get(key, False)
+        """Get cached boolean value. Control flags are not stored here; the
+        controller owns them. Returns False for any key."""
+        return False
 
     def get_binary_sensor(self, key: str) -> bool:
-        """Get cached binary sensor value"""
-        with self._lock:
-            return self._binary_sensors.get(key, False)
-
-    @property
-    def washer_power_on(self) -> bool:
-        with self._lock:
-            return self._washer_power
-
-    @property
-    def dryer_power_on(self) -> bool:
-        with self._lock:
-            return self._dryer_power
-
-    @property
-    def laundry_outlet_on(self) -> bool:
-        with self._lock:
-            return self._laundry_outlet
-
-    @property
-    def home_recliner_on(self) -> bool:
-        with self._lock:
-            return self._home_recliner
-
-    @property
-    def home_garage_on(self) -> bool:
-        with self._lock:
-            return self._home_garage
+        """Get cached binary sensor value. No binary sensors are polled; always False."""
+        return False
 
     def get_all_sensors(self) -> dict[str, Any]:
         """Get copy of all sensor values"""
@@ -436,9 +339,8 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             return dict(self._sensors)
 
     def get_all_booleans(self) -> dict[str, bool]:
-        """Get copy of all boolean values"""
-        with self._lock:
-            return dict(self._booleans)
+        """Get copy of all boolean values (control flags live in the controller, not here)."""
+        return {}
 
     # === Control Methods ===
 

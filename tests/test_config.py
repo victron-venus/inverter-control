@@ -36,7 +36,6 @@ class TestConfigValidation:
         assert isinstance(config.PORTAL_ID, str)
         assert isinstance(config.HA_SENSORS, dict)
         assert isinstance(config.VUE_SENSORS, dict)
-        assert isinstance(config.HA_BOOLEANS, dict)
         assert isinstance(config.HA_DUMP_LOADS, (list, tuple))
 
     def test_ranges(self):
@@ -104,20 +103,8 @@ class TestMQTTConfig:
         assert isinstance(config.MQTT_SLIM_EXCLUDE_KEYS, frozenset)
 
     def test_slim_exclude_keys_content(self):
-        """Test MQTT_SLIM_EXCLUDE_KEYS has expected keys (water always relayed)"""
-        expected_keys = {
-            "laundry_outlet",
-            "home_recliner",
-            "home_garage",
-            "dishwasher_running",
-            "dishwasher_duration",
-            "washer_time",
-            "dryer_time",
-            "washer_power",
-            "dryer_power",
-        }
-        assert config.MQTT_SLIM_EXCLUDE_KEYS == expected_keys
-        assert "water_valve" not in config.MQTT_SLIM_EXCLUDE_KEYS
+        """Test MQTT_SLIM_EXCLUDE_KEYS is empty (HA appliance/switch sensors removed)."""
+        assert config.MQTT_SLIM_EXCLUDE_KEYS == frozenset()
         assert "pump_switch" not in config.MQTT_SLIM_EXCLUDE_KEYS
 
 

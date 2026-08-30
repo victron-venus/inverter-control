@@ -35,7 +35,7 @@ def _make_controller(**overrides):
         patch(f"{_MOD}.ENABLE_EV", True),
         patch(f"{_MOD}.ENABLE_WATER", True),
         patch(f"{_MOD}.ENABLE_HA", True),
-        patch(f"{_MOD}.ENABLE_HA_LOADS", False),
+        patch(f"{_MOD}.ENABLE_ACLOADS", False),
     ):
         mock_victron = MagicMock()
         mock_ha = MagicMock()
@@ -244,9 +244,6 @@ class TestUpdateState(unittest.TestCase):
         mock_ha.get_boolean.return_value = False
         mock_ha.connected = False
         mock_ha.uptime = 0
-        mock_ha.laundry_outlet_on = False
-        mock_ha.home_recliner_on = False
-        mock_ha.home_garage_on = False
 
         controller._cached_mppt_data = {"mppt0": {"w": 500.0, "a": 10.0}}
         controller._cached_pv_powers = [300.0]
@@ -561,9 +558,6 @@ class TestGetHaState(unittest.TestCase):
     def test_returns_ha_data_when_enabled(self):
         with patch(f"{_MOD}.ENABLE_HA", True):
             controller, _mock_victron, mock_ha, _ = _make_controller()
-            mock_ha.laundry_outlet_on = True
-            mock_ha.home_recliner_on = False
-            mock_ha.home_garage_on = True
             mock_ha.connected = True
             mock_ha.uptime = 3600
 
@@ -581,9 +575,11 @@ class TestGetHaState(unittest.TestCase):
             "set_limit_to_ev_charger": False,
             "minimize_charging": False,
         }
-        assert state["laundry_outlet"] is True
-        assert state["home_recliner"] is False
-        assert state["home_garage"] is True
+        # laundry_outlet, home_recliner, home_garage removed — HA no longer
+        # polled for these; relay/switch control lives in the controller.
+        assert "laundry_outlet" not in state
+        assert "home_recliner" not in state
+        assert "home_garage" not in state
         assert state["ha_connected"] is True
         assert state["ha_uptime"] == 3600
 
