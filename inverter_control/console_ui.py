@@ -26,10 +26,11 @@ from .config import (
 class ConsoleUI:
     """Handles terminal output formatting"""
 
-    def __init__(self, ha_client, victron_interface, water_reader=None):
+    def __init__(self, ha_client, victron_interface, water_reader=None, evcharger_reader=None):
         self.ha = ha_client
         self.victron = victron_interface
         self.water = water_reader  # WaterSystemReader or None (test mode)
+        self.evcharger = evcharger_reader  # EvChargerReader or None (test mode)
 
     def format_line(  # pylint: disable=too-many-arguments
         self,
@@ -143,10 +144,15 @@ class ConsoleUI:
                 color = C.RED if wstate["water_valve"] else C.YELLOW
                 parts.append(f"{color}{int(level)}%{C.RESET}")
 
-        # Car
-        if ENABLE_EV:
-            car_soc = int(self.ha.get_sensor("car_soc", 0))
-            parts.append(f"{C.YELLOW}{car_soc}%{C.RESET}")
+        # Car (D-Bus evcharger reader; not HA)
+        if ENABLE_EV and self.evcharger is not None:
+            car_soc = self.evcharger.read().get("car_soc")
+            if car_soc is None:
+                parts.append(f"{C.YELLOW}--%{C.RESET}")
+            else:
+                parts.append(f"{C.YELLOW}{int(car_soc)}%{C.RESET}")
+        elif ENABLE_EV:
+            parts.append(f"{C.YELLOW}--%{C.RESET}")
 
         # Appliances
         parts.append(fmt_appliance_time(self.ha.get_sensor("washer_time", "")))

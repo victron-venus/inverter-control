@@ -58,6 +58,15 @@ WATER_PUMP_INSTANCE = int(_import_local_config("WATER_PUMP_INSTANCE", 1))
 WATER_VALVE_INSTANCE = int(_import_local_config("WATER_VALVE_INSTANCE", 2))
 
 # =============================================================================
+# EV CHARGER / VEHICLE (dbus-evcharger + dbus-ev D-Bus services on the GX)
+# =============================================================================
+# dbus-evcharger exposes com.victronenergy.evcharger.<N> (wallbox).
+# dbus-ev exposes com.victronenergy.ev.<suffix> (vehicle, has /Soc /VIN).
+# Both are autodetected via D-Bus; these are fallback defaults only.
+EV_INSTANCE = int(_import_local_config("EV_INSTANCE", 22))
+EVCHARGER_INSTANCE = int(_import_local_config("EVCHARGER_INSTANCE", 40))
+
+# =============================================================================
 # OPTIONAL FEATURES
 # =============================================================================
 # Set to False to disable features manually, or leave True for auto-detection.
@@ -68,7 +77,7 @@ WATER_VALVE_INSTANCE = int(_import_local_config("WATER_VALVE_INSTANCE", 2))
 #   - Web UI hides the corresponding cards
 #   - No HA API calls are made for disabled features
 
-ENABLE_EV = True  # EV charging monitoring (car SoC, VUE charger power)
+ENABLE_EV = True  # EV charging monitoring (car SoC, wallbox power) via D-Bus
 ENABLE_WATER = True  # Water level, pump and valve (via dbus-pump D-Bus)
 ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
 ENABLE_DISHWASHER = True  # Dishwasher duration monitoring
@@ -79,11 +88,11 @@ ENABLE_HA = True  # Home Assistant integration entirely
 # Auto-disable all HA features if no valid token configured
 if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_HA = False
-    ENABLE_EV = False
     ENABLE_HA_LOADS = False
     ENABLE_DISHWASHER = False
     ENABLE_WASHER = False
     ENABLE_DRYER = False
+    # EV is D-Bus based and does NOT require Home Assistant
     print("INFO: Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
 
 # =============================================================================
@@ -598,9 +607,10 @@ UI_CONFIG: dict = {
         "valve_instance": WATER_VALVE_INSTANCE,
     },
     "ev": {
-        "charging_sensor": "ev_charging_power",
-        "power_sensor": "ev_charger",
-        "soc_sensor": "car_soc",
+        "instance": EV_INSTANCE,
+        "evcharger_instance": EVCHARGER_INSTANCE,
+        "soc_path": "/Soc",
+        "power_path": "/Ac/Power",
     },
 }
 

@@ -28,7 +28,7 @@ The main control loop runs every ~0.33 seconds and performs these steps:
 | `inv_power` | D-Bus | Current inverter AC output (W) |
 | `mppt_total` | D-Bus | Solar from MPPT controllers (W) |
 | `pv_inverter_total` | D-Bus | Solar from Tasmota microinverters (W) |
-| `ev_power` | Home Assistant | EV charger consumption (W) |
+| `ev_power` | D-Bus (dbus-evcharger / dbus-ev) | EV charger consumption (W) |
 
 ### Step 2: Get Control Switches
 

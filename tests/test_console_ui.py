@@ -56,13 +56,23 @@ class TestConsoleUI:
             "pump_switch": False,
         }
 
+        # EV comes from dbus-evcharger / dbus-ev D-Bus reader (mocked)
+        self.mock_evcharger = MagicMock()
+        self.mock_evcharger.read.return_value = {
+            "ev_power": 1500.0,
+            "car_soc": 80,
+            "ev_charging_kw": 1.5,
+        }
+
         # Setup mock returns
         self.mock_ha.home_recliner_on = False
         self.mock_ha.home_garage_on = False
 
         self.mock_victron.get_inverter_state.return_value = (9, "Inverting")
 
-        self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron, self.mock_water)
+        self.ui = console_ui.ConsoleUI(
+            self.mock_ha, self.mock_victron, self.mock_water, self.mock_evcharger
+        )
 
     def test_format_line_basic(self):
         """Test basic line formatting"""
@@ -190,8 +200,10 @@ class TestConsoleUIEdgeCases:
         self.mock_ha.get_boolean.return_value = False
         self.mock_ha.get_binary_sensor.return_value = False
         self.mock_victron.get_inverter_state.return_value = (0, "Off")
+        self.mock_evcharger = MagicMock()
+        self.mock_evcharger.read.return_value = {"car_soc": None}
 
-        self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron)
+        self.ui = console_ui.ConsoleUI(self.mock_ha, self.mock_victron, None, self.mock_evcharger)
 
     def test_format_line_missing_keys(self):
         """Test format_line handles missing keys gracefully"""

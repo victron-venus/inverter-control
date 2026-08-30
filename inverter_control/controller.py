@@ -60,6 +60,7 @@ from inverter_control.config import (
 from inverter_control.console_server import broadcast_line
 from inverter_control.console_ui import ConsoleUI
 from inverter_control.dvcc import create_dvcc_from_config
+from inverter_control.evcharger import EvChargerReader
 from inverter_control.grid_filter import GridFilter
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
@@ -140,6 +141,12 @@ class InverterController:
         if not getattr(self.victron, "_test_mode", False):
             self.water = WaterSystemReader(self.victron.dbus_get)
 
+        # EV charger / vehicle from D-Bus (dbus-evcharger + dbus-ev). Same
+        # test-mode guard as water; no HA dependency.
+        self.evcharger: EvChargerReader | None = None
+        if not getattr(self.victron, "_test_mode", False):
+            self.evcharger = EvChargerReader(self.victron.dbus_get)
+
         # Load UI configuration
         from inverter_control.config import (
             get_ui_config,  # pylint: disable=import-outside-toplevel
@@ -155,7 +162,7 @@ class InverterController:
             # per-cycle EMA must be identity to avoid double smoothing.
             config_dict["EMA_ALPHA"] = 1.0
         self.calculator = SetpointCalculator(config_dict)
-        self.console = ConsoleUI(self.ha, self.victron, self.water)
+        self.console = ConsoleUI(self.ha, self.victron, self.water, self.evcharger)
 
         # Background grid EMA filter (owns filtered_gt; started with the main
         # loop). Not started here so unit tests stay single-threaded.
@@ -494,7 +501,7 @@ class InverterController:
             mppt_total=mppt_total,
             pv_inverter_total=pv_inverter_total,
             pv_total=mppt_total + pv_inverter_total,
-            ev_power=self.ha.get_vue_sensor("ev_charger", 0),
+            ev_power=(self.evcharger.read()["ev_power"] or 0) if self.evcharger else 0,
             garage_power=self.ha.get_vue_sensor("garage", 0),
             home_total=home_total,
             only_charging=self.get_boolean("only_charging"),
@@ -559,10 +566,14 @@ class InverterController:
     def _get_ev_state(self) -> dict[str, Any]:
         if not ENABLE_EV:
             return {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
+        if self.evcharger is None:
+            # Test mode / no D-Bus: report no data rather than fake zeros
+            return {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
+        data = self.evcharger.read()
         return {
-            "ev_power": self.ha.get_vue_sensor("ev_charger", 0),
-            "car_soc": self.ha.get_sensor("car_soc", 0),
-            "ev_charging_kw": self.ha.get_sensor("ev_charging_power", 0),
+            "ev_power": data.get("ev_power") or 0,
+            "car_soc": data.get("car_soc") or 0,
+            "ev_charging_kw": data.get("ev_charging_kw") or 0,
         }
 
     def _get_water_state(self) -> dict[str, Any]:

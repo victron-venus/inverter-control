@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **EV charger / vehicle data from D-Bus** (no Home Assistant):
+  - New `inverter_control/evcharger.py` module — `EvChargerReader` mirrors
+    the `water.py` pattern (TTL cache, missing service → `None`, singleton
+    `get_evcharger()` / `reset_evcharger_for_testing()`)
+  - Autodetects services by prefix:
+    - `com.victronenergy.evcharger.<N>` → wallbox (dbus-evcharger)
+    - `com.victronenergy.ev.<suffix>` → vehicle (dbus-ev)
+  - Vehicle is distinguished by `/Mgmt/Connection` starting with
+    `evcharger:` AND presence of `/Soc` and/or `/VIN`. If the
+    `evcharger.<N>` service also advertises `/Soc` it is reclassified as
+    the vehicle, never treated as a second wallbox
+  - New config: `EV_INSTANCE` (default 22), `EVCHARGER_INSTANCE` (default 40)
+  - `ENABLE_EV` no longer auto-disables on missing `HA_TOKEN` (EV is
+    D-Bus based, like water)
+  - `local_config.example.py`: removed `car_soc`, `ev_charging_power`,
+    `ev_charger` from `HA_SENSORS`; added `EV_INSTANCE` /
+    `EVCHARGER_INSTANCE` overrides
+  - UI_CONFIG `ev` section: keys renamed to D-Bus paths
+    (`soc_path=/Soc`, `power_path=/Ac/Power`) plus instance numbers
+  - Console UI now reads car SoC from the D-Bus reader; falls back to
+    `--%` when the service is absent
+  - Tests: `tests/test_evcharger.py` (11 cases) plus updated
+    `tests/test_main.py` and `tests/test_console_ui.py`
+
+### Changed
+- `InverterController._get_ev_state()` reads from `EvChargerReader` instead
+  of `HomeAssistantClient`. Missing service → `None`, not `0` (matches
+  water pattern)
+- `InverterController.calculate_setpoint()` uses
+  `self.evcharger.read()["ev_power"]` instead of
+  `self.ha.get_vue_sensor("ev_charger", 0)`
+- `ConsoleUI.__init__` now takes an `evcharger_reader` parameter
+
+
 ## [1.22.0] - 2026-08-25
 
 ### Changed

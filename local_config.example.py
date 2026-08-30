@@ -43,8 +43,7 @@ TOU_EXPENSIVE_END_HOUR = 24  # midnight
 
 HA_SENSORS = {
     "net_usage": "sensor.your_net_usage",
-    "car_soc": "sensor.your_car_soc",
-    "ev_charging_power": "sensor.your_ev_charging_power",
+    # Note: car_soc, ev_charging_power, ev_charger moved to D-Bus (see EV_INSTANCE below)
     "water_level": "sensor.your_water_level",
     "laundry_power": "sensor.your_laundry_power",
     "washer_time": "sensor.your_washer_time",
@@ -92,6 +91,16 @@ HA_DUMP_LOADS = [
 WATER_TANK_INSTANCE = 21
 WATER_PUMP_INSTANCE = 1
 WATER_VALVE_INSTANCE = 2
+
+# =============================================================================
+# EV CHARGER / VEHICLE (dbus-evcharger + dbus-ev D-Bus services on the GX)
+# =============================================================================
+# dbus-evcharger exposes com.victronenergy.evcharger.<N> (wallbox).
+# dbus-ev exposes com.victronenergy.ev.<suffix> (vehicle, has /Soc /VIN).
+# Both services are autodetected; set overrides only if auto-detection fails.
+# Default: EV_INSTANCE = 22 (vehicle), EVCHARGER_INSTANCE = 40 (wallbox)
+EV_INSTANCE = 22
+EVCHARGER_INSTANCE = 40
 
 # Laundry appliance controls
 HA_WASHER_POWER = "switch.washer_power"

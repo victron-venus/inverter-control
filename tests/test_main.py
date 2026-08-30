@@ -24,6 +24,7 @@ def _make_controller(**overrides):
         patch(f"{_MOD}.get_ha") as mock_get_ha,
         patch(f"{_MOD}.ConsoleUI") as mock_console_cls,
         patch(f"{_MOD}.SetpointCalculator") as mock_calc_cls,
+        patch(f"{_MOD}.EvChargerReader") as mock_evcharger_cls,
         patch("inverter_control.config.get_ui_config", return_value={}),
         patch(f"{_MOD}.DRY_RUN", False),
         patch(f"{_MOD}.LOOP_INTERVAL", 0.33),
@@ -40,11 +41,18 @@ def _make_controller(**overrides):
         mock_ha = MagicMock()
         mock_console = MagicMock()
         mock_calc = MagicMock()
+        mock_evcharger = MagicMock()
+        mock_evcharger.read.return_value = {
+            "ev_power": 0.0,
+            "car_soc": 0,
+            "ev_charging_kw": 0.0,
+        }
 
         mock_get_victron.return_value = mock_victron
         mock_get_ha.return_value = mock_ha
         mock_console_cls.return_value = mock_console
         mock_calc_cls.return_value = mock_calc
+        mock_evcharger_cls.return_value = mock_evcharger
 
         mock_victron.get_cell_counts.return_value = {}
         mock_calc.power_limit_min = -2300
@@ -57,6 +65,7 @@ def _make_controller(**overrides):
         controller.ha = mock_ha
         controller.console = mock_console
         controller.calculator = mock_calc
+        controller.evcharger = mock_evcharger
         return controller, mock_victron, mock_ha, mock_calc
 
 
@@ -123,6 +132,11 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_victron.get_inverter_power.return_value = -800
         mock_ha.get_vue_sensor.return_value = 100
         mock_ha.get_boolean.return_value = False
+        controller.evcharger.read.return_value = {
+            "ev_power": 100.0,
+            "car_soc": 50,
+            "ev_charging_kw": 0.1,
+        }
         mock_calc.calculate.return_value = MagicMock(setpoint=-400, flags="", filtered_gt=50.0)
 
         sys_data = {
@@ -476,15 +490,16 @@ class TestGetDailyStats(unittest.TestCase):
 
 
 class TestGetEvState(unittest.TestCase):
-    """Test InverterController._get_ev_state()"""
+    """Test InverterController._get_ev_state() (dbus-evcharger / dbus-ev D-Bus reader)"""
 
     def test_returns_ev_data_when_enabled(self):
-        controller, _mock_victron, mock_ha, _ = _make_controller()
-        mock_ha.get_vue_sensor.return_value = 1500
-        mock_ha.get_sensor.side_effect = lambda k, d=0: {
+        controller, _mock_victron, _mock_ha, _ = _make_controller()
+        controller.evcharger = MagicMock()
+        controller.evcharger.read.return_value = {
+            "ev_power": 1500.0,
             "car_soc": 85,
-            "ev_charging_power": 7.2,
-        }.get(k, d)
+            "ev_charging_kw": 7.2,
+        }
 
         with patch(f"{_MOD}.ENABLE_EV", True):
             state = controller._get_ev_state()
@@ -496,6 +511,14 @@ class TestGetEvState(unittest.TestCase):
     def test_returns_zeros_when_disabled(self):
         with patch(f"{_MOD}.ENABLE_EV", False):
             controller, _, _, _ = _make_controller()
+            state = controller._get_ev_state()
+            assert state == {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
+
+    def test_returns_zeros_when_no_reader(self):
+        """No D-Bus reader (test mode): ev_power=0, no fake values."""
+        with patch(f"{_MOD}.ENABLE_EV", True):
+            controller, _, _, _ = _make_controller()
+            controller.evcharger = None
             state = controller._get_ev_state()
             assert state == {"ev_power": 0, "car_soc": 0, "ev_charging_kw": 0}
 
