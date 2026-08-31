@@ -16,7 +16,7 @@ import urllib3
 # Pre-compiled regex for _parse_numeric (called ~10x per 1.5s poll cycle)
 _NUMERIC_RE = re.compile(r"^([+-]?\d+\.?\d*)")
 
-from .config import (  # noqa: E402
+from .config import (
     HA_DUMP_LOADS,
     HA_POLL_INTERVAL,
     HA_SENSORS,
@@ -25,7 +25,7 @@ from .config import (  # noqa: E402
     HA_URL,
     VUE_SENSORS,
 )
-from .dbus import VUESensorDBusClient  # noqa: E402
+from .dbus import VUESensorDBusClient
 
 logger = logging.getLogger("inverter-control")
 
@@ -279,7 +279,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
     def _parse_boolean_sensors(self):
         """Placeholder for parity with the historical parser. No binary
         sensors are polled anymore (was dishwasher_running)."""
-        pass
 
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""

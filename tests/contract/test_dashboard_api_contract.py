@@ -25,7 +25,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from inverter_control.webhook_server import WebhookHandler, WebhookServer  # noqa: E402
+from inverter_control.webhook_server import WebhookHandler, WebhookServer
 
 # ---------------------------------------------------------------------------
 # helpers
