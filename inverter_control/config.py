@@ -38,6 +38,7 @@ def _import_local_config(name: str, default=""):
     except (ImportError, AttributeError):
         return default
 
+
 # =============================================================================
 # WATER SYSTEM (dbus-pump D-Bus services on the GX - no Home Assistant)
 # =============================================================================

@@ -283,10 +283,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
-        items = [
-            f'  "{key}": "{{{{ states("{entity}") }}}}"'
-            for key, entity in HA_SENSORS.items()
-        ]
+        items = [f'  "{key}": "{{{{ states("{entity}") }}}}"' for key, entity in HA_SENSORS.items()]
         return "{\n" + ",\n".join(items) + "\n}"
 
     # === Public API ===
