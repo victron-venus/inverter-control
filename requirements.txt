@@ -2,7 +2,7 @@
 requests>=2.34.2
 
 # MsgPack for efficient binary serialization
-msgpack>=1.2.1
+msgpack>=1.2.2
 
 # D-Bus (persistent dbus_fast connection for Get/Set; preinstalled on Venus OS)
 dbus-fast>=2.21.1
