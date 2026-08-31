@@ -27,18 +27,8 @@ class TestHomeAssistantClient:
                 "inverter_control.homeassistant.HA_SENSORS",
                 {"sensor1": "entity1", "sensor2": "entity2"},
             ),
-            patch("inverter_control.homeassistant.HA_BOOLEANS", {"bool1": "entity_bool1"}),
-            patch(
-                "inverter_control.homeassistant.HA_BINARY_SENSORS", {"binary1": "entity_binary1"}
-            ),
             patch("inverter_control.homeassistant.HA_DUMP_LOADS", ["load1", "load2"]),
             patch("inverter_control.homeassistant.VUE_SENSORS", {"vue1": "entity_vue1"}),
-            patch("inverter_control.homeassistant.ENABLE_DISHWASHER", True),
-            patch("inverter_control.homeassistant.ENABLE_WASHER", True),
-            patch("inverter_control.homeassistant.ENABLE_DRYER", True),
-            patch("inverter_control.homeassistant.HA_WASHER_POWER", "washer_power"),
-            patch("inverter_control.homeassistant.HA_DRYER_POWER", "dryer_power"),
-            patch("inverter_control.homeassistant.HA_LAUNDRY_OUTLET", "laundry_outlet"),
         ]
         for p in self.patches:
             p.start()
@@ -123,33 +113,27 @@ class TestHomeAssistantClient:
         template = self.client._build_template()
         assert '"sensor1": "{{ states("entity1") }}"' in template
         assert '"sensor2": "{{ states("entity2") }}"' in template
-        assert '"bool1"' not in template  # control flags no longer polled from HA
-        assert '"binary1": "{{ states("entity_binary1") }}"' in template
-        assert '"washer_power": "{{ states("washer_power") }}"' in template
-        assert '"dryer_power": "{{ states("dryer_power") }}"' in template
-        assert '"laundry_outlet": "{{ states("laundry_outlet") }}"' in template
-        assert '"home_recliner": "{{ states(\'switch.recliner_recliner\') }}"' in template
-        assert '"home_garage": "{{ states(\'switch.garage_opener_l\') }}"' in template
+        # Control flags, binary sensors, switches, and appliance timers are no
+        # longer polled from Home Assistant.
+        assert "bool1" not in template
+        assert "binary1" not in template
+        assert "washer_power" not in template
+        assert "dryer_power" not in template
+        assert "laundry_outlet" not in template
+        assert "home_recliner" not in template
+        assert "home_garage" not in template
 
-    def test_build_template_disabled_features(self):
-        """Test template building with disabled features"""
-        with patch("inverter_control.homeassistant.ENABLE_DISHWASHER", False):
-            with patch("inverter_control.homeassistant.ENABLE_WASHER", False):
-                with patch("inverter_control.homeassistant.ENABLE_DRYER", False):
-                    client = homeassistant.HomeAssistantClient()
-                    template = client._build_template()
-                    # Should not include disabled sensors
-                    assert "dishwasher_duration" not in template
-                    assert "dishwasher_running" not in template
-                    assert "washer_time" not in template
-                    assert "dryer_time" not in template
-                    # Water never appears - read from dbus-pump D-Bus, not HA
-                    assert "water_level" not in template
-                    assert "water_valve" not in template
-                    assert "pump_switch" not in template
-                    assert "washer_power" not in template
-                    assert "dryer_power" not in template
-                    assert "laundry_outlet" not in template
+    def test_build_template_minimal(self):
+        """Test template reflects HA_SENSORS only."""
+        client = homeassistant.HomeAssistantClient()
+        template = client._build_template()
+        assert "sensor1" in template
+        assert "sensor2" in template
+        assert "binary1" not in template
+        assert "dishwasher_running" not in template
+        assert "dishwasher_duration" not in template
+        assert "washer_time" not in template
+        assert "dryer_time" not in template
 
     @patch("inverter_control.homeassistant.requests.Session.post")
     def test_fetch_template_data_success(self, mock_post):
@@ -216,31 +200,15 @@ class TestHomeAssistantClient:
         assert self.client._sensors["sensor2"] == 0  # default for unavailable
 
     def test_parse_boolean_sensors(self):
-        """Test boolean sensor parsing"""
+        """Test boolean sensor parsing is now a no-op"""
         data = {
             "bool1": "on",
             "binary1": "off",
         }
-        self.client._parse_boolean_sensors(data)
-        # Control flags are no longer parsed from the HA template
-        assert self.client._booleans["bool1"] is False
-        assert self.client._binary_sensors["binary1"] is False
-
-    def test_parse_switches(self):
-        """Test switch parsing"""
-        data = {
-            "washer_power": "on",
-            "dryer_power": "off",
-            "laundry_outlet": "on",
-            "home_recliner": "on",
-            "home_garage": "off",
-        }
-        self.client._parse_switches(data)
-        assert self.client._washer_power is True
-        assert self.client._dryer_power is False
-        assert self.client._laundry_outlet is True
-        assert self.client._home_recliner is True
-        assert self.client._home_garage is False
+        # No-op: must not raise, must not populate any cached state.
+        self.client._parse_boolean_sensors()
+        assert self.client.get_boolean() is False
+        assert self.client.get_binary_sensor() is False
 
     @patch("inverter_control.homeassistant.HomeAssistantClient._fetch_template_data")
     def test_poll_all_success(self, mock_fetch):
@@ -253,11 +221,11 @@ class TestHomeAssistantClient:
         with patch.object(self.client._vue_dbus_client, "update_all") as mock_vue:
             mock_vue.side_effect = lambda vue_dict: vue_dict.update({"vue1": 200})
             self.client._poll_all()
-        # _connected is set by _poll_loop, not _poll_all
         # Check that data was parsed correctly
         assert self.client._sensors["sensor1"] == 150
-        assert self.client._booleans["bool1"] is False
-        assert self.client._binary_sensors["binary1"] is False
+        # Control flags and binary sensors are no longer parsed from HA.
+        assert self.client.get_boolean() is False
+        assert self.client.get_binary_sensor() is False
         assert self.client._vue_sensors["vue1"] == 200
 
     @patch("inverter_control.homeassistant.HomeAssistantClient._fetch_template_data")
@@ -272,7 +240,7 @@ class TestHomeAssistantClient:
         except requests.exceptions.ConnectionError:
             pass
         # _poll_all doesn't set _connected=False - that happens in _poll_loop
-        assert self.client._consecutive_failures == 0  # not incremented by _poll_all
+        assert self.client._consecutive_failures == 0
 
     def test_get_sensor(self):
         """Test getting sensor value"""
@@ -286,15 +254,12 @@ class TestHomeAssistantClient:
         assert self.client.get_vue_sensor("vue_sensor") == 100
 
     def test_get_boolean(self):
-        """Test getting boolean value"""
-        self.client._booleans["test_bool"] = True
-        assert self.client.get_boolean("test_bool") is True
-        assert self.client.get_boolean("missing") is False
+        """Test getting boolean value (always False; control flags live in controller)."""
+        assert self.client.get_boolean() is False
 
     def test_get_binary_sensor(self):
-        """Test getting binary sensor value"""
-        self.client._binary_sensors["test_binary"] = True
-        assert self.client.get_binary_sensor("test_binary") is True
+        """Test getting binary sensor value (always False; not polled anymore)."""
+        assert self.client.get_binary_sensor() is False
 
     def test_control_dump_loads(self):
         """Test control dump loads"""
@@ -423,41 +388,6 @@ class TestHomeAssistantClient:
         result = self.client.get_all_vue_sensors()
         assert result == {"vue1": 100, "vue2": 200}
 
-    def test_washer_power_on_property(self):
-        """Test washer_power_on property"""
-        self.client._washer_power = True
-        assert self.client.washer_power_on is True
-        self.client._washer_power = False
-        assert self.client.washer_power_on is False
-
-    def test_dryer_power_on_property(self):
-        """Test dryer_power_on property"""
-        self.client._dryer_power = True
-        assert self.client.dryer_power_on is True
-        self.client._dryer_power = False
-        assert self.client.dryer_power_on is False
-
-    def test_laundry_outlet_on_property(self):
-        """Test laundry_outlet_on property"""
-        self.client._laundry_outlet = True
-        assert self.client.laundry_outlet_on is True
-        self.client._laundry_outlet = False
-        assert self.client.laundry_outlet_on is False
-
-    def test_home_recliner_on_property(self):
-        """Test home_recliner_on property"""
-        self.client._home_recliner = True
-        assert self.client.home_recliner_on is True
-        self.client._home_recliner = False
-        assert self.client.home_recliner_on is False
-
-    def test_home_garage_on_property(self):
-        """Test home_garage_on property"""
-        self.client._home_garage = True
-        assert self.client.home_garage_on is True
-        self.client._home_garage = False
-        assert self.client.home_garage_on is False
-
     def test_last_update_property(self):
         """Test last_update property"""
         assert self.client.last_update == 0
@@ -499,10 +429,9 @@ class TestHomeAssistantClient:
         assert result == {"s1": 100, "s2": 200}
 
     def test_get_all_booleans(self):
-        """Test get_all_booleans"""
-        self.client._booleans = {"b1": True, "b2": False}
+        """Test get_all_booleans (empty; control flags are in-process)."""
         result = self.client.get_all_booleans()
-        assert result == {"b1": True, "b2": False}
+        assert result == {}
 
     def test_poll_all_success_path(self):
         """Test _poll_all success path"""

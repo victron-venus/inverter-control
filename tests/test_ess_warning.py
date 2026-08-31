@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-_MOD = "inverter_control.controller"
-
 from test_main import _make_controller  # reuse the mocked-controller factory (pytest path)
+
+_MOD = "inverter_control.controller"
 
 
 def _set_ess(controller, external: bool) -> None:

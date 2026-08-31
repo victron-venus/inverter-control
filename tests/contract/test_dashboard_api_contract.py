@@ -25,7 +25,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from inverter_control.webhook_server import WebhookHandler, WebhookServer  # noqa: E402
+from inverter_control.webhook_server import WebhookHandler, WebhookServer
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -83,9 +83,9 @@ class TestHealthContract:
             port = server._server.server_address[1]
             status, body = _get(port, "/health")
             assert status == 200
-            assert body == {
-                "status": "ok"
-            }, f"dashboards/Grafana probe this body literally; got {body!r}"
+            assert body == {"status": "ok"}, (
+                f"dashboards/Grafana probe this body literally; got {body!r}"
+            )
         finally:
             server.stop()
 
@@ -122,9 +122,9 @@ class TestPreChargeContract:
                 },
             )
             assert status == 200
-            assert (
-                body["status"] == "pre-charge triggered"
-            ), f"integration-tests asserts this exact string; got {body!r}"
+            assert body["status"] == "pre-charge triggered", (
+                f"integration-tests asserts this exact string; got {body!r}"
+            )
             cb.assert_called_once()
         finally:
             server.stop()

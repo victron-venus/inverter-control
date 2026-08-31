@@ -13,8 +13,6 @@ import subprocess
 # =============================================================================
 try:
     from local_config import (  # pylint: disable=unused-import
-        HA_BINARY_SENSORS,
-        HA_BOOLEANS,
         HA_DUMP_LOADS,
         HA_SENSORS,
         HA_TOKEN,
@@ -28,9 +26,7 @@ except ImportError:
     HA_TOKEN = "your_token_here"
     HA_SENSORS = {}
     VUE_SENSORS = {}
-    HA_BOOLEANS = {}
     HA_DUMP_LOADS = []
-    HA_BINARY_SENSORS = {}
 
 
 def _import_local_config(name: str, default=""):
@@ -42,11 +38,6 @@ def _import_local_config(name: str, default=""):
     except (ImportError, AttributeError):
         return default
 
-
-# Optional laundry controls (may not exist in older local_config.py)
-HA_WASHER_POWER = _import_local_config("HA_WASHER_POWER")
-HA_DRYER_POWER = _import_local_config("HA_DRYER_POWER")
-HA_LAUNDRY_OUTLET = _import_local_config("HA_LAUNDRY_OUTLET")
 
 # =============================================================================
 # WATER SYSTEM (dbus-pump D-Bus services on the GX - no Home Assistant)
@@ -79,20 +70,14 @@ EVCHARGER_INSTANCE = int(_import_local_config("EVCHARGER_INSTANCE", 40))
 
 ENABLE_EV = True  # EV charging monitoring (car SoC, wallbox power) via D-Bus
 ENABLE_WATER = True  # Water level, pump and valve (via dbus-pump D-Bus)
-ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
-ENABLE_DISHWASHER = True  # Dishwasher duration monitoring
-ENABLE_WASHER = True  # Washer remaining time monitoring
-ENABLE_DRYER = True  # Dryer remaining time monitoring
-ENABLE_HA = True  # Home Assistant integration entirely
+ENABLE_ACLOADS = True  # AC load monitoring via D-Bus acload services
+ENABLE_HA = True  # Home Assistant integration (net_usage sensor, dump load control)
 
 # Auto-disable all HA features if no valid token configured
 if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_HA = False
-    ENABLE_HA_LOADS = False
-    ENABLE_DISHWASHER = False
-    ENABLE_WASHER = False
-    ENABLE_DRYER = False
-    # EV is D-Bus based and does NOT require Home Assistant
+    ENABLE_ACLOADS = False
+    # EV and WATER are D-Bus based and do NOT require Home Assistant
     print("INFO: Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
 
 # =============================================================================
@@ -119,19 +104,7 @@ ALERT_STORAGE_PATH = _import_local_config(
 # always relayed so remote consumers see it without HA.
 MQTT_SLIM_STATE = True
 
-MQTT_SLIM_EXCLUDE_KEYS = frozenset(
-    {
-        "laundry_outlet",
-        "home_recliner",
-        "home_garage",
-        "dishwasher_running",
-        "dishwasher_duration",
-        "washer_time",
-        "dryer_time",
-        "washer_power",
-        "dryer_power",
-    }
-)
+MQTT_SLIM_EXCLUDE_KEYS = frozenset()
 
 # =============================================================================
 # WEBHOOK SERVER (for solar forecast pre-charge triggers)
@@ -302,9 +275,8 @@ INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
 # HOME ASSISTANT
 # =============================================================================
 
-# HA_URL, HA_TOKEN, HA_SENSORS, VUE_SENSORS, HA_BOOLEANS,
-# HA_DUMP_LOADS, HA_BINARY_SENSORS
-# are all imported from local_config.py
+# HA_URL, HA_TOKEN, HA_SENSORS, VUE_SENSORS,
+# HA_DUMP_LOADS are all imported from local_config.py
 
 HA_TIMEOUT = 2.0  # seconds
 
@@ -461,7 +433,6 @@ def _validate_config():
         # PORTAL_ID not checked: lazily resolved via __getattr__, always str
         _check_type("HA_SENSORS", HA_SENSORS, dict),
         _check_type("VUE_SENSORS", VUE_SENSORS, dict),
-        _check_type("HA_BOOLEANS", HA_BOOLEANS, dict),
         _check_type("HA_DUMP_LOADS", HA_DUMP_LOADS, (list, tuple)),
         _check_type("LOOP_INTERVAL", LOOP_INTERVAL, (int, float)),
         _check_type("POWER_LIMIT_MAX", POWER_LIMIT_MAX, (int, float)),
@@ -517,59 +488,6 @@ _validate_config()
 # =============================================================================
 
 UI_CONFIG: dict = {
-    "header_toggles": [
-        {
-            "id": "only_charging",
-            "label": "ONLY CHARGING",
-            "entity": "input_boolean.only_charging",
-        },
-        {"id": "no_feed", "label": "NO FEED", "entity": "input_boolean.no_feed"},
-        {
-            "id": "house_support",
-            "label": "HOUSE SUPPORT",
-            "entity": "input_boolean.house_support",
-        },
-        {
-            "id": "charge_battery",
-            "label": "CHARGE BATTERY",
-            "entity": "input_boolean.charge_battery",
-        },
-        {
-            "id": "do_not_supply_charger",
-            "label": "DO NOT SUPPLY EV",
-            "entity": "input_boolean.do_not_supply_charger",
-        },
-        {
-            "id": "set_limit_to_ev_charger",
-            "label": "LIMIT TO EV",
-            "entity": "input_boolean.set_limit_to_ev_charger",
-        },
-        {
-            "id": "minimize_charging",
-            "label": "MINIMIZE CHARGING",
-            "entity": "input_boolean.minimize_charging",
-        },
-    ],
-    "home_buttons": [
-        {
-            "id": "recliner",
-            "label": "RECLINER",
-            "entity": "switch.recliner_recliner",
-            "state_key": "home_recliner",
-        },
-        {
-            "id": "garage",
-            "label": "GARAGE",
-            "entity": "switch.garage_opener_l",
-            "state_key": "home_garage",
-        },
-        {
-            "id": "laundry",
-            "label": "LAUNDRY",
-            "entity": "switch.laundry_zigbee_switch",
-            "state_key": "laundry_outlet",
-        },
-    ],
     "batteries": [
         {
             "id": "chain1",

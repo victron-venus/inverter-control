@@ -44,15 +44,11 @@ TOU_EXPENSIVE_END_HOUR = 24  # midnight
 HA_SENSORS = {
     "net_usage": "sensor.your_net_usage",
     # Note: car_soc, ev_charging_power, ev_charger moved to D-Bus (see EV_INSTANCE below)
-    "water_level": "sensor.your_water_level",
-    "laundry_power": "sensor.your_laundry_power",
-    "washer_time": "sensor.your_washer_time",
-    "dryer_time": "sensor.your_dryer_time",
-    "dishwasher_duration": "sensor.your_dishwasher_duration",
-    "produced_dollars": "sensor.your_produced_dollars",
-    "battery_in_yesterday": "sensor.your_battery_in_yesterday",
-    "battery_out_yesterday": "sensor.your_battery_out_yesterday",
-    "grid_kwh_today": "sensor.your_grid_kwh_today",
+    # Note: water_level, produced_dollars, battery_in/out_yesterday, grid_kwh_today,
+    # washer_time, dryer_time, dishwasher_duration, laundry_power are no longer
+    # polled from Home Assistant. Water comes from dbus-pump D-Bus, EV from
+    # dbus-evcharger/dbus-ev D-Bus, appliance timers and energy totals are
+    # surfaced from local D-Bus or the in-process inverter-control state.
 }
 
 # =============================================================================
@@ -65,18 +61,8 @@ HA_SENSORS = {
 VUE_SENSORS = {}
 
 # =============================================================================
-# HOME ASSISTANT CONTROL ENTITIES
+# HOME ASSISTANT DUMP LOADS
 # =============================================================================
-
-HA_BOOLEANS = {
-    "only_charging": "input_boolean.only_charging",
-    "no_feed": "input_boolean.no_feed",
-    "house_support": "input_boolean.house_support",
-    "charge_battery": "input_boolean.charge_battery",
-    "do_not_supply_charger": "input_boolean.do_not_supply_charger",
-    "set_limit_to_ev_charger": "input_boolean.set_limit_to_ev_charger",
-    "minimize_charging": "input_boolean.minimize_charging",
-}
 
 HA_DUMP_LOADS = [
     "switch.your_dump_load_1",
@@ -101,14 +87,3 @@ WATER_VALVE_INSTANCE = 2
 # Default: EV_INSTANCE = 22 (vehicle), EVCHARGER_INSTANCE = 40 (wallbox)
 EV_INSTANCE = 22
 EVCHARGER_INSTANCE = 40
-
-# Laundry appliance controls
-HA_WASHER_POWER = "switch.washer_power"
-HA_WASHER_PAUSE = "button.washer_pause"
-HA_DRYER_POWER = "switch.dryer_power"
-HA_DRYER_PAUSE = "button.dryer_pause"
-HA_LAUNDRY_OUTLET = "switch.laundry_zigbee_switch"  # Smart outlet for washer/dryer standby power
-
-HA_BINARY_SENSORS = {
-    "dishwasher_running": "binary_sensor.your_dishwasher",
-}
