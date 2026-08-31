@@ -8,7 +8,7 @@ jobs:
   auto-merge:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Add auto-merge label
         run: gh pr edit ${{ github.event.number }} --add-label auto-merge
         env:
