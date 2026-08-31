@@ -41,8 +41,8 @@ class TestConsoleUI:
             "lost": 0,
         }.get(key, default)
 
-        self.mock_ha.get_boolean.side_effect = lambda key: False
-        self.mock_ha.get_binary_sensor.side_effect = lambda key: False
+        self.mock_ha.get_boolean.side_effect = lambda: False
+        self.mock_ha.get_binary_sensor.side_effect = lambda: False
 
         # Water comes from dbus-pump D-Bus reader (mocked)
         self.mock_water = MagicMock()

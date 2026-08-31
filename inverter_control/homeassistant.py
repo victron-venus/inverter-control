@@ -276,10 +276,10 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                     data[key] if key in duration_sensors else self._parse_numeric(data[key])
                 )
 
-    def _parse_boolean_sensors(self, data: dict):
+    def _parse_boolean_sensors(self):
         """Placeholder for parity with the historical parser. No binary
         sensors are polled anymore (was dishwasher_running)."""
-        return
+        pass
 
     def _build_template(self) -> str:
         """Build Jinja2 template for batch fetch"""
@@ -324,13 +324,13 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         with self._lock:
             return dict(self._vue_sensors)
 
-    def get_boolean(self, key: str) -> bool:
+    def get_boolean(self) -> bool:
         """Get cached boolean value. Control flags are not stored here; the
         controller owns them. Returns False for any key."""
         return False
 
-    def get_binary_sensor(self, key: str) -> bool:
-        """Get cached binary sensor value. No binary sensors are polled; always False."""
+    def get_binary_sensor(self) -> bool:
+        """No binary sensors are polled; always False."""
         return False
 
     def get_all_sensors(self) -> dict[str, Any]:

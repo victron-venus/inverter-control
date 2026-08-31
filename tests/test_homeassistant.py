@@ -206,9 +206,9 @@ class TestHomeAssistantClient:
             "binary1": "off",
         }
         # No-op: must not raise, must not populate any cached state.
-        self.client._parse_boolean_sensors(data)
-        assert self.client.get_boolean("bool1") is False
-        assert self.client.get_binary_sensor("binary1") is False
+        self.client._parse_boolean_sensors()
+        assert self.client.get_boolean() is False
+        assert self.client.get_binary_sensor() is False
 
     @patch("inverter_control.homeassistant.HomeAssistantClient._fetch_template_data")
     def test_poll_all_success(self, mock_fetch):
@@ -221,12 +221,11 @@ class TestHomeAssistantClient:
         with patch.object(self.client._vue_dbus_client, "update_all") as mock_vue:
             mock_vue.side_effect = lambda vue_dict: vue_dict.update({"vue1": 200})
             self.client._poll_all()
-        # _connected is set by _poll_loop, not _poll_all
         # Check that data was parsed correctly
         assert self.client._sensors["sensor1"] == 150
         # Control flags and binary sensors are no longer parsed from HA.
-        assert self.client.get_boolean("bool1") is False
-        assert self.client.get_binary_sensor("binary1") is False
+        assert self.client.get_boolean() is False
+        assert self.client.get_binary_sensor() is False
         assert self.client._vue_sensors["vue1"] == 200
 
     @patch("inverter_control.homeassistant.HomeAssistantClient._fetch_template_data")
@@ -241,7 +240,7 @@ class TestHomeAssistantClient:
         except requests.exceptions.ConnectionError:
             pass
         # _poll_all doesn't set _connected=False - that happens in _poll_loop
-        assert self.client._consecutive_failures == 0  # not incremented by _poll_all
+        assert self.client._consecutive_failures == 0
 
     def test_get_sensor(self):
         """Test getting sensor value"""
@@ -256,12 +255,11 @@ class TestHomeAssistantClient:
 
     def test_get_boolean(self):
         """Test getting boolean value (always False; control flags live in controller)."""
-        assert self.client.get_boolean("test_bool") is False
-        assert self.client.get_boolean("missing") is False
+        assert self.client.get_boolean() is False
 
     def test_get_binary_sensor(self):
         """Test getting binary sensor value (always False; not polled anymore)."""
-        assert self.client.get_binary_sensor("test_binary") is False
+        assert self.client.get_binary_sensor() is False
 
     def test_control_dump_loads(self):
         """Test control dump loads"""
