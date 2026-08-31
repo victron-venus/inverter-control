@@ -72,9 +72,9 @@ class TestMQTTTopicShape:
         queued = _drain_publish_queue(bridge)
         assert len(queued) == 1
         topic, _, qos, retain = queued[0]
-        assert (
-            topic == "inverter/state"
-        ), f"dashboards subscribe to 'inverter/state' literally; got {topic!r}"
+        assert topic == "inverter/state", (
+            f"dashboards subscribe to 'inverter/state' literally; got {topic!r}"
+        )
         assert retain is True, "state must be retained so late subscribers see latest"
         assert qos == 0
 
