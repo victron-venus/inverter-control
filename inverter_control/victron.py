@@ -1285,8 +1285,8 @@ class VictronDBus:
                 start_new_session=True,
                 check=False,
             )
-            if result.returncode == 0 and result.stdout:
-                return result.stdout.strip()
+            if result.returncode == 0:
+                return (result.stdout or "").strip()
         except subprocess.TimeoutExpired:
             pass  # Timeout is expected sometimes
         except Exception as e:
@@ -1555,7 +1555,7 @@ class VictronDBus:
         if not self._vebus_service:
             return False
 
-        return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int16")
+        return self._dbus_set(self._vebus_service, "/Hub4/L1/AcPowerSetpoint", watts, "int32")
 
     def get_mppt_data(self) -> dict[str, dict[str, float]]:
         """Get power and current from all MPPT chargers - pure background-cache read.
