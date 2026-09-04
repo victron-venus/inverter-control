@@ -297,7 +297,7 @@ class TestVictronDBus:
             result = v.set_grid_setpoint(500)
 
         assert result is True
-        mock_set.assert_called_once_with("test.service", "/Hub4/L1/AcPowerSetpoint", 500, "int16")
+        mock_set.assert_called_once_with("test.service", "/Hub4/L1/AcPowerSetpoint", 500, "int32")
 
     def test_get_mppt_data(self):
         """Test getting MPPT data"""

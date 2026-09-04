@@ -208,7 +208,7 @@ class TestVictronDBusIntegration:
 
         assert v.set_grid_setpoint(-615)
         fake.set_value.assert_called_once_with(
-            "com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", -615, "int16"
+            "com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", -615, "int32"
         )
         mock_run.assert_not_called()
         assert v._consecutive_errors == 0
