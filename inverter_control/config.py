@@ -97,14 +97,62 @@ ALERT_STORAGE_PATH = _import_local_config(
     "ALERT_STORAGE_PATH", "/data/inverter_control_alerts.json"
 )
 
-# When True, inverter/state MQTT payload omits Home Assistant mirror fields (booleans,
-# switch shadows, appliance flags). Use this with inverter-dashboard ha_secrets.py + HA_DIRECT_CONTROLS
-# so switch state is read from HA in the dashboard instead of duplicated over MQTT.
-# Water keys are NOT excluded: water state now comes from dbus-pump D-Bus and is
-# always relayed so remote consumers see it without HA.
+# When True, inverter/state MQTT payload omits fields that already live on Victron
+# Cerbo MQTT / dbus-* services (grid, consumption, battery bank, solar, loads, EV,
+# water, setpoint/mode mirrors). Desktop and other Cerbo-first UIs read those live
+# tiles from Cerbo; the daemon must not republish them into inverter/state.
+# Keep daemon-only extras: daily_stats, solar_forecast, booleans, features,
+# ess_mode, dry_run, ui_config, version/uptime, ha_* flags, filtered_gt, limits,
+# loop_interval, dvcc_limits, perf.
 MQTT_SLIM_STATE = True
 
-MQTT_SLIM_EXCLUDE_KEYS = frozenset()
+MQTT_SLIM_EXCLUDE_KEYS = frozenset(
+    {
+        # Grid / consumption (systemcalc + vebus on Cerbo)
+        "g1",
+        "g2",
+        "gt",
+        "t1",
+        "t2",
+        "tt",
+        # Battery bank (SmartShunt / system on Cerbo); short + long keys
+        "bv",
+        "bc",
+        "bp",
+        "battery_soc",
+        "battery_power",
+        "battery_voltage",
+        "battery_current",
+        "battery_socs",
+        "batteries",
+        # Solar / MPPT / PV inverter (Cerbo solarcharger + pvinverter)
+        "solar_total",
+        "pv_total",
+        "mppt_total",
+        "mppt_data",
+        "mppt_individual",
+        "mppt_chargers",
+        "pv_inverter_total",
+        "pv_inverter_individual",
+        "pv_inverter_powers",
+        "pv_inverters",
+        # Active loads (dbus-emporia-vue / Cerbo acload)
+        "loads",
+        # VE.Bus mode + Hub4 setpoint (Cerbo vebus)
+        "setpoint",
+        "inverter_state",
+        # EV (dbus-ev / dbus-evcharger on Cerbo)
+        "ev_power",
+        "car_soc",
+        "ev_charging_kw",
+        # Water (dbus-pump / Cerbo tank+startstop)
+        "water_level",
+        "water_valve",
+        "pump_switch",
+        # Internal cache stamp from get_system_data (not for consumers)
+        "_last_update",
+    }
+)
 
 # =============================================================================
 # WEBHOOK SERVER (for solar forecast pre-charge triggers)

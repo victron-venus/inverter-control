@@ -804,10 +804,14 @@ class InverterController:
         self._ess_not_external_since = None
 
     def get_state_for_mqtt(self) -> dict[str, Any]:
-        if not MQTT_SLIM_STATE:
-            out = dict(self.state)
-        else:
-            out = dict(self.state)
+        """Publish payload for inverter/state.
+
+        When MQTT_SLIM_STATE is enabled, drop Cerbo/dbus-mirrored live tiles
+        (grid, consumption, bank, solar, loads, EV, water, setpoint/mode) so
+        consumers that already read Victron MQTT do not get a duplicate mirror.
+        """
+        out = dict(self.state)
+        if MQTT_SLIM_STATE:
             for k in MQTT_SLIM_EXCLUDE_KEYS:
                 out.pop(k, None)
         # Always publish current flags so MQTT/HA see set_boolean immediately

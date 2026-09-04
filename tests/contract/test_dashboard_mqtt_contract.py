@@ -202,26 +202,12 @@ class TestCommandTopics:
 # ---------------------------------------------------------------------------
 
 
+# Daemon-owned keys that must still appear on inverter/state after Cerbo-first
+# migration. Live power tiles (gt/tt/battery/solar/loads/EV/water/setpoint) are
+# read from Cerbo MQTT / dbus-* and are intentionally absent from the slim
+# publish payload (see MQTT_SLIM_EXCLUDE_KEYS).
 REQUIRED_STATE_KEYS = {
-    # Aggregates the dashboards plot
-    "g1",
-    "g2",
-    "gt",
-    "t1",
-    "t2",
-    "tt",
-    "pv_total",
-    "solar_total",
-    "mppt_total",
-    "pv_inverter_total",
-    "battery_soc",
-    "battery_power",
-    "battery_voltage",
-    "battery_current",
-    # Control loop / display
-    "setpoint",
     "filtered_gt",
-    "inverter_state",
     "ess_mode",
     "booleans",
     "dry_run",
@@ -229,6 +215,8 @@ REQUIRED_STATE_KEYS = {
     "loop_interval",
     "version",
     "uptime",
+    "daily_stats",
+    "ui_config",
 }
 
 

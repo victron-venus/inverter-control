@@ -103,9 +103,49 @@ class TestMQTTConfig:
         assert isinstance(config.MQTT_SLIM_EXCLUDE_KEYS, frozenset)
 
     def test_slim_exclude_keys_content(self):
-        """Test MQTT_SLIM_EXCLUDE_KEYS is empty (HA appliance/switch sensors removed)."""
-        assert config.MQTT_SLIM_EXCLUDE_KEYS == frozenset()
-        assert "pump_switch" not in config.MQTT_SLIM_EXCLUDE_KEYS
+        """Cerbo/dbus-mirrored live tiles must not be republished on inverter/state."""
+        assert config.MQTT_SLIM_STATE is True
+        required = {
+            "g1",
+            "g2",
+            "gt",
+            "t1",
+            "t2",
+            "tt",
+            "loads",
+            "batteries",
+            "battery_soc",
+            "battery_power",
+            "battery_voltage",
+            "battery_current",
+            "solar_total",
+            "mppt_total",
+            "mppt_chargers",
+            "pv_inverter_total",
+            "setpoint",
+            "inverter_state",
+            "ev_power",
+            "car_soc",
+            "ev_charging_kw",
+            "water_level",
+            "water_valve",
+            "pump_switch",
+        }
+        assert required <= config.MQTT_SLIM_EXCLUDE_KEYS
+        # Daemon-owned extras must remain publishable
+        for keep in (
+            "daily_stats",
+            "solar_forecast",
+            "booleans",
+            "ess_mode",
+            "dry_run",
+            "ui_config",
+            "version",
+            "uptime",
+            "filtered_gt",
+            "ha_connected",
+        ):
+            assert keep not in config.MQTT_SLIM_EXCLUDE_KEYS
 
 
 class TestOptionalFeatures:
