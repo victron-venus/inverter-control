@@ -516,14 +516,6 @@ class TestVictronSignalIntegration:
         v._apply_fast_value(svc, "/Ac/Power", "-125.5")
         assert v.get_pv_power() == [-125.5]
 
-    def test_apply_fast_value_routes_acload(self):
-        """Name+power signals compose into the named {CustomName: power} view."""
-        v = victron.get_victron(test_mode=True)
-        svc = "com.victronenergy.acload.vue_l1"
-        v._acload_services = [svc]
-        v._apply_fast_value(svc, "/CustomName", " Vue L1 \n")
-        v._apply_fast_value(svc, "/Ac/Power", "310.4")
-        assert v.get_acload_powers() == {"Vue L1": 310.4}
 
     def test_group_signal_marks_sender_alive(self):
         """Polled-group traffic proves the signal path alive like system/shunt."""

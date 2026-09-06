@@ -70,13 +70,11 @@ EVCHARGER_INSTANCE = int(_import_local_config("EVCHARGER_INSTANCE", 40))
 
 ENABLE_EV = True  # EV charging monitoring (car SoC, wallbox power) via D-Bus
 ENABLE_WATER = True  # Water level, pump and valve (via dbus-pump D-Bus)
-ENABLE_ACLOADS = True  # AC load monitoring via D-Bus acload services
 ENABLE_HA = True  # Home Assistant integration (net_usage sensor, dump load control)
 
 # Auto-disable all HA features if no valid token configured
 if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_HA = False
-    ENABLE_ACLOADS = False
     # EV and WATER are D-Bus based and do NOT require Home Assistant
     print("INFO: Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
 
@@ -136,7 +134,7 @@ MQTT_SLIM_EXCLUDE_KEYS = frozenset(
         "pv_inverter_individual",
         "pv_inverter_powers",
         "pv_inverters",
-        # Active loads (dbus-emporia-vue / Cerbo acload)
+        # Active loads (legacy key; inverter-control no longer reads Emporia acloads)
         "loads",
         # VE.Bus mode + Hub4 setpoint (Cerbo vebus)
         "setpoint",

@@ -25,7 +25,6 @@ from .config import (
     HA_URL,
     VUE_SENSORS,
 )
-from .dbus import VUESensorDBusClient
 
 logger = logging.getLogger("inverter-control")
 
@@ -85,9 +84,6 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         # Cached values (persist until HA reconnects)
         self._sensors: dict[str, Any] = dict.fromkeys(HA_SENSORS, 0)
         self._vue_sensors: dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
-
-        # D-Bus client for VUE sensors (if available)
-        self._vue_dbus_client = VUESensorDBusClient(VUE_SENSORS)
 
         # Connection status
         self._connected = False
@@ -228,19 +224,11 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             time.sleep(HA_POLL_INTERVAL)
 
     def _poll_all(self):
-        """Poll all entities from HA and dbus for VUE sensors"""
+        """Poll all entities from HA (Emporia/Vue D-Bus acloads are not consumed)."""
         data = self._fetch_template_data()
 
         with self._lock:
             self._parse_sensors(data)
-
-        # Update VUE sensors from dbus services. Deliberately OUTSIDE the lock:
-        # update_all runs dbus-send subprocesses (up to 2s each) which would
-        # otherwise block every main-thread ha.get_* cache read for that
-        # duration (source of the control-loop update_state tail spikes). The
-        # in-place dict writes are single-key assignments, safe for concurrent
-        # readers under the lock.
-        self._vue_dbus_client.update_all(self._vue_sensors)
 
     def _fetch_template_data(self) -> dict:
         """Fetch all entity data via template API"""
@@ -311,7 +299,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         return self._parse_duration(raw)
 
     def get_vue_sensor(self, key: str, default: Any = 0) -> Any:
-        """Get cached VUE sensor value"""
+        """Get cached VUE sensor value (legacy stub; Emporia acload D-Bus not used)."""
         with self._lock:
             return self._vue_sensors.get(key, default)
 

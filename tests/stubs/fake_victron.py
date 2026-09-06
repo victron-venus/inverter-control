@@ -11,7 +11,7 @@ What the fake covers
   `_cached_battery_chain_socs`, `_cached_inverter_state`,
   `_cached_battery_daily_energy`, …) read directly.
 - Public getters that build their return value from the cached properties
-  AND from per-service reads (`get_acload_powers`, `get_tasmota_pv_power`,
+  AND from per-service reads (`get_tasmota_pv_power`,
   `get_mppt_data`, `get_battery_chain_socs`) — these now read from the same
   store the seeds populate.
 - Subprocess path is disabled: `_safe_subprocess` returns the seeded
@@ -94,10 +94,6 @@ class FakeVictronDBus:
                 {"soc": 85.0, "voltage": 53.2, "current": 10.0, "power": 532.0},
             ),
         ],
-        # Emporia Vue / acload: list of (service, {"name": str, "power": W})
-        "acload": [
-            ("com.victronenergy.acload.emporia_1", {"name": "Garage", "power": 50.0}),
-        ],
         # Daily energy (kWh) — in, out
         "battery_daily_energy": (1.5, 2.0),
         "battery_yesterday_energy": (1.0, 1.5),
@@ -165,7 +161,6 @@ class FakeVictronDBus:
         shunt: str | None = "com.victronenergy.battery.ttyUSB0",
         mppt: list[str] | None = None,
         pv_inverter: list[str] | None = None,
-        acload: list[str] | None = None,
     ) -> None:
         """Set discovered-service names without going through D-Bus."""
         if vebus is not None:
@@ -176,8 +171,6 @@ class FakeVictronDBus:
             self._v._mppt_services = mppt
         if pv_inverter is not None:
             self._v._pv_inverter_services = pv_inverter
-        if acload is not None:
-            self._v._acload_services = acload
         self._refresh_caches()
 
     def tick(self) -> None:
@@ -196,7 +189,6 @@ class FakeVictronDBus:
         self._v._shunt_service = "com.victronenergy.battery.ttyUSB0"
         self._v._mppt_services = [m[0] for m in self.DEFAULTS["mppt"]]
         self._v._pv_inverter_services = [m[0] for m in self.DEFAULTS["pv_inverter"]]
-        self._v._acload_services = [m[0] for m in self.DEFAULTS["acload"]]
         self._refresh_caches()
 
     def _refresh_caches(self) -> None:
@@ -236,10 +228,6 @@ class FakeVictronDBus:
             for svc, r in cv["battery"]
         ]
         self._v._last_battery_chain_soc_time = 1e18
-        # acload
-        self._v._acload_powers_by_service = {svc: r["power"] for svc, r in cv["acload"]}
-        self._v._acload_names = {svc: r["name"] for svc, r in cv["acload"]}
-        self._v._last_acload_time = 1e18
         # Daily energy
         self._v._cached_battery_daily_energy = tuple(cv["battery_daily_energy"])  # type: ignore[assignment]
         self._v._last_battery_daily_energy_time = 1e18

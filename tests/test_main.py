@@ -35,7 +35,6 @@ def _make_controller(**overrides):
         patch(f"{_MOD}.ENABLE_EV", True),
         patch(f"{_MOD}.ENABLE_WATER", True),
         patch(f"{_MOD}.ENABLE_HA", True),
-        patch(f"{_MOD}.ENABLE_ACLOADS", False),
     ):
         mock_victron = MagicMock()
         mock_ha = MagicMock()
@@ -232,7 +231,6 @@ class TestUpdateState(unittest.TestCase):
         mock_victron.get_ess_mode.return_value = {"is_external": True, "mode_name": "External"}
         mock_victron.get_all_batteries.return_value = []
         mock_victron.get_mppt_chargers.return_value = []
-        mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 80.0
         mock_victron.get_battery_daily_energy.return_value = (10.0, 5.0)
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
@@ -283,7 +281,6 @@ class TestUpdateState(unittest.TestCase):
         mock_victron.get_ess_mode.return_value = {"is_external": False}
         mock_victron.get_all_batteries.return_value = []
         mock_victron.get_mppt_chargers.return_value = []
-        mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 0
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
@@ -325,7 +322,6 @@ class TestGetStateForMqtt(unittest.TestCase):
         mock_victron.get_ess_mode.return_value = {"is_external": True, "mode_name": "External"}
         mock_victron.get_all_batteries.return_value = [{"name": "Bank"}]
         mock_victron.get_mppt_chargers.return_value = [{"name": "MPPT"}]
-        mock_victron.get_acload_powers.return_value = {"kitchen": 120}
         mock_victron.get_battery_soc_local.return_value = 78.0
         mock_victron.get_battery_daily_energy.return_value = (1.0, 2.0)
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
@@ -419,7 +415,6 @@ class TestRunCycle(unittest.TestCase):
         mock_victron.get_ess_mode.return_value = {"is_external": True}
         mock_victron.get_all_batteries.return_value = []
         mock_victron.get_mppt_chargers.return_value = []
-        mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 80
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
@@ -457,7 +452,6 @@ class TestRunCycle(unittest.TestCase):
         mock_victron.get_ess_mode.return_value = {"is_external": True}
         mock_victron.get_all_batteries.return_value = []
         mock_victron.get_mppt_chargers.return_value = []
-        mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 80
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
@@ -498,7 +492,6 @@ class TestRunCycle(unittest.TestCase):
         mock_victron.get_ess_mode.return_value = {"is_external": False}
         mock_victron.get_all_batteries.return_value = []
         mock_victron.get_mppt_chargers.return_value = []
-        mock_victron.get_acload_powers.return_value = {}
         mock_victron.get_battery_soc_local.return_value = 0
         mock_victron.get_battery_daily_energy.return_value = (0, 0)
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)

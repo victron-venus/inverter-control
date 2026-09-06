@@ -35,7 +35,6 @@ from inverter_control.config import (
     DVCC_TEMP_REDUCED,
     DVCC_TEMP_STOP_CHARGE,
     DVCC_TEMP_STOP_CHARGE_HIGH,
-    ENABLE_ACLOADS,
     ENABLE_EV,
     ENABLE_GRID_SMOOTHING_WITH_HOME,
     ENABLE_HA,
@@ -92,13 +91,13 @@ STAGE_SLOW_MS = 300.0
 # MQTT. The setpoint control decision runs every cycle in calculate_setpoint and
 # reads only the values it truly needs (system data, mppt/pv totals, inverter
 # power, grid-smoothing home total, and the setpoint booleans) at full speed.
-# Everything else in update_state is telemetry/display-only — acloads, full
+# Everything else in update_state is telemetry/display-only — full
 # battery & MPPT charger detail, EV/car charge, water level, non-setpoint HA
 # booleans, ESS mode, and daily stats — which is NOT used to derive the setpoint,
 # so a 3-5 second staleness is acceptable. This cadence decouples that non-critical
 # work from the hot path: the heavy reads behind it already refresh on their own
 # 2s/5s/10s TTLs in the background poll thread, and the remaining per-build
-# composition (dict builds, acload compose) is now ~4-6x rarer than the old 0.5s.
+# composition (dict builds) is now ~4-6x rarer than the old 0.5s.
 UPDATE_STATE_INTERVAL = 4.0
 
 
@@ -463,7 +462,7 @@ class InverterController:
         self._cached_mppt_data = mppt_data
         self._cached_pv_powers = pv_inverter_powers
 
-        # Grid smoothing with Home total (Vue via D-Bus)
+        # Grid smoothing with Home total (optional; Emporia acload D-Bus not used)
         # derived_gt = home_total - pv_total (negative = export, positive = import)
         # Blend with instantaneous CT meter for stable control
         home_total = 0.0
@@ -672,7 +671,7 @@ class InverterController:
         ev_state = self._get_ev_state()
         water_state = self._get_water_state()
         ha_state = self._get_ha_state()
-        loads = self.victron.get_acload_powers() if ENABLE_ACLOADS else {}
+        loads: dict[str, float] = {}
         ess_mode = self.victron.get_ess_mode()
         daily_stats = self._get_daily_stats()
 
@@ -885,7 +884,9 @@ class InverterController:
                 # Mark setpoint-write liveness for the hardware watchdog
                 self._watchdog.mark_setpoint_update()
 
-            print(f"\033k{sys_data['gt']}\033\\", end="")
+            # Live console is TCP :9999 via broadcast_line below — do not emit
+            # GNU screen title escapes (\033k…\033\\) to stdout; under
+            # daemontools/multilog they pollute Loki as raw k63/k40/… noise.
             _stage("setpoint_write")
 
             # Inject cached data for console UI

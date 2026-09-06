@@ -224,7 +224,7 @@ D-Bus based and stay enabled:
 ```python
 ENABLE_EV = True  # EV charging monitoring (car SoC, charger power) — D-Bus, no HA
 ENABLE_WATER = True  # Water level, pump and valve control — D-Bus (dbus-pump), no HA
-ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
+# Emporia/Vue acload D-Bus channels are not consumed by inverter-control
 ENABLE_HA = True  # Home Assistant integration entirely
 ```
 
@@ -405,7 +405,9 @@ Any Shelly device with external CT (current transformer) clamp input works well:
 
 ### Emporia Vue
 
-Vue energy monitors can work but have significant limitations:
+**Note:** `inverter-control` does **not** consume Emporia Vue / `com.victronenergy.acload` D-Bus channels (they add latency and are unused for setpoint generation). Prefer a local grid meter on Cerbo for control.
+
+Vue energy monitors can still exist on the GX for other dashboards, but have significant limitations for control use:
 
 | Version | Pros | Cons |
 |---------|------|------|

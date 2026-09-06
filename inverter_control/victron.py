@@ -104,14 +104,13 @@ SHUNT_SIGNAL_PATHS = {
 # the cached dict can hold only a subset briefly at startup; get_system_data
 # merges over these defaults so a partial cache never KeyErrors.
 _SYSTEM_DATA_KEYS = frozenset({"g1", "g2", "gt", "t1", "t2", "tt", "bv", "bc", "bp"})
-# MPPT chargers, Tasmota PV inverters and Vue acloads are signal-driven too;
+# MPPT chargers and Tasmota PV inverters are signal-driven too;
 # their single-value reads remain only as a slow reconciliation pass.
 MPPT_SIGNAL_PATHS = {
     YIELD_POWER_PATH: "w",
     DC_CURRENT_PATH: "a",
 }
 PV_SIGNAL_PATHS = {"/Ac/Power": "p"}
-ACLOAD_NAME_PATH = "/CustomName"
 VEBUS_STATE_PATH = "/State"
 VEBUS_INV_POWER_PATH = "/Devices/0/Ac/Inverter/P"
 # While signals are healthy, hot tree polls run only this often
@@ -208,12 +207,6 @@ class VictronDBus:
         # Cache for inverter state
         self._cached_inverter_state: tuple[int, str] = (0, "Unknown")
         self._last_inverter_state_time: float = 0.0
-        # Cache for acload (Emporia Vue) power channels: per-service reads
-        # composed into the named {CustomName: power} view on demand
-        self._acload_services: list = []
-        self._acload_names: dict[str, str] = {}
-        self._acload_powers_by_service: dict[str, float] = {}
-        self._last_acload_time: float = 0.0
         # Cache for discovered Tasmota PV inverter services
         self._pv_inverter_services: list = []
         # Cache for daily/yesterday yields (MPPT + Tasmota) and battery daily energy
@@ -284,9 +277,6 @@ class VictronDBus:
             targets.extend((service, path) for path in MPPT_SIGNAL_PATHS)
         for service in self._pv_inverter_services:
             targets.extend((service, path) for path in PV_SIGNAL_PATHS)
-        for service in self._acload_services:
-            targets.append((service, ACLOAD_NAME_PATH))
-            targets.append((service, AC_POWER_PATH))
         return targets
 
     def _setup_fast_signals(self):
@@ -314,8 +304,8 @@ class VictronDBus:
             subscribed.append(
                 self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH)
             )
-        # Discovered services (solarcharger C++, tasmota-pv/acload velib-python)
-        for service in (*self._mppt_services, *self._pv_inverter_services, *self._acload_services):
+        # Discovered services (solarcharger C++, tasmota-pv velib-python)
+        for service in (*self._mppt_services, *self._pv_inverter_services):
             subscribed.append(self._native.subscribe_service_items(service))
         self._set_signals_healthy(all(subscribed))
         if all(subscribed):
@@ -383,7 +373,7 @@ class VictronDBus:
             self._last_signal_ok_monotonic = time.monotonic()
             return
         elif service is not None and self._apply_group_value(service, path, raw):
-            # Polled-group value (MPPT/PV/acload) routed; observed traffic
+            # Polled-group value (MPPT/PV) routed; observed traffic
             # proves the signal path alive; see _poll_all.
             self._last_signal_ok_monotonic = time.monotonic()
             return
@@ -408,7 +398,7 @@ class VictronDBus:
             pass  # non-numeric payload (e.g. NULL variant); next event fixes it
 
     def _apply_group_value(self, service: str | None, path: str, raw: str) -> bool:
-        """Route one polled-group reading (MPPT/PV/acload) into its cache.
+        """Route one polled-group reading (MPPT/PV) into its cache.
 
         Returns False for senders outside these groups so the caller ignores
         them; True means routed — even for unparseable payloads, which still
@@ -416,12 +406,8 @@ class VictronDBus:
         if service is None or (
             service not in self._mppt_services
             and service not in self._pv_inverter_services
-            and service not in self._acload_services
         ):
             return False
-        if service in self._acload_services and path == ACLOAD_NAME_PATH:
-            self._acload_names[service] = raw.strip()
-            return True  # string payload; handled before the numeric parse below
         try:
             val = float(raw)
         except (TypeError, ValueError):
@@ -441,23 +427,12 @@ class VictronDBus:
             powers[idx] = val
             self._cached_pv_powers = powers[: len(self._pv_inverter_services)]
             self._last_pv_time = now
-        elif service in self._acload_services and path == AC_POWER_PATH:
-            self._acload_powers_by_service[service] = val
-            self._last_acload_time = now
         else:
             return False  # subscribed sender, but a path we don't track
         return True
 
-    def _compose_acload_powers(self) -> dict[str, float]:
-        """Named {CustomName: power} view of the per-service acload caches."""
-        return {
-            self._acload_names[svc]: self._acload_powers_by_service[svc]
-            for svc in self._acload_services
-            if svc in self._acload_names and svc in self._acload_powers_by_service
-        }
-
     def _discover_services(self):
-        """Discover VE.Bus, MPPT, acload, and Tasmota PV inverter services.
+        """Discover VE.Bus, MPPT, and Tasmota PV inverter services.
 
         Runs a blocking `dbus -y` subprocess (bounded by DISCOVERY_TIMEOUT) that
         takes the discovery lock; concurrent callers (startup, NameOwnerChanged,
@@ -511,12 +486,10 @@ class VictronDBus:
         (
             self._vebus_service,
             self._mppt_services,
-            self._acload_services,
             self._pv_inverter_services,
             battery_candidates,
         ) = self._process_discovered_lines(lines)
         self._mppt_services.sort()
-        self._acload_services.sort()
         self._pv_inverter_services.sort()
 
         # The SmartShunt's bus-name suffix (ttyUSB4 today) can change
@@ -542,9 +515,6 @@ class VictronDBus:
             else:
                 print("  [D-Bus] SmartShunt service not found")
 
-        if self._acload_services:
-            print(f"  [D-Bus] acload services found: {len(self._acload_services)}")
-
         if self._pv_inverter_services:
             print(f"  [D-Bus] PV inverters found: {self._pv_inverter_services}")
 
@@ -559,7 +529,6 @@ class VictronDBus:
         """Process the lines from dbus -y to discover services."""
         vebus_service = None
         mppt_services = []
-        acload_services = []
         pv_inverter_services = []
         battery_candidates = []
         for line in lines:
@@ -567,8 +536,6 @@ class VictronDBus:
                 vebus_service = line.strip()
             elif "com.victronenergy.solarcharger" in line:
                 mppt_services.append(line.strip())
-            elif "com.victronenergy.acload" in line:
-                acload_services.append(line.strip())
             elif "com.victronenergy.pvinverter." in line:
                 pv_inverter_services.append(line.strip())
             elif "com.victronenergy.battery." in line:
@@ -576,7 +543,6 @@ class VictronDBus:
         return (
             vebus_service,
             mppt_services,
-            acload_services,
             pv_inverter_services,
             battery_candidates,
         )
@@ -621,12 +587,11 @@ class VictronDBus:
             BATTERY_CHAIN_2,
         }
 
-        # Also check for any ve bus, mptt, ac load, or pv inverter services
+        # Also check for any ve bus, mppt, or pv inverter services
         if service_name.startswith(
             (
                 "com.victronenergy.vebus",
                 "com.victronenergy.solarcharger",
-                "com.victronenergy.acload",
                 "com.victronenergy.pvinverter.",
                 "com.victronenergy.battery.",
             )
@@ -690,7 +655,6 @@ class VictronDBus:
                 self._poll_inverter_power()
                 self._reconcile_mppt_data()
                 self._reconcile_pv_power()
-                self._reconcile_acload_power()
                 self._last_signal_reconcile = time.time()
         else:
             if (
@@ -708,7 +672,6 @@ class VictronDBus:
                 self._poll_shunt_data()
                 self._reconcile_mppt_data()
                 self._reconcile_pv_power()
-                self._reconcile_acload_power()
 
         # Poll battery chain SoCs (already fork-free native reads)
         self._poll_battery_chain_socs()
@@ -716,7 +679,7 @@ class VictronDBus:
         # Poll inverter state (native-first; keeps the main-thread getter pure-cache)
         self._poll_inverter_state()
 
-        # Gated group reconciles (MPPT/PV/acload) run every pass in the
+        # Gated group reconciles (MPPT/PV) run every pass in the
         # BACKGROUND thread. Signals keep _last_*_time fresh while responsive;
         # the gate skips redundant work then. When signals are quiet, the cache
         # timestamp goes stale and this refresh happens HERE instead of the main
@@ -731,7 +694,7 @@ class VictronDBus:
         self._poll_battery_daily_energy()
 
     def _reconcile_groups_if_stale(self):
-        """Refresh MPPT/PV/acload/ESS/battery caches in the poll thread when their
+        """Refresh MPPT/PV/ESS/battery caches in the poll thread when their
         getter cache TTL has lapsed. Keeps the control loop getters pure-cache:
         the main thread never performs a synchronous reconcile."""
         now = time.time()
@@ -739,8 +702,6 @@ class VictronDBus:
             self._reconcile_mppt_data()
         if self._pv_inverter_services and now - self._last_pv_time >= GROUP_CACHE_TTL:
             self._reconcile_pv_power()
-        if self._acload_services and now - self._last_acload_time >= GROUP_CACHE_TTL:
-            self._reconcile_acload_power()
         if self._ess_mode_cache and now - self._ess_mode_cache_time >= 5.0:
             self._reconcile_ess_mode()
         if (self._cached_all_batteries or self._last_all_batteries_time == 0) and (
@@ -835,18 +796,6 @@ class VictronDBus:
             self._get_float_nolock(service, AC_POWER_PATH) for service in self._pv_inverter_services
         ]
         self._last_pv_time = time.time()
-
-    def _reconcile_acload_power(self):
-        """Refresh Emporia Vue channels (native-first; see _reconcile_mppt_data)."""
-        for service in self._acload_services:
-            name = self._dbus_get(service, ACLOAD_NAME_PATH)
-            if name:
-                self._acload_names[service] = name.strip()
-        self._acload_powers_by_service = {
-            service: self._get_float_nolock(service, AC_POWER_PATH)
-            for service in self._acload_services
-        }
-        self._last_acload_time = time.time()
 
     def _query_battery_chain_socs(self) -> list[float]:
         """Query all battery chain services for SoC (shared by poll and fallback).
@@ -1580,18 +1529,6 @@ class VictronDBus:
             return []
         self._reconcile_pv_power()
         return self._cached_pv_powers
-
-    def get_acload_powers(self) -> dict[str, float]:
-        """Get power from Emporia Vue channels (acload services) - pure cache.
-
-        Reconcile happens only in the background poll thread; this is a read
-        of the per-service cache so the control loop never blocks on D-Bus."""
-        if not self._acload_services:
-            return {}
-        if self._last_acload_time == 0:
-            self._reconcile_acload_power()
-        # Compose on read: signals update the per-service layer directly.
-        return self._compose_acload_powers()
 
     def get_battery_soc(self) -> float | None:
         """Get battery SoC from system"""

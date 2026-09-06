@@ -145,18 +145,6 @@ class TestConsoleUI:
         solar_section2 = self.ui._fmt_solar_section(sys_data2)
         assert "0" in solar_section2
 
-    def test_format_loads_section(self):
-        """Test loads section formatting (D-Bus acload, gated by ENABLE_ACLOADS)"""
-        with patch("inverter_control.console_ui.ENABLE_ACLOADS", True):
-            loads_section = self.ui._fmt_loads_section()
-            # garage=50, fridge=100 should appear with short suffixes
-            assert "50g" in loads_section
-            assert "100f" in loads_section
-
-        with patch("inverter_control.console_ui.ENABLE_ACLOADS", False):
-            loads_section = self.ui._fmt_loads_section()
-            assert loads_section == ""
-
     def test_format_extra_info(self):
         """Test extra info formatting (water from dbus-pump, car SoC from dbus-ev)."""
         with patch("inverter_control.console_ui.ENABLE_WATER", True):
