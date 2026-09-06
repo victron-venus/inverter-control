@@ -511,7 +511,7 @@ class TestVictronSignalIntegration:
 
     def test_apply_fast_value_routes_pv_inverter(self):
         v = victron.get_victron(test_mode=True)
-        svc = "com.victronenergy.pvinverter.tasmota_1"
+        svc = "com.victronenergy.pvinverter.pvinverter_1"
         v._pv_inverter_services = [svc]
         v._apply_fast_value(svc, "/Ac/Power", "-125.5")
         assert v.get_pv_power() == [-125.5]

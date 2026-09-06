@@ -27,7 +27,7 @@ The main control loop runs every ~0.33 seconds and performs these steps:
 | `t1`, `t2`, `tt` | D-Bus | Consumption per phase and total (W) |
 | `inv_power` | D-Bus | Current inverter AC output (W) |
 | `mppt_total` | D-Bus | Solar from MPPT controllers (W) |
-| `pv_inverter_total` | D-Bus | Solar from Tasmota microinverters (W) |
+| `pv_inverter_total` | D-Bus | Solar from PV inverters (W) |
 | `ev_power` | D-Bus (dbus-evcharger / dbus-ev) | EV charger consumption (W) |
 
 ### Step 2: Get Control Switches
@@ -43,8 +43,8 @@ sync. Published on `inverter/state` as status (`booleans`).
 |--------|---------|
 | `only_charging` | Don't discharge battery, use only solar |
 | `do_not_supply_charger` | Don't power EV from battery |
-| `no_feed` | Match Tasmota output to prevent grid export |
-| `house_support` | Tasmota minus 300W for partial self-consumption |
+| `no_feed` | Match PV inverter output to prevent grid export |
+| `house_support` | PV inverter minus 300W for partial self-consumption |
 | `charge_battery` | Force battery charging |
 
 ### Step 3: Calculate Effective Grid
@@ -96,18 +96,18 @@ if vanew < -max_output:
 Flag: `[NoEV]`
 
 #### 3. NO_FEED
-**Goal:** Match Tasmota output to prevent grid export
+**Goal:** Match PV inverter output to prevent grid export
 
 ```
 vanew = pv_inverter_total
 ```
 
-Positive setpoint consumes from grid what Tasmota exports.
+Positive setpoint consumes from grid what PV inverters export.
 
 Flag: `[NF]`
 
 #### 4. HOUSE_SUPPORT
-**Goal:** Partial self-consumption with Tasmota
+**Goal:** Partial self-consumption with PV inverters
 
 ```
 vanew = pv_inverter_total - 300

@@ -82,7 +82,7 @@ dbus-pump; this project only reads state.
 Home Assistant integration:
 - REST API communication
 - Boolean toggles (input_boolean.*)
-- Vue energy sensors
+- Home-load sensors (legacy VUE_SENSORS / HA)
 - Switch control
 
 ## config.py

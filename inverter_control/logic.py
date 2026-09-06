@@ -49,7 +49,7 @@ class SystemState:
     previous_setpoint: int
 
     # Home grid smoothing (optional, when ENABLE_GRID_SMOOTHING_WITH_HOME)
-    home_total: float = 0.0  # Total house consumption from Vue
+    home_total: float = 0.0  # Total house consumption from HA (optional)
     derived_gt: float | None = None  # Grid derived from home_total - production
     filtered_gt: float | None = None
 
@@ -189,7 +189,7 @@ def no_feed_strategy(
     state: SystemState,
     current_vanew: int,
 ) -> tuple[int, str]:
-    """Match Tasmota microinverter output exactly"""
+    """Match PV inverter output exactly"""
     if state.no_feed:
         return int(state.pv_inverter_total), "[NF] "
     return current_vanew, ""
@@ -199,7 +199,7 @@ def house_support_strategy(
     state: SystemState,
     current_vanew: int,
 ) -> tuple[int, str]:
-    """Tasmota solar minus offset for house loads"""
+    """PV inverter solar minus offset for house loads"""
     if state.house_support:
         return int(state.pv_inverter_total - 300), "[HS] "
     return current_vanew, ""

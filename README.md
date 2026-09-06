@@ -44,7 +44,7 @@ Grid-zero feed-in controller for Victron systems with split-phase compensation.
 - ✅ **Hardware Watchdog Failsafe**: 30-second heartbeat watchdog automatically resets Victron ESS setpoint to fallback mode (0W / pass-through) if MQTT or D-Bus telemetry stops updating (PR #63, commit 0212a4c)
 - ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
 - ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
-- ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Blends derived grid (Vue total load − PV production) with instantaneous CT meter at configurable weight for stable setpoints
+- ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Blends derived grid (home total load − PV production) with instantaneous CT meter at configurable weight for stable setpoints
 
 ---
 
@@ -94,7 +94,7 @@ mosquitto_sub -L "mqtt://mqtt:***@10.10.10.10/home/power_main" \
   done
 ```
 
-That pipeline was enough to prove the idea on a bench or a single meter. It was also fragile: no persistence across reboots, no split-phase awareness, no EV or laundry logic, and no story for MPPT + Tasmota + multiple battery chains. Everything you see now — structured config, `victron.py`, MQTT bridge, optional dashboard, monitoring hooks — grew out of replacing that one-liner piece by piece while keeping the same core goal: **keep the grid where we want it without sacrificing the weird parts of a real house.**
+That pipeline was enough to prove the idea on a bench or a single meter. It was also fragile: no persistence across reboots, no split-phase awareness, no EV or laundry logic, and no story for MPPT + PV inverters + multiple battery chains. Everything you see now — structured config, `victron.py`, MQTT bridge, optional dashboard, monitoring hooks — grew out of replacing that one-liner piece by piece while keeping the same core goal: **keep the grid where we want it without sacrificing the weird parts of a real house.**
 
 If you are browsing this repo for inspiration, that history is intentional: **start simple, measure, then automate.** The current code is the same instinct with years of production bruises folded in.
 
@@ -109,16 +109,16 @@ flowchart TD
     MPPT1 -.->|"D-Bus\nTelemetry"| Script["This Script\non Cerbo GX"]
     MPPT1 <-->|"DC"| Inverter["Victron\nInverter"]
 
-    Solar2["Solar Panels\n(Tasmota)"] -->|"DC"| MPPT2["Inline MPPT\nInverter\n(w/ Tasmota)"]
-    MPPT2 -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
-    Tasmota -->|"AC"| Grid["AC Grid"]
+    Solar2["Solar Panels\n(AC-coupled)"] -->|"DC"| MPPT2["Inline MPPT\nInverter"]
+    MPPT2 -->|"AC"| PVI["PV Inverter\n(D-Bus)"]
+    PVI -->|"AC"| Grid["AC Grid"]
 
     Battery <-->|"DC"| Inverter
     Inverter <-->|"AC L1"| Grid
     Grid -->|"AC L1"| Loads1["Loads L1"]
     Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
 
-    Tasmota -.->|"D-Bus\n(dbustasmota-pv)"| Script
+    PVI -.->|"D-Bus\n(pvinverter.*)"| Script
     HA["Home Assistant"] -.->|"HTTP\npolling"| Script
 
     Script -->|"D-Bus\nSetpoint"| Inverter
@@ -133,8 +133,8 @@ flowchart TD
 - **Multiple Operating Modes**:
   - Normal: Automatic grid-zero targeting
   - Only Charging: Use solar only, don't discharge battery
-  - No Feed: Only use Tasmota PV, no battery
-  - House Support: Tasmota PV minus 300W
+  - No Feed: Only use PV inverters, no battery
+  - House Support: PV inverter total minus 300W
   - Charge Battery: Force battery charging
   - Do Not Supply Charger: EV charges from grid only
 - **Minimize Charging**: Auto-control dump loads to consume excess solar
@@ -142,7 +142,7 @@ flowchart TD
 - **Fast Control Loop**: 3 updates per second via D-Bus
 - **Background D-Bus Polling** (v1.19.0+): 5 Hz thread caches D-Bus data; hot-path methods read instantly (< 1 ms) — eliminates subprocess overhead on Cerbo GX
 - **Async MQTT Publish** (v1.19.0+): Non-blocking publish queue; control loop never stalls on broker
-- **Home Load Grid Smoothing** (v1.19.1+): Blends derived grid (Home total load − PV production) from HA/Vue with instantaneous CT meter at configurable weight (default 0.7) for stable setpoints despite CT jitter
+- **Home Load Grid Smoothing** (v1.19.1+): Blends derived grid (Home total load − PV production) from optional HA home_total with instantaneous CT meter at configurable weight (default 0.7) for stable setpoints despite CT jitter
 
 ## Architecture
 
@@ -200,7 +200,7 @@ HA_TOKEN = "your_long_lived_access_token"
 TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
 TOU_EXPENSIVE_END_HOUR = 24  # midnight
 
-# HA Sensors, VUE sensors, booleans, etc.
+# HA Sensors, home-load sensors, booleans, etc.
 # See local_config.example.py for full template
 ```
 
@@ -224,7 +224,7 @@ D-Bus based and stay enabled:
 ```python
 ENABLE_EV = True  # EV charging monitoring (car SoC, charger power) — D-Bus, no HA
 ENABLE_WATER = True  # Water level, pump and valve control — D-Bus (dbus-pump), no HA
-# Emporia/Vue acload D-Bus channels are not consumed by inverter-control
+# com.victronenergy.acload.* D-Bus channels are not consumed by inverter-control
 ENABLE_HA = True  # Home Assistant integration entirely
 ```
 
@@ -347,12 +347,12 @@ python3 main.py --dry-run
 - Use MPPT solar only, minus offset
 
 ### No Feed (`[NF]`)
-- Only use Tasmota PV inverters
+- Only use PV inverters (`com.victronenergy.pvinverter.*`)
 - Don't discharge main battery
-- Setpoint = Tasmota PV power
+- Setpoint = PV inverter power
 
 ### House Support (`[HS]`)
-- Tasmota PV minus 300W
+- PV inverter total minus 300W
 - Supports house loads partially
 
 ### Charge Battery (`[CHG]`)
@@ -403,21 +403,6 @@ Any Shelly device with external CT (current transformer) clamp input works well:
 - **Shelly EM** - Single phase, WiFi, local MQTT
 - Low latency (~100ms), fully local, no cloud dependency
 
-### Emporia Vue
-
-**Note:** `inverter-control` does **not** consume Emporia Vue / `com.victronenergy.acload` D-Bus channels (they add latency and are unused for setpoint generation). Prefer a local grid meter on Cerbo for control.
-
-Vue energy monitors can still exist on the GX for other dashboards, but have significant limitations for control use:
-
-| Version | Pros | Cons |
-|---------|------|------|
-| **Vue 2** | Affordable, easy setup | Cloud-only by default (us-east-2 = high latency), 2.4GHz WiFi only |
-| **Vue 3** | Has Ethernet port | ESPHome reflash may not work with Ethernet, falls back to WiFi |
-
-**Vue with ESPHome**: You can reflash Vue 2/3 with ESPHome for local MQTT, eliminating cloud latency. However:
-- Vue 2: No Ethernet, 2.4GHz WiFi can introduce jitter
-- Vue 3: Ethernet support in ESPHome is experimental, may not work
-
 ### Victron Energy Meters
 
 Official Victron solutions like **VM-3P75CT** (3-phase CT meter):
@@ -449,11 +434,6 @@ For most setups, **Shelly with CT clamp** offers the best balance:
 3. Affordable (~$50-80)
 4. Easy integration with this controller
 
-If already using Vue with cloud, it still works but expect:
-- 500-2000ms latency from us-east-2 cloud
-- Occasional missed readings
-- Less responsive grid-zero tracking
-
 ## Grid Smoothing with Home Load (v1.19.1+)
 
 When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller blends a derived grid estimate with the instantaneous CT meter for dramatically more stable setpoints.
@@ -461,8 +441,8 @@ When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller b
 ### How it works
 
 ```
-pv_total = MPPT DC power + Tasmota AC power
-derived_gt = home_total (from Vue via HA cloud) - pv_total
+pv_total = MPPT DC power + PV inverter AC power
+derived_gt = home_total (optional HA sensor) - pv_total
 # derived_gt: positive = import, negative = export
 
 effective_gt = GRID_SMOOTHING_HOME_WEIGHT * derived_gt
@@ -482,15 +462,14 @@ The derived grid is also EMA-smoothed with `GRID_SMOOTHING_DERIVED_ALPHA` (defau
 ### Why it helps
 
 - **Instantaneous CT meters** (VM-3P75CT, Shelly, etc.) report noisy, jittery values that cause setpoint oscillation
-- **Home total from Vue** (via HA cloud, ~1 s latency) is rock-stable — it's a billing-grade accumulator
+- **Home total from HA** (optional sensor, ~1 s latency when via cloud) can be rock-stable — a billing-grade accumulator
 - **Blending at 0.7 weight** gives you the stability of cloud data with the responsiveness of local CT
 - Bash scripts using this approach historically produced the most economical setpoints
 
 ### Requirements
 
 - `ENABLE_HA_LOADS = True` in `config.py`
-- `HA_SENSORS` in `site_config.py` must include Vue total house consumption sensor
-- `VUE_SENSORS` in `site_config.py` must map to correct HA entities
+- `HA_SENSORS` / `VUE_SENSORS` in site config must map `home_total` (and related keys) to the correct HA entities when smoothing is enabled
 
 ## Troubleshooting
 
@@ -668,7 +647,7 @@ This project is part of the Victron Venus OS integration suite:
 | [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
 | [inverter-desktop](https://github.com/victron-venus/inverter-desktop) | Native desktop application (Rust/Tauri) for system monitoring |
 | [dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) | MQTT to D-Bus bridge for JBD BMS battery integration |
-| [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Tasmota smart plug integration as a PV inverter on D-Bus |
+| [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Publishes `com.victronenergy.pvinverter.*` on D-Bus (one PV publisher among others); inverter-control only reads those services |
 | [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) | ESP32 Bluetooth monitor for JBD BMS batteries |
 | [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) | TIG (Telegraf, InfluxDB, Grafana) monitoring stack |
 | [terraform-github-victron](https://github.com/4alvit/terraform-github-victron) | Infrastructure as Code for the GitHub organization |
@@ -709,7 +688,7 @@ Configure branch protection rules in GitHub settings to require these checks.
 ### v1.19.1 (2026-08-15) — Aggressive Grid Smoothing with Home Load
 
 - **New**: `ENABLE_GRID_SMOOTHING_WITH_HOME`, `GRID_SMOOTHING_HOME_WEIGHT`, `GRID_SMOOTHING_DERIVED_ALPHA` config options
-- **Logic**: Blends derived grid (Vue home_total − PV production) with instantaneous CT meter at 0.7 weight
+- **Logic**: Blends derived grid (HA home_total − PV production) with instantaneous CT meter at 0.7 weight
 - **Stability**: Derived grid EMA-smoothed at 0.1 alpha; eliminates CT jitter while keeping responsiveness
 - **Result**: Most economical setpoints historically; stable grid-zero tracking despite noisy CT meters
 
@@ -748,7 +727,7 @@ MIT License
 For issues specific to:
 - **D-Bus errors**: Verify VE.Bus service and Venus OS version
 - **Home Assistant**: Test token and sensor availability
-- **Grid metering**: Check Shelly/Vue connection and MQTT latency
+- **Grid metering**: Check Shelly/CT meter connection and MQTT latency
 - **Operating modes**: Review mode-specific logic implementation
 - **This project**: Open an issue in this repository
 

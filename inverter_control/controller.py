@@ -462,7 +462,7 @@ class InverterController:
         self._cached_mppt_data = mppt_data
         self._cached_pv_powers = pv_inverter_powers
 
-        # Grid smoothing with Home total (optional; Emporia acload D-Bus not used)
+        # Grid smoothing with Home total (optional HA home_total sensor)
         # derived_gt = home_total - pv_total (negative = export, positive = import)
         # Blend with instantaneous CT meter for stable control
         home_total = 0.0
@@ -656,7 +656,7 @@ class InverterController:
         }
 
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
-        # mppt/tasmota data was already read this cycle in calculate_setpoint
+        # mppt/pv inverter data was already read this cycle in calculate_setpoint
         self._cached_battery_socs = self.victron.get_battery_chain_socs()
         _, self._cached_inv_state = self.victron.get_inverter_state()
 
