@@ -885,7 +885,9 @@ class InverterController:
                 # Mark setpoint-write liveness for the hardware watchdog
                 self._watchdog.mark_setpoint_update()
 
-            print(f"\033k{sys_data['gt']}\033\\", end="")
+            # Live console is TCP :9999 via broadcast_line below — do not emit
+            # GNU screen title escapes (\033k…\033\\) to stdout; under
+            # daemontools/multilog they pollute Loki as raw k63/k40/… noise.
             _stage("setpoint_write")
 
             # Inject cached data for console UI
