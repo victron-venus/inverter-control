@@ -12,7 +12,6 @@ except ImportError:
     from backports.zoneinfo import ZoneInfo
 
 from .config import (
-    ENABLE_ACLOADS,
     ENABLE_EV,
     ENABLE_WATER,
     TIMEZONE,
@@ -57,13 +56,12 @@ class ConsoleUI:
         # Extracted sections
         battery_str = self._fmt_battery_section(sys_data)
         solar_str = self._fmt_solar_section(sys_data)
-        loads_str = self._fmt_loads_section()
         extra_str = self._fmt_extra_info()
 
         line = (
             f"{now}{flags}>{C.CYAN}{setpoint}{C.RESET}({previous_setpoint}) "
             f"{grid_str}\t{usage_str} {battery_str} "
-            f"{solar_str} {loads_str} {extra_str} {bv:.2f}"
+            f"{solar_str} {extra_str} {bv:.2f}"
         )
 
         return line
@@ -110,25 +108,6 @@ class ConsoleUI:
             solar_str += f"{tas_str}+"
         solar_str += f"{int(mppt_total)}({mppt_str})){C.RESET}"
         return solar_str
-
-    def _fmt_loads_section(self) -> str:
-        if not ENABLE_ACLOADS:
-            return ""
-        loads_parts = []
-        for name, key in [
-            ("g", "garage"),
-            ("f", "fridge"),
-            ("h", "furnace"),
-            ("s", "stove"),
-            ("m", "microwave"),
-            ("k", "kitchen_fridge_side"),
-            ("d", "dishwasher"),
-            ("l", "lost"),
-        ]:
-            val = int(self.ha.get_sensor(key, 0))
-            if val > 19:
-                loads_parts.append(f"{val}{name}")
-        return " ".join(loads_parts)
 
     def _fmt_extra_info(self) -> str:
         parts = []

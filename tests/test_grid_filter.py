@@ -115,7 +115,6 @@ class TestControllerWiring:
             patch(f"{_MOD}.ENABLE_EV", False),
             patch(f"{_MOD}.ENABLE_WATER", False),
             patch(f"{_MOD}.ENABLE_HA", True),
-            patch(f"{_MOD}.ENABLE_ACLOADS", False),
         ):
             mock_victron = MagicMock()
             mock_get_victron.return_value = mock_victron
@@ -148,7 +147,6 @@ class TestControllerWiring:
             patch(f"{_MOD}.ENABLE_EV", False),
             patch(f"{_MOD}.ENABLE_WATER", False),
             patch(f"{_MOD}.ENABLE_HA", True),
-            patch(f"{_MOD}.ENABLE_ACLOADS", False),
         ):
             mock_victron = MagicMock()
             mock_get_victron.return_value = mock_victron
@@ -203,7 +201,6 @@ class TestControllerWiring:
             patch(f"{_MOD}.ENABLE_EV", False),
             patch(f"{_MOD}.ENABLE_WATER", False),
             patch(f"{_MOD}.ENABLE_HA", True),
-            patch(f"{_MOD}.ENABLE_ACLOADS", False),
         ):
             mock_victron = MagicMock()
             mock_get_victron.return_value = mock_victron

@@ -218,15 +218,12 @@ class TestHomeAssistantClient:
             "bool1": "on",
             "binary1": "off",
         }
-        with patch.object(self.client._vue_dbus_client, "update_all") as mock_vue:
-            mock_vue.side_effect = lambda vue_dict: vue_dict.update({"vue1": 200})
-            self.client._poll_all()
+        self.client._poll_all()
         # Check that data was parsed correctly
         assert self.client._sensors["sensor1"] == 150
         # Control flags and binary sensors are no longer parsed from HA.
         assert self.client.get_boolean() is False
         assert self.client.get_binary_sensor() is False
-        assert self.client._vue_sensors["vue1"] == 200
 
     @patch("inverter_control.homeassistant.HomeAssistantClient._fetch_template_data")
     def test_poll_all_failure(self, mock_fetch):

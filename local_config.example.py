@@ -36,8 +36,8 @@ TOU_EXPENSIVE_END_HOUR = 24  # midnight
 # =============================================================================
 # HOME ASSISTANT SENSORS
 # =============================================================================
-# Note: "home_total" removed - now read from Vue D-Bus (com.victronenergy.acload.Total)
-# via HomeAssistantClient.get_vue_sensor("total")
+# Note: "home_total" / Emporia Vue acload D-Bus channels are NOT consumed by
+# inverter-control (setpoint path uses Cerbo grid/CT + optional HA sensors).
 # Note: produced_today, battery_in/out_today, mppt_*_daily,
 # pv_total_daily, compensation_voltage removed - now read from D-Bus
 
@@ -52,11 +52,10 @@ HA_SENSORS = {
 }
 
 # =============================================================================
-# VUE POWER SENSORS (Deprecated - Auto-discovered via D-Bus acload services)
+# VUE POWER SENSORS (unused — Emporia acload D-Bus not consumed)
 # =============================================================================
-# Emporia Vue channels registered by dbus-emporia-vue (com.victronenergy.acload.*)
-# are automatically discovered on Venus OS D-Bus. No manual configuration needed.
-# Optional override mapping (key -> custom_name) if custom key names are desired:
+# inverter-control no longer discovers or reads com.victronenergy.acload.*
+# (dbus-emporia-vue). Kept as an empty mapping for config compatibility only.
 
 VUE_SENSORS = {}
 

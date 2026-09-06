@@ -27,7 +27,6 @@ class TestVictronCoverage:
         v._vebus_service = None
         v._mppt_services = []
         v._pv_inverter_services = []
-        v._acload_services = []
         targets = v._fast_targets()
         # Should have added shunt service paths
         assert any(t[0] == v._shunt_service for t in targets)
@@ -45,7 +44,6 @@ class TestVictronCoverage:
         v._vebus_service = "com.victronenergy.vebus.ttyUSB0"
         v._mppt_services = []
         v._pv_inverter_services = []
-        v._acload_services = []
         targets = v._fast_targets()
         assert any(t[0] == v._vebus_service for t in targets)
         from inverter_control.victron import VEBUS_INV_POWER_PATH, VEBUS_STATE_PATH
@@ -61,7 +59,6 @@ class TestVictronCoverage:
         v._vebus_service = None
         v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB0"]
         v._pv_inverter_services = []
-        v._acload_services = []
         targets = v._fast_targets()
         assert any(t[0] == v._mppt_services[0] for t in targets)
         from inverter_control.victron import MPPT_SIGNAL_PATHS
@@ -77,7 +74,6 @@ class TestVictronCoverage:
         v._vebus_service = None
         v._mppt_services = []
         v._pv_inverter_services = ["com.victronenergy.vebus.ttyUSB0"]  # reuse
-        v._acload_services = []
         targets = v._fast_targets()
         assert any(t[0] == v._pv_inverter_services[0] for t in targets)
         from inverter_control.victron import PV_SIGNAL_PATHS
@@ -85,22 +81,6 @@ class TestVictronCoverage:
         for service, path in targets:
             if service == v._pv_inverter_services[0]:
                 assert path in PV_SIGNAL_PATHS
-
-    def test_fast_targets_with_acload_services(self):
-        """Cover lines in _fast_targets that involve aload services"""
-        v = victron.get_victron(test_mode=False)
-        v._shunt_service = None
-        v._vebus_service = None
-        v._mppt_services = []
-        v._pv_inverter_services = []
-        v._acload_services = ["com.victronenergy.acload.ttyUSB0"]
-        targets = v._fast_targets()
-        assert any(t[0] == v._acload_services[0] for t in targets)
-        from inverter_control.victron import AC_POWER_PATH, ACLOAD_NAME_PATH
-
-        for service, path in targets:
-            if service == v._acload_services[0]:
-                assert path in (ACLOAD_NAME_PATH, AC_POWER_PATH)
 
     def test_setup_fast_signals_native_none(self):
         """Cover line 253: early return when _native is None"""
@@ -129,7 +109,6 @@ class TestVictronCoverage:
             v._vebus_service = None
             v._mppt_services = []
             v._pv_inverter_services = []
-            v._acload_services = []
             # Now call _setup_fast_signals
             v._setup_fast_signals()
             # Verify that subscribe_service_items was called with the shunt service
@@ -150,7 +129,6 @@ class TestVictronCoverage:
             v._vebus_service = "com.victronenergy.vebus.ttyUSB0"
             v._mppt_services = []
             v._pv_inverter_services = []
-            v._acload_services = []
             v._setup_fast_signals()
             # Check that the vebus service calls were made
             from inverter_control.victron import VEBUS_INV_POWER_PATH, VEBUS_STATE_PATH
@@ -177,7 +155,6 @@ class TestVictronCoverage:
             v._vebus_service = None
             v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB0"]
             v._pv_inverter_services = []
-            v._acload_services = []
             v._setup_fast_signals()
             mock_native_instance.subscribe_service_items.assert_any_call(v._mppt_services[0])
 
@@ -196,7 +173,6 @@ class TestVictronCoverage:
             v._vebus_service = None
             v._mppt_services = []
             v._pv_inverter_services = []
-            v._acload_services = []
             v._setup_fast_signals()
             # If all(subscribed) is True, then _last_signal_ok_monotonic should be set
             assert v._last_signal_ok_monotonic is not None
