@@ -548,14 +548,14 @@ class TestNoFeedStrategy(unittest.TestCase):
         assert result == -500
         assert flags == ""
 
-    def test_no_feed_zero_tasmota(self):
+    def test_no_feed_zero_pv(self):
         state = self._state(no_feed=True, pv_inverter_total=0)
         result, _flags = no_feed_strategy(state, -500)
         assert result == 0
 
 
 class TestHouseSupportStrategy(unittest.TestCase):
-    """Test house_support_strategy: returns tasmota - 300 offset"""
+    """Test house_support_strategy: returns pv inverter - 300 offset"""
 
     def _state(self, **kwargs):
         defaults = {
@@ -594,12 +594,12 @@ class TestHouseSupportStrategy(unittest.TestCase):
         assert result == -500
         assert flags == ""
 
-    def test_house_support_small_tasmota(self):
+    def test_house_support_small_pv(self):
         state = self._state(house_support=True, pv_inverter_total=200)
         result, _flags = house_support_strategy(state, -500)
         assert result == -100
 
-    def test_house_support_zero_tasmota(self):
+    def test_house_support_zero_pv(self):
         state = self._state(house_support=True, pv_inverter_total=0)
         result, _flags = house_support_strategy(state, -500)
         assert result == -300

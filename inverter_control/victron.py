@@ -58,10 +58,10 @@ CONTROL_FLAG_SETTINGS = {
 SYSTEM_SERVICE = "com.victronenergy.system"
 GET_VALUE_METHOD = "com.victronenergy.BusItem.GetValue"
 PRINT_REPLY_LITERAL = "--print-reply=literal"
-TASMOTA_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
-TASMOTA_ENERGY_DAILY_PATH = "/Ac/Energy/Daily"
-# Published by dbus-tasmota-pv >= 3.0 (Tasmota ENERGY.Yesterday)
-TASMOTA_ENERGY_YESTERDAY_PATH = "/Energy/Daily/Yesterday"
+PV_INVERTER_ENERGY_FORWARD_PATH = "/Ac/Energy/Forward"
+PV_INVERTER_ENERGY_DAILY_PATH = "/Ac/Energy/Daily"
+# Yesterday path published by dbus-tasmota-pv >= 3.0 (and compatible publishers)
+PV_INVERTER_ENERGY_YESTERDAY_PATH = "/Energy/Daily/Yesterday"
 AC_POWER_PATH = "/Ac/Power"
 YIELD_POWER_PATH = "/Yield/Power"
 # Battery daily energy is integrated from battery power (no D-Bus history on
@@ -104,7 +104,7 @@ SHUNT_SIGNAL_PATHS = {
 # the cached dict can hold only a subset briefly at startup; get_system_data
 # merges over these defaults so a partial cache never KeyErrors.
 _SYSTEM_DATA_KEYS = frozenset({"g1", "g2", "gt", "t1", "t2", "tt", "bv", "bc", "bp"})
-# MPPT chargers and Tasmota PV inverters are signal-driven too;
+# MPPT chargers and PV inverters are signal-driven too;
 # their single-value reads remain only as a slow reconciliation pass.
 MPPT_SIGNAL_PATHS = {
     YIELD_POWER_PATH: "w",
@@ -194,7 +194,7 @@ class VictronDBus:
         # Cache for MPPT data to reduce D-Bus calls
         self._cached_mppt_data: dict[str, dict[str, float]] = {}
         self._last_mppt_time: float = 0.0
-        # Cache for Tasmota PV power
+        # Cache for PV inverter power
         self._cached_pv_powers: list = []
         self._last_pv_time: float = 0.0
         # Cache for battery chain SoC
@@ -207,9 +207,9 @@ class VictronDBus:
         # Cache for inverter state
         self._cached_inverter_state: tuple[int, str] = (0, "Unknown")
         self._last_inverter_state_time: float = 0.0
-        # Cache for discovered Tasmota PV inverter services
+        # Cache for discovered PV inverter services
         self._pv_inverter_services: list = []
-        # Cache for daily/yesterday yields (MPPT + Tasmota) and battery daily energy
+        # Cache for daily/yesterday yields (MPPT + PV inverter) and battery daily energy
         self._cached_mppt_daily_yields: list[float] = []
         self._cached_pv_inverter_daily_yields: list[float] = []
         self._cached_mppt_yesterday_yields: list[float] = []
@@ -304,7 +304,7 @@ class VictronDBus:
             subscribed.append(
                 self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH)
             )
-        # Discovered services (solarcharger C++, tasmota-pv velib-python)
+        # Discovered services (solarcharger C++, pvinverter velib-python)
         for service in (*self._mppt_services, *self._pv_inverter_services):
             subscribed.append(self._native.subscribe_service_items(service))
         self._set_signals_healthy(all(subscribed))
@@ -432,7 +432,7 @@ class VictronDBus:
         return True
 
     def _discover_services(self):
-        """Discover VE.Bus, MPPT, and Tasmota PV inverter services.
+        """Discover VE.Bus, MPPT, and PV inverter services.
 
         Runs a blocking `dbus -y` subprocess (bounded by DISCOVERY_TIMEOUT) that
         takes the discovery lock; concurrent callers (startup, NameOwnerChanged,
@@ -982,7 +982,7 @@ class VictronDBus:
             self._consecutive_errors += 1
 
     def _poll_daily_yields(self):
-        """Poll daily/yesterday yields for MPPT chargers and Tasmota inverters (throttled to 5s)"""
+        """Poll daily/yesterday yields for MPPT chargers and PV inverters (throttled to 5s)"""
         now = time.time()
         if now - self._last_daily_yields_time < 5.0:
             return
@@ -997,13 +997,13 @@ class VictronDBus:
             for service in self._mppt_services
         ]
 
-        # Tasmota: dbus-tasmota-pv publishes both counters directly from the
-        # plug telemetry (ENERGY.Today / ENERGY.Yesterday) - no arithmetic here.
+        # PV inverters: publishers (e.g. dbus-tasmota-pv) expose both counters
+        # on D-Bus directly — no arithmetic here.
         self._cached_pv_inverter_daily_yields = [
-            self._get_float_nolock(s, TASMOTA_ENERGY_DAILY_PATH) for s in self._pv_inverter_services
+            self._get_float_nolock(s, PV_INVERTER_ENERGY_DAILY_PATH) for s in self._pv_inverter_services
         ]
         self._cached_pv_inverter_yesterday_yields = [
-            self._get_float_nolock(s, TASMOTA_ENERGY_YESTERDAY_PATH)
+            self._get_float_nolock(s, PV_INVERTER_ENERGY_YESTERDAY_PATH)
             for s in self._pv_inverter_services
         ]
         self._last_daily_yields_time = now
@@ -1522,7 +1522,7 @@ class VictronDBus:
         return self._cached_mppt_data
 
     def get_pv_power(self) -> list:
-        """Get power from PV inverters (Tasmota, ESPHome, etc.) - pure cache."""
+        """Get power from PV inverters (com.victronenergy.pvinverter.*) - pure cache."""
         if self._last_pv_time > 0:
             return self._cached_pv_powers
         if not self._pv_inverter_services:
@@ -2030,7 +2030,7 @@ class VictronDBus:
         return list(self._cached_mppt_daily_yields)
 
     def get_pv_inverter_daily_yields(self) -> list[float]:
-        """Get daily yield (kWh) for each Tasmota PV inverter - instant from background cache"""
+        """Get daily yield (kWh) for each PV inverter - instant from background cache"""
         return list(self._cached_pv_inverter_daily_yields)
 
     def get_mppt_yesterday_yields(self) -> list[float]:
@@ -2038,7 +2038,7 @@ class VictronDBus:
         return list(self._cached_mppt_yesterday_yields)
 
     def get_pv_inverter_yesterday_yields(self) -> list[float]:
-        """Get yesterday's yield (kWh) for each Tasmota PV inverter - instant from cache"""
+        """Get yesterday's yield (kWh) for each PV inverter - instant from cache"""
         return list(self._cached_pv_inverter_yesterday_yields)
 
     def get_battery_daily_energy(self) -> tuple[float, float]:

@@ -6,7 +6,7 @@
 flowchart TB
     subgraph Solar["☀️ Solar Sources"]
         MPPT["MPPT Charger\n(Victron)"]
-        TAS["Tasmota PV\n(2x smart plugs)"]
+        PVI["PV Inverters\n(AC-coupled)"]
     end
 
     subgraph Battery["🔋 Battery System"]
@@ -16,7 +16,7 @@ flowchart TB
 
     subgraph Measurement["📊 Measurements"]
         SHELLY["Shelly Pro 3EM\n(Grid Meter)"]
-        VUE["Emporia Vue\n(Circuit Monitor)"]
+        HOME["Home load meter\n(optional)"]
     end
 
     subgraph ESP["📡 ESP32 Bridge"]
@@ -41,7 +41,7 @@ flowchart TB
 
     %% Solar to Battery
     MPPT -->|"DC Power"| INV
-    TAS -->|"Grid AC"| SYS
+    PVI -->|"Grid AC"| SYS
 
     %% Battery connections
     JBD -->|"BLE"| ESP32
@@ -61,7 +61,7 @@ flowchart TB
     VBUS <-->|"Inverter State"| INV
 
     %% Circuit monitoring
-    VUE -->|"Cloud/HTTP"| HA
+    HOME -->|"Cloud/HTTP"| HA
     HA -->|"Load Data"| INV_CTRL
 
     %% Remote access
@@ -109,8 +109,8 @@ graph TB
         CERBO["Cerbo GX\n192.168.160.150"]
         MQTT_C["MQTT :1883"]
         SHELLY["Shelly Pro 3EM"]
-        TAS1["Tasmota :120"]
-        TAS2["Tasmota :121"]
+        PVI1["PV inverter 1"]
+        PVI2["PV inverter 2"]
         ESP["ESP32"]
     end
 
@@ -123,8 +123,8 @@ graph TB
     CERBO --> MQTT_C
     MQTT_C --> DASH
     SHELLY -->|"MQTT"| MQTT_C
-    TAS1 --> MQTT_C
-    TAS2 --> MQTT_C
+    PVI1 --> MQTT_C
+    PVI2 --> MQTT_C
     ESP -->|"MQTT:battery"| MQTT_C
     HA -->|"HTTP :8123"| CERBO
     GH -->|"Download"| CERBO

@@ -134,7 +134,7 @@ MQTT_SLIM_EXCLUDE_KEYS = frozenset(
         "pv_inverter_individual",
         "pv_inverter_powers",
         "pv_inverters",
-        # Active loads (legacy key; inverter-control no longer reads Emporia acloads)
+        # Active loads (legacy publish key; acload D-Bus reads removed)
         "loads",
         # VE.Bus mode + Hub4 setpoint (Cerbo vebus)
         "setpoint",
@@ -269,8 +269,8 @@ EMA_ALPHA = float(
 GRID_FILTER_TAU = float(_import_local_config("GRID_FILTER_TAU", 2.0))
 SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
-# Aggressive Grid Smoothing with Home Load (Vue via HA cloud)
-# Uses "home_total" (total house consumption from Vue) + known production
+# Aggressive Grid Smoothing with Home Load (optional HA home_total)
+# Uses "home_total" (total house consumption) + known production
 # to derive a stable grid estimate. Blends with instantaneous CT meter.
 # Values are tuned by inverter-monitoring analysis/grid_correlation.py.
 ENABLE_GRID_SMOOTHING_WITH_HOME = bool(

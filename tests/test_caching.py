@@ -83,15 +83,15 @@ def test_mppt_data_caching():
 
 def test_pv_inverter_power_caching():
     """Test that get_pv_power caches results"""
-    print("Testing Tasmota PV power caching...")
+    print("Testing PV inverter power caching...")
 
     # Reset singleton
     victron._victron = None
     v = victron.VictronDBus(test_mode=True)
-    # Mock discovered Tasmota services
+    # Mock discovered PV inverter services
     v._pv_inverter_services = [
-        "com.victronenergy.pvinverter.tasmota_120",
-        "com.victronenergy.pvinverter.tasmota_121",
+        "com.victronenergy.pvinverter.pvinverter_120",
+        "com.victronenergy.pvinverter.pvinverter_121",
     ]
 
     call_count = 0
@@ -164,7 +164,7 @@ def test_pv_inverter_power_caching():
             f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
         )
 
-        print("✓ Tasmota PV power caching test passed")
+        print("✓ PV inverter power caching test passed")
 
 
 def test_battery_chain_socs_caching():

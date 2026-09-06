@@ -246,7 +246,7 @@ class TestHomeAssistantClient:
         assert self.client.get_sensor("missing") == 0
 
     def test_get_vue_sensor(self):
-        """Test getting VUE sensor value"""
+        """Test getting home-load sensor value"""
         self.client._vue_sensors["vue_sensor"] = 100
         assert self.client.get_vue_sensor("vue_sensor") == 100
 

@@ -36,8 +36,8 @@ TOU_EXPENSIVE_END_HOUR = 24  # midnight
 # =============================================================================
 # HOME ASSISTANT SENSORS
 # =============================================================================
-# Note: "home_total" / Emporia Vue acload D-Bus channels are NOT consumed by
-# inverter-control (setpoint path uses Cerbo grid/CT + optional HA sensors).
+# Note: setpoint path uses Cerbo grid/CT + optional HA sensors.
+# com.victronenergy.acload.* D-Bus channels are not consumed.
 # Note: produced_today, battery_in/out_today, mppt_*_daily,
 # pv_total_daily, compensation_voltage removed - now read from D-Bus
 
@@ -52,10 +52,10 @@ HA_SENSORS = {
 }
 
 # =============================================================================
-# VUE POWER SENSORS (unused — Emporia acload D-Bus not consumed)
+# HOME-LOAD SENSORS (legacy VUE_SENSORS mapping; optional HA home_total)
 # =============================================================================
-# inverter-control no longer discovers or reads com.victronenergy.acload.*
-# (dbus-emporia-vue). Kept as an empty mapping for config compatibility only.
+# Used by grid smoothing / console home_total when populated via HA entities.
+# Empty by default. Not related to D-Bus acload services.
 
 VUE_SENSORS = {}
 

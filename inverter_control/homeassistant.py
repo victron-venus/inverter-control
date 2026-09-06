@@ -224,7 +224,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             time.sleep(HA_POLL_INTERVAL)
 
     def _poll_all(self):
-        """Poll all entities from HA (Emporia/Vue D-Bus acloads are not consumed)."""
+        """Poll all entities from HA."""
         data = self._fetch_template_data()
 
         with self._lock:
@@ -299,12 +299,12 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         return self._parse_duration(raw)
 
     def get_vue_sensor(self, key: str, default: Any = 0) -> Any:
-        """Get cached VUE sensor value (legacy stub; Emporia acload D-Bus not used)."""
+        """Get cached home-load sensor value (legacy VUE_SENSORS mapping)."""
         with self._lock:
             return self._vue_sensors.get(key, default)
 
     def get_all_vue_sensors(self) -> dict[str, Any]:
-        """Get copy of all VUE sensor values"""
+        """Get copy of all home-load sensor values (legacy VUE_SENSORS mapping)"""
         with self._lock:
             return dict(self._vue_sensors)
 

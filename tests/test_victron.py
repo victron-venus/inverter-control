@@ -316,7 +316,7 @@ class TestVictronDBus:
         assert data["mppt0"]["a"] == 10.5
 
     def test_get_pv_power(self):
-        """Test getting Tasmota PV power"""
+        """Test getting PV inverter power"""
         victron.reset_victron_for_testing()
         v = victron.get_victron(test_mode=True)
         v._cached_pv_powers = [1200.0, 800.0]
@@ -842,7 +842,7 @@ class TestPollDailyYields:
         mock_run.return_value = MagicMock(returncode=0, stdout="")
         v = victron.get_victron(test_mode=True)
         v._mppt_services = ["com.victronenergy.solarcharger.ttyUSB1"]
-        v._pv_inverter_services = ["com.victronenergy.pvinverter.tasmota_1"]
+        v._pv_inverter_services = ["com.victronenergy.pvinverter.pvinverter_1"]
 
         reads: list[tuple[str, str]] = []
 
@@ -851,8 +851,8 @@ class TestPollDailyYields:
             return {
                 "/History/Daily/0/Yield": 4.0,
                 "/History/Daily/1/Yield": 3.0,
-                victron.TASMOTA_ENERGY_DAILY_PATH: 2.0,
-                victron.TASMOTA_ENERGY_YESTERDAY_PATH: 1.5,
+                victron.PV_INVERTER_ENERGY_DAILY_PATH: 2.0,
+                victron.PV_INVERTER_ENERGY_YESTERDAY_PATH: 1.5,
             }.get(path, 0.0)
 
         with patch.object(v, "_get_float_nolock", side_effect=fake_get):
@@ -868,7 +868,7 @@ class TestPollDailyYields:
         """Daily yield must come from /Ac/Energy/Daily, not lifetime-minus-midnight"""
         mock_run.return_value = MagicMock(returncode=0, stdout="")
         v = victron.get_victron(test_mode=True)
-        v._pv_inverter_services = ["com.victronenergy.pvinverter.tasmota_1"]
+        v._pv_inverter_services = ["com.victronenergy.pvinverter.pvinverter_1"]
         v._mppt_services = []
 
         reads: list[str] = []
@@ -877,8 +877,8 @@ class TestPollDailyYields:
         ):
             v._poll_daily_yields()
 
-        assert victron.TASMOTA_ENERGY_FORWARD_PATH not in reads
-        assert victron.TASMOTA_ENERGY_DAILY_PATH in reads
+        assert victron.PV_INVERTER_ENERGY_FORWARD_PATH not in reads
+        assert victron.PV_INVERTER_ENERGY_DAILY_PATH in reads
 
 
 if __name__ == "__main__":

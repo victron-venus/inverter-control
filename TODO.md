@@ -203,7 +203,7 @@ home total, and the setpoint booleans) stay at full per-cycle speed.
 - [x] **acloads** — `get_acload_powers()` (victron.py:1495) is a pure-cache
       compose (`_compose_acload_powers`); the native `_reconcile_acload_power`
       runs only in the background poll thread (gated via `_reconcile_groups_if_stale`).
-- [x] **PV inverters (Tasmota)** — `get_pv_power()` pure-cache; poll thread owns
+- [x] **PV inverters** — `get_pv_power()` pure-cache; poll thread owns
       reconcile. Individual/display values built from cache (`_cached_pv_powers`).
 - [x] **MPPT controllers** — `get_mppt_chargers()` (victron.py:1972) native 2s
       TTL but wrapped by controller `_get_cached_mppt_chargers()` **10s** cache, so
