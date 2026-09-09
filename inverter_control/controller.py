@@ -635,7 +635,7 @@ class InverterController:
     def _get_daily_stats(self) -> dict[str, Any]:
         # All daily stats now from D-Bus (no HA dependency)
         battery_in, battery_out = self.victron.get_battery_daily_energy()
-        _, _ = self.victron.get_battery_yesterday_energy()
+        battery_in_yesterday, battery_out_yesterday = self.victron.get_battery_yesterday_energy()
         mppt_daily = self.victron.get_mppt_daily_yields()
         pv_inverter_daily = self.victron.get_pv_inverter_daily_yields()
         produced_today = sum(mppt_daily) + sum(pv_inverter_daily)
@@ -649,6 +649,8 @@ class InverterController:
             "grid_kwh": 0.0,  # No D-Bus equivalent yet
             "battery_in": battery_in,
             "battery_out": battery_out,
+            "battery_in_yesterday": battery_in_yesterday,
+            "battery_out_yesterday": battery_out_yesterday,
             "pv_total_daily": produced_today,
             "pv_inverter_daily": pv_inverter_daily,
             "mppt_daily": mppt_daily,
