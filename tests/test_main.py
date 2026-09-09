@@ -534,21 +534,27 @@ class TestGetDailyStats(unittest.TestCase):
     def test_returns_correct_dict_structure(self):
         controller, mock_victron, _, _ = _make_controller()
         mock_victron.get_battery_daily_energy.return_value = (10.5, 8.2)
-        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
+        mock_victron.get_battery_yesterday_energy.return_value = (9.1, 7.4)
         mock_victron.get_mppt_daily_yields.return_value = [5.0, 3.0, 2.0]
         mock_victron.get_pv_inverter_daily_yields.return_value = [1.5, 0.5]
+        mock_victron.get_mppt_yesterday_yields.return_value = []
+        mock_victron.get_pv_inverter_yesterday_yields.return_value = []
 
         stats = controller._get_daily_stats()
 
         assert "produced_today" in stats
         assert "battery_in" in stats
         assert "battery_out" in stats
+        assert "battery_in_yesterday" in stats
+        assert "battery_out_yesterday" in stats
         assert "mppt_daily" in stats
         assert "pv_inverter_daily" in stats
         assert "pv_total_daily" in stats
         assert stats["produced_today"] == 12.0  # sum([5,3,2]) + sum([1.5,0.5])
         assert stats["battery_in"] == 10.5
         assert stats["battery_out"] == 8.2
+        assert stats["battery_in_yesterday"] == 9.1
+        assert stats["battery_out_yesterday"] == 7.4
 
     def test_returns_zeroed_dict_when_no_data(self):
         controller, mock_victron, _, _ = _make_controller()
@@ -556,12 +562,16 @@ class TestGetDailyStats(unittest.TestCase):
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
+        mock_victron.get_mppt_yesterday_yields.return_value = []
+        mock_victron.get_pv_inverter_yesterday_yields.return_value = []
 
         stats = controller._get_daily_stats()
 
         assert stats["produced_today"] == 0.0
         assert stats["battery_in"] == 0.0
         assert stats["battery_out"] == 0.0
+        assert stats["battery_in_yesterday"] == 0.0
+        assert stats["battery_out_yesterday"] == 0.0
 
 
 class TestGetEvState(unittest.TestCase):
