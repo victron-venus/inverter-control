@@ -23,8 +23,7 @@ def test_precharge_day_scoped_banner_for_today():
         patch.object(controller, "_in_expensive_window", return_value=False),
     ):
         mock_dt.now.return_value = fixed
-        mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
-        # Keep UTC symbol used by controller
+        # Keep UTC symbol used by controller (only datetime.now(UTC) is used)
         mock_dt.UTC = UTC
 
         ok = controller._handle_pre_charge_webhook(
