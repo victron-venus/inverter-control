@@ -35,46 +35,30 @@ jobs:
 
     - name: Install security tools
       run: |
-        pip install --only-binary :all: "bandit==1.8.3" "safety"
+        pip install --only-binary :all: "bandit[sarif]==1.8.3" "safety"
 
     - name: Run Bandit security linter
       id: bandit
       run: |
+        # Keep Bandit's exit status, but upload its report even when findings fail the scan.
+        bandit_status=0
         bandit -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
-          --include "*.py" -f sarif -o /tmp/bandit-results.sarif
+          -f sarif -o "$RUNNER_TEMP/bandit-results.sarif" || bandit_status=$?
 
-        # Always ensure SARIF exists for upload step
-        if [ ! -f /tmp/bandit-results.sarif ]; then
-          printf '%s\n' \
-            '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Bandit","version":"1.8.0","informationUri":"https://bandit.readthedocs.io/","rules":[]}},"results":[]}]}' \
-            > /tmp/bandit-results.sarif
+        # Never replace a failed scan with an empty report.
+        if [ -s "$RUNNER_TEMP/bandit-results.sarif" ]; then
+          echo "sarif_ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Bandit did not produce a SARIF report (exit $bandit_status)."
+          exit 1
         fi
-
-    - name: Fail on Bandit high/medium findings
-      if: steps.bandit.outcome == 'success'
-      run: |
-        python3 - <<'PY'
-        import json, sys
-        with open('/tmp/bandit-results.sarif') as f:
-            sarif = json.load(f)
-        HIGH = {'HIGH', 'CRITICAL'}
-        findings = []
-        for run in sarif.get('runs', []):
-            for r in run.get('results', []):
-                sev = r.get('properties', {}).get('issue_severity', '')
-                level = r.get('level', '').upper()
-                if level in HIGH or str(sev).upper() in HIGH:
-                    findings.append(r.get('ruleId') + ':' + r.get('message', {}).get('text', ''))
-        if findings:
-            print('::error::Bandit high/medium findings: ' + '; '.join(findings[:10]))
-            sys.exit(1)
-        PY
+        exit "$bandit_status"
 
     - name: Upload Bandit results
-      if: always()
+      if: always() && steps.bandit.outputs.sarif_ready == 'true'
       uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
       with:
-        sarif_file: /tmp/bandit-results.sarif
+        sarif_file: ${{ runner.temp }}/bandit-results.sarif
         category: python-bandit
 
     - name: Run Safety dependency check
