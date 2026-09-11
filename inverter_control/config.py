@@ -157,7 +157,7 @@ MQTT_SLIM_EXCLUDE_KEYS = frozenset(
 # =============================================================================
 # WEBHOOK SERVER (for solar forecast pre-charge triggers)
 # =============================================================================
-WEBHOOK_SERVER_HOST = "0.0.0.0"
+WEBHOOK_SERVER_HOST = _import_local_config("WEBHOOK_SERVER_HOST", "127.0.0.1")
 WEBHOOK_SERVER_PORT = 8081
 
 # =============================================================================

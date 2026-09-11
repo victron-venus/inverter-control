@@ -15,8 +15,8 @@ from inverter_control.watchdog import HardwareWatchdog
 
 def wait_until(condition, timeout=2.0, interval=0.01):
     """Poll `condition()` until truthy or the deadline expires."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if condition():
             return True
         time.sleep(interval)
@@ -38,6 +38,7 @@ class TestHardwareWatchdog(unittest.TestCase):
             dry_run=dry_run,
             get_setpoint=lambda: 1234,
         )
+        self.addCleanup(watchdog.stop)
         return watchdog, victron
 
     def test_active_loop_never_triggers_failsafe(self):
@@ -76,7 +77,9 @@ class TestHardwareWatchdog(unittest.TestCase):
         watchdog.mark_setpoint_update()
 
         # Let the loop go silent past the timeout
-        assert wait_until(watchdog.is_triggered)
+        # Trigger detection precedes the hardware write on the worker thread.
+        assert wait_until(lambda: watchdog.get_status()["hardware_forced"])
+        assert watchdog.is_triggered()
 
         assert watchdog._hardware_forced
         victron.set_grid_setpoint.assert_any_call(0)
@@ -91,7 +94,9 @@ class TestHardwareWatchdog(unittest.TestCase):
         watchdog.mark_setpoint_update()
 
         # Stall -> failsafe
-        assert wait_until(watchdog.is_triggered)
+        # Trigger detection precedes the hardware write on the worker thread.
+        assert wait_until(lambda: watchdog.get_status()["hardware_forced"])
+        assert watchdog.is_triggered()
 
         # Loop recovers and resumes marking regularly
         for _ in range(10):
@@ -99,7 +104,9 @@ class TestHardwareWatchdog(unittest.TestCase):
             watchdog.mark_setpoint_update()
             time.sleep(0.02)
 
-        assert wait_until(lambda: not watchdog.is_triggered())
+        assert wait_until(
+            lambda: not watchdog.is_triggered() and watchdog._pre_forced_setpoint == 0
+        )
         victron.set_ess_mode.assert_not_called()
         victron.set_grid_setpoint.assert_any_call(1234)
         watchdog.stop()
@@ -133,6 +140,7 @@ class TestWatchdogConcurrency(unittest.TestCase):
             dry_run=dry_run,
             get_setpoint=lambda: 1234,
         )
+        self.addCleanup(watchdog.stop)
         return watchdog, victron
 
     def test_rapid_mark_calls_from_threads(self):
@@ -189,7 +197,9 @@ class TestWatchdogConcurrency(unittest.TestCase):
         watchdog.mark_setpoint_update()
 
         # Stall → failsafe
-        assert wait_until(watchdog.is_triggered)
+        # Trigger detection precedes the hardware write on the worker thread.
+        assert wait_until(lambda: watchdog.get_status()["hardware_forced"])
+        assert watchdog.is_triggered()
         assert watchdog._pre_forced_setpoint == 1234
 
         # Recover
@@ -198,7 +208,9 @@ class TestWatchdogConcurrency(unittest.TestCase):
             watchdog.mark_setpoint_update()
             time.sleep(0.02)
 
-        assert wait_until(lambda: not watchdog.is_triggered())
+        assert wait_until(
+            lambda: not watchdog.is_triggered() and watchdog._pre_forced_setpoint == 0
+        )
         # After recovery, pre_forced state should be cleared
         assert watchdog._pre_forced_setpoint == 0
         watchdog.stop()

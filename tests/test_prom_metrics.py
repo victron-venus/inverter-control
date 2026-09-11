@@ -4,6 +4,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from inverter_control import prom_metrics
 
 
@@ -34,7 +36,11 @@ def _fake_gauges():
     return gauges, make
 
 
-def test_publish_sets_all_gauges(monkeypatch):
+@pytest.mark.parametrize("host", [None, "192.0.2.10"])
+def test_publish_sets_all_gauges(monkeypatch, host):
+    monkeypatch.delenv("INVERTER_METRICS_HOST", raising=False)
+    if host:
+        monkeypatch.setenv("INVERTER_METRICS_HOST", host)
     _gauges_unused, make = _fake_gauges()
     fake_pc = MagicMock()
     fake_pc.Gauge.side_effect = make
@@ -50,6 +56,7 @@ def test_publish_sets_all_gauges(monkeypatch):
     sys.modules["prometheus_client"] = stub
     try:
         assert prom_metrics.start() is True
+        stub.start_http_server.assert_called_once_with(19102, addr=host or "127.0.0.1")
     finally:
         del sys.modules["prometheus_client"]
     prom_metrics._gauges = {
