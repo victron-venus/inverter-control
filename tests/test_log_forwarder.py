@@ -220,6 +220,7 @@ class TestLogForwarder:
         """Test successful push with requests library."""
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
+        mock_resp.status_code = 204
         mock_post.return_value = mock_resp
 
         payload = {"streams": [{"stream": {"job": "test"}, "values": [["123", "msg"]]}]}
@@ -242,12 +243,12 @@ class TestLogForwarder:
         assert result is False
 
     @patch("inverter_control.log_forwarder.USE_REQUESTS", False)
-    @patch("inverter_control.log_forwarder.urllib.request.urlopen")
-    def test_push_to_loki_success_urllib(self, mock_urlopen):
+    @patch("inverter_control.log_forwarder.urllib.request.build_opener")
+    def test_push_to_loki_success_urllib(self, mock_build_opener):
         """Test successful push with urllib."""
         mock_resp = MagicMock()
         mock_resp.status = 200
-        mock_urlopen.return_value.__enter__.return_value = mock_resp
+        mock_build_opener.return_value.open.return_value.__enter__.return_value = mock_resp
 
         payload = {"streams": [{"stream": {"job": "test"}, "values": [["123", "msg"]]}]}
         result = log_forwarder.push_to_loki(payload)
@@ -255,12 +256,12 @@ class TestLogForwarder:
         assert result is True
 
     @patch("inverter_control.log_forwarder.USE_REQUESTS", False)
-    @patch("inverter_control.log_forwarder.urllib.request.urlopen")
-    def test_push_to_loki_failure_http_error(self, mock_urlopen):
+    @patch("inverter_control.log_forwarder.urllib.request.build_opener")
+    def test_push_to_loki_failure_http_error(self, mock_build_opener):
         """Test failed push with HTTP error."""
         mock_resp = MagicMock()
         mock_resp.status = 500
-        mock_urlopen.return_value.__enter__.return_value = mock_resp
+        mock_build_opener.return_value.open.return_value.__enter__.return_value = mock_resp
 
         payload = {"streams": [{"stream": {"job": "test"}, "values": [["123", "msg"]]}]}
         result = log_forwarder.push_to_loki(payload)
@@ -268,12 +269,14 @@ class TestLogForwarder:
         assert result is False
 
     @patch("inverter_control.log_forwarder.USE_REQUESTS", False)
-    @patch("inverter_control.log_forwarder.urllib.request.urlopen")
-    def test_push_to_loki_exception_urllib(self, mock_urlopen):
+    @patch("inverter_control.log_forwarder.urllib.request.build_opener")
+    def test_push_to_loki_exception_urllib(self, mock_build_opener):
         """Test push exception handling with urllib."""
         import urllib.error
 
-        mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+        mock_build_opener.return_value.open.side_effect = urllib.error.URLError(
+            "Connection refused"
+        )
 
         payload = {"streams": [{"stream": {"job": "test"}, "values": [["123", "msg"]]}]}
         result = log_forwarder.push_to_loki(payload)
@@ -316,5 +319,51 @@ class TestLogForwarder:
         assert "dbus-virtual-chain" in log_forwarder.LOG_SOURCES
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+@pytest.mark.parametrize("use_requests", [True, False])
+@pytest.mark.parametrize(
+    "url", ["file:///etc/passwd", "ftp://example.com/logs", "https:///logs", "logs"]
+)
+def test_loki_rejects_non_http_endpoints(monkeypatch, use_requests, url):
+    monkeypatch.setattr(log_forwarder, "USE_REQUESTS", use_requests)
+    monkeypatch.setattr(log_forwarder, "LOKI_URL", url)
+    with (
+        patch.object(log_forwarder.requests, "post") as post,
+        patch.object(log_forwarder.urllib.request, "build_opener") as opener,
+    ):
+        assert log_forwarder.push_to_loki({"streams": []}) is False
+        post.assert_not_called()
+        opener.assert_not_called()
+
+
+@pytest.mark.parametrize("use_requests", [True, False])
+def test_loki_does_not_follow_redirects(monkeypatch, use_requests):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+
+    paths = []
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            paths.append(self.path)
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            self.send_response(302)
+            self.send_header("Location", "/unexpected")
+            self.end_headers()
+
+        def do_GET(self):
+            paths.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+
+    server = HTTPServer(("127.0.0.1", 0), RedirectHandler)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    monkeypatch.setattr(log_forwarder, "USE_REQUESTS", use_requests)
+    monkeypatch.setattr(log_forwarder, "LOKI_URL", f"http://127.0.0.1:{server.server_port}/loki")
+    try:
+        assert log_forwarder.push_to_loki({"streams": []}) is False
+        assert paths == ["/loki"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)

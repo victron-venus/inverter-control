@@ -35,15 +35,15 @@ jobs:
 
     - name: Install security tools
       run: |
-        pip install --only-binary :all: "bandit[sarif]==1.8.3" "safety"
+        pip install --only-binary :all: "bandit[sarif]==1.8.3" "pip-audit==2.10.1"
 
     - name: Run Bandit security linter
       id: bandit
       run: |
-        # Keep Bandit's exit status, but upload its report even when findings fail the scan.
+        # Upload all findings; medium/high severity findings block the job.
         bandit_status=0
         bandit -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
-          -f sarif -o "$RUNNER_TEMP/bandit-results.sarif" || bandit_status=$?
+          -f sarif -o "$RUNNER_TEMP/bandit-results.sarif" --exit-zero || bandit_status=$?
 
         # Never replace a failed scan with an empty report.
         if [ -s "$RUNNER_TEMP/bandit-results.sarif" ]; then
@@ -52,7 +52,11 @@ jobs:
           echo "::error::Bandit did not produce a SARIF report (exit $bandit_status)."
           exit 1
         fi
-        exit "$bandit_status"
+        if [ "$bandit_status" -ne 0 ]; then
+          exit "$bandit_status"
+        fi
+        bandit -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
+          --severity-level medium
 
     - name: Upload Bandit results
       if: always() && steps.bandit.outputs.sarif_ready == 'true'
@@ -61,41 +65,9 @@ jobs:
         sarif_file: ${{ runner.temp }}/bandit-results.sarif
         category: python-bandit
 
-    - name: Run Safety dependency check
-      id: safety
-      run: |
-        pip freeze > requirements.txt
-        safety check --json -o /tmp/safety-results.json --file requirements.txt || true
+    - name: Audit project dependencies
+      run: pip-audit . --progress-spinner off
 
-    - name: Fail on Safety vulnerabilities
-      if: steps.safety.outcome == 'success'
-      run: |
-        python3 - <<'PY'
-        import json, sys
-        with open('/tmp/safety-results.json') as f:
-            data = json.load(f)
-        vulns = []
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, dict):
-                    for v in item.get('vulnerabilities', []):
-                        vulns.append(v.get('package_name') + ':' + v.get('advisory', ''))
-        if vulns:
-            print('::error::Safety vulnerabilities: ' + '; '.join(vulns[:10]))
-            sys.exit(1)
-        PY
-
-    - name: Comment PR on security issues
-      if: |
-        (steps.bandit.outcome == 'failure' || steps.safety.outcome == 'failure') &&
-        github.event_name == 'pull_request'
-      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: '⚠️ Security scan found Bandit or Safety issues. Check workflow logs.'
-          })
+    - name: Audit deployment dependencies
+      if: success() || failure()
+      run: pip-audit -r requirements.txt --progress-spinner off

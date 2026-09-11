@@ -14,6 +14,7 @@ import traceback
 
 # Import urllib at module level for test patching
 import urllib.error
+import urllib.parse
 import urllib.request
 
 try:
@@ -158,20 +159,35 @@ def format_loki_payload(service_name, lines):
     return payload
 
 
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Keep log payloads on the explicitly configured Loki endpoint."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def push_to_loki(payload):
     """Push logs to Loki via HTTP."""
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
 
     try:
+        endpoint = urllib.parse.urlsplit(LOKI_URL)
+        if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
+            raise ValueError("LOKI_URL must be an absolute HTTP(S) URL")
         if USE_REQUESTS:
-            resp = requests.post(LOKI_URL, data=data, headers=headers, timeout=10)
+            resp = requests.post(
+                LOKI_URL, data=data, headers=headers, timeout=10, allow_redirects=False
+            )
+            if 300 <= resp.status_code < 400:
+                raise ValueError("Loki redirects are not allowed")
             resp.raise_for_status()
         else:
             req = urllib.request.Request(  # pylint: disable=used-before-assignment
                 LOKI_URL, data=data, headers=headers, method="POST"
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            opener = urllib.request.build_opener(_RejectRedirects())
+            with opener.open(req, timeout=10) as resp:
                 if resp.status >= 400:
                     raise urllib.error.HTTPError(
                         LOKI_URL, resp.status, f"HTTP {resp.status}", {}, None

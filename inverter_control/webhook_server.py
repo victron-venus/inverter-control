@@ -23,10 +23,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
     def _send_response(self, status: int, data: dict):
         """Send JSON response."""
+        payload = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(payload)
 
     def do_POST(self):
         """Handle POST requests."""
@@ -138,7 +140,7 @@ class WebhookServer:
 
     def __init__(
         self,
-        host: str = "0.0.0.0",
+        host: str = "127.0.0.1",
         port: int = 8081,
         pre_charge_callback: Callable[[dict], bool] | None = None,
         forecast_callback: Callable[[dict], bool] | None = None,
@@ -189,7 +191,7 @@ _webhook_server: WebhookServer | None = None
 
 
 def get_webhook_server(
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8081,
     pre_charge_callback: Callable[[dict], bool] | None = None,
     forecast_callback: Callable[[dict], bool] | None = None,
