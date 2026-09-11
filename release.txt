@@ -1,11 +1,8 @@
-Deploy-hygiene + auto-merge fixes; everything since v1.21.2.
+v1.23.0 — EV charger integration + security/fallback fixes.
 
 Highlights:
-- `setup install` now performs a complete standalone manual install
-  (services, /service symlinks, rc.local boot block) - replaces the
-  removed legacy install.sh; recipe: wget tarball, `setup install auto`
-- Auto-merge workflow fixed (label mismatch + retry window): PRs labeled
-  `auto-merge` actually merge themselves after CI
-- README install docs match reality
+- EV charger / vehicle data from D-Bus (no Home Assistant required)
+- Python Security workflow fails on real findings, not swallowed by || true
+- CLI dbus-send fallback no longer contends with hot-path locks
 
-Full list: CHANGELOG.md [1.21.3]
+Full list: CHANGELOG.md [1.23.0]

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.23.0] - 2026-09-10
 
 ### Added
 - **EV charger / vehicle data from D-Bus** (no Home Assistant):
@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `self.evcharger.read()["ev_power"]` instead of
   `self.ha.get_vue_sensor("ev_charger", 0)`
 - `ConsoleUI.__init__` now takes an `evcharger_reader` parameter
+
+### Fixed
+- Python Security workflow: removed `|| true` from Bandit and Safety steps;
+  workflow now fails on high/medium Bandit findings and Safety vulnerabilities,
+  with SARIF artifacts preserved on upload
+- CLI fallback latency: removed `_dbus_lock` contention from `_dbus_get` and
+  `_dbus_set` subprocess paths; fallback reads/writes no longer block
+  telemetry or control loop
 
 
 ## [1.22.0] - 2026-08-25
