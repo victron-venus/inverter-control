@@ -42,7 +42,7 @@ jobs:
       run: |
         # Upload all findings; medium/high severity findings block the job.
         bandit_status=0
-        bandit -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
+        bandit -c pyproject.toml -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
           -f sarif -o "$RUNNER_TEMP/bandit-results.sarif" --exit-zero || bandit_status=$?
 
         # Never replace a failed scan with an empty report.
@@ -55,7 +55,7 @@ jobs:
         if [ "$bandit_status" -ne 0 ]; then
           exit "$bandit_status"
         fi
-        bandit -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
+        bandit -c pyproject.toml -r . -x .git,.github,__pycache__,.pytest_cache,.ruff_cache,tmp_venv,logs,images,services,service \
           --severity-level medium
 
     - name: Upload Bandit results

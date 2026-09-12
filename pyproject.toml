@@ -83,3 +83,9 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "--cov=inverter_control --cov-report=term-missing --cov-fail-under=81"
+
+
+[tool.bandit.assert_used]
+# Pytest assertions are executable test checks, not production security guards.
+# Keep every other rule enabled in tests and B101 enabled in production code.
+skips = ["*/tests/test_*.py", "*/conftest.py"]
