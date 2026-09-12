@@ -173,7 +173,7 @@ class NativeDbusClient:
             return bus
 
         self._loop = self._ensure_loop()
-        self._bus = self._call_on_loop(lambda: _connect_data(), CONNECT_TIMEOUT)
+        self._bus = self._call_on_loop(_connect_data, CONNECT_TIMEOUT)
         if self._bus is None or not getattr(self._bus, "connected", True):
             raise ConnectionError("System D-Bus connection did not become ready")
         if self._subscriptions:
@@ -390,7 +390,12 @@ class NativeDbusClient:
         )
         if reply is None:
             return False
-        if len(reply.body) != 1 or type(reply.body[0]) is not int or reply.body[0] != 0:
+        if (
+            len(reply.body) != 1
+            or not isinstance(reply.body[0], int)
+            or isinstance(reply.body[0], bool)
+            or reply.body[0] != 0
+        ):
             logger.warning("SetValue %s%s rejected or malformed: %s", service, path, reply.body)
             return False
         return True

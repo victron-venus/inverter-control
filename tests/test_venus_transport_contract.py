@@ -48,7 +48,7 @@ def test_failed_match_replay_is_retried(monkeypatch):
     monkeypatch.setattr(client, "_send_add_match", send)
     client._replay_subscriptions()
     assert rule not in client._armed_subscriptions
-    monkeypatch.setattr(client, "_get_bus", lambda: object())
+    monkeypatch.setattr(client, "_get_bus", object)
     send.side_effect = None
     assert client.subscribe_service_items("com.victronenergy.system")
     assert send.call_count == 2
