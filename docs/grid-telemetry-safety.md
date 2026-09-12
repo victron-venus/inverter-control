@@ -31,7 +31,7 @@ Changing a configured meter or reducing the site's established phase layout requ
 
 ## Outage and recovery timing
 
-On the next control cycle after invalidation, the controller pauses normal setpoint writes, preserves pending manual requests and stops renewing both the valid-telemetry and accepted-setpoint watchdog heartbeats. It also discards stale grid-filter history. A second inexpensive validity check immediately before writing catches invalidation during calculation. A D-Bus write already in flight cannot be recalled.
+On the next control cycle after invalidation, the controller pauses normal setpoint writes, preserves pending manual requests and stops renewing both the valid-telemetry and accepted-setpoint watchdog heartbeats. It also discards stale grid-filter, derivative and legacy derived-grid EMA history so recovery cannot compare a new measurement with a sample from before the outage. A second inexpensive validity check immediately before writing catches invalidation during calculation. A D-Bus write already in flight cannot be recalled.
 
 The existing watchdog policy remains in effect:
 

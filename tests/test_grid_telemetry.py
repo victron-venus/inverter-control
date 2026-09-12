@@ -13,6 +13,7 @@ from inverter_control.grid_telemetry import (
     GridTelemetry,
     parse_grid_snapshot,
 )
+from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.victron import SYSTEM_SERVICE, VictronDBus
 from inverter_control.watchdog import HardwareWatchdog
 
@@ -308,6 +309,49 @@ def test_missing_validity_contract_blocks_control_even_with_numeric_grid(control
     assert controller.run_cycle()
     victron.set_grid_setpoint.assert_not_called()
     assert controller._watchdog._last_dbus_update == 100.0
+
+
+@pytest.mark.parametrize("derived_grid", [None, 0.0])
+def test_recovered_zero_discards_derivative_and_legacy_derived_history(control, derived_grid):
+    controller, _ = control
+    controller.calculator = SetpointCalculator(
+        {"CREEP_RATE": 0.0, "GRID_SMOOTHING_DERIVED_TAU": 0, "GRID_SMOOTHING_HOME_WEIGHT": 0.5}
+    )
+    controller.calculator.prev_effective_gt = 200.0
+    controller.calculator._filtered_derived_gt = 500.0
+    controller.filtered_gt = 200.0
+    controller.manual_setpoint = -700
+    assert not controller._grid_ready_for_control({"_grid_valid": False})
+    assert controller._grid_ready_for_control({"_grid_valid": True})
+    recovered = SystemState(
+        g1=0,
+        g2=0,
+        gt=0,
+        t1=0,
+        t2=0,
+        tt=0,
+        inv_power=0,
+        mppt_total=0,
+        pv_inverter_total=0,
+        pv_total=0,
+        ev_power=0,
+        garage_power=0,
+        only_charging=False,
+        no_feed=False,
+        house_support=False,
+        charge_battery=False,
+        do_not_supply_charger=False,
+        limit_to_ev=False,
+        previous_setpoint=0,
+        filtered_gt=controller.filtered_gt,
+        derived_gt=derived_grid,
+    )
+    result = controller.calculator.calculate(recovered)
+    assert result.setpoint == 0
+    assert result.filtered_gt == 0
+    assert "[D:" not in result.flags
+    assert "[B:" not in result.flags
+    assert controller.manual_setpoint == -700
 
 
 def test_outage_timing_manual_preservation_and_orderly_recovery(control, monkeypatch):

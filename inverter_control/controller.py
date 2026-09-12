@@ -857,6 +857,7 @@ class InverterController:
                 )
                 self.filtered_gt = None
                 self._raw_derived_gt = None
+                self.calculator.reset_measurement_history()
                 for grid_filter in (self.grid_filter, self.derived_grid_filter):
                     if grid_filter is not None:
                         grid_filter.reset()
