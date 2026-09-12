@@ -145,7 +145,7 @@ class InverterController:
         # test-mode guard as water; no HA dependency.
         self.evcharger: EvChargerReader | None = None
         if not getattr(self.victron, "_test_mode", False):
-            self.evcharger = EvChargerReader(self.victron.dbus_get)
+            self.evcharger = EvChargerReader(self.victron.dbus_get, self.victron.get_service_names)
 
         # Load UI configuration
         from inverter_control.config import (

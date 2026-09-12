@@ -81,7 +81,7 @@ WATER_VALVE_INSTANCE = 2
 # =============================================================================
 # EV CHARGER / VEHICLE (dbus-evcharger + dbus-ev D-Bus services on the GX)
 # =============================================================================
-# dbus-evcharger exposes com.victronenergy.evcharger.<N> (wallbox).
+# dbus-evcharger exposes com.victronenergy.evcharger.<suffix> (wallbox).
 # dbus-ev exposes com.victronenergy.ev.<suffix> (vehicle, has /Soc /VIN).
 # Both services are autodetected; set overrides only if auto-detection fails.
 # Default: EV_INSTANCE = 22 (vehicle), EVCHARGER_INSTANCE = 40 (wallbox)
