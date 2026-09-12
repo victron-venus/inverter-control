@@ -121,11 +121,12 @@ def test_native_write_requires_explicit_zero_reply(monkeypatch, body):
 def test_empty_connection_result_enters_cooldown(monkeypatch):
     client = NativeDbusClient()
     connect = Mock(return_value=None)
+    replay = Mock()
     monkeypatch.setattr(client, "_call_on_loop", connect)
     monkeypatch.setattr(client, "_ensure_loop", lambda: None)
-    monkeypatch.setattr(client, "_replay_subscriptions", Mock())
+    monkeypatch.setattr(client, "_replay_subscriptions", replay)
     for _ in range(3):
         assert client._get_bus() is None
     assert connect.call_count == 1
     assert client._fail_until > time.time()
-    client._replay_subscriptions.assert_not_called()
+    replay.assert_not_called()
