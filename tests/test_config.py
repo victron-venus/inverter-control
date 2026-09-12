@@ -2,8 +2,10 @@
 Unit tests for Inverter Control Configuration
 """
 
+import importlib.util
 import os
 import sys
+from types import ModuleType
 from unittest.mock import mock_open, patch
 
 import pytest
@@ -45,10 +47,53 @@ class TestConfigValidation:
         assert config.LOOP_INTERVAL > 0
         assert config.POWER_LIMIT_MIN < config.POWER_LIMIT_MAX
         assert config.EXPORT_DAMPING >= 0.0
-        assert config.CREEP_RATE >= 0.0
-        assert config.CREEP_MAX > 0
+        assert 0.0 <= config.CREEP_RATE <= 100.0
+        assert 0.0 <= config.CREEP_MAX <= 100.0
         assert config.SOLAR_OUTPUT_OFFSET >= 0
         assert 0.0 <= config.INVERTER_EFFICIENCY <= 1.0
+
+
+class TestCreepLocalConfig:
+    """Exercise startup loading without mutating the shared config module."""
+
+    @staticmethod
+    def load_config(monkeypatch, **overrides):
+        local_config = ModuleType("local_config")
+        local_config.HA_URL = "http://localhost:8123"
+        local_config.HA_TOKEN = ""
+        local_config.HA_SENSORS = {}
+        local_config.VUE_SENSORS = {}
+        local_config.HA_DUMP_LOADS = []
+        for name, value in overrides.items():
+            setattr(local_config, name, value)
+        monkeypatch.setitem(sys.modules, "local_config", local_config)
+        spec = importlib.util.spec_from_file_location("_creep_config_test", config.__file__)
+        loaded = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(loaded)
+        return loaded
+
+    def test_defaults_preserved(self, monkeypatch):
+        loaded = self.load_config(monkeypatch)
+        assert loaded.CREEP_RATE == 0.5
+        assert loaded.CREEP_MAX == 100.0
+
+    def test_zero_rate_override_disables_accumulation(self, monkeypatch):
+        loaded = self.load_config(monkeypatch, CREEP_RATE=0)
+        calculator_config = {name: getattr(loaded, name) for name in loaded.EXPORTED_KEYS}
+        assert calculator_config["CREEP_RATE"] == 0.0
+        assert calculator_config["CREEP_MAX"] == 100.0
+
+    @pytest.mark.parametrize("name", ["CREEP_RATE", "CREEP_MAX"])
+    @pytest.mark.parametrize("value", [0.0, 12.5, 100.0])
+    def test_valid_local_override(self, monkeypatch, name, value):
+        loaded = self.load_config(monkeypatch, **{name: value})
+        assert getattr(loaded, name) == value
+
+    @pytest.mark.parametrize("name", ["CREEP_RATE", "CREEP_MAX"])
+    @pytest.mark.parametrize("value", [-0.1, 100.1, float("nan"), float("inf"), -float("inf")])
+    def test_invalid_local_override_fails_at_startup(self, monkeypatch, name, value):
+        with pytest.raises(ValueError, match=rf"{name} must be 0\.0-100\.0"):
+            self.load_config(monkeypatch, **{name: value})
 
 
 class TestColors:
