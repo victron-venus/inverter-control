@@ -110,6 +110,7 @@ class TestVictronDBus:
         with patch("inverter_control.victron.subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "method return reply_serial=1\n   int32 0\n"
             mock_run.return_value = mock_result
 
             victron.reset_victron_for_testing()
@@ -281,7 +282,15 @@ class TestVictronDBus:
         """Test getting AC input power"""
         victron.reset_victron_for_testing()
         v = victron.get_victron(test_mode=True)
-        v._system_data["gt"] = 500
+        v._grid_telemetry.replace(
+            {
+                "/Ac/Grid/NumberOfPhases": 1,
+                "/Ac/Grid/L1/Power": 500,
+                "/Ac/In/0/Source": 1,
+                "/Ac/In/0/ServiceName": "com.victronenergy.vebus.ttyUSB0",
+                "/Ac/In/0/DeviceInstance": 0,
+            }
+        )
         power = v.get_ac_in_power()
 
         assert power == 500
@@ -822,8 +831,8 @@ class TestGetVictron:
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        v1 = victron.get_victron()
-        v2 = victron.get_victron()
+        v1 = victron.get_victron(test_mode=True)
+        v2 = victron.get_victron(test_mode=True)
 
         assert v1 is v2
 

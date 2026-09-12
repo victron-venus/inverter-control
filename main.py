@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import traceback
+from logging.handlers import RotatingFileHandler
 
 from inverter_control.console_server import (
     start_server as start_console_server,
@@ -40,22 +41,27 @@ from inverter_control.controller import (
 )
 
 # =============================================================================
-# LOGGING SETUP - All errors go to file, debug to stdout
+# LOGGING SETUP - Supervised stdout; optional bounded duplicate file
 # =============================================================================
-LOG_FILE = os.environ.get("INVERTER_CONTROL_LOG_FILE", "/var/log/inverter-control.log")
+LOG_FILE = os.environ.get("INVERTER_CONTROL_LOG_FILE", "")
 
 logger = logging.getLogger("inverter-control")
 logger.setLevel(logging.DEBUG)
 
-try:
-    fh = logging.FileHandler(LOG_FILE)
-    fh.setLevel(logging.DEBUG)  # Changed to DEBUG to capture debug messages
-    fh.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    )
-    logger.addHandler(fh)
-except Exception as log_err:
-    print(f"Warning: Could not create log file: {log_err}", file=sys.stderr)
+# On Venus OS /var/log points into persistent /data. multilog already rotates
+# stdout; a second unbounded DEBUG file writes every event twice to flash.
+if LOG_FILE:
+    try:
+        fh = RotatingFileHandler(LOG_FILE, maxBytes=512 * 1024, backupCount=2)
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+            )
+        )
+        logger.addHandler(fh)
+    except Exception as log_err:
+        print(f"Warning: Could not create log file: {log_err}", file=sys.stderr)
 
 # Also log to stdout (captured by daemontools/multilog)
 sh = logging.StreamHandler(sys.stdout)

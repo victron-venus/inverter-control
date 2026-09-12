@@ -5,7 +5,7 @@ EV charger / vehicle reader over D-Bus (dbus-evcharger + dbus-ev services).
 Runs on the Cerbo GX and reads EV data from native Venus D-Bus services.
 Two service prefixes exist:
 
-    com.victronenergy.evcharger.<N>  → wallbox EV charger (dbus-evcharger)
+    com.victronenergy.evcharger.<suffix> → wallbox EV charger (dbus-evcharger)
     com.victronenergy.ev.<suffix>    → vehicle (dbus-ev)
 
 The vehicle is distinguished by presence of /Soc and/or /VIN AND
@@ -27,27 +27,53 @@ from .config import EV_INSTANCE, EVCHARGER_INSTANCE
 logger = logging.getLogger("inverter-control")
 
 CACHE_TTL = 2.0  # seconds between actual D-Bus read passes
-
-
-def _wallbox_service_name(instance: int) -> str:
-    return f"com.victronenergy.evcharger.{instance}"
-
-
-def _vehicle_service_name(instance: int) -> str:
-    return f"com.victronenergy.ev.{instance}"
+DISCOVERY_TTL = 30.0  # retry unavailable metadata without polling on every read
 
 
 class EvChargerReader:
     """Reads EV charger power and vehicle SoC from D-Bus services."""
 
-    def __init__(self, dbus_get: Callable[[str, str], str | None]):
+    def __init__(
+        self,
+        dbus_get: Callable[[str, str], str | None],
+        get_service_names: Callable[[], tuple[str, ...]] | None = None,
+    ):
         """dbus_get: callable(service, path) -> str | None (e.g. VictronDBus.dbus_get)."""
         self._dbus_get = dbus_get
+        self._get_service_names = get_service_names or (lambda: ())
         self._cache: dict[str, Any] | None = None
         self._cache_time = 0.0
         self.vehicle_service: str | None = None
         self.wallbox_service: str | None = None
         self._services_discovered = False
+        self._discovered_names: tuple[str, ...] = ()
+        self._discovery_time = 0.0
+
+    def _service_for_instance(self, prefix: str, instance: int) -> str | None:
+        matches = [
+            service
+            for service in self._discovered_names
+            if service.startswith(prefix)
+            and self._dbus_get(service, "/DeviceInstance") == str(instance)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            logger.warning(
+                "Multiple %s services have DeviceInstance %s; skipping", prefix, instance
+            )
+        return None
+
+    def _is_vehicle(self, service: str | None) -> bool:
+        if service is None:
+            return False
+        connection = self._dbus_get(service, "/Mgmt/Connection")
+        if not connection or not connection.startswith("evcharger:"):
+            return False
+        return (
+            self._dbus_get(service, "/Soc") is not None
+            or self._dbus_get(service, "/VIN") is not None
+        )
 
     def _discover_services(self, force: bool = False) -> None:
         """Discover vehicle and wallbox services from D-Bus.
@@ -56,42 +82,42 @@ class EvChargerReader:
         - /Mgmt/Connection starting with "evcharger:" (paired with a wallbox)
         - AND presence of /Soc and/or /VIN
         """
-        if self._services_discovered and not force:
+        names = tuple(
+            sorted(
+                name
+                for name in self._get_service_names()
+                if name.startswith(("com.victronenergy.ev.", "com.victronenergy.evcharger."))
+            )
+        )
+        now = time.monotonic()
+        if (
+            self._services_discovered
+            and not force
+            and names == self._discovered_names
+            and now - self._discovery_time < DISCOVERY_TTL
+        ):
             return
+        self._discovered_names = names
+        self._discovery_time = now
+        self.wallbox_service = self._service_for_instance(
+            "com.victronenergy.evcharger.", EVCHARGER_INSTANCE
+        )
+        self.vehicle_service = self._service_for_instance("com.victronenergy.ev.", EV_INSTANCE)
 
-        # Start with the configured-instance defaults; clear if not validated.
-        self.wallbox_service = _wallbox_service_name(EVCHARGER_INSTANCE)
-        self.vehicle_service = _vehicle_service_name(EV_INSTANCE)
-
-        # Validate vehicle: must have /Mgmt/Connection=="evcharger:*" + /Soc or /VIN
-        conn = self._dbus_get(self.vehicle_service, "/Mgmt/Connection")
-        soc = self._dbus_get(self.vehicle_service, "/Soc")
-        vin = self._dbus_get(self.vehicle_service, "/VIN")
-        if conn and conn.startswith("evcharger:") and (soc is not None or vin is not None):
-            logger.debug(
-                f"Found vehicle service: {self.vehicle_service} (conn={conn}, soc={soc}, vin={vin})"
-            )
-        else:
-            logger.debug(
-                f"Service {self.vehicle_service} does not look like a vehicle "
-                f"(conn={conn}, soc={soc}, vin={vin})"
-            )
+        # A service name and instance alone do not establish vehicle semantics.
+        if not self._is_vehicle(self.vehicle_service):
             self.vehicle_service = None
 
         # Validate wallbox: ensure it's not actually a vehicle
-        conn = self._dbus_get(self.wallbox_service, "/Mgmt/Connection")
-        soc = self._dbus_get(self.wallbox_service, "/Soc")
-        vin = self._dbus_get(self.wallbox_service, "/VIN")
-        if conn and conn.startswith("evcharger:") and (soc is not None or vin is not None):
+        if self._is_vehicle(self.wallbox_service):
             # This wallbox has /Soc or /VIN: reclassify as vehicle
             logger.warning(
-                f"Service {self.wallbox_service} appears to be a vehicle, not a wallbox "
-                f"(conn={conn}, soc={soc}, vin={vin}); treating as vehicle"
+                "Service %s exposes vehicle metadata; treating as vehicle", self.wallbox_service
             )
             self.vehicle_service = self.wallbox_service
             self.wallbox_service = None
         else:
-            logger.debug(f"Found wallbox service: {self.wallbox_service} (conn={conn})")
+            logger.debug("Found wallbox service: %s", self.wallbox_service)
 
         self._services_discovered = True
 
@@ -163,11 +189,14 @@ class EvChargerReader:
 _evcharger: EvChargerReader | None = None
 
 
-def get_evcharger(dbus_get: Callable[[str, str], str | None]) -> EvChargerReader:
+def get_evcharger(
+    dbus_get: Callable[[str, str], str | None],
+    get_service_names: Callable[[], tuple[str, ...]] | None = None,
+) -> EvChargerReader:
     """Get or create the shared EV reader bound to a dbus_get callable."""
     global _evcharger  # pylint: disable=global-statement
     if _evcharger is None:
-        _evcharger = EvChargerReader(dbus_get)
+        _evcharger = EvChargerReader(dbus_get, get_service_names)
     return _evcharger
 
 

@@ -34,6 +34,7 @@ class HardwareWatchdog:
         check_interval: float = 1.0,
         dry_run: bool = False,
         get_setpoint=None,
+        grid_loss_hold_seconds: float | None = None,
     ):
         self.victron = victron
         self.timeout_seconds = timeout_seconds
@@ -43,13 +44,21 @@ class HardwareWatchdog:
         self._last_dbus_update = 0.0
         self._last_mqtt_update = 0.0
         self._last_setpoint_update = 0.0
+        self._telemetry_invalid = False
+        self.grid_loss_hold_seconds = grid_loss_hold_seconds
+        self._grid_invalid_since: float | None = None
+        self._grid_loss_forced = False
+        self._has_valid_setpoint = False
+        self._grid_loss_zero_applied = False
         self._enabled = False
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._triggered = False
         self._hardware_forced = False
         self._pre_forced_setpoint: int = 0
-        self._lock = threading.Lock()
+        # Serialize safety writes, recovery and validity transitions. A new
+        # invalidation must not race a restoration from the watchdog thread.
+        self._lock = threading.RLock()
         # Hysteresis counters to prevent flapping
         self._fail_count = 0
         self._success_count = 0
@@ -59,7 +68,31 @@ class HardwareWatchdog:
     def mark_dbus_update(self):
         """Call when D-Bus telemetry is successfully read"""
         with self._lock:
-            self._last_dbus_update = time.monotonic()
+            now = time.monotonic()
+            # A read that returns after the deadline cannot retrospectively
+            # cancel an expired hold, even if no periodic check ran in time.
+            self._check_grid_loss_locked(now)
+            self._last_dbus_update = now
+            self._telemetry_invalid = False
+            if not self._grid_loss_forced:
+                self._grid_invalid_since = None
+
+    def mark_dbus_invalid(self):
+        """Pause recovery when control telemetry is explicitly unavailable.
+
+        Start a single outage deadline without renewing it on repeated bad
+        reads. Hardware action is handled by check_grid_loss/the watchdog.
+        """
+        with self._lock:
+            if self._grid_invalid_since is None:
+                self._grid_invalid_since = time.monotonic()
+                if self.grid_loss_hold_seconds is not None:
+                    logger.warning(
+                        "Grid loss: holding last accepted command for at most %.1fs",
+                        self.grid_loss_hold_seconds if self._has_valid_setpoint else 0.0,
+                    )
+            self._telemetry_invalid = True
+            self._success_count = 0
 
     def mark_mqtt_update(self):
         """Call when MQTT state is successfully published"""
@@ -70,6 +103,38 @@ class HardwareWatchdog:
         """Call every time a grid setpoint is written to the inverter"""
         with self._lock:
             self._last_setpoint_update = time.monotonic()
+            if not self._telemetry_invalid:
+                self._has_valid_setpoint = True
+                self._grid_loss_zero_applied = False
+
+    def check_grid_loss(self):
+        """Enforce the optional outage deadline at control-loop cadence."""
+        with self._lock:
+            self._check_grid_loss_locked(time.monotonic())
+
+    def _check_grid_loss_locked(self, now: float) -> None:
+        if self.dry_run or self.grid_loss_hold_seconds is None:
+            return
+        if self._telemetry_invalid and self._grid_invalid_since is not None:
+            elapsed = now - self._grid_invalid_since
+            if (
+                not self._has_valid_setpoint
+                or self._triggered
+                or elapsed >= self.grid_loss_hold_seconds
+            ):
+                if not self._grid_loss_forced:
+                    logger.warning("Grid loss: hold expired; requesting 0W until meter recovery")
+                self._grid_loss_forced = True
+                self._triggered = True
+                # Recovery must calculate a new command from fresh data,
+                # including when an earlier generic watchdog already forced 0.
+                self._pre_forced_setpoint = 0
+                if self._hardware_forced:
+                    self._grid_loss_zero_applied = True
+        if self._grid_loss_forced and not self._hardware_forced:
+            # A rejected zero remains pending even if the meter returns before
+            # the retry; recovery cannot silently skip the required write.
+            self._apply_failsafe()
 
     def start(self):
         """Start the watchdog monitoring thread"""
@@ -82,6 +147,11 @@ class HardwareWatchdog:
         self._pre_forced_setpoint = 0
         self._fail_count = 0
         self._success_count = 0
+        self._grid_invalid_since = None
+        self._grid_loss_forced = False
+        self._has_valid_setpoint = False
+        self._grid_loss_zero_applied = False
+        self._telemetry_invalid = False
         now = time.monotonic()
         self._last_dbus_update = now
         self._last_mqtt_update = now
@@ -105,13 +175,21 @@ class HardwareWatchdog:
 
     def _check_heartbeat(self):
         """Check if the control loop is alive and trigger failsafe if not"""
+        with self._lock:
+            self._check_heartbeat_locked()
+
+    def _check_heartbeat_locked(self):
         # In dry-run no setpoints are written, so liveness cannot be judged
         if self.dry_run:
             return
         now = time.monotonic()
-        with self._lock:
-            setpoint_age = now - self._last_setpoint_update
-            dbus_age = now - self._last_dbus_update
+        self._check_grid_loss_locked(now)
+        if self._grid_loss_forced and not self._hardware_forced:
+            self._success_count = 0
+            return
+        setpoint_age = now - self._last_setpoint_update
+        dbus_age = now - self._last_dbus_update
+        telemetry_invalid = self._telemetry_invalid
 
         # The loop is healthy as long as it keeps writing setpoints (even if
         # slowly). Only force the failsafe when BOTH the setpoint writes and
@@ -122,6 +200,10 @@ class HardwareWatchdog:
         if stale:
             self._fail_count += 1
             self._success_count = 0
+        elif telemetry_invalid:
+            # A brief good sample must not re-arm after an explicit new loss.
+            self._success_count = 0
+            self._fail_count = 0
         else:
             self._success_count += 1
             self._fail_count = 0
@@ -148,7 +230,9 @@ class HardwareWatchdog:
             return
         if not self._hardware_forced:
             try:
-                self._pre_forced_setpoint = self._get_setpoint() if self._get_setpoint else 0
+                self._pre_forced_setpoint = (
+                    self._get_setpoint() if self._get_setpoint and not self._grid_loss_forced else 0
+                )
             except Exception:
                 # Reading the recovery value must never prevent the safety write.
                 self._pre_forced_setpoint = 0
@@ -160,12 +244,31 @@ class HardwareWatchdog:
                 logger.error("WATCHDOG: failsafe write rejected; retrying on the next check")
                 return
             self._hardware_forced = True
-            logger.warning("WATCHDOG: stalled loop detected - forced 0W grid setpoint")
+            if self._grid_loss_forced:
+                self._grid_loss_zero_applied = True
+            logger.warning(
+                "WATCHDOG: %s - forced 0W grid setpoint",
+                "grid telemetry lost" if self._grid_loss_forced else "stalled loop detected",
+            )
         except Exception:
             logger.exception("WATCHDOG: failsafe write failed")
 
     def _recover_from_failsafe(self):
         """Telemetry recovered - re-arm watchdog and restore the prior setpoint"""
+        with self._lock:
+            self._recover_from_failsafe_locked()
+
+    def _recover_from_failsafe_locked(self):
+        if self._telemetry_invalid:
+            return
+        if self._grid_loss_forced:
+            if not self._hardware_forced:
+                return
+            # Keep the accepted zero. The controller will calculate a fresh
+            # command after two valid checks, never replay a pre-outage value.
+            self._grid_loss_forced = False
+            self._grid_invalid_since = None
+            self._hardware_forced = False
         if self._hardware_forced:
             try:
                 if not self.victron.set_grid_setpoint(self._pre_forced_setpoint):
@@ -190,12 +293,39 @@ class HardwareWatchdog:
             setpoint_age = now - self._last_setpoint_update
             dbus_age = now - self._last_dbus_update
             mqtt_age = now - self._last_mqtt_update
-        return {
-            "enabled": self._enabled,
-            "triggered": self._triggered,
-            "hardware_forced": self._hardware_forced,
-            "setpoint_age": round(setpoint_age, 1),
-            "dbus_age": round(dbus_age, 1),
-            "mqtt_age": round(mqtt_age, 1),
-            "timeout_seconds": self.timeout_seconds,
-        }
+            elapsed = (
+                None
+                if self._grid_invalid_since is None
+                else max(0.0, now - self._grid_invalid_since)
+            )
+            remaining = None
+            if self.grid_loss_hold_seconds is None:
+                loss_state = "disabled"
+            elif self._grid_loss_forced:
+                loss_state = "zero" if self._hardware_forced else "zero_pending"
+                if self._hardware_forced and not self._telemetry_invalid:
+                    loss_state = "recovering"
+                remaining = 0.0
+            elif self._telemetry_invalid:
+                loss_state = "holding"
+                remaining = max(
+                    0.0,
+                    (self.grid_loss_hold_seconds if self._has_valid_setpoint else 0.0)
+                    - (elapsed or 0.0),
+                )
+            else:
+                loss_state = "normal"
+            return {
+                "enabled": self._enabled,
+                "triggered": self._triggered,
+                "hardware_forced": self._hardware_forced,
+                "setpoint_age": round(setpoint_age, 1),
+                "dbus_age": round(dbus_age, 1),
+                "mqtt_age": round(mqtt_age, 1),
+                "timeout_seconds": self.timeout_seconds,
+                "grid_loss_state": loss_state,
+                "grid_loss_hold_seconds": self.grid_loss_hold_seconds,
+                "grid_loss_elapsed": elapsed,
+                "grid_loss_remaining": remaining,
+                "grid_loss_zero_applied": self._grid_loss_zero_applied,
+            }

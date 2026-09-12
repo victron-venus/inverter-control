@@ -32,12 +32,17 @@ except ImportError:  # Development machines without dbus-fast: CLI fallback only
 BUSITEM_INTERFACE = "com.victronenergy.BusItem"
 DBUS_DAEMON = "org.freedesktop.DBus"
 DBUS_DAEMON_PATH = "/org/freedesktop/DBus"
+NAME_OWNER_RULE = (
+    "type='signal',sender='org.freedesktop.DBus',"
+    "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+    "path='/org/freedesktop/DBus'"
+)
 SYSTEM_BUS_ADDRESS = os.environ.get(
     "DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/var/run/dbus/system_bus_socket"
 )
 CONNECT_TIMEOUT = 2.0
 MATCH_TIMEOUT = 1.0
-# After a failure, skip native calls briefly so the CLI fallback takes over
+# After a connection failure, skip native calls briefly so the CLI fallback takes over
 # while the bus recovers; next call after cooldown reconnects automatically.
 RECONNECT_COOLDOWN = 5.0
 
@@ -78,6 +83,7 @@ class NativeDbusClient:
         self._handlers_lock = threading.Lock()
         # Armed match rules (strings), replayed after reconnect
         self._subscriptions: set[str] = set()
+        self._armed_subscriptions: set[str] = set()
         # Well-known services behind the armed rules (for sender resolution)
         self._subscription_services: set[str] = set()
         # Sender unique bus name -> well-known service name. Path-keyed fast
@@ -117,22 +123,59 @@ class NativeDbusClient:
         to ``timeout`` seconds for the result. Safe to call from any thread -
         including the loop thread itself (a self-``run_coroutine_threadsafe``
         would deadlock the loop, see the 2026-08-27 wedge). Returns the
-        coroutine's result, or None on timeout/failure.
+        coroutine's result, or None when a synchronous self-call is refused.
+        Failures propagate so the caller can distinguish a request deadline
+        from a broken shared connection.
         """
         if self._loop is None:
             self._ensure_loop()
         if self._loop_thread_id == threading.get_ident():
             # Already on the loop thread. It is running (run_forever), so a
-            # synchronous wait is impossible here - schedule and give up rather
-            # than submit to our own loop and deadlock.
-            self._track_task(async_fn())
+            # synchronous wait is impossible here. Do not schedule a command
+            # whose acceptance we cannot report to the caller.
+            logger.debug("Native D-Bus synchronous call refused on its event-loop thread")
             return None
+        deadline = time.monotonic() + timeout
+
+        async def _run():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # A busy loop must not send an old queued setpoint after the
+                # caller has already timed out and requested a safety zero.
+                raise TimeoutError("Request expired before dispatch")
+            async with asyncio.timeout(remaining):
+                return await async_fn()
+
+        coroutine = _run()
         try:
-            future = asyncio.run_coroutine_threadsafe(async_fn(), self._loop)
+            future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        except BaseException as error:
+            coroutine.close()
+            if isinstance(error, RuntimeError):
+                # Submission failed locally; an endpoint RuntimeError raised
+                # later by future.result() must remain request-scoped.
+                raise ConnectionError("Native D-Bus event-loop submission failed") from error
+            raise
+        try:
             return future.result(timeout)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.debug("Native D-Bus loop call failed: %s", e)
-            return None
+        except BaseException:
+            # Also cancel when the control-cycle watchdog interrupts this
+            # synchronous wait. Cancellation cannot recall a wire message.
+            future.cancel()
+            raise
+
+    async def _call_message(self, bus, message):
+        """Call one message and release its reply handler, including on timeout."""
+        try:
+            return await bus.call(message)
+        finally:
+            # dbus-fast 2.21.1 leaves cancelled calls in this public Cython dict
+            # until a reply/disconnect. A silent endpoint must not leak one
+            # handler per retry on the otherwise healthy shared connection.
+            # This runs on the bus loop and only touches this message's serial.
+            handlers = getattr(bus, "_method_return_handlers", None)
+            if isinstance(handlers, dict):
+                handlers.pop(message.serial, None)
 
     def _submit_on_loop(self, async_fn) -> None:
         """Fire-and-forget a coroutine on the loop (no result wait).
@@ -167,7 +210,9 @@ class NativeDbusClient:
             return bus
 
         self._loop = self._ensure_loop()
-        self._bus = self._call_on_loop(lambda: _connect_data(), CONNECT_TIMEOUT)
+        self._bus = self._call_on_loop(_connect_data, CONNECT_TIMEOUT)
+        if self._bus is None or not getattr(self._bus, "connected", True):
+            raise ConnectionError("System D-Bus connection did not become ready")
         if self._subscriptions:
             # Re-arm match rules; signals don't survive a disconnect
             self._replay_subscriptions()
@@ -177,9 +222,11 @@ class NativeDbusClient:
         # Bus reattachment gives services new unique names; the old map lies.
         self._sender_service.clear()
         # Snapshot: subscribe_signal can add to _subscriptions concurrently.
-        for rule in self._subscriptions:
+        self._armed_subscriptions.clear()
+        for rule in tuple(self._subscriptions):
             try:
                 self._send_add_match(rule)
+                self._armed_subscriptions.add(rule)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Native D-Bus re-subscribe failed (%s): %s", rule, e)
         if self._subscription_services and self._loop is not None and self._bus is not None:
@@ -222,8 +269,10 @@ class NativeDbusClient:
             signature="s",
         )
 
+        bus = self._bus
+
         def _call():
-            return self._bus.call(message)
+            return self._call_message(bus, message)
 
         if self._loop_thread_id == threading.get_ident():
             # On the loop thread (reconnect path) - cannot wait synchronously.
@@ -238,17 +287,29 @@ class NativeDbusClient:
         if reply.message_type != MessageType.METHOD_RETURN:
             raise ConnectionError(f"AddMatch rejected: {reply.message_type}")
 
+    def is_connected(self) -> bool:
+        """Report connection availability without initiating synchronous I/O."""
+        return bool(
+            self._bus is not None
+            and getattr(self._bus, "connected", True)
+            and time.time() >= self._fail_until
+        )
+
+    def subscriptions_healthy(self) -> bool:
+        """All requested match rules must be armed on the current connection."""
+        return self.is_connected() and self._subscriptions.issubset(self._armed_subscriptions)
+
     def _get_bus(self):
         """Return a connected bus or None (cooldown active / connect failed)."""
         with self._state_lock:
             if time.time() < self._fail_until:
                 return None
             try:
-                if self._bus is None:
+                if self._bus is None or not getattr(self._bus, "connected", True):
                     self._connect()
                 return self._bus
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Native D-Bus connect failed: %s", e)
+                logger.debug("Native D-Bus connect failed (%s): %s", type(e).__name__, e)
                 self._fail_until = time.time() + RECONNECT_COOLDOWN
                 self._bus = None
                 return None
@@ -270,9 +331,11 @@ class NativeDbusClient:
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus disconnect failed: %s", e)
 
-    def _mark_failure(self):
-        """Enter reconnect cooldown and drop the broken connection."""
+    def _mark_failure(self, failed_bus):
+        """Drop only the connection that failed, never a newer replacement."""
         with self._state_lock:
+            if self._bus is not failed_bus:
+                return
             self._fail_until = time.time() + RECONNECT_COOLDOWN
             bus, self._bus = self._bus, None
         if bus is not None:
@@ -302,10 +365,10 @@ class NativeDbusClient:
         timeout: float = 0.5,
     ):
         """Call a com.victronenergy.BusItem method; reply Message or None."""
-        if not _DBUS_FAST_AVAILABLE:
-            return None
-        bus = self._get_bus()
-        if bus is None:
+        if not _DBUS_FAST_AVAILABLE or self._loop_thread_id == threading.get_ident():
+            # A synchronous loop-thread caller cannot await acceptance. Avoid
+            # even acquiring the connection lock: a reconnect may hold it while
+            # waiting for this loop to arm signal matches.
             return None
         from dbus_fast import Message
 
@@ -318,18 +381,45 @@ class NativeDbusClient:
                 member=member,
                 **kwargs,
             )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Invalid destinations, paths or payloads are local caller errors,
+            # not evidence that the shared system-bus connection is broken.
+            logger.debug("Invalid native D-Bus request %s %s/%s: %s", service, member, path, e)
+            return None
+
+        bus = self._get_bus()
+        if bus is None:
+            return None
+        try:
 
             def _call():
-                return bus.call(message)
+                return self._call_message(bus, message)
 
             reply = self._call_on_loop(_call, timeout)
-            if reply is None:
-                # Timeout/failure: the request never completed
-                self._mark_failure()
-                return None
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.debug("Native D-Bus %s %s/%s failed: %s", service, member, path, e)
-            self._mark_failure()
+            logger.debug(
+                "Native D-Bus %s %s/%s failed (%s): %s",
+                service,
+                member,
+                path,
+                type(e).__name__,
+                e,
+            )
+            # A remote request deadline says nothing about other services or
+            # installed signal matches. TimeoutError is also an OSError, so
+            # exclude it explicitly from socket/connection failures.
+            if isinstance(e, (ConnectionError, EOFError, OSError)) and not isinstance(
+                e, TimeoutError
+            ):
+                self._mark_failure(bus)
+            reply = None
+        if reply is None:
+            if (
+                not getattr(bus, "connected", True)
+                or self._loop is None
+                or not self._loop.is_running()
+            ):
+                self._mark_failure(bus)
             return None
         if reply.message_type != MessageType.METHOD_RETURN:
             logger.debug(
@@ -350,6 +440,20 @@ class NativeDbusClient:
         value = getattr(reply.body[0], "value", None)
         return _format_value(value)
 
+    def get_values(self, service: str, timeout: float = 0.5) -> dict[str, str | None] | None:
+        """Read one root BusItem snapshot so related fields share a reply."""
+        reply = self.call_busitem(service, "/", "GetValue", timeout=timeout)
+        if reply is None or not reply.body:
+            return None
+        values = getattr(reply.body[0], "value", reply.body[0])
+        if not isinstance(values, dict):
+            return None
+        return {
+            "/" + path.lstrip("/"): _format_value(getattr(value, "value", value))
+            for path, value in values.items()
+            if isinstance(path, str)
+        }
+
     def set_value(
         self,
         service: str,
@@ -368,8 +472,13 @@ class NativeDbusClient:
         )
         if reply is None:
             return False
-        if reply.body and reply.body[0] != 0:
-            logger.warning("SetValue %s%s rejected: %s", service, path, reply.body[0])
+        if (
+            len(reply.body) != 1
+            or not isinstance(reply.body[0], int)
+            or isinstance(reply.body[0], bool)
+            or reply.body[0] != 0
+        ):
+            logger.warning("SetValue %s%s rejected or malformed: %s", service, path, reply.body)
             return False
         return True
 
@@ -393,24 +502,32 @@ class NativeDbusClient:
         """Register callback(service_name: str, old_owner: str, new_owner: str) for NameOwnerChanged signals."""
         with self._handlers_lock:
             self._name_owner_handlers.append(callback)
+        # Remember before the initial connection; _connect replays this rule.
+        self._subscriptions.add(NAME_OWNER_RULE)
+        if self.is_connected():
+            try:
+                self._send_add_match(NAME_OWNER_RULE)
+                self._armed_subscriptions.add(NAME_OWNER_RULE)
+            except Exception as exc:
+                logger.debug("NameOwnerChanged subscribe failed: %s", exc)
 
     def subscribe_signal(self, service: str, member: str, path: str) -> bool:
         """Arm one match rule. Idempotent; re-armed automatically after a
         reconnect. Initial values must still be fetched (signals fire on
         change only)."""
         rule = self._build_rule(service, member, path)
-        if rule in self._subscriptions:
-            return True
-
         bus = self._get_bus()
         if bus is None:
             return False
+        if rule in self._armed_subscriptions:
+            return True
         try:
             self._send_add_match(rule)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus subscribe %s failed: %s", rule, e)
             return False
         self._subscriptions.add(rule)
+        self._armed_subscriptions.add(rule)
         self._subscription_services.add(service)
         # Resolve the sender eagerly so the first signals already carry the
         # service tag; lazy refresh below covers services that come up later.
@@ -428,7 +545,7 @@ class NativeDbusClient:
         # Snapshot these shared sets: subscribe_signal/_replay_subscriptions can
         # mutate them from another thread while this async loop iterates, which
         # raised "Set changed size during iteration" at startup (2026-08-27).
-        for svc in self._subscription_services:
+        for svc in tuple(self._subscription_services):
             try:
                 reply = await self._bus.call(
                     Message(
@@ -505,9 +622,11 @@ class NativeDbusClient:
 
     def _handle_name_owner_changed(self, message):
         if len(message.body) >= 3:
-            service_name = str(message.body[2])
-            old_owner = str(message.body[0])
-            new_owner = str(message.body[1])
+            service_name, old_owner, new_owner = map(str, message.body[:3])
+            if old_owner:
+                self._sender_service.pop(old_owner, None)
+            if new_owner and service_name in self._subscription_services:
+                self._sender_service[new_owner] = service_name
             with self._handlers_lock:
                 handlers = list(self._name_owner_handlers)
             for callback in handlers:
@@ -519,6 +638,8 @@ class NativeDbusClient:
         self._resolving_senders.discard(sender)
 
     def _dispatch(self, path: str, props, service: str | None):
+        if "Value" not in props:
+            return  # Text-only changes do not invalidate the numeric value.
         value = getattr(props.get("Value"), "value", None)
         formatted = _format_value(value)
         with self._handlers_lock:

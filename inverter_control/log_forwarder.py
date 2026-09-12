@@ -26,7 +26,7 @@ except ImportError:
 
 # Configuration
 LOKI_URL = os.environ.get("LOKI_URL", "http://192.168.167.25:3100/loki/api/v1/push")  # nosec B310 # nosonar — local Loki # nosem S1313
-STATE_FILE = os.environ.get("STATE_FILE", "/var/log/log-forwarder-state.json")  # nosec B310 # nosonar — single-user embedded device
+STATE_FILE = os.environ.get("STATE_FILE", "/run/inverter-control/log-forwarder-state.json")  # nosec B310 # nosonar — single-user embedded device
 POLL_INTERVAL = 5  # seconds
 BATCH_SIZE = 100  # max lines per push
 JOB_LABEL = "cerbo"
@@ -52,6 +52,7 @@ def load_state():
 def save_state(state):
     """Save file positions to state file."""
     try:
+        os.makedirs(os.path.dirname(os.path.abspath(STATE_FILE)), exist_ok=True)
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f)
     except OSError as e:
@@ -113,7 +114,12 @@ def read_new_lines(filepath, position, inode):
 
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             f.seek(new_position)
-            for line in f:
+            # readline preserves tell() even when a full batch stops before EOF.
+            # TextIO iteration disables tell() until EOF on CPython.
+            while len(lines) < BATCH_SIZE:
+                line = f.readline()
+                if not line:
+                    break
                 line = line.rstrip("\n\r")
                 if line:
                     lines.append(line)

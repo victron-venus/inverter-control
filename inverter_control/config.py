@@ -51,9 +51,10 @@ WATER_VALVE_INSTANCE = int(_import_local_config("WATER_VALVE_INSTANCE", 2))
 # =============================================================================
 # EV CHARGER / VEHICLE (dbus-evcharger + dbus-ev D-Bus services on the GX)
 # =============================================================================
-# dbus-evcharger exposes com.victronenergy.evcharger.<N> (wallbox).
+# dbus-evcharger exposes com.victronenergy.evcharger.<suffix> (wallbox).
 # dbus-ev exposes com.victronenergy.ev.<suffix> (vehicle, has /Soc /VIN).
-# Both are autodetected via D-Bus; these are fallback defaults only.
+# Match these /DeviceInstance values against discovered names; a numeric
+# instance is metadata, never a valid final bus-name component.
 EV_INSTANCE = int(_import_local_config("EV_INSTANCE", 22))
 EVCHARGER_INSTANCE = int(_import_local_config("EVCHARGER_INSTANCE", 40))
 
@@ -257,6 +258,16 @@ WATCHDOG_CHECK_INTERVAL = float(_import_local_config("WATCHDOG_CHECK_INTERVAL", 
 # to force the CLI path.
 USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "false")
 
+# Optional startup contract. Empty/zero learn the first complete valid
+# observation; explicit values also protect a cold start during a meter outage.
+GRID_EXPECTED_SERVICE = _import_local_config("GRID_EXPECTED_SERVICE", "")
+GRID_EXPECTED_PHASES = _import_local_config("GRID_EXPECTED_PHASES", 0)
+
+# Optional meter-loss policy. Hold the last accepted command for this many
+# seconds, then latch 0 W until valid grid telemetry recovers. None retains
+# the legacy watchdog timing; zero skips the hold. No stale sample is reused.
+GRID_LOSS_HOLD_SECONDS = _import_local_config("GRID_LOSS_HOLD_SECONDS", None)
+
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 30  # Watts - upper bound (slight import OK)
@@ -307,8 +318,9 @@ D_THRESHOLD = 50  # Watts/cycle — minimum derivative to trigger braking
 D_GAIN = 0.3  # Fraction of derivative to apply as brake (0.0–1.0)
 
 # Creep correction — slow drift fix when grid stays in deadband but offset from zero
-CREEP_RATE = 0.5  # Watts accumulated per cycle while in deadband
-CREEP_MAX = 100.0  # Maximum creep correction (Watts)
+# Set CREEP_RATE to 0 in local_config.py to disable accumulation.
+CREEP_RATE = float(_import_local_config("CREEP_RATE", 0.5))  # Watts accumulated per cycle
+CREEP_MAX = float(_import_local_config("CREEP_MAX", 100.0))  # Maximum creep correction (Watts)
 
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
@@ -487,8 +499,12 @@ def _validate_config():
         _check_type("POWER_LIMIT_MIN", POWER_LIMIT_MIN, (int, float)),
         _check_type("DAMPING_FACTOR", DAMPING_FACTOR, (int, float)),
         _check_type("EMA_ALPHA", EMA_ALPHA, (int, float)),
+        _check_type("CREEP_RATE", CREEP_RATE, (int, float)),
+        _check_type("CREEP_MAX", CREEP_MAX, (int, float)),
         _check_range("DAMPING_FACTOR", DAMPING_FACTOR, 0.0, 1.0),
         _check_range("EMA_ALPHA", EMA_ALPHA, 0.0, 1.0),
+        _check_range("CREEP_RATE", CREEP_RATE, 0.0, 100.0),
+        _check_range("CREEP_MAX", CREEP_MAX, 0.0, 100.0),
         _check_type("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, (int, float)),
         _check_range("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, 0.0, 1.0),
         _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),
@@ -508,6 +524,16 @@ def _validate_config():
     if GRID_FILTER_TAU < 0:
         checks.append(f"GRID_FILTER_TAU must be >= 0, got {GRID_FILTER_TAU!r}")
 
+    if not isinstance(GRID_EXPECTED_SERVICE, str) or (
+        GRID_EXPECTED_SERVICE and not GRID_EXPECTED_SERVICE.startswith("com.victronenergy.")
+    ):
+        checks.append("GRID_EXPECTED_SERVICE must be empty or a Victron D-Bus service name")
+    if type(GRID_EXPECTED_PHASES) is not int or GRID_EXPECTED_PHASES not in (0, 1, 2):
+        checks.append("GRID_EXPECTED_PHASES must be 0 (learn), 1 or 2")
+    if GRID_LOSS_HOLD_SECONDS is not None and (
+        type(GRID_LOSS_HOLD_SECONDS) not in (int, float) or not 0 <= GRID_LOSS_HOLD_SECONDS <= 30
+    ):
+        checks.append("GRID_LOSS_HOLD_SECONDS must be None or a finite number from 0 to 30")
     if WATCHDOG_TIMEOUT_SECONDS <= 0:
         checks.append(
             f"WATCHDOG_TIMEOUT_SECONDS must be positive, got {WATCHDOG_TIMEOUT_SECONDS!r}"

@@ -12,7 +12,7 @@
 #                        so the default leaves generous headroom for load spikes.
 #   WATCHDOG_MAX_RESTARTS - restarts before disable (default: 3)
 #   WATCHDOG_WINDOW   - time window in seconds for restart count (default: 300)
-#   WATCHDOG_LOG       - log file (default: /var/log/watchdog.log)
+#   WATCHDOG_LOG       - optional duplicate log file (default: stdout via multilog)
 #   WATCHDOG_DISABLE_BACKOFF - seconds to back off after disabling a service (default: 600)
 #   WATCHDOG_ALERT_ONLY - 1 = log stale services but never restart/disable
 #                         (escape hatch after a restart storm; default: 0)
@@ -25,7 +25,7 @@ WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
 WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-300}"
 WATCHDOG_MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-3}"
 WATCHDOG_WINDOW="${WATCHDOG_WINDOW:-300}"
-WATCHDOG_LOG="${WATCHDOG_LOG:-/var/log/watchdog.log}"
+WATCHDOG_LOG="${WATCHDOG_LOG:-}"
 WATCHDOG_DISABLE_BACKOFF="${WATCHDOG_DISABLE_BACKOFF:-600}"
 WATCHDOG_ALERT_ONLY="${WATCHDOG_ALERT_ONLY:-0}"
 HB_DIR="/run/inverter-control"
@@ -37,7 +37,15 @@ HB_DIR="/run/inverter-control"
 SERVICES="${SERVICES:-inverter-control}"
 
 log() {
-    echo "$(date +'%Y-%m-%d %H:%M:%S') $1" >> "$WATCHDOG_LOG"
+    if [ -n "$WATCHDOG_LOG" ]; then
+        # Bound the optional duplicate file; normal service logs use multilog.
+        if [ -f "$WATCHDOG_LOG" ] && [ "$(wc -c < "$WATCHDOG_LOG")" -ge 131072 ]; then
+            mv -f "$WATCHDOG_LOG" "$WATCHDOG_LOG.1"
+        fi
+        echo "$(date +'%Y-%m-%d %H:%M:%S') $1" >> "$WATCHDOG_LOG"
+    else
+        echo "$(date +'%Y-%m-%d %H:%M:%S') $1"
+    fi
 }
 
 get_restart_count() {

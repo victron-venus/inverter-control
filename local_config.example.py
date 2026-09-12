@@ -81,9 +81,22 @@ WATER_VALVE_INSTANCE = 2
 # =============================================================================
 # EV CHARGER / VEHICLE (dbus-evcharger + dbus-ev D-Bus services on the GX)
 # =============================================================================
-# dbus-evcharger exposes com.victronenergy.evcharger.<N> (wallbox).
+# dbus-evcharger exposes com.victronenergy.evcharger.<suffix> (wallbox).
 # dbus-ev exposes com.victronenergy.ev.<suffix> (vehicle, has /Soc /VIN).
 # Both services are autodetected; set overrides only if auto-detection fails.
 # Default: EV_INSTANCE = 22 (vehicle), EVCHARGER_INSTANCE = 40 (wallbox)
 EV_INSTANCE = 22
 EVCHARGER_INSTANCE = 40
+
+# Optional grid measurement contract for startup during an external meter outage.
+# Empty/0 learn the first complete valid source and one/two-phase topology.
+# Use the well-known source shown in com.victronenergy.system /Ac/In/0/ServiceName.
+GRID_EXPECTED_SERVICE = ""
+GRID_EXPECTED_PHASES = 0
+
+# Optional delay after grid invalidation before commanding 0 W. During this
+# delay the last accepted command remains unchanged; stale readings are not
+# used for control. None keeps legacy watchdog timing, 0 means immediate zero.
+# For a pinned external meter, a short hold can bridge transient outages:
+# GRID_LOSS_HOLD_SECONDS = 3.0
+GRID_LOSS_HOLD_SECONDS = None

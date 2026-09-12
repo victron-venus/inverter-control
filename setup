@@ -29,93 +29,30 @@ fi
 if [ "$scriptAction" == 'INSTALL' ]; then
     logMessage "Installing $packageName"
 
-    # Backup existing installation for rollback
-    if [ -d "$installDir" ]; then
-        logMessage "Backing up existing installation for rollback"
-        rm -rf "${installDir}.rollback"
-        cp -a "$installDir" "${installDir}.rollback"
-    fi
-
-    # Create directories
+    # Use one installer for PackageManager, local updates and webhook releases.
+    # The package directory may be the source; update.sh handles that safely.
     mkdir -p "$installDir"
-    mkdir -p /var/log/inverter-control
-
-    # Install Python scripts (skip when running from the install dir itself,
-    # e.g. a manual tarball install where scriptDir == installDir)
-    if [ "$scriptDir" != "$installDir" ]; then
-        mkdir -p "$installDir/inverter_control"
-        cp "$scriptDir/main.py" "$installDir/"
-        cp "$scriptDir/inverter_control/"*.py "$installDir/inverter_control/"
-        chmod +x "$installDir/main.py"
-    fi
-
-    # Install config from setupOptions; never clobber an existing config on update
     if [ -f "/data/setupOptions/$packageName/local_config.py" ]; then
-        cp "/data/setupOptions/$packageName/local_config.py" "$installDir/"
+        cp "/data/setupOptions/$packageName/local_config.py" "$installDir/" || exit $?
         logMessage "Using local_config.py from setupOptions"
-    elif [ -f "$installDir/local_config.py" ]; then
-        logMessage "Keeping existing local_config.py"
-    else
-        cp "$scriptDir/local_config.example.py" "$installDir/local_config.py"
-        logMessage "WARNING: Installed local_config.example.py as local_config.py - edit TOU hours, HA token (or place your config at /data/setupOptions/$packageName/local_config.py)"
     fi
+    sh "$scriptDir/update.sh" "$installDir" || exit $?
 
-    # Install daemontools services: persistent dirs under /data, linked into
-    # tmpfs /service (same layout update.sh creates). endScript INSTALL_SERVICES
-    # is NOT used: SetupHelper expects a services/ directory and installs real
-    # dirs into tmpfs /service.
-    #
-    # Overlay-copy (no dir replace): deleting a supervised dir leaves the
-    # supervisor watching a deleted cwd until manual cleanup
-    mkdir -p "$installDir/service"
-    for svcDir in "$scriptDir"/service/*; do
-        [ -d "$svcDir" ] || continue
-        name="$(basename "$svcDir")"
-        mkdir -p "$installDir/service/$name"
-        [ "$scriptDir" != "$installDir" ] && cp -a "$svcDir/." "$installDir/service/$name/"
-        find "$installDir/service/$name" -type f -name run -exec chmod +x {} \; 2>/dev/null || true
-        ln -sfn "$installDir/service/$name" "/service/$name"
-    done
-
-    # Boot persistence: /service is tmpfs, rc.local recreates symlinks
-    rcLocal="/data/rc.local"
-    if [ ! -f "$rcLocal" ]; then
-        echo "#!/bin/sh" > "$rcLocal"
-        chmod +x "$rcLocal"
-    fi
-    if ! grep -q "inverter-control" "$rcLocal" 2>/dev/null; then
-        cat >> "$rcLocal" << 'RCLOCAL'
-
-# === inverter-control persistence ===
-# Recreate /service symlinks (lost on reboot since /service is tmpfs)
-ln -sf /data/inverter-control/service/inverter-control /service/
-ln -sf /data/inverter-control/service/log-forwarder /service/
-ln -sf /data/inverter-control/service/watchdog /service/
-sleep 2
-svc -u /service/inverter-control/log 2>/dev/null || true
-svc -u /service/inverter-control 2>/dev/null || true
-svc -u /service/log-forwarder 2>/dev/null || true
-svc -u /service/watchdog 2>/dev/null || true
-# === end inverter-control ===
-RCLOCAL
-        logMessage "Added rc.local boot persistence block"
-    fi
 fi
 
 #### uninstall
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
 
-    # Remove service symlinks before the install dir they point into
-    if [ -d "$installDir/service" ]; then
-        for svcDir in "$installDir"/service/*; do
-            [ -d "$svcDir" ] || continue
-            rm -f "/service/$(basename "$svcDir")"
-        done
+    # Stop and retire supervisors before unlinking their service directories.
+    for name in watchdog log-forwarder inverter-control; do
+        svc -dx "/service/$name" "/service/$name/log" 2>/dev/null || true
+        rm -f "/service/$name"
+    done
+    if [ -f /data/rc.local ]; then
+        sed -i '/# === inverter-control.*persistence ===/,/# === end inverter-control ===/d' /data/rc.local
     fi
-
-    # Remove installation directory and GUI-editable settings
-    rm -rf "$installDir"
+    # Retain configuration, certificates and persisted data for explicit cleanup.
     removeDbusSettings \
         "/Settings/InverterControl/TouExpensiveStartHour" \
         "/Settings/InverterControl/TouExpensiveEndHour"
