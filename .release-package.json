@@ -1,0 +1,33 @@
+{
+  "required": [
+    "main.py",
+    "inverter_control",
+    "setup",
+    "update.sh",
+    "keepalive.sh",
+    "service",
+    "version",
+    "gitHubInfo",
+    "local_config.example.py",
+    "uv.lock"
+  ],
+  "include": [
+    "main.py",
+    "inverter_control",
+    "setup",
+    "update.sh",
+    "keepalive.sh",
+    "restart.sh",
+    "setup_ssl.sh",
+    "service",
+    "version",
+    "gitHubInfo",
+    "local_config.example.py",
+    "requirements.txt",
+    "pyproject.toml",
+    "uv.lock",
+    "mqtt.yaml",
+    "README.md",
+    "LICENSE"
+  ]
+}

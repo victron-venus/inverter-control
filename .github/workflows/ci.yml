@@ -1,129 +1,58 @@
 name: CI
-
-on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '**.json'
-  pull_request:
-    branches: ['**']
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '**.json'
-
 permissions:
   contents: read
-
 jobs:
   ci:
     name: CI
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@5b18667880c7a0154b7c7e6686042eff5f47cdb7
-    with:
-      python-version: '3.11'
-      run-type-check: false
-
-  integration:
-    name: Integration Tests
     runs-on: ubuntu-latest
-    # The victron-venus/integration-tests repo holds shared mock D-Bus / battery / PV
-    # Docker services that simulate Venus OS hardware over MQTT.  It also contains
-    # pytest suites that verify the mock publishers are behaving correctly.
-    #
-    # Required check name (displayed in PR status): "Integration Tests"
-    #
-    # NOTE: the integration-tests/.github/workflows/integration.yml has
-    # workflow_call but assumes a sibling layout (../inverter-dashboard).  We
-    # implement the pattern locally instead of calling it via workflow_call.
-    #
-    # The mock services (mock-dbus, mock-battery, mock-pv) do NOT require
-    # inverter-control to be running; the test suite verifies the mock publishers
-    # and the MQTT broker.  A follow-up will add a Dockerfile.test for
-    # inverter-control so the full end-to-end path can be exercised.
+    timeout-minutes: 25
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
-      - name: Checkout this repo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Checkout integration-tests
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: victron-venus/integration-tests
-          path: integration-tests
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
-      - name: Build test-runner image
-        run: |
-          docker build \
-            -f integration-tests/Dockerfile.test-runner \
-            -t test-runner \
-            .
-
-      - name: Start mock services
-        run: |
-          docker compose \
-            -f integration-tests/docker-compose.yml \
-            -f integration-tests/docker-compose.test.yml \
-            up -d --build mqtt-broker mock-dbus mock-battery mock-pv
-          sleep 5
-
-      - name: Run integration tests
-        run: |
-          docker compose \
-            -f integration-tests/docker-compose.yml \
-            -f integration-tests/docker-compose.test.yml \
-            run --rm \
-            -e MQTT_HOST=mqtt-broker \
-            -e MQTT_PORT=1883 \
-            test-runner python -m pytest tests/integration/ -v --tb=short
-
-      - name: Upload test report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: integration-test-report
-          path: report.html
-          retention-days: 7
-
-      - name: Tear down
-        if: always()
-        run: |
-          docker compose \
-            -f integration-tests/docker-compose.yml \
-            -f integration-tests/docker-compose.test.yml \
-            down -v
-
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      with:
+        version: 0.12.7
+    - run: bash scripts/ci.sh
+  integration:
+    name: Pinned mock contract integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      with:
+        version: 0.12.7
+    - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+    - run: bash scripts/ci.sh integration
   validate-secrets-template:
     name: Validate Secrets Template
     runs-on: ubuntu-latest
     steps:
-      - name: Harden the runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-
-      - name: Validate local_config.example.py syntax
-        run: python -m py_compile local_config.example.py
-
-      - name: Check local_config.example.py has no real values
-        run: |
-          if grep -E '(token|password|secret|key)\s*=\s*["\x27][^"\x27]{8,}' local_config.example.py | grep -v 'your_'; then
-            echo "ERROR: local_config.example.py may contain real values"
-            exit 1
-          fi
-          echo "OK: local_config.example.py looks like a template"
+    - name: Harden the runner
+      uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1
+      with:
+        egress-policy: audit
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      with:
+        python-version: '3.11'
+    - name: Validate local_config.example.py syntax
+      run: python -m py_compile local_config.example.py
+    - name: Check local_config.example.py has no real values
+      run: "if grep -E '(token|password|secret|key)\\s*=\\s*[\"\\x27][^\"\\x27]{8,}' local_config.example.py | grep\
+        \ -v 'your_'; then\n  echo \"ERROR: local_config.example.py may contain real values\"\n  exit 1\nfi\necho\
+        \ \"OK: local_config.example.py looks like a template\"\n"
+'on':
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - '**'
+  workflow_call: {}
