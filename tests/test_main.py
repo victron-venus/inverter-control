@@ -2,9 +2,13 @@
 Unit tests for InverterController in controller.py
 """
 
+import io
 import os
+import queue
 import sys
 import unittest
+from collections import deque
+from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -769,3 +773,35 @@ class TestNextSlot:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize("interactive", [False, True])
+def test_cycle_keeps_tcp_console_without_screen_title_escapes(monkeypatch, interactive):
+    """A real cycle enqueues and sends its console line without terminal-title noise."""
+    from inverter_control import console_server
+
+    controller, victron, _, _ = _make_controller()
+    victron.get_system_data.return_value = {"gt": 63}
+    controller.calculate_setpoint = MagicMock(return_value=(-63, ""))
+    controller.handle_minimize_charging = MagicMock()
+    controller.update_state = MagicMock()
+    controller.get_boolean = MagicMock(return_value=False)
+    line = "\033[32mgrid 63W\033[0m"
+    controller.console.format_line.return_value = line
+    client = MagicMock()
+    monkeypatch.setattr(console_server, "_clients", {client})
+    monkeypatch.setattr(console_server, "_sender_queue", queue.Queue())
+    monkeypatch.setattr(console_server, "_console_buffer", deque(maxlen=100))
+    output = io.StringIO()
+    monkeypatch.setattr(output, "isatty", lambda: interactive)
+
+    with redirect_stdout(output):
+        assert controller.run_cycle() is True
+
+    assert output.getvalue() == ""
+    victron.set_grid_setpoint.assert_called_once_with(-63)
+    assert controller.last_console_line == line
+    assert list(console_server._console_buffer) == [line]
+    assert console_server._next_line_done() is False
+    client.sendall.assert_called_once_with((line + "\n").encode())
+    assert console_server._sender_queue.empty()

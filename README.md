@@ -608,6 +608,10 @@ Python 3.6+ has a built-in `secrets` module. Our `site_config.py` relies on loca
 
 ### TCP Console Server (Port 9999)
 
+Control cycles stream their formatted console line to TCP clients without emitting
+GNU screen title escapes to stdout. This keeps daemontools/multilog and Loki logs
+free of title-control noise while preserving the live console's formatted output.
+
 The TCP console server binds to `127.0.0.1:9999` by default and provides **read-only** access to live inverter data via a simple telnet-style interface.
 
 **Security Options** (choose one):
