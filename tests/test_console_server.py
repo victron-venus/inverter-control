@@ -16,6 +16,10 @@ from inverter_control import console_server
 class TestConsoleServer:
     """Test console server functionality"""
 
+    def setup_method(self):
+        """Other controller tests can enqueue output before this module runs."""
+        self.teardown_method()
+
     def teardown_method(self):
         """Reset globals after each test"""
         console_server._clients.clear()
