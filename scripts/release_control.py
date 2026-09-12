@@ -4,11 +4,7 @@
 # mypy: ignore-errors
 # pylint: skip-file
 # fmt: off
-"""Fail-closed release publication and promotion; GitHub I/O uses the gh CLI.
-
-Dispatch release-pipeline.yml locally; candidate/promote run inside its checked jobs.
-Uses only the standard library and authenticated gh/git executables.
-"""
+"""Publish candidates and promote checked RCs inside the guarded Actions workflow."""
 
 from __future__ import annotations
 
@@ -238,7 +234,10 @@ def source_policy_snapshot(gh: GitHub, sha: str) -> dict:
         len(raw) <= 250_000 and response.get("size") == len(raw),
         "Source policy size mismatch",
     )
-    blob_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+    # Git's object identifier is SHA-1; payload security uses SHA-256 separately.
+    blob_sha = hashlib.sha1(
+        b"blob " + str(len(raw)).encode() + b"\0" + raw, usedforsecurity=False
+    ).hexdigest()
     require(response.get("sha") == blob_sha, "Source policy Git blob identity mismatch")
     data = parse_json(raw, "source release policy")
     require_release_policy(data, gh.repo, qualified=False)

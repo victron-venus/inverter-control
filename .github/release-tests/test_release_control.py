@@ -44,7 +44,7 @@ def policy_response(data):
     """Represent policy bytes as a hash-verified GitHub contents response."""
     raw = rc.json_bytes(data)
     blob_sha = rc.hashlib.sha1(
-        b"blob " + str(len(raw)).encode() + b"\0" + raw
+        b"blob " + str(len(raw)).encode() + b"\0" + raw, usedforsecurity=False
     ).hexdigest()
     return {
         "type": "file",
