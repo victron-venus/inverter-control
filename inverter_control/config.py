@@ -258,6 +258,11 @@ WATCHDOG_CHECK_INTERVAL = float(_import_local_config("WATCHDOG_CHECK_INTERVAL", 
 # to force the CLI path.
 USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "false")
 
+# Optional startup contract. Empty/zero learn the first complete valid
+# observation; explicit values also protect a cold start during a meter outage.
+GRID_EXPECTED_SERVICE = _import_local_config("GRID_EXPECTED_SERVICE", "")
+GRID_EXPECTED_PHASES = _import_local_config("GRID_EXPECTED_PHASES", 0)
+
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 30  # Watts - upper bound (slight import OK)
@@ -514,6 +519,12 @@ def _validate_config():
     if GRID_FILTER_TAU < 0:
         checks.append(f"GRID_FILTER_TAU must be >= 0, got {GRID_FILTER_TAU!r}")
 
+    if not isinstance(GRID_EXPECTED_SERVICE, str) or (
+        GRID_EXPECTED_SERVICE and not GRID_EXPECTED_SERVICE.startswith("com.victronenergy.")
+    ):
+        checks.append("GRID_EXPECTED_SERVICE must be empty or a Victron D-Bus service name")
+    if type(GRID_EXPECTED_PHASES) is not int or GRID_EXPECTED_PHASES not in (0, 1, 2):
+        checks.append("GRID_EXPECTED_PHASES must be 0 (learn), 1 or 2")
     if WATCHDOG_TIMEOUT_SECONDS <= 0:
         checks.append(
             f"WATCHDOG_TIMEOUT_SECONDS must be positive, got {WATCHDOG_TIMEOUT_SECONDS!r}"

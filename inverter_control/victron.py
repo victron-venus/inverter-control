@@ -16,8 +16,14 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .config import INVERTER_STATES, USE_NATIVE_DBUS
+from .config import GRID_EXPECTED_PHASES, GRID_EXPECTED_SERVICE, INVERTER_STATES, USE_NATIVE_DBUS
 from .dbus_native import NativeDbusClient
+from .grid_telemetry import (
+    GRID_PATHS,
+    GridTelemetry,
+    parse_grid_meter_snapshot,
+    parse_grid_snapshot,
+)
 from .victron_parse import (
     calculate_battery_soc_from_voltage,
     parse_shunt_data_output,
@@ -251,6 +257,14 @@ class VictronDBus:
         # D-Bus discovery failure log throttling (once per minute)
         self._last_discovery_failed_log: float = 0.0
 
+        # One reconciliation interval plus the existing silence budget gives
+        # unchanged values time to be revalidated without relying on shunt traffic.
+        self._grid_telemetry = GridTelemetry(
+            SIGNAL_RECONCILE_INTERVAL + SIGNAL_SILENCE_TIMEOUT,
+            GRID_EXPECTED_SERVICE,
+            GRID_EXPECTED_PHASES,
+        )
+
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
             # Set up NameOwnerChanged handler for service discovery
@@ -276,7 +290,9 @@ class VictronDBus:
 
     def _fast_targets(self) -> list[tuple[str, str]]:
         """(service, path) pairs for all signal-driven fast inputs."""
-        targets = [(SYSTEM_SERVICE, path) for path in SYSTEM_SIGNAL_PATHS]
+        targets = [
+            (SYSTEM_SERVICE, path) for path in dict.fromkeys((*SYSTEM_SIGNAL_PATHS, *GRID_PATHS))
+        ]
         if self._shunt_service:
             targets.extend((self._shunt_service, path) for path in SHUNT_SIGNAL_PATHS)
         if self._vebus_service:
@@ -333,9 +349,23 @@ class VictronDBus:
         """Fetch current values for all subscribed paths (initial/reconnect)."""
         if self._native is None:
             return
+        generation = self._grid_telemetry.generation
+        grid_fields = self._native.get_values(SYSTEM_SERVICE)
+        if isinstance(grid_fields, dict):
+            applied_generation = self._grid_telemetry.replace(grid_fields, generation)
+            if applied_generation is not None:
+                self._system_data["_last_update"] = time.time()
+                meter = self._grid_telemetry.selected_meter()
+                if meter and not self._native.subscribe_service_items(meter):
+                    self._set_signals_healthy(False)
+                self._refresh_grid_meter(applied_generation)
+        elif generation == self._grid_telemetry.generation:
+            self._grid_telemetry.unavailable("System grid snapshot unavailable")
         for service, path in self._fast_targets():
+            if service == SYSTEM_SERVICE and path in GRID_PATHS:
+                continue
             self._apply_fast_value(service, path, self._native.get_value(service, path))
-        self._last_signal_reconcile = time.time()
+        self._last_signal_reconcile = time.monotonic()
 
     def _signals_healthy(self) -> bool:
         """True when all fast-input subscriptions are armed on the live bus."""
@@ -372,7 +402,15 @@ class VictronDBus:
         SmartShunt's bank truth — a path-only route let them overwrite bp/bc/bv
         every snapshot and made battery power flicker between two realities.
         """
-        if raw is None:
+        meter_updated = False
+        if service == SYSTEM_SERVICE and path in GRID_PATHS:
+            old_meter = self._grid_telemetry.selected_meter()
+            self._grid_telemetry.update(path, raw)
+            if self._grid_telemetry.selected_meter() != old_meter:
+                self._discovery_requested.set()
+        else:
+            meter_updated = self._grid_telemetry.update_meter(service, path, raw)
+        if raw is None or meter_updated:
             return
         if service == SYSTEM_SERVICE:
             key = SYSTEM_SIGNAL_PATHS.get(path)
@@ -402,6 +440,8 @@ class VictronDBus:
         now = time.time()
         try:
             val = float(raw)
+            if not math.isfinite(val):
+                return
             self._system_data[key] = round(val) if key not in ("bv", "bc") else val
             self._system_data["gt"] = int(
                 self._system_data.get("g1", 0) + self._system_data.get("g2", 0)
@@ -629,6 +669,7 @@ class VictronDBus:
         - A service gains an owner (appears on the bus)
         - A service loses its owner (disappears from the bus)
         """
+        grid_changed = self._grid_telemetry.owner_changed(service_name)
         # Only trigger discovery for services we care about
         tracked_services = {
             SYSTEM_SERVICE,
@@ -651,7 +692,7 @@ class VictronDBus:
         ):
             tracked_services.add(service_name)
 
-        if service_name in tracked_services:
+        if service_name in tracked_services or grid_changed:
             logger.debug(f"NameOwnerChanged: {service_name} {old_owner} -> {new_owner}")
             # Discovery performs synchronous reads; never block the D-Bus loop.
             self._discovery_requested.set()
@@ -703,14 +744,14 @@ class VictronDBus:
         # signals while subscriptions are healthy; tree polls then only
         # reconcile every SIGNAL_RECONCILE_INTERVAL against missed events.
         if self._signals_healthy():
-            if time.time() - self._last_signal_reconcile >= SIGNAL_RECONCILE_INTERVAL:
+            if time.monotonic() - self._last_signal_reconcile >= SIGNAL_RECONCILE_INTERVAL:
                 self._poll_system_data()
                 self._poll_shunt_data()
                 self._poll_inverter_power()
                 self._reconcile_mppt_data()
                 self._reconcile_pv_power()
                 self._reconcile_acload_power()
-                self._last_signal_reconcile = time.time()
+                self._last_signal_reconcile = time.monotonic()
         else:
             if (
                 self._native is not None
@@ -770,6 +811,7 @@ class VictronDBus:
 
     def _poll_system_data(self):
         """Poll system data using tree query"""
+        generation = self._grid_telemetry.generation
         output = self._safe_subprocess_tracked(
             [
                 "dbus-send",
@@ -783,13 +825,40 @@ class VictronDBus:
             timeout=0.5,
         )
         if output:
-            self._parse_system_data(output)
+            self._parse_system_data(output, generation)
+        elif generation == self._grid_telemetry.generation:
+            self._grid_telemetry.unavailable("System grid read unavailable")
 
-    def _parse_system_data(self, output: str):
+    def _parse_system_data(self, output: str, generation: int | None = None):
         """Parse system data from tree query output using shared parser"""
         parsed = parse_system_data_output(output)
+        applied_generation = self._grid_telemetry.replace(parse_grid_snapshot(output), generation)
+        if applied_generation is not None:
+            self._refresh_grid_meter(applied_generation)
         self._system_data.update(parsed)
         self._system_data["_last_update"] = time.time()
+
+    def _refresh_grid_meter(self, generation: int):
+        """Revalidate the selected external meter without using inverter input flags."""
+        meter = self._grid_telemetry.selected_meter()
+        if not meter:
+            return
+        fields = self._native.get_values(meter) if self._native is not None else None
+        if not isinstance(fields, dict):
+            output = self._safe_subprocess_tracked(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply",
+                    f"--dest={meter}",
+                    "/",
+                    GET_VALUE_METHOD,
+                ],
+                service=meter,
+                timeout=0.5,
+            )
+            fields = parse_grid_meter_snapshot(output) if output else None
+        self._grid_telemetry.replace_meter(meter, fields, generation)
 
     def _poll_shunt_data(self):
         """Poll bank V/I/P from the SmartShunt service (tree query)."""
@@ -1478,6 +1547,7 @@ class VictronDBus:
             data = dict(self._system_data)
             for k in _SYSTEM_DATA_KEYS:
                 data.setdefault(k, 0)
+            self._merge_grid_status(data)
             return data
 
         # Fallback: synchronous call if cache stale (should rarely happen)
@@ -1494,6 +1564,7 @@ class VictronDBus:
             "pv_total": 0,
         }
 
+        generation = self._grid_telemetry.generation
         output = self._safe_subprocess(
             [
                 "dbus-send",
@@ -1507,9 +1578,15 @@ class VictronDBus:
         )
 
         if not output:
+            if generation == self._grid_telemetry.generation:
+                self._grid_telemetry.unavailable("System grid read unavailable")
+            self._merge_grid_status(data)
             return data
 
         parsed = parse_system_data_output(output)
+        applied_generation = self._grid_telemetry.replace(parse_grid_snapshot(output), generation)
+        if applied_generation is not None:
+            self._refresh_grid_meter(applied_generation)
         data.update(parsed)
 
         # Bank V/I/P from the SmartShunt only (see SHUNT_SIGNAL_PATHS note).
@@ -1527,7 +1604,23 @@ class VictronDBus:
             )
             if shunt_output:
                 data.update(parse_shunt_data_output(shunt_output))
+        self._merge_grid_status(data)
         return data
+
+    def _merge_grid_status(self, data: dict[str, Any]) -> None:
+        status = self._grid_telemetry.snapshot()
+        # Keep display data on an outage, but never label it valid for control.
+        data.update(
+            {
+                key: value
+                for key, value in status.items()
+                if status["_grid_valid"] or key.startswith("_grid")
+            }
+        )
+
+    def get_grid_status(self) -> dict[str, Any]:
+        """Read control validity without triggering synchronous device I/O."""
+        return self._grid_telemetry.snapshot()
 
     def get_inverter_state(self) -> tuple[int, str]:
         """Get inverter state code and description - pure background-cache read.
@@ -1570,9 +1663,10 @@ class VictronDBus:
         """Get current inverter AC output power - instant from background cache"""
         return self._system_data.get("inv_power", 0)
 
-    def get_ac_in_power(self) -> int:
-        """Get AC input power (from grid) - from system data cache"""
-        return self._system_data.get("gt", 0)
+    def get_ac_in_power(self) -> int | None:
+        """Get valid grid power for the filter; unavailable input is not zero."""
+        data = self._grid_telemetry.snapshot()
+        return data["gt"] if data["_grid_valid"] else None
 
     def set_grid_setpoint(self, watts: int) -> bool:
         """Set the grid power setpoint (Hub4/L1/AcPowerSetpoint)"""

@@ -809,3 +809,7 @@ bind address and restrict access with a firewall:
 - Metrics: `INVERTER_METRICS_HOST` environment variable.
 
 Loki URLs must use HTTP or HTTPS. Redirects are rejected; configure the final push URL.
+
+### Grid measurement validity
+
+See [Grid telemetry validity and recovery](docs/grid-telemetry-safety.md) for source and phase validation, cold-start expectations, watchdog timing and diagnostics. Sites that require an external meter should configure its expected service and phase layout before rollout.

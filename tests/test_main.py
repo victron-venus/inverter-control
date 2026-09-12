@@ -59,6 +59,7 @@ def _make_controller(**overrides):
         mock_evcharger_cls.return_value = mock_evcharger
 
         mock_victron.get_cell_counts.return_value = {}
+        mock_victron.get_grid_status.return_value = {"_grid_valid": True}
         mock_calc.power_limit_min = -2300
         mock_calc.power_limit_max = 2250
 
@@ -113,6 +114,7 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_calc.calculate.return_value = MagicMock(setpoint=-600, flags="[T]", filtered_gt=100.0)
 
         sys_data = {
+            "_grid_valid": True,
             "g1": 200,
             "g2": 0,
             "gt": 200,
@@ -144,6 +146,7 @@ class TestCalculateSetpoint(unittest.TestCase):
         mock_calc.calculate.return_value = MagicMock(setpoint=-400, flags="", filtered_gt=50.0)
 
         sys_data = {
+            "_grid_valid": True,
             "g1": 100,
             "g2": 50,
             "gt": 150,
@@ -183,6 +186,7 @@ class TestCalculateSetpoint(unittest.TestCase):
 
         controller.calculate_setpoint(
             {
+                "_grid_valid": True,
                 "g1": 0,
                 "g2": 0,
                 "gt": 0,
@@ -209,6 +213,7 @@ class TestCalculateSetpoint(unittest.TestCase):
 
         controller.calculate_setpoint(
             {
+                "_grid_valid": True,
                 "g1": 0,
                 "g2": 0,
                 "gt": 0,
@@ -255,6 +260,7 @@ class TestUpdateState(unittest.TestCase):
         controller.previous_setpoint = -500
 
         sys_data = {
+            "_grid_valid": True,
             "g1": 100,
             "g2": 50,
             "gt": 150,
@@ -302,6 +308,7 @@ class TestUpdateState(unittest.TestCase):
         controller._cached_pv_powers = [50.0]
 
         sys_data = {
+            "_grid_valid": True,
             "g1": 0,
             "g2": 0,
             "gt": 0,
@@ -347,6 +354,7 @@ class TestGetStateForMqtt(unittest.TestCase):
             controller._internal_booleans = {"no_feed": True}
 
             sys_data = {
+                "_grid_valid": True,
                 "g1": 100,
                 "g2": 50,
                 "gt": 150,
@@ -406,6 +414,7 @@ class TestRunCycle(unittest.TestCase):
     def test_returns_true_on_success(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_system_data.return_value = {
+            "_grid_valid": True,
             "g1": 0,
             "g2": 0,
             "gt": 0,
@@ -443,6 +452,7 @@ class TestRunCycle(unittest.TestCase):
     def test_calls_get_system_data_and_set_grid_setpoint(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         sys_data = {
+            "_grid_valid": True,
             "g1": 100,
             "g2": 50,
             "gt": 150,
@@ -485,6 +495,7 @@ class TestRunCycle(unittest.TestCase):
     def test_cycle_marks_watchdog_updates(self):
         controller, mock_victron, mock_ha, mock_calc = _make_controller()
         mock_victron.get_system_data.return_value = {
+            "_grid_valid": True,
             "g1": 0,
             "g2": 0,
             "gt": 0,
@@ -781,7 +792,7 @@ def test_cycle_keeps_tcp_console_without_screen_title_escapes(monkeypatch, inter
     from inverter_control import console_server
 
     controller, victron, _, _ = _make_controller()
-    victron.get_system_data.return_value = {"gt": 63}
+    victron.get_system_data.return_value = {"_grid_valid": True, "gt": 63}
     controller.calculate_setpoint = MagicMock(return_value=(-63, ""))
     controller.handle_minimize_charging = MagicMock()
     controller.update_state = MagicMock()

@@ -256,6 +256,11 @@ class SetpointCalculator:
         # EMA-smoothed derived_gt (persists across calculate() calls)
         self._filtered_derived_gt: float | None = None
 
+    def reset_measurement_history(self) -> None:
+        """Discard samples from before an outage without changing control policy."""
+        self.prev_effective_gt = None
+        self._filtered_derived_gt = None
+
     # Backwards compatibility for tests - expose normal strategy state
     @property
     def strategies(self):
