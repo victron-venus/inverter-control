@@ -31,24 +31,38 @@ Changing a configured meter or reducing the site's established phase layout requ
 
 ## Outage and recovery timing
 
-On the next control cycle after invalidation, the controller pauses normal setpoint writes, preserves pending manual requests and stops renewing both the valid-telemetry and accepted-setpoint watchdog heartbeats. It also discards stale grid-filter, derivative and legacy derived-grid EMA history so recovery cannot compare a new measurement with a sample from before the outage. A second inexpensive validity check immediately before writing catches invalidation during calculation. A D-Bus write already in flight cannot be recalled.
+On the next control cycle after invalidation, the controller pauses normal setpoint writes, preserves pending manual requests and stops renewing both valid-telemetry and accepted-setpoint watchdog heartbeats. It discards stale grid-filter, derivative and legacy derived-grid EMA history. A second inexpensive validity check immediately before writing catches invalidation during calculation. A D-Bus write already in flight cannot be recalled.
 
-The existing watchdog policy remains in effect:
+### Optional short hold before zero
 
-- Both control heartbeats must be older than `WATCHDOG_TIMEOUT_SECONDS`, normally 30 seconds.
-- Three consecutive failed checks trigger the existing **0 W grid setpoint**. With the default five-second check interval, this is normally 40–45 seconds after the last valid control heartbeat, depending on check alignment.
-- A rejected or failed fallback write is retried on subsequent watchdog checks. It is not recorded as a successful hardware change.
-- Recovery requires two consecutive watchdog checks with currently valid telemetry. A brief good sample followed by another explicit invalidation cannot re-arm the watchdog.
-- The existing recovery operation must successfully restore its saved setpoint before normal control resumes. The next cycle calculates a new setpoint or applies the preserved manual request. With the default interval, recovery qualification takes roughly 5–10 seconds after valid telemetry returns, plus any write retries.
+For an installation with a pinned external meter, configure a short delay in `local_config.py`:
 
-If an outage produces no explicit invalidation and only stops revalidation, the 40-second freshness budget precedes watchdog timeout qualification. The fallback timing is deliberately not shortened by this change. Operators requiring a different timing policy should assess that separately.
+```python
+GRID_LOSS_HOLD_SECONDS = 3.0
+```
 
-No ESS mode, battery limit, control coefficient or power limit is changed by this mechanism. Dry-run mode still performs no hardware writes.
+`None` (the default) preserves the legacy watchdog policy below. A finite number from 0 to 30 enables the short hold; `0` requests zero immediately. The delay starts at the first detected invalid observation and repeated invalid reads or changed error reasons do not extend it. Detection includes source substitution, missing phases, an unavailable meter and expired required readings; this setting does not change the telemetry freshness budget.
+
+During the hold, the inverter retains the last successfully accepted command. The controller does **not** repeatedly calculate corrections from a frozen meter value. Diagnostic power readings can remain visible but are not control input. If the process has not yet accepted a command, there is no known command to hold and it requests zero immediately.
+
+When the delay expires, the shared watchdog requests **0 W** and latches normal control off. Failed or rejected writes remain pending and are retried, even if the meter returns before the retry. An accepted zero is retained while the source is wrong or readings remain invalid. A zero inverter setpoint does not mean zero utility-meter power: house consumption and PV can still import or export during the outage.
+
+Both control validity gates check the deadline, normally once per 0.33-second cycle. The background watchdog also checks it, so a stalled control loop is still covered. A deadline can be exceeded by scheduling and bounded D-Bus write latency; background-only enforcement can add up to `WATCHDOG_CHECK_INTERVAL`, normally five seconds. The separate stalled-loop failsafe can act sooner and is never postponed by the hold. If it has already triggered when meter loss is observed, its pending or accepted zero is adopted immediately and recovery will not replay the older command.
+
+A valid return before the deadline cancels the hold and normal calculation resumes with reset measurement history. Once zero has been requested, recovery requires an accepted zero and two consecutive valid watchdog checks (normally about 5–10 seconds). An explicit invalidation resets that recovery qualification. Recovery leaves the command at zero, then the next control cycle calculates from fresh readings or applies a pending manual request. It never restores the command from before the outage. Safety writes and recovery transitions share a lock to prevent the background watchdog from racing this policy.
+
+Dry-run mode writes no hardware commands. This mechanism does not change ESS modes, scheduling, battery policy, control coefficients or power limits.
+
+### Legacy policy when the option is disabled
+
+With `GRID_LOSS_HOLD_SECONDS = None`, both control heartbeats must be older than `WATCHDOG_TIMEOUT_SECONDS`, normally 30 seconds. Three consecutive failed checks trigger the existing 0 W setpoint, normally 40–45 seconds after the last valid heartbeat. Failed fallback writes are retried on subsequent checks. Recovery requires two consecutive checks with valid telemetry and a successful restoration of the saved setpoint before normal control resumes.
+
+If telemetry only stops revalidating without explicit invalidation, its 40-second freshness budget precedes either outage policy. Set an explicit expected meter and phase count to protect startup during a meter outage.
 
 ## Diagnostics and verification
 
-The state API reports `grid_control_valid` and `grid_control_reason`. Logs report transitions into an unavailable measurement state and back to normal control. Diagnostic power values may retain the last reading during an outage; the validity field determines whether they can be used for control.
+The state API reports `grid_control_valid`, `grid_control_reason`, `grid_loss_state`, `grid_loss_hold_seconds`, `grid_loss_elapsed` and `grid_loss_remaining`. Outage states distinguish `holding`, `zero_pending`, `zero` and `recovering`; `disabled` means legacy policy and `normal` means valid control input. `grid_loss_zero_applied` records an accepted outage zero until the next accepted normal command. These fields refresh even while normal control is paused. Logs report transitions into an unavailable measurement state and back to normal control. Diagnostic power values may retain the last reading during an outage; the validity field determines whether they can be used for control.
 
-Before deploying, run the local regression suite. It covers measured zero, invalid arrays, non-finite values, legitimate single-phase input, missing active phases, unsupported three-phase input, external meter metadata, source and owner changes, stale replies, unrelated signal traffic, unchanged-value revalidation, filter reset races, pending manual requests and deterministic watchdog outage/recovery/write-rejection sequences.
+Before deploying, run the local regression suite. It covers measured zero, invalid arrays, non-finite values, legitimate single-phase input, missing active phases, unsupported three-phase input, external meter metadata, source and owner changes, stale replies, unrelated signal traffic, unchanged-value revalidation, filter reset races, pending manual requests and deterministic watchdog outage/recovery/write-rejection sequences, configurable deadlines, cold startup, short recovery, pending zero retries, dry-run behavior and both control validity gates.
 
 This implementation has been validated with local tests and read-only inspection of Venus D-Bus contracts. Device rollout and an observed physical meter outage are separate operational checks; they are not performed by these tests.
