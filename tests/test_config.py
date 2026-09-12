@@ -60,7 +60,7 @@ class TestCreepLocalConfig:
     def load_config(monkeypatch, **overrides):
         local_config = ModuleType("local_config")
         local_config.HA_URL = "http://localhost:8123"
-        local_config.HA_TOKEN = "your_token_here"
+        local_config.HA_TOKEN = ""
         local_config.HA_SENSORS = {}
         local_config.VUE_SENSORS = {}
         local_config.HA_DUMP_LOADS = []
