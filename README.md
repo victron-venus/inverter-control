@@ -608,7 +608,7 @@ Python 3.6+ has a built-in `secrets` module. Our `site_config.py` relies on loca
 
 ### TCP Console Server (Port 9999)
 
-The TCP console server binds to `0.0.0.0:9999` and provides **read-only** access to live inverter data via a simple telnet-style interface.
+The TCP console server binds to `127.0.0.1:9999` by default and provides **read-only** access to live inverter data via a simple telnet-style interface.
 
 **Security Options** (choose one):
 
@@ -751,3 +751,23 @@ For issues specific to:
 - **This project**: Open an issue in this repository
 
 **Note:** This is a community project and is not affiliated with Victron Energy.
+
+
+### Security scan and network defaults
+
+Python Security uploads all Bandit findings and fails on medium/high severity findings.
+Low severity findings remain visible in code scanning, including pytest assertions.
+The only medium-severity test exceptions are HTTP calls to fixed loopback test servers.
+Dependency auditing checks both `pyproject.toml` and `requirements.txt` using pip-audit;
+audit failures and known vulnerabilities fail the job.
+
+The unauthenticated webhook, console and optional metrics listeners default to loopback.
+After upgrading, remote integrations must use an SSH tunnel or an authenticated reverse
+proxy. If direct access from a trusted network is required, explicitly configure the
+bind address and restrict access with a firewall:
+
+- Webhook: `WEBHOOK_SERVER_HOST` in `local_config.py`.
+- Console: `INVERTER_CONSOLE_HOST` environment variable.
+- Metrics: `INVERTER_METRICS_HOST` environment variable.
+
+Loki URLs must use HTTP or HTTPS. Redirects are rejected; configure the final push URL.

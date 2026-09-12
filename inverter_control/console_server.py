@@ -6,6 +6,7 @@ Uses threading for compatibility with synchronous main loop
 """
 
 import logging
+import os
 import queue
 import socket
 import threading
@@ -119,7 +120,9 @@ def start_server():
         _server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         _server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         _server_socket.settimeout(1.0)  # For clean shutdown
-        _server_socket.bind(("0.0.0.0", TCP_CONSOLE_PORT))
+        _server_socket.bind(
+            (os.environ.get("INVERTER_CONSOLE_HOST", "127.0.0.1"), TCP_CONSOLE_PORT)
+        )
         _server_socket.listen(5)
 
         _running = True

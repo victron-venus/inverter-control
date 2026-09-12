@@ -2,6 +2,7 @@
 Unit tests for MQTT Bridge
 """
 
+import json
 import os
 import sys
 from unittest.mock import MagicMock, patch
@@ -119,6 +120,36 @@ class TestMQTTBridge:
             bridge._on_connect(mock_client, None, None, 0)
 
         mock_client.publish.assert_not_called()
+
+    @pytest.mark.parametrize("connection_attempt", [1, 2])
+    @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
+    @patch("inverter_control.mqtt_bridge.mqtt")
+    def test_on_connect_replays_only_current_unacknowledged_alerts(
+        self, mock_mqtt, isolated_alert_storage, connection_attempt
+    ):
+        """Each test starts empty, while reconnect still replays persisted alerts."""
+        from inverter_control.alert_state import AlertStorage
+
+        assert isolated_alert_storage.get_alert_history() == []
+        pending = isolated_alert_storage.add_alert(f"pending {connection_attempt}", "body", "info")
+        acknowledged = isolated_alert_storage.add_alert("acknowledged", "body", "info")
+        isolated_alert_storage.acknowledge_alert(acknowledged.id)
+
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
+        # Reload from disk to exercise persistence as well as the replay path.
+        bridge._alert_storage = AlertStorage(isolated_alert_storage.storage_path)
+        mock_client = mock_mqtt.Client.return_value
+        try:
+            with patch("inverter_control.config.PORTAL_ID", "your_portal_id"):
+                bridge._on_connect(mock_client, None, None, 0)
+            bridge.flush()
+            mock_client.publish.assert_called_once()
+            args, kwargs = mock_client.publish.call_args
+            assert args[0] == "test/notifications"
+            assert json.loads(args[1])["id"] == pending.id
+            assert kwargs == {"qos": 0, "retain": False}
+        finally:
+            bridge.disconnect()
 
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
     @patch("inverter_control.mqtt_bridge.mqtt")

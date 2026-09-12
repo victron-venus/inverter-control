@@ -199,7 +199,7 @@ class InverterController:
 
         # Pre-charge state (triggered by solar-forecast webhook)
         self._pre_charge_requested = False
-        self._pre_charge_horizon_hours = 6
+        self._pre_charge_horizon_hours = 24
 
         # Sustained "ESS not in External control" tracker: GX silently ignores
         # AcPowerSetpoint outside Hub4Mode=3, so live control becomes a no-op.
@@ -375,19 +375,25 @@ class InverterController:
 
             forecast_wh = payload.get("forecast_energy_wh", 0)
             threshold_wh = payload.get("threshold_wh", 0)
-            horizon_hours = payload.get("horizon_hours", 6)
+            horizon_hours = payload.get("horizon_hours", 24)
+            day_scope = (
+                payload.get("day") == "today"
+                or payload.get("horizon") in ("next_day", "today")
+                or int(horizon_hours or 0) >= 24
+            )
             logger.info(
                 f"Pre-charge webhook: forecast={forecast_wh:.0f}Wh "
                 f"threshold={threshold_wh:.0f}Wh horizon={horizon_hours}h"
+                f" day_scope={day_scope}"
             )
             bridge = get_mqtt_bridge()
 
+            day_stamp = datetime.now(UTC).strftime("%Y%m%d")
             if self._in_expensive_window():
                 logger.info("Pre-charge webhook ignored: expensive grid window active")
                 if bridge:
                     bridge.publish_notification(
-                        notification_id="precharge-suppressed-"
-                        + datetime.now(UTC).strftime("%Y%m%d-%H"),
+                        notification_id="precharge-suppressed-" + day_stamp,
                         level="info",
                         title="Pre-charge skipped",
                         body=(
@@ -405,17 +411,24 @@ class InverterController:
             self._pre_charge_requested = True
             self._pre_charge_horizon_hours = horizon_hours
 
-            # Notify dashboards (id is hour-scoped so consumers can dedupe)
+            # Notify dashboards (day-scoped id so one banner per calendar day)
             if bridge:
-                notification_id = "precharge-" + datetime.now(UTC).strftime("%Y%m%d-%H")
+                notification_id = "precharge-" + day_stamp
+                if day_scope:
+                    body = (
+                        f"Low solar forecast: {forecast_wh / 1000:.1f} kWh "
+                        f"< {threshold_wh / 1000:.1f} kWh for today"
+                    )
+                else:
+                    body = (
+                        f"Low solar forecast: {forecast_wh / 1000:.1f} kWh "
+                        f"< {threshold_wh / 1000:.1f} kWh in {horizon_hours}h"
+                    )
                 bridge.publish_notification(
                     notification_id=notification_id,
                     level="info",
                     title="Pre-charge triggered",
-                    body=(
-                        f"Low solar forecast: {forecast_wh / 1000:.1f} kWh "
-                        f"< {threshold_wh / 1000:.1f} kWh in {horizon_hours}h"
-                    ),
+                    body=body,
                     source="solar-forecast",
                 )
             return True
@@ -635,7 +648,7 @@ class InverterController:
     def _get_daily_stats(self) -> dict[str, Any]:
         # All daily stats now from D-Bus (no HA dependency)
         battery_in, battery_out = self.victron.get_battery_daily_energy()
-        _, _ = self.victron.get_battery_yesterday_energy()
+        battery_in_yesterday, battery_out_yesterday = self.victron.get_battery_yesterday_energy()
         mppt_daily = self.victron.get_mppt_daily_yields()
         pv_inverter_daily = self.victron.get_pv_inverter_daily_yields()
         produced_today = sum(mppt_daily) + sum(pv_inverter_daily)
@@ -649,6 +662,8 @@ class InverterController:
             "grid_kwh": 0.0,  # No D-Bus equivalent yet
             "battery_in": battery_in,
             "battery_out": battery_out,
+            "battery_in_yesterday": battery_in_yesterday,
+            "battery_out_yesterday": battery_out_yesterday,
             "pv_total_daily": produced_today,
             "pv_inverter_daily": pv_inverter_daily,
             "mppt_daily": mppt_daily,

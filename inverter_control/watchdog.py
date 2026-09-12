@@ -20,8 +20,8 @@ class HardwareWatchdog:
     (pass-through/fallback mode) to prevent uncontrolled grid export/import if
     the control loop stalls or crashes.
 
-    Trigger is based on the actual setpoint writes, not telemetry reads, so a
-    slow-but-alive loop is never mistaken for a crash.
+    Both setpoint writes and telemetry must stop before triggering. Failed
+    fallback writes are retried once per check until the transport accepts one.
 
     Runs as a daemon thread checking heartbeats every check_interval seconds
     (WATCHDOG_CHECK_INTERVAL, default 5s).
@@ -59,17 +59,17 @@ class HardwareWatchdog:
     def mark_dbus_update(self):
         """Call when D-Bus telemetry is successfully read"""
         with self._lock:
-            self._last_dbus_update = time.time()
+            self._last_dbus_update = time.monotonic()
 
     def mark_mqtt_update(self):
         """Call when MQTT state is successfully published"""
         with self._lock:
-            self._last_mqtt_update = time.time()
+            self._last_mqtt_update = time.monotonic()
 
     def mark_setpoint_update(self):
         """Call every time a grid setpoint is written to the inverter"""
         with self._lock:
-            self._last_setpoint_update = time.time()
+            self._last_setpoint_update = time.monotonic()
 
     def start(self):
         """Start the watchdog monitoring thread"""
@@ -82,7 +82,7 @@ class HardwareWatchdog:
         self._pre_forced_setpoint = 0
         self._fail_count = 0
         self._success_count = 0
-        now = time.time()
+        now = time.monotonic()
         self._last_dbus_update = now
         self._last_mqtt_update = now
         self._last_setpoint_update = now
@@ -108,7 +108,7 @@ class HardwareWatchdog:
         # In dry-run no setpoints are written, so liveness cannot be judged
         if self.dry_run:
             return
-        now = time.time()
+        now = time.monotonic()
         with self._lock:
             setpoint_age = now - self._last_setpoint_update
             dbus_age = now - self._last_dbus_update
@@ -126,9 +126,10 @@ class HardwareWatchdog:
             self._success_count += 1
             self._fail_count = 0
 
-        if self._fail_count >= self._fail_threshold and not self._triggered:
+        if self._fail_count >= self._fail_threshold:
             self._triggered = True
-            self._apply_failsafe()
+            if not self._hardware_forced:
+                self._apply_failsafe()
         elif self._success_count >= self._success_threshold and self._triggered:
             self._recover_from_failsafe()
 
@@ -145,10 +146,19 @@ class HardwareWatchdog:
         if self.dry_run:
             logger.warning("[DRY] watchdog would force 0W setpoint")
             return
-        try:
-            if not self._hardware_forced:
+        if not self._hardware_forced:
+            try:
                 self._pre_forced_setpoint = self._get_setpoint() if self._get_setpoint else 0
-            self.victron.set_grid_setpoint(0)
+            except Exception:
+                # Reading the recovery value must never prevent the safety write.
+                self._pre_forced_setpoint = 0
+                logger.exception(
+                    "WATCHDOG: failed to capture prior setpoint; recovery defaults to 0W"
+                )
+        try:
+            if not self.victron.set_grid_setpoint(0):
+                logger.error("WATCHDOG: failsafe write rejected; retrying on the next check")
+                return
             self._hardware_forced = True
             logger.warning("WATCHDOG: stalled loop detected - forced 0W grid setpoint")
         except Exception:
@@ -156,13 +166,16 @@ class HardwareWatchdog:
 
     def _recover_from_failsafe(self):
         """Telemetry recovered - re-arm watchdog and restore the prior setpoint"""
-        self._triggered = False
         if self._hardware_forced:
             try:
-                self.victron.set_grid_setpoint(self._pre_forced_setpoint)
+                if not self.victron.set_grid_setpoint(self._pre_forced_setpoint):
+                    logger.error("WATCHDOG: setpoint restore rejected; watchdog remains armed")
+                    return
             except Exception:
                 logger.exception("WATCHDOG: setpoint restore failed")
+                return
             self._hardware_forced = False
+        self._triggered = False
         self._pre_forced_setpoint = 0
         logger.info("hardware watchdog re-armed after telemetry recovery")
 
@@ -172,12 +185,17 @@ class HardwareWatchdog:
 
     def get_status(self) -> dict:
         """Return watchdog status for UI/debugging"""
+        now = time.monotonic()
+        with self._lock:
+            setpoint_age = now - self._last_setpoint_update
+            dbus_age = now - self._last_dbus_update
+            mqtt_age = now - self._last_mqtt_update
         return {
             "enabled": self._enabled,
             "triggered": self._triggered,
             "hardware_forced": self._hardware_forced,
-            "setpoint_age": round(time.time() - self._last_setpoint_update, 1),
-            "dbus_age": round(time.time() - self._last_dbus_update, 1),
-            "mqtt_age": round(time.time() - self._last_mqtt_update, 1),
+            "setpoint_age": round(setpoint_age, 1),
+            "dbus_age": round(dbus_age, 1),
+            "mqtt_age": round(mqtt_age, 1),
             "timeout_seconds": self.timeout_seconds,
         }

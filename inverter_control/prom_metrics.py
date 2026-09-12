@@ -26,7 +26,7 @@ def start() -> bool:
         logger.info("prometheus_client not installed, /metrics disabled")
         return False
     try:
-        start_http_server(int(port), addr="0.0.0.0")
+        start_http_server(int(port), addr=os.environ.get("INVERTER_METRICS_HOST", "127.0.0.1"))
     except (OSError, ValueError) as e:
         logger.warning("Metrics server not started: %s", e)
         return False

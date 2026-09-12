@@ -37,10 +37,14 @@ class TestConsoleServer:
         assert len(console_server._console_buffer) == 0
         assert console_server._sender_queue.empty()
 
+    @pytest.mark.parametrize("host", [None, "192.0.2.10"])
     @patch("inverter_control.console_server.socket.socket")
     @patch("inverter_control.console_server.threading.Thread")
-    def test_start_server(self, mock_thread, mock_socket):
-        """Test starting server"""
+    def test_start_server(self, mock_thread, mock_socket, monkeypatch, host):
+        """Test loopback default and explicit interface selection."""
+        monkeypatch.delenv("INVERTER_CONSOLE_HOST", raising=False)
+        if host:
+            monkeypatch.setenv("INVERTER_CONSOLE_HOST", host)
         mock_sock = MagicMock()
         mock_socket.return_value = mock_sock
 
@@ -48,7 +52,7 @@ class TestConsoleServer:
 
         mock_sock.setsockopt.assert_called_once()
         mock_sock.settimeout.assert_called_once_with(1.0)
-        mock_sock.bind.assert_called_once_with(("0.0.0.0", 9999))
+        mock_sock.bind.assert_called_once_with((host or "127.0.0.1", 9999))
         mock_sock.listen.assert_called_once_with(5)
         assert console_server._running is True
         assert console_server._server_socket == mock_sock

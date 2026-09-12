@@ -319,78 +319,81 @@ class TestGetStateForMqtt(unittest.TestCase):
     """Slim inverter/state: Cerbo/dbus mirrors stripped; daemon extras kept."""
 
     def test_strips_migrated_cerbo_fields_keeps_daemon_extras(self):
-        controller, mock_victron, mock_ha, _ = _make_controller()
-        mock_victron.get_battery_chain_socs.return_value = [80.0]
-        mock_victron.get_inverter_state.return_value = (9, "Inverting")
-        mock_victron.get_ess_mode.return_value = {"is_external": True, "mode_name": "External"}
-        mock_victron.get_all_batteries.return_value = [{"name": "Bank"}]
-        mock_victron.get_mppt_chargers.return_value = [{"name": "MPPT"}]
-        mock_victron.get_acload_powers.return_value = {"kitchen": 120}
-        mock_victron.get_battery_soc_local.return_value = 78.0
-        mock_victron.get_battery_daily_energy.return_value = (1.0, 2.0)
-        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
-        mock_victron.get_mppt_daily_yields.return_value = [1.0]
-        mock_victron.get_pv_inverter_daily_yields.return_value = [0.5]
-        mock_ha.connected = True
-        mock_ha.uptime = 42
+        # ENABLE_HA must stay True during update_state: CI has no local_config
+        # token so module-level ENABLE_HA is False and ha_connected stays False.
+        with patch(f"{_MOD}.ENABLE_HA", True):
+            controller, mock_victron, mock_ha, _ = _make_controller()
+            mock_victron.get_battery_chain_socs.return_value = [80.0]
+            mock_victron.get_inverter_state.return_value = (9, "Inverting")
+            mock_victron.get_ess_mode.return_value = {"is_external": True, "mode_name": "External"}
+            mock_victron.get_all_batteries.return_value = [{"name": "Bank"}]
+            mock_victron.get_mppt_chargers.return_value = [{"name": "MPPT"}]
+            mock_victron.get_acload_powers.return_value = {"kitchen": 120}
+            mock_victron.get_battery_soc_local.return_value = 78.0
+            mock_victron.get_battery_daily_energy.return_value = (1.0, 2.0)
+            mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
+            mock_victron.get_mppt_daily_yields.return_value = [1.0]
+            mock_victron.get_pv_inverter_daily_yields.return_value = [0.5]
+            mock_ha.connected = True
+            mock_ha.uptime = 42
 
-        controller._cached_mppt_data = {"mppt0": {"w": 500.0, "a": 10.0}}
-        controller._cached_pv_powers = [300.0]
-        controller.filtered_gt = 25.0
-        controller._internal_booleans = {"no_feed": True}
+            controller._cached_mppt_data = {"mppt0": {"w": 500.0, "a": 10.0}}
+            controller._cached_pv_powers = [300.0]
+            controller.filtered_gt = 25.0
+            controller._internal_booleans = {"no_feed": True}
 
-        sys_data = {
-            "g1": 100,
-            "g2": 50,
-            "gt": 150,
-            "t1": 200,
-            "t2": 100,
-            "tt": 300,
-            "bv": 51.0,
-            "bc": -4.0,
-            "bp": -200,
-            "_last_update": 123.0,
-        }
-        controller.update_state(sys_data, -450)
-        out = controller.get_state_for_mqtt()
+            sys_data = {
+                "g1": 100,
+                "g2": 50,
+                "gt": 150,
+                "t1": 200,
+                "t2": 100,
+                "tt": 300,
+                "bv": 51.0,
+                "bc": -4.0,
+                "bp": -200,
+                "_last_update": 123.0,
+            }
+            controller.update_state(sys_data, -450)
+            out = controller.get_state_for_mqtt()
 
-        # Migrated / Cerbo-owned — must not republish
-        for key in (
-            "g1",
-            "g2",
-            "gt",
-            "t1",
-            "t2",
-            "tt",
-            "loads",
-            "batteries",
-            "battery_soc",
-            "battery_power",
-            "battery_voltage",
-            "battery_current",
-            "solar_total",
-            "mppt_total",
-            "mppt_chargers",
-            "setpoint",
-            "inverter_state",
-            "ev_power",
-            "car_soc",
-            "water_level",
-            "pump_switch",
-            "_last_update",
-        ):
-            assert key not in out, f"{key} should be stripped from inverter/state"
+            # Migrated / Cerbo-owned — must not republish
+            for key in (
+                "g1",
+                "g2",
+                "gt",
+                "t1",
+                "t2",
+                "tt",
+                "loads",
+                "batteries",
+                "battery_soc",
+                "battery_power",
+                "battery_voltage",
+                "battery_current",
+                "solar_total",
+                "mppt_total",
+                "mppt_chargers",
+                "setpoint",
+                "inverter_state",
+                "ev_power",
+                "car_soc",
+                "water_level",
+                "pump_switch",
+                "_last_update",
+            ):
+                assert key not in out, f"{key} should be stripped from inverter/state"
 
-        # Daemon-owned extras — still published
-        assert out["filtered_gt"] == 25.0
-        assert out["booleans"]["no_feed"] is True
-        assert out["ess_mode"]["is_external"] is True
-        assert out["dry_run"] == controller.dry_run
-        assert "daily_stats" in out
-        assert "ui_config" in out
-        assert "version" in out
-        assert "uptime" in out
-        assert out["ha_connected"] is True
+            # Daemon-owned extras — still published
+            assert out["filtered_gt"] == 25.0
+            assert out["booleans"]["no_feed"] is True
+            assert out["ess_mode"]["is_external"] is True
+            assert out["dry_run"] == controller.dry_run
+            assert "daily_stats" in out
+            assert "ui_config" in out
+            assert "version" in out
+            assert "uptime" in out
+            assert out["ha_connected"] is True
 
 
 class TestRunCycle(unittest.TestCase):
@@ -534,21 +537,27 @@ class TestGetDailyStats(unittest.TestCase):
     def test_returns_correct_dict_structure(self):
         controller, mock_victron, _, _ = _make_controller()
         mock_victron.get_battery_daily_energy.return_value = (10.5, 8.2)
-        mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
+        mock_victron.get_battery_yesterday_energy.return_value = (9.1, 7.4)
         mock_victron.get_mppt_daily_yields.return_value = [5.0, 3.0, 2.0]
         mock_victron.get_pv_inverter_daily_yields.return_value = [1.5, 0.5]
+        mock_victron.get_mppt_yesterday_yields.return_value = []
+        mock_victron.get_pv_inverter_yesterday_yields.return_value = []
 
         stats = controller._get_daily_stats()
 
         assert "produced_today" in stats
         assert "battery_in" in stats
         assert "battery_out" in stats
+        assert "battery_in_yesterday" in stats
+        assert "battery_out_yesterday" in stats
         assert "mppt_daily" in stats
         assert "pv_inverter_daily" in stats
         assert "pv_total_daily" in stats
         assert stats["produced_today"] == 12.0  # sum([5,3,2]) + sum([1.5,0.5])
         assert stats["battery_in"] == 10.5
         assert stats["battery_out"] == 8.2
+        assert stats["battery_in_yesterday"] == 9.1
+        assert stats["battery_out_yesterday"] == 7.4
 
     def test_returns_zeroed_dict_when_no_data(self):
         controller, mock_victron, _, _ = _make_controller()
@@ -556,12 +565,16 @@ class TestGetDailyStats(unittest.TestCase):
         mock_victron.get_battery_yesterday_energy.return_value = (0.0, 0.0)
         mock_victron.get_mppt_daily_yields.return_value = []
         mock_victron.get_pv_inverter_daily_yields.return_value = []
+        mock_victron.get_mppt_yesterday_yields.return_value = []
+        mock_victron.get_pv_inverter_yesterday_yields.return_value = []
 
         stats = controller._get_daily_stats()
 
         assert stats["produced_today"] == 0.0
         assert stats["battery_in"] == 0.0
         assert stats["battery_out"] == 0.0
+        assert stats["battery_in_yesterday"] == 0.0
+        assert stats["battery_out_yesterday"] == 0.0
 
 
 class TestGetEvState(unittest.TestCase):

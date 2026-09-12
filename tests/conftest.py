@@ -22,6 +22,16 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def isolated_alert_storage(tmp_path, monkeypatch):
+    """Keep persisted alerts local to each test, including MQTT contract tests."""
+    from inverter_control import alert_state
+
+    storage = alert_state.AlertStorage(str(tmp_path / "alerts.json"))
+    monkeypatch.setattr(alert_state, "_alert_storage", storage)
+    return storage
+
+
 @pytest.fixture
 def fresh_victron():
     """Yield a `FakeVictronDBus` that wraps a real `VictronDBus(test_mode=True)`.

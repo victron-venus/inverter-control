@@ -28,7 +28,7 @@ def _post(port: int, endpoint: str, body: dict | str) -> tuple[int, dict]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 # fixed loopback HTTP test server
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
@@ -41,7 +41,7 @@ def _get(port: int, endpoint: str) -> tuple[int, dict]:
         method="GET",
     )
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 # fixed loopback HTTP test server
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
@@ -417,3 +417,7 @@ class TestWebhookHandler:
         assert server._running
         server.stop()
         assert not server._running
+
+
+def test_webhook_defaults_to_loopback():
+    assert WebhookServer().host == "127.0.0.1"

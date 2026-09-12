@@ -1353,30 +1353,29 @@ class VictronDBus:
                 "D-Bus native read failed, falling back to dbus-send: %s %s", service, path
             )
 
-        with self._dbus_lock:
-            result = self._safe_subprocess(
-                [
-                    "dbus-send",
-                    "--system",
-                    PRINT_REPLY_LITERAL,
-                    f"--dest={service}",
-                    path,
-                    GET_VALUE_METHOD,
-                ],
-                timeout=0.5,
-            )
-            if result:
-                parts = result.split()
-                if parts:
-                    self._consecutive_errors = 0
-                    self._last_success_time = time.time()
-                    self._record_service_success(service)
-                    return parts[-1]
+        result = self._safe_subprocess(
+            [
+                "dbus-send",
+                "--system",
+                PRINT_REPLY_LITERAL,
+                f"--dest={service}",
+                path,
+                GET_VALUE_METHOD,
+            ],
+            timeout=0.5,
+        )
+        if result:
+            parts = result.split()
+            if parts:
+                self._consecutive_errors = 0
+                self._last_success_time = time.time()
+                self._record_service_success(service)
+                return parts[-1]
 
-            # Track error
-            self._consecutive_errors += 1
-            self._record_service_failure(service)
-            return None
+        # Track error
+        self._consecutive_errors += 1
+        self._record_service_failure(service)
+        return None
 
     def _dbus_get_native_only(self, service: str, path: str) -> str | None:
         """Best-effort native read with NO dbus-send fallback.
@@ -1412,7 +1411,7 @@ class VictronDBus:
                     path,
                 )
 
-        with self._dbus_lock:
+        with self._set_lock:
             result = self._safe_subprocess(
                 [
                     "dbus-send",
