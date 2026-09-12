@@ -218,7 +218,7 @@ class TestVictronDBusIntegration:
         v = victron.get_victron(test_mode=True)
         v._vebus_service = "com.victronenergy.vebus.ttyUSB2"
         v._native = MagicMock(return_value=False)
-        mock_run.return_value = MagicMock(returncode=0, stdout="   0\n")
+        mock_run.return_value = MagicMock(returncode=0, stdout="method return reply_serial=1\n   int32 0\n")
 
         assert v._dbus_set(v._vebus_service, "/Hub4/L1/AcPowerSetpoint", -615)
         assert mock_run.called

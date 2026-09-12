@@ -177,8 +177,13 @@ class TestLogForwarder:
             many_lines_file = f.name
 
         try:
-            lines, _, _ = log_forwarder.read_new_lines(many_lines_file, 0, None)
+            lines, pos, inode = log_forwarder.read_new_lines(many_lines_file, 0, None)
             assert len(lines) == log_forwarder.BATCH_SIZE
+            assert pos > 0
+            next_lines, end, _ = log_forwarder.read_new_lines(many_lines_file, pos, inode)
+            assert next_lines == [f"line {i}" for i in range(100, 200)]
+            assert end > pos
+            assert log_forwarder.read_new_lines(many_lines_file, end, inode)[0] == []
         finally:
             if os.path.exists(many_lines_file):
                 os.unlink(many_lines_file)

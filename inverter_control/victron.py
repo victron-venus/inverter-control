@@ -179,6 +179,7 @@ class VictronDBus:
         # the native signal thread, and the poll-thread rescan can otherwise
         # run overlapping `dbus -y` subprocesses and race the service maps).
         self._discovery_lock = threading.Lock()
+        self._discovery_requested = threading.Event()
         # Persistent native D-Bus connection (None in test mode / disabled)
         self._native: NativeDbusClient | None = None
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
@@ -337,7 +338,11 @@ class VictronDBus:
 
     def _signals_healthy(self) -> bool:
         """True when all fast-input subscriptions are armed on the live bus."""
-        return bool(self._native is not None and self._signal_paths_subscribed)
+        return bool(
+            self._native is not None
+            and self._signal_paths_subscribed
+            and self._native.subscriptions_healthy()
+        )
 
     def is_signals_healthy(self) -> bool:
         """Public view of fast-signal path health (for perf telemetry)."""
@@ -589,6 +594,11 @@ class VictronDBus:
 
         now = time.time()
 
+        if self._discovery_requested.is_set():
+            self._discovery_requested.clear()
+            self._discover_services()
+            return True
+
         # Rescan if too many consecutive errors (with cooldown to prevent storm)
         if self._consecutive_errors >= self.RESCAN_ERROR_THRESHOLD:
             if now - self._last_rescan_time < self.RESCAN_COOLDOWN_SECONDS:
@@ -635,7 +645,8 @@ class VictronDBus:
 
         if service_name in tracked_services:
             logger.debug(f"NameOwnerChanged: {service_name} {old_owner} -> {new_owner}")
-            self._discover_services()
+            # Discovery performs synchronous reads; never block the D-Bus loop.
+            self._discovery_requested.set()
 
     def _start_background_polling(self):
         """Start background polling thread to keep D-Bus data fresh"""
@@ -706,6 +717,7 @@ class VictronDBus:
                 self._next_unhealthy_poll = now_mono + UNHEALTHY_POLL_INTERVAL
                 self._poll_system_data()
                 self._poll_shunt_data()
+                self._poll_inverter_power()
                 self._reconcile_mppt_data()
                 self._reconcile_pv_power()
                 self._reconcile_acload_power()
@@ -1417,6 +1429,7 @@ class VictronDBus:
                     "dbus-send",
                     "--system",
                     "--type=method_call",
+                    "--print-reply",
                     f"--dest={service}",
                     path,
                     "com.victronenergy.BusItem.SetValue",
@@ -1424,7 +1437,11 @@ class VictronDBus:
                 ],
                 timeout=0.5,
             )
-            if result is not None:
+            # BusItem.SetValue returns zero on acceptance, nonzero on rejection.
+            # A successful dbus-send dispatch with no reply proves nothing.
+            if isinstance(result, str) and re.search(
+                r"^\s*(?:u?int32)\s+0\s*$", result, re.MULTILINE
+            ):
                 self._consecutive_errors = 0
                 self._last_success_time = time.time()
                 return True

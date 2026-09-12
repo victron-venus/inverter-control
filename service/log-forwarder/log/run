@@ -1,2 +1,3 @@
 #!/bin/sh
+mkdir -p /var/log/log-forwarder
 exec multilog t s25000 n4 /var/log/log-forwarder

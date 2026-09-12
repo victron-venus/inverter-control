@@ -32,6 +32,11 @@ except ImportError:  # Development machines without dbus-fast: CLI fallback only
 BUSITEM_INTERFACE = "com.victronenergy.BusItem"
 DBUS_DAEMON = "org.freedesktop.DBus"
 DBUS_DAEMON_PATH = "/org/freedesktop/DBus"
+NAME_OWNER_RULE = (
+    "type='signal',sender='org.freedesktop.DBus',"
+    "interface='org.freedesktop.DBus',member='NameOwnerChanged',"
+    "path='/org/freedesktop/DBus'"
+)
 SYSTEM_BUS_ADDRESS = os.environ.get(
     "DBUS_SYSTEM_BUS_ADDRESS", "unix:path=/var/run/dbus/system_bus_socket"
 )
@@ -78,6 +83,7 @@ class NativeDbusClient:
         self._handlers_lock = threading.Lock()
         # Armed match rules (strings), replayed after reconnect
         self._subscriptions: set[str] = set()
+        self._armed_subscriptions: set[str] = set()
         # Well-known services behind the armed rules (for sender resolution)
         self._subscription_services: set[str] = set()
         # Sender unique bus name -> well-known service name. Path-keyed fast
@@ -168,6 +174,8 @@ class NativeDbusClient:
 
         self._loop = self._ensure_loop()
         self._bus = self._call_on_loop(lambda: _connect_data(), CONNECT_TIMEOUT)
+        if self._bus is None or not getattr(self._bus, "connected", True):
+            raise ConnectionError("System D-Bus connection did not become ready")
         if self._subscriptions:
             # Re-arm match rules; signals don't survive a disconnect
             self._replay_subscriptions()
@@ -177,9 +185,11 @@ class NativeDbusClient:
         # Bus reattachment gives services new unique names; the old map lies.
         self._sender_service.clear()
         # Snapshot: subscribe_signal can add to _subscriptions concurrently.
-        for rule in self._subscriptions:
+        self._armed_subscriptions.clear()
+        for rule in tuple(self._subscriptions):
             try:
                 self._send_add_match(rule)
+                self._armed_subscriptions.add(rule)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 logger.debug("Native D-Bus re-subscribe failed (%s): %s", rule, e)
         if self._subscription_services and self._loop is not None and self._bus is not None:
@@ -238,13 +248,25 @@ class NativeDbusClient:
         if reply.message_type != MessageType.METHOD_RETURN:
             raise ConnectionError(f"AddMatch rejected: {reply.message_type}")
 
+    def is_connected(self) -> bool:
+        """Report connection availability without initiating synchronous I/O."""
+        return bool(
+            self._bus is not None
+            and getattr(self._bus, "connected", True)
+            and time.time() >= self._fail_until
+        )
+
+    def subscriptions_healthy(self) -> bool:
+        """All requested match rules must be armed on the current connection."""
+        return self.is_connected() and self._subscriptions.issubset(self._armed_subscriptions)
+
     def _get_bus(self):
         """Return a connected bus or None (cooldown active / connect failed)."""
         with self._state_lock:
             if time.time() < self._fail_until:
                 return None
             try:
-                if self._bus is None:
+                if self._bus is None or not getattr(self._bus, "connected", True):
                     self._connect()
                 return self._bus
             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -368,8 +390,8 @@ class NativeDbusClient:
         )
         if reply is None:
             return False
-        if reply.body and reply.body[0] != 0:
-            logger.warning("SetValue %s%s rejected: %s", service, path, reply.body[0])
+        if len(reply.body) != 1 or type(reply.body[0]) is not int or reply.body[0] != 0:
+            logger.warning("SetValue %s%s rejected or malformed: %s", service, path, reply.body)
             return False
         return True
 
@@ -393,24 +415,32 @@ class NativeDbusClient:
         """Register callback(service_name: str, old_owner: str, new_owner: str) for NameOwnerChanged signals."""
         with self._handlers_lock:
             self._name_owner_handlers.append(callback)
+        # Remember before the initial connection; _connect replays this rule.
+        self._subscriptions.add(NAME_OWNER_RULE)
+        if self.is_connected():
+            try:
+                self._send_add_match(NAME_OWNER_RULE)
+                self._armed_subscriptions.add(NAME_OWNER_RULE)
+            except Exception as exc:
+                logger.debug("NameOwnerChanged subscribe failed: %s", exc)
 
     def subscribe_signal(self, service: str, member: str, path: str) -> bool:
         """Arm one match rule. Idempotent; re-armed automatically after a
         reconnect. Initial values must still be fetched (signals fire on
         change only)."""
         rule = self._build_rule(service, member, path)
-        if rule in self._subscriptions:
-            return True
-
         bus = self._get_bus()
         if bus is None:
             return False
+        if rule in self._armed_subscriptions:
+            return True
         try:
             self._send_add_match(rule)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus subscribe %s failed: %s", rule, e)
             return False
         self._subscriptions.add(rule)
+        self._armed_subscriptions.add(rule)
         self._subscription_services.add(service)
         # Resolve the sender eagerly so the first signals already carry the
         # service tag; lazy refresh below covers services that come up later.
@@ -428,7 +458,7 @@ class NativeDbusClient:
         # Snapshot these shared sets: subscribe_signal/_replay_subscriptions can
         # mutate them from another thread while this async loop iterates, which
         # raised "Set changed size during iteration" at startup (2026-08-27).
-        for svc in self._subscription_services:
+        for svc in tuple(self._subscription_services):
             try:
                 reply = await self._bus.call(
                     Message(
@@ -505,9 +535,11 @@ class NativeDbusClient:
 
     def _handle_name_owner_changed(self, message):
         if len(message.body) >= 3:
-            service_name = str(message.body[2])
-            old_owner = str(message.body[0])
-            new_owner = str(message.body[1])
+            service_name, old_owner, new_owner = map(str, message.body[:3])
+            if old_owner:
+                self._sender_service.pop(old_owner, None)
+            if new_owner and service_name in self._subscription_services:
+                self._sender_service[new_owner] = service_name
             with self._handlers_lock:
                 handlers = list(self._name_owner_handlers)
             for callback in handlers:

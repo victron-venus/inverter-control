@@ -19,10 +19,9 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${1:-/data/inverter-control}"
 
 # Device-local files that must never be overwritten by an update.
-LOCAL_ONLY="local_config.py ui_config_local.py inverter-control.crt inverter-control.key"
 
 # Runtime items shipped at the repo root and installed at INSTALL_DIR root.
-RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup"
+RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh keepalive.sh local_config.example.py"
 
 # Historical flat-file leftovers from older layouts that are now dead code
 # (all of these live in the inverter_control/ package since 1.17).
@@ -30,12 +29,39 @@ STALE_TOP_LEVEL="config.py console_server.py console_ui.py homeassistant.py keep
 
 sep() { echo "=== inverter-control update: $*"; }
 
-# 1. Stop the services BEFORE touching files so a half-written tree is never
-#    executed and the multilog log dir is not disturbed under a running logger.
-for svc in /service/inverter-control/log /service/inverter-control /service/log-forwarder /service/watchdog; do
-    [ -e "$svc" ] && svc -dk "$svc" 2>/dev/null || true
+# The service launchers use the standard persistent package path.
+if [ "$INSTALL_DIR" != /data/inverter-control ]; then
+    echo "Unsupported install directory: $INSTALL_DIR (expected /data/inverter-control)" >&2
+    exit 1
+fi
+
+# Validate the release and dependencies before interrupting the controller.
+# compile() avoids generating __pycache__ in a package manager's source tree.
+python3 - "$SRC_DIR" <<'CHECK'
+import pathlib
+import sys
+import requests
+import paho.mqtt.client
+root = pathlib.Path(sys.argv[1])
+for source in [root / "main.py", *(root / "inverter_control").glob("*.py")]:
+    compile(source.read_bytes(), str(source), "exec")
+CHECK
+for name in inverter-control log-forwarder watchdog; do
+    test -f "$SRC_DIR/service/$name/run"
 done
-sleep 1
+
+# Record freshness before any downtime; an old heartbeat cannot prove recovery.
+STARTED_AT=$(date +%s)
+
+# Stop the watchdog first so it cannot restart the controller during update.
+# Keep loggers and service directory inodes alive; only replace shipped scripts.
+for name in watchdog log-forwarder inverter-control; do
+    [ ! -e "/service/$name" ] || svc -d "/service/$name"
+done
+sleep 2
+for name in watchdog log-forwarder inverter-control; do
+    [ ! -e "/service/$name" ] || svc -k "/service/$name" 2>/dev/null || true
+done
 
 # 1a. Hold the grid setpoint while we install. The controller is now down;
 #     without this the inverter drifts into passthrough mode within seconds,
@@ -46,36 +72,8 @@ sleep 1
 #     Never fatal: a keepalive failure must not abort the update.
 sh "$SRC_DIR/keepalive.sh" start || true
 
-# 1c. Reap stale daemontools supervise processes left behind by earlier
-#     updates. Every time a service dir under $INSTALL_DIR/service is replaced
-#     the inode changes, so svscan spawns a NEW supervise and the old one is
-#     never killed - they linger forever with "(deleted)" cwd. Several
-#     supervisors on one service corrupt runit state (broken log pipes that
-#     crash print() with EPIPE, and down services that svc -u cannot bring up).
-#     The same inode churn also orphans the run processes themselves (main.py
-#     / log_forwarder.py, cwd == $INSTALL_DIR): when a supervise dies, svc -dk
-#     can no longer reach its child, so it keeps running the old code and
-#     hammering D-Bus next to the new instance. Drop the /service symlinks
-#     first so svscan does not respawn supervisors while we replace the dirs
-#     below, then kill anything whose cwd lives under our install tree. Fresh
-#     supervisors are spawned in step 6.
-rm -f /service/inverter-control /service/log-forwarder /service/watchdog
-sleep 2
-for pid in /proc/[0-9]*; do
-    cwd=$(readlink "$pid/cwd" 2>/dev/null) || continue
-    case "$cwd" in
-        "$INSTALL_DIR/service/"*)
-            kill -9 "${pid##*/}" 2>/dev/null || true
-            ;;
-        "$INSTALL_DIR")
-            kill -9 "${pid##*/}" 2>/dev/null || true
-            ;;
-        *)
-            # Ignore processes outside our install tree
-            ;;
-    esac
-done
-sleep 1
+# Never kill processes based on cwd: an installer or SSH shell can share the
+# package directory. Supervisors are kept in place across an ordinary update.
 
 mkdir -p "$INSTALL_DIR"
 sep "installing from $SRC_DIR into $INSTALL_DIR"
@@ -86,37 +84,39 @@ if [ -f "$INSTALL_DIR/secrets.py" ] && [ ! -f "$INSTALL_DIR/local_config.py" ]; 
     sep "migrated secrets.py -> local_config.py"
 fi
 
-# 2. Back up device-local files so the wholesale copy below can restore them.
-TMP_BACKUP="/tmp/inverter-control-update-$$"
-mkdir -p "$TMP_BACKUP"
-for f in $LOCAL_ONLY; do
-    [ -f "$INSTALL_DIR/$f" ] && cp -p "$INSTALL_DIR/$f" "$TMP_BACKUP/"
+# 2. Copy release files only when staging differs from installation. Never
+# remove files from a source tree while installing that same tree in place.
+if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
+    for item in $RUNTIME_ITEMS; do
+        if [ -e "$SRC_DIR/$item" ]; then
+            rm -rf "${INSTALL_DIR:?}/$item"
+            cp -a "$SRC_DIR/$item" "$INSTALL_DIR/$item"
+        fi
+    done
+fi
+
+# 3. Refresh run scripts without replacing live supervise/ directory inodes.
+for name in inverter-control log-forwarder watchdog; do
+    mkdir -p "$INSTALL_DIR/service/$name/log" "/var/log/$name"
+    for item in run log/run; do
+        [ -f "$SRC_DIR/service/$name/$item" ] || continue
+        if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
+            cp "$SRC_DIR/service/$name/$item" "$INSTALL_DIR/service/$name/$item.new"
+            chmod +x "$INSTALL_DIR/service/$name/$item.new"
+            mv "$INSTALL_DIR/service/$name/$item.new" "$INSTALL_DIR/service/$name/$item"
+        else
+            chmod +x "$INSTALL_DIR/service/$name/$item"
+        fi
+    done
+    rm -f "$INSTALL_DIR/service/$name/down" "$INSTALL_DIR/service/$name/log/down"
 done
 
-# 3. Install runtime items (replace wholesale to also drop stale files).
-for item in $RUNTIME_ITEMS; do
-    if [ -e "$SRC_DIR/$item" ]; then
-        rm -rf "$INSTALL_DIR/$item"
-        cp -a "$SRC_DIR/$item" "$INSTALL_DIR/$item"
-    fi
-done
-
-# 4. Install daemontools services: every dir under service/ maps to
-#    INSTALL_DIR/service/. New services are picked up automatically.
-mkdir -p "$INSTALL_DIR/service"
-for svc in "$SRC_DIR/service"/*; do
-    [ -d "$svc" ] || continue
-    name="$(basename "$svc")"
-    rm -rf "$INSTALL_DIR/service/$name"
-    cp -a "$svc" "$INSTALL_DIR/service/$name"
-    find "$INSTALL_DIR/service/$name" -type f -name run -exec chmod +x {} \; 2>/dev/null || true
-done
-
-# 5. Restore device-local files and drop stale flat-file leftovers.
-for f in $LOCAL_ONLY; do
-    [ -f "$TMP_BACKUP/$f" ] && cp -p "$TMP_BACKUP/$f" "$INSTALL_DIR/$f"
-done
-rm -rf "$TMP_BACKUP"
+# 4. Preserve device-local configuration; bootstrap it only on first install.
+# Local configuration/certificates are absent from RUNTIME_ITEMS and never removed.
+if [ ! -f "$INSTALL_DIR/local_config.py" ]; then
+    cp "$SRC_DIR/local_config.example.py" "$INSTALL_DIR/local_config.py"
+    sep "created local_config.py from example; configure it before enabling control"
+fi
 for f in $STALE_TOP_LEVEL; do
     rm -f "$INSTALL_DIR/$f"
 done
@@ -126,55 +126,80 @@ done
 if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; then
     SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
     mkdir -p "$SETUP_OPTIONS_DIR"
-    cp -p "$SRC_DIR/local_config.py" "$INSTALL_DIR/local_config.py"
+    if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
+        cp -p "$SRC_DIR/local_config.py" "$INSTALL_DIR/local_config.py"
+    fi
     cp -p "$SRC_DIR/local_config.py" "$SETUP_OPTIONS_DIR/local_config.py"
     sep "pushed local_config.py (PUSH_LOCAL_CONFIG=1)"
 fi
 
-# 6. Refresh /service symlinks.
-ln -sf "$INSTALL_DIR/service/inverter-control" /service/
-ln -sf "$INSTALL_DIR/service/log-forwarder" /service/
-ln -sf "$INSTALL_DIR/service/watchdog" /service/
+# 6. Refresh links, retiring old supervisors only when the target changes.
+for name in inverter-control log-forwarder watchdog; do
+    target="$INSTALL_DIR/service/$name"
+    if [ -e "/service/$name" ] && { [ ! -L "/service/$name" ] || \
+        [ "$(readlink "/service/$name")" != "$target" ]; }; then
+        svc -dx "/service/$name" "/service/$name/log" 2>/dev/null || true
+        sleep 2
+        rm -rf "/service/$name"
+    fi
+    ln -snf "$target" "/service/$name"
+done
 
-# 6a. Ensure boot persistence: /service is tmpfs, so rc.local recreates the
-#     symlinks on every boot. Idempotent — only appends when block missing.
-RC_LOCAL="/data/rc.local"
-if [ ! -f "$RC_LOCAL" ]; then
-    printf '#!/bin/sh\n' > "$RC_LOCAL"
-    chmod +x "$RC_LOCAL"
-fi
-if ! grep -q "inverter-control/service/inverter-control" "$RC_LOCAL"; then
-    cat >> "$RC_LOCAL" << 'RCEOF'
-
+# Refresh both historical marker variants and insert before a final exit 0.
+RC_LOCAL=/data/rc.local
+[ -f "$RC_LOCAL" ] || printf '#!/bin/sh\n' > "$RC_LOCAL"
+sed -i '/# === inverter-control.*persistence ===/,/# === end inverter-control ===/d' "$RC_LOCAL"
+HOOK=$(mktemp /data/.inverter-control-boot.XXXXXX)
+cat > "$HOOK" <<'RCEOF'
 # === inverter-control service persistence ===
-# Recreate /service symlinks on boot (lost since /service is tmpfs)
-ln -sf /data/inverter-control/service/inverter-control /service/
-ln -sf /data/inverter-control/service/log-forwarder /service/
-ln -sf /data/inverter-control/service/watchdog /service/
-sleep 3
-svc -u /service/inverter-control/log 2>/dev/null || true
-svc -u /service/inverter-control 2>/dev/null || true
-svc -u /service/log-forwarder 2>/dev/null || true
-svc -u /service/watchdog 2>/dev/null || true
+ln -snf /data/inverter-control/service/inverter-control /service/inverter-control
+ln -snf /data/inverter-control/service/log-forwarder /service/log-forwarder
+ln -snf /data/inverter-control/service/watchdog /service/watchdog
 # === end inverter-control ===
 RCEOF
-    sep "added rc.local boot persistence block"
-fi
+awk -v hook="$HOOK" '
+    function insert_hook() { while ((getline line < hook) > 0) print line; close(hook) }
+    !inserted && /^[[:space:]]*exit[[:space:]]+0[[:space:]]*$/ { insert_hook(); inserted=1 }
+    { print }
+    END { if (!inserted) insert_hook() }
+' "$RC_LOCAL" > "$RC_LOCAL.inverter-control"
+chmod +x "$RC_LOCAL.inverter-control"
+mv "$RC_LOCAL.inverter-control" "$RC_LOCAL"
+rm -f "$HOOK"
 
 # 6b. Give svscan a moment to spawn fresh supervisors for the new symlinks
 #     before we try to bring the services up, so svc -u lands on a live one.
 sleep 3
-
-# 7. Let PackageManager rediscover the package (version/gitHubInfo changed).
-svc -t /service/PackageManager 2>/dev/null || true
 
 # 8. Bring everything back up (svc -d only marks down; svc -u starts).
 for svc in /service/inverter-control/log /service/inverter-control /service/log-forwarder /service/watchdog; do
     [ -e "$svc" ] && svc -u "$svc" 2>/dev/null || true
 done
 
-# 9. Stop the keepalive if it somehow survived (it normally exits by itself
-#    once the new instance writes its first heartbeat).
+# A successful svc command is not proof that the new process started. Wait
+# for a fresh heartbeat before stopping the bounded keepalive helper.
+ready=0
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+    heartbeat=$(cat /run/inverter-control/inverter-control.heartbeat 2>/dev/null || true)
+    case "$heartbeat" in
+        ''|*[!0-9]*) ;;
+        *)
+            if [ "$heartbeat" -gt "$STARTED_AT" ] &&
+                svstat /service/inverter-control 2>/dev/null | grep -q ': up (pid '; then
+                ready=1
+                break
+            fi
+            ;;
+    esac
+    attempt=$((attempt + 1))
+    sleep 1
+done
+if [ "$ready" != 1 ]; then
+    echo "Controller did not produce a fresh heartbeat; inspect /var/log/inverter-control/current" >&2
+    # The helper has its own bounded timeout; do not stop it on failed startup.
+    exit 1
+fi
 sh "$SRC_DIR/keepalive.sh" stop || true
 
 sep "installed version $(cat "$INSTALL_DIR/version" 2>/dev/null || echo unknown)"

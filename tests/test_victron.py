@@ -110,6 +110,7 @@ class TestVictronDBus:
         with patch("inverter_control.victron.subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "method return reply_serial=1\n   int32 0\n"
             mock_run.return_value = mock_result
 
             victron.reset_victron_for_testing()
