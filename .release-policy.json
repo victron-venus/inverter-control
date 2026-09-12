@@ -18,5 +18,6 @@
   "notes": [
     "Native Venus OS Python/D-Bus and hardware tests require a separate target acceptance run. Existing integration job checks shared mocks."
   ],
-  "container_assets": {}
+  "container_assets": {},
+  "visibility": "public"
 }

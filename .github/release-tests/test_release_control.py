@@ -11,6 +11,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -646,6 +647,186 @@ class ReleaseControlTests(unittest.TestCase):
         self.reject_promotion()
 
 
+class TransportTests(unittest.TestCase):
+    """Reject CLI argument and path injection before a subprocess can execute."""
+
+    def test_repository_cannot_supply_host_or_options(self):
+        """An explicit github.com owner/repository identity is mandatory."""
+        for repo in (
+            "--hostname/evil",
+            "evil.com/owner/repo",
+            "owner/repo --help",
+            "../repo",
+        ):
+            with self.subTest(repo=repo), self.assertRaises(rc.ReleaseError):
+                rc.GitHub(repo)
+
+    def test_api_routes_methods_and_traversal_fail_before_execution(self):
+        """Neither flags, URLs, query fields nor encoded traversal become API routes."""
+        gh = rc.GitHub(REPO)
+        for path, method, body in (
+            ("--hostname=evil.com", "GET", None),
+            ("https://evil.com/repos/owner/repo", "GET", None),
+            ("../../other/repo/releases", "GET", None),
+            ("releases?hostname=evil.com", "GET", None),
+            (f"compare/{SHA}...main%2F..%2F..%2Freleases", "GET", None),
+            ("releases", "--hostname", None),
+            ("releases", "DELETE", None),
+            ("", "POST", {}),
+            ("releases", "GET", {"draft": False}),
+        ):
+            with (
+                self.subTest(path=path, method=method),
+                patch.object(rc.subprocess, "run") as command,
+                self.assertRaises(rc.ReleaseError),
+            ):
+                gh.api(path, method, body)
+            command.assert_not_called()
+
+    def test_default_endpoint_and_json_body_have_fixed_argument_boundaries(self):
+        """A hostile body remains stdin data, never command-line options."""
+        gh = rc.GitHub(REPO)
+        body = {"body": "--hostname evil.com --clobber #label"}
+        with patch.object(
+            rc.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"{}")
+        ) as command:
+            gh.api("")
+            gh.api("releases", "POST", body)
+        root_call, create_call = command.call_args_list
+        self.assertEqual(
+            root_call.args[0],
+            [
+                "gh",
+                "api",
+                "--hostname",
+                "github.com",
+                "--method",
+                "GET",
+                "--",
+                f"repos/{REPO}",
+            ],
+        )
+        self.assertEqual(
+            create_call.args[0][-4:], ["--input", "-", "--", f"repos/{REPO}/releases"]
+        )
+        self.assertEqual(create_call.kwargs["input"], rc.json_bytes(body))
+        self.assertNotIn(body["body"], create_call.args[0])
+
+    def test_expected_release_routes_remain_available(self):
+        """Preserve every internal REST resource, including encoded default branches."""
+        gh = rc.GitHub(REPO)
+        paths = [
+            "",
+            "tags",
+            "releases",
+            "releases/10",
+            "releases/10/assets",
+            "releases/assets/21",
+            f"releases/tags/{RC_TAG}",
+            f"git/ref/tags/{RC_TAG}",
+            "environments/release",
+            "actions/runs/17",
+            "actions/runs/17/artifacts",
+            "actions/runs/17/attempts/2/jobs",
+            "actions/artifacts/40/zip",
+            f"contents/{rc.POLICY}?ref={SHA}",
+            f"compare/{SHA}...feature%2Fbranch",
+        ]
+        with patch.object(
+            rc.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"{}")
+        ) as command:
+            for path in paths:
+                gh.api(path)
+            gh.api("git/refs", "POST", {"ref": f"refs/tags/{RC_TAG}", "sha": SHA})
+            gh.api("releases/10", "PATCH", {"draft": False})
+        self.assertEqual(command.call_count, len(paths) + 2)
+
+    def test_upload_rejects_tags_labels_symlinks_and_unstaged_paths(self):
+        """Only a regular asset in the private staging directory can reach gh."""
+        gh = rc.GitHub(REPO)
+        with tempfile.TemporaryDirectory(prefix="release-candidate-") as temp:
+            root = Path(temp)
+            asset = root / "package.tar.gz"
+            asset.write_bytes(b"package")
+            link = root / "link.tar.gz"
+            link.symlink_to(asset)
+            nested = root / "nested"
+            nested.mkdir()
+            (nested / asset.name).write_bytes(b"package")
+            invalid = [
+                ("--clobber", asset),
+                ("v1.2.3-rc.01", asset),
+                ("v1.2.3#label", asset),
+                ("v1.2.٣-rc.2", asset),
+                (RC_TAG, link),
+                (RC_TAG, nested / asset.name),
+                (RC_TAG, Path(asset.name)),
+                (RC_TAG, root),
+            ]
+            for name in ("package.tar.gz#label", "--clobber", "asset*.tar.gz"):
+                path = root / name
+                path.write_bytes(b"package")
+                invalid.append((RC_TAG, path))
+            for tag, path in invalid:
+                with (
+                    self.subTest(tag=tag, path=path),
+                    patch.object(rc.subprocess, "run") as command,
+                    self.assertRaises(rc.ReleaseError),
+                ):
+                    gh.upload(tag, path)
+                command.assert_not_called()
+
+    def test_upload_never_overwrites_or_retries_an_existing_asset(self):
+        """Keep the gh no-clobber default even when GitHub rejects an existing asset."""
+        gh = rc.GitHub(REPO)
+        with tempfile.TemporaryDirectory(prefix="release-promote-") as temp:
+            asset = Path(temp) / "package.tar.gz"
+            asset.write_bytes(b"package")
+            with (
+                patch.object(
+                    rc.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 1, stderr=b"HTTP 422 already_exists"
+                    ),
+                ) as command,
+                self.assertRaises(rc.GitHubError),
+            ):
+                gh.upload("v1.2.3", asset)
+            command.assert_called_once_with(
+                [
+                    "gh",
+                    "release",
+                    "upload",
+                    "--repo",
+                    f"github.com/{REPO}",
+                    "--",
+                    "v1.2.3",
+                    str(asset.resolve()),
+                ],
+                capture_output=True,
+                check=False,
+            )
+
+    def test_canonical_numeric_fields_remain_ascii(self):
+        """Reject Unicode digits after adopting concise regexes with ASCII flags."""
+        for value in ("1.٢.3", "01.2.3", "1.2.3\n"):
+            with self.subTest(version=value), self.assertRaises(rc.ReleaseError):
+                rc.version(value)
+        for value in ("1١", "１２", "01", True):
+            with self.subTest(identifier=value), self.assertRaises(rc.ReleaseError):
+                rc.positive(value, "run ID")
+        for tag in (
+            "v0.2.3",
+            RC_TAG,
+            "v1.2.3-beta.4",
+            "v1.2.3-nightly.20260912000000.17.1",
+        ):
+            self.assertIsNotNone(rc.TAG_RE.fullmatch(tag))
+        with self.assertRaises(rc.ReleaseError):
+            rc.parse_json(b"\xff", "invalid UTF-8")
+
+
 class OfflineValidationTests(unittest.TestCase):
     """Check parsing, staging and REST contracts without network access."""
 
@@ -653,15 +834,19 @@ class OfflineValidationTests(unittest.TestCase):
         """Actions zip uses default accept and release assets use binary accept."""
         gh = rc.GitHub(REPO)
 
-        def service(command, _data=None):
+        def service(command, **_kwargs):
             if command[-1].endswith("actions/artifacts/40/zip"):
                 if "-H" in command:
-                    raise rc.GitHubError("HTTP 415 Unsupported Accept header")
-                return b"zip archive"
-            self.assertIn("Accept: application/octet-stream", command)
-            return b"release asset"
+                    return subprocess.CompletedProcess(
+                        command, 1, stderr=b"HTTP 415 Unsupported Accept header"
+                    )
+                data = b"zip archive"
+            else:
+                self.assertIn("Accept: application/octet-stream", command)
+                data = b"release asset"
+            return subprocess.CompletedProcess(command, 0, data)
 
-        with patch.object(gh, "command", side_effect=service):
+        with patch.object(rc.subprocess, "run", side_effect=service):
             self.assertEqual(gh.binary("actions/artifacts/40/zip"), b"zip archive")
             self.assertEqual(gh.binary("releases/assets/21"), b"release asset")
             with self.assertRaises(rc.ReleaseError):
@@ -716,10 +901,9 @@ class OfflineValidationTests(unittest.TestCase):
             {"tag": "v1.2.3-rc.01"},
             {"assets": []},
         ):
+            raw = rc.json_bytes({**manifest(), **change})
             with self.subTest(change=change), self.assertRaises(rc.ReleaseError):
-                rc.validate_manifest(
-                    rc.json_bytes({**manifest(), **change}), REPO, RC_TAG
-                )
+                rc.validate_manifest(raw, REPO, RC_TAG)
         for name in (
             "../escape",
             "/absolute",
@@ -729,8 +913,9 @@ class OfflineValidationTests(unittest.TestCase):
         ):
             invalid = manifest()
             invalid["assets"][0]["name"] = name
+            raw = rc.json_bytes(invalid)
             with self.subTest(name=name), self.assertRaises(rc.ReleaseError):
-                rc.validate_manifest(rc.json_bytes(invalid), REPO, RC_TAG)
+                rc.validate_manifest(raw, REPO, RC_TAG)
 
     def test_duplicate_manifest_fields_and_assets_rejected(self):
         """Duplicate manifest fields and assets rejected."""
@@ -738,8 +923,9 @@ class OfflineValidationTests(unittest.TestCase):
             rc.validate_manifest(b'{"schema":1,"schema":2}', REPO, RC_TAG)
         invalid = manifest()
         invalid["assets"].append({**invalid["assets"][0], "name": "PACKAGE.TAR.GZ"})
+        raw = rc.json_bytes(invalid)
         with self.assertRaises(rc.ReleaseError):
-            rc.validate_manifest(rc.json_bytes(invalid), REPO, RC_TAG)
+            rc.validate_manifest(raw, REPO, RC_TAG)
 
     def test_empty_nested_symlink_reserved_and_colliding_assets_rejected(self):
         """Empty nested symlink reserved and colliding assets rejected."""
@@ -779,11 +965,18 @@ class OfflineValidationTests(unittest.TestCase):
         """Pagination keeps gate on later pages."""
         gh = rc.GitHub(REPO)
         with patch.object(
-            gh,
-            "command",
-            return_value=json.dumps(
-                [{"jobs": [{"name": "build"}]}, {"jobs": [{"name": "Release gate"}]}]
-            ).encode(),
+            rc.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                [],
+                0,
+                json.dumps(
+                    [
+                        {"jobs": [{"name": "build"}]},
+                        {"jobs": [{"name": "Release gate"}]},
+                    ]
+                ).encode(),
+            ),
         ) as command:
             jobs = gh.pages("actions/runs/17/attempts/1/jobs", "jobs")
         self.assertEqual([job["name"] for job in jobs], ["build", "Release gate"])

@@ -20,6 +20,9 @@ Callable validation workflows:
 - `.github/workflows/codeql.yml`
 - `.github/workflows/release-security.yml`
 
+The [release strategy](../RELEASING.md) defines versioning, channels, acceptance,
+ownership, hotfixes and rollback. This document is the operational runbook.
+
 ## Nightly, beta and RC
 
 During rollout, checks and builds run but public candidate publication is disabled
@@ -29,8 +32,9 @@ been migrated. This prevents the first nightly/beta from reaching an old auto-de
 handler. Manual beta/RC/stable requests fail with an explicit configuration error
 until enabled; build-only nightlies remain available in Actions artifacts.
 
-Nightly runs daily at the repository's staggered UTC schedule. Every default-branch
-push produces a beta after the same validation and build gates. GitHub can delay
+Nightly runs daily at the repository's staggered UTC schedule. Default-branch
+pushes request beta builds through the same validation and build gates. Publication
+also requires the opt-in variable and an eligible unreleased base version. GitHub can delay
 scheduled runs; schedule timing is not an SLA. A committed base version (`X.Y.Z`)
 is required. Version changes go through PR review, including any native companion
 version files. Native binaries keep that base version; the release manifest records
@@ -49,7 +53,9 @@ python3 scripts/release.py status
 Replace the example version with the committed project version. Native multi-OS
 packages require the hosted build matrix; local packaging covers only supported
 local targets. These commands never stage unrelated changes, push `main`, or create
-tags directly. They dispatch `release-pipeline.yml` on the default branch.
+tags directly. Publication commands dispatch `release-pipeline.yml` on the default
+branch; `package` builds locally, `status` reads run history, and `--dry-run` only
+displays the request.
 
 If the base version already has a stable release, bump the committed version through
 a PR before beta/RC publication. Nightly builds may still use that existing base.
@@ -85,17 +91,20 @@ and PyPI publication use verified stable assets as a separate explicit operation
 
 - Native Venus OS Python/D-Bus and hardware tests require a separate target acceptance run. Existing integration job checks shared mocks.
 
-Merge and verify the workflows before enabling the additive Terraform **CI gate**
-ruleset for this repository. Configure required reviewers and default-branch-only
-policies for `release`/`production`; the Terraform governance repositories contain
-`release-standards.tf` and opt-in example tfvars. Do not apply fleet-wide requirements
-to repositories whose workflows have not landed. Existing review/security rules
-remain in force. Physical hardware, real credentials/streams and production access
-are not implied by unit tests or packaging checks.
+For public repositories, merge and verify the workflows before enabling the
+additive Terraform **CI gate** ruleset. Where release/deployment workflows use
+environments, configure reviewers and default-branch-only policies. The governance
+repositories contain `release-standards.tf` and opt-in examples for public
+repositories only. Do not extend these requirements to private repositories by
+buying a plan or to workflows that have not landed.
+
+Existing review/security rules remain in force. Physical hardware, real
+credentials/streams and production access are not implied by unit tests or builds.
 
 The release engine/client are vendored from `victron-venus/venus-os-ci-toolkit`.
-They are excluded from consumer-specific formatting/type policy and exercised by
-the mandatory Release tooling contracts job. Update the toolkit source and rerun
+They are excluded from consumer-specific formatting/type policy. Application
+release workflows run the mandatory Release tooling contracts job; validation-only
+projects receive the local client, whose contracts run in the toolkit. Update the toolkit source and rerun
 `scripts/install_release.py`; `--check` detects drift.
 
 References: [GitHub schedules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule),

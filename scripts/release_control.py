@@ -6,11 +6,13 @@
 # fmt: off
 """Publish candidates and promote checked RCs inside the guarded Actions workflow."""
 
+# Keep the audited engine self-contained when vendored into application repos.
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import argparse
 import base64
-import binascii
 import hashlib
 import io
 import json
@@ -23,13 +25,34 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 WORKFLOW = ".github/workflows/release-pipeline.yml"
 MANIFEST = "release-manifest.json"
 POLICY = ".release-policy.json"
 EVIDENCE = Path(".release-evidence") / MANIFEST
-VERSION_RE = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
+VERSION_PATTERN = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+VERSION_RE = re.compile(VERSION_PATTERN, re.ASCII)
+TAG_RE = re.compile(
+    "v"
+    + VERSION_PATTERN
+    + r"(?:-(?:beta|rc)\.[1-9]\d*|-nightly\.\d{14}\.[1-9]\d*\.[1-9]\d*)?",
+    re.ASCII,
+)
+API_PATHS = {
+    "GET": (
+        r"(?:|tags|releases|environments/release)",
+        r"releases/(?:[1-9]\d*(?:/assets)?|assets/[1-9]\d*)",
+        "releases/tags/" + TAG_RE.pattern,
+        "git/ref/tags/" + TAG_RE.pattern,
+        r"actions/runs/[1-9]\d*(?:/artifacts|/attempts/[1-9]\d*/jobs)?",
+        r"actions/artifacts/[1-9]\d*/zip",
+        r"contents/\.release-policy\.json\?ref=[0-9a-f]{40}",
+        r"compare/[0-9a-f]{40}\.\.\.(?:[A-Za-z0-9_.~-]|%[0-9A-F]{2})+",
+    ),
+    "POST": (r"(?:git/refs|releases)",),
+    "PATCH": (r"releases/[1-9]\d*",),
+}
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\Z")
 REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
@@ -67,7 +90,7 @@ def positive(value: object, name: str) -> int:
     require(
         isinstance(value, (str, int)) and not isinstance(value, bool), f"Invalid {name}"
     )
-    require(bool(re.fullmatch(r"[1-9][0-9]*", str(value))), f"Invalid {name}")
+    require(bool(re.fullmatch(r"[1-9]\d*", str(value), re.ASCII)), f"Invalid {name}")
     return int(value)
 
 
@@ -93,7 +116,7 @@ def parse_json(data: bytes, label: str) -> object:
 
     try:
         return json.loads(data, object_pairs_hook=no_duplicates)
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise ReleaseError(f"Invalid JSON in {label}") from exc
 
 
@@ -105,27 +128,68 @@ class GitHub:
         self.repo = repository
         self.base = f"repos/{repository}"
 
-    def command(self, args: list[str], data: bytes | None = None) -> bytes:
-        """Run gh without a shell and translate failed calls into GitHubError."""
-        result = subprocess.run(
-            ["gh", *args],
-            input=data,
-            capture_output=True,
-            check=False,
-        )
+    @staticmethod
+    def response(result: subprocess.CompletedProcess) -> bytes:
+        """Translate a completed fixed-form command without retrying failed writes."""
         if result.returncode:
             message = result.stderr.decode(errors="replace").strip()
             raise GitHubError(message, "HTTP 404" in message)
         return result.stdout
 
+    def request(self, path: str, method="GET", body=None, mode="json") -> bytes:
+        """Call only allowed REST routes with fixed flags and one positional endpoint."""
+        require(method in API_PATHS, "Unsupported API method")
+        require(
+            any(re.fullmatch(pattern, path, re.ASCII) for pattern in API_PATHS[method]),
+            "Unsupported API endpoint",
+        )
+        require(
+            all(part not in {".", ".."} for part in unquote(path).split("/")),
+            "API endpoint cannot traverse repository paths",
+        )
+        require(
+            (method == "GET" and body is None)
+            or (method in {"POST", "PATCH"} and isinstance(body, dict)),
+            "API body does not match its method",
+        )
+        modes = {
+            "json": [],
+            "pages": ["--paginate", "--slurp"],
+            "asset": ["-H", "Accept: application/octet-stream"],
+        }
+        require(
+            mode in modes and (mode == "json" or method == "GET"), "Invalid API mode"
+        )
+        endpoint = f"{self.base}/{path}".rstrip("/")
+        if mode == "pages":
+            endpoint += ("&" if "?" in endpoint else "?") + "per_page=100"
+        method_args = {
+            "GET": ["--method", "GET"],
+            "POST": ["--method", "POST"],
+            "PATCH": ["--method", "PATCH"],
+        }[method]
+        return self.response(
+            subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    "--hostname",
+                    "github.com",
+                    *method_args,
+                    *modes[mode],
+                    *(["--input", "-"] if body is not None else []),
+                    "--",
+                    endpoint,
+                ],
+                input=json_bytes(body) if body is not None else None,
+                capture_output=True,
+                check=False,
+            )
+        )
+
     def api(self, path: str, method: str = "GET", body: dict | None = None):
-        """Read or mutate a repository REST endpoint with optional JSON input."""
-        args = ["api", "--method", method, f"{self.base}/{path}".rstrip("/")]
-        data = None
-        if body is not None:
-            args += ["--input", "-"]
-            data = json_bytes(body)
-        raw = self.command(args, data)
+        """Read or mutate a permitted repository endpoint with optional JSON input."""
+        raw = self.request(path, method, body)
         return parse_json(raw, path) if raw.strip() else None
 
     def optional(self, path: str):
@@ -139,15 +203,7 @@ class GitHub:
 
     def pages(self, path: str, field: str | None = None) -> list:
         """Fetch and flatten every page so later jobs or artifacts are not skipped."""
-        separator = "&" if "?" in path else "?"
-        raw = self.command(
-            [
-                "api",
-                "--paginate",
-                "--slurp",
-                f"{self.base}/{path}{separator}per_page=100",
-            ]
-        )
+        raw = self.request(path, mode="pages")
         pages = parse_json(raw, path)
         require(isinstance(pages, list), f"Invalid pagination response: {path}")
         records = []
@@ -160,19 +216,46 @@ class GitHub:
     def binary(self, path: str) -> bytes:
         """Download release bytes or an Actions ZIP using its required media type."""
         # The Actions redirect rejects octet-stream with HTTP 415; gh follows it.
-        if re.fullmatch(r"actions/artifacts/[1-9][0-9]*/zip", path):
-            return self.command(["api", f"{self.base}/{path}"])
+        if re.fullmatch(r"actions/artifacts/[1-9]\d*/zip", path, re.ASCII):
+            return self.request(path)
         require(
-            re.fullmatch(r"releases/assets/[1-9][0-9]*", path),
+            re.fullmatch(r"releases/assets/[1-9]\d*", path, re.ASCII),
             "Unsupported binary download endpoint",
         )
-        return self.command(
-            ["api", "-H", "Accept: application/octet-stream", f"{self.base}/{path}"]
-        )
+        return self.request(path, mode="asset")
 
     def upload(self, tag: str, path: Path) -> None:
-        """Upload a new asset without allowing replacement of an existing name."""
-        self.command(["release", "upload", tag, str(path), "--repo", self.repo])
+        """Upload a canonical tag's staged regular file, with no overwrite option."""
+        require(TAG_RE.fullmatch(tag), "Unsupported release upload tag")
+        require(
+            path.is_absolute() and NAME_RE.fullmatch(path.name), "Unsafe upload path"
+        )
+        require(
+            path.is_file() and not path.is_symlink(), "Upload must be a regular file"
+        )
+        parent = path.parent.resolve(strict=True)
+        require(
+            parent.parent == Path(tempfile.gettempdir()).resolve()
+            and parent.name.startswith(("release-candidate-", "release-promote-"))
+            and "#" not in str(path),
+            "Upload must come from the private release staging directory",
+        )
+        self.response(
+            subprocess.run(
+                [
+                    "gh",
+                    "release",
+                    "upload",
+                    "--repo",
+                    f"github.com/{self.repo}",
+                    "--",
+                    tag,
+                    str(parent / path.name),
+                ],
+                capture_output=True,
+                check=False,
+            )
+        )
 
 
 def repository_info(gh: GitHub) -> dict:
@@ -228,7 +311,7 @@ def source_policy_snapshot(gh: GitHub, sha: str) -> dict:
     )
     try:
         raw = base64.b64decode("".join(encoded.split()), validate=True)
-    except (binascii.Error, ValueError) as exc:
+    except ValueError as exc:
         raise ReleaseError("Invalid source policy base64 content") from exc
     require(
         len(raw) <= 250_000 and response.get("size") == len(raw),
@@ -427,7 +510,9 @@ def next_sequence(gh: GitHub, base_version: str, channel: str) -> int:
     tags = [item.get("name", "") for item in gh.pages("tags")]
     tags += [item.get("tag_name", "") for item in gh.pages("releases")]
     for tag in tags:
-        if tag.startswith(prefix) and re.fullmatch(r"[1-9][0-9]*", tag[len(prefix) :]):
+        if tag.startswith(prefix) and re.fullmatch(
+            r"[1-9]\d*", tag[len(prefix) :], re.ASCII
+        ):
             numbers.append(int(tag[len(prefix) :]))
     return max(numbers, default=0) + 1
 
@@ -660,7 +745,7 @@ def validate_manifest(raw: bytes, repo: str, rc_tag: str) -> dict:
     require(manifest.get("channel") == "rc", "Only release candidates can be promoted")
     require(
         manifest.get("tag") == rc_tag
-        and re.fullmatch(rf"v{re.escape(base_version)}-rc\.[1-9][0-9]*", rc_tag),
+        and re.fullmatch(rf"v{re.escape(base_version)}-rc\.[1-9]\d*", rc_tag, re.ASCII),
         "Manifest RC tag/version mismatch",
     )
     require(
@@ -823,8 +908,9 @@ def promote(args) -> dict:
     gh = GitHub(args.repo)
     require(
         re.fullmatch(
-            r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-rc\.[1-9][0-9]*",
+            "v" + VERSION_PATTERN + r"-rc\.[1-9]\d*",
             args.rc,
+            re.ASCII,
         ),
         "Promotion requires a strict vX.Y.Z-rc.N tag",
     )
