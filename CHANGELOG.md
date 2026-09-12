@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.1] - 2026-09-12
+
+### Fixed
+- Preserve the current background grid EMA in the setpoint calculator instead
+  of replacing it with the raw measurement. Keep the legacy EMA as a fallback.
+- Apply matching home blending and EV exclusion to raw and filtered grid values
+  so burst detection compares signals with the same reference.
+- Apply burst and derivative corrections before higher-priority mode limits.
+- Clear accumulated creep at exact zero error instead of creating a new offset.
+- Include service definitions and update/keepalive scripts in release packages.
+- Also includes the watchdog retry, listener/endpoint hardening, and console
+  escape fixes merged since v1.23.0.
+
+### Documentation
+- Explain why home-minus-solar estimates can be biased by battery charging and
+  why a smooth grid average does not measure separate import/export energy.
+- Keep scheduling, battery reserve policy, and Quattro on/off transitions in
+  Home Assistant. Control gains and the -2300/+2250 W limits are unchanged.
+
+### Validation
+- Add ten regression tests for filter wiring, load steps, zero creep, and mode
+  precedence. Hardware response still requires observation after deployment.
+
 ## [1.23.0] - 2026-09-10
 
 ### Added

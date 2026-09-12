@@ -51,7 +51,8 @@ class SystemState:
     # Home grid smoothing (optional, when ENABLE_GRID_SMOOTHING_WITH_HOME)
     home_total: float = 0.0  # Total house consumption from Vue
     derived_gt: float | None = None  # Grid derived from home_total - production
-    filtered_gt: float | None = None
+    filtered_gt: float | None = None  # Previous effective-grid EMA (legacy path)
+    prefiltered_gt: float | None = None  # Current raw-grid EMA from GridFilter
 
 
 @dataclass
@@ -103,6 +104,11 @@ def normal_strategy(
 
     if _deadband_low < smoothed_gt < _deadband_high:
         _state["stable_count"] = _state.get("stable_count", 0) + 1
+        if smoothed_gt == 0:
+            # Zero error is neither import nor export. Clear any residual
+            # creep rather than moving a setpoint that has reached its target.
+            _state["creep_accumulator"] = 0.0
+            return state.previous_setpoint, flags + "[~0] "
         # Creep: accumulate error to push toward zero
         # Faster creep for export (we never want to export)
         if smoothed_gt > 0:
@@ -321,10 +327,13 @@ class SetpointCalculator:
         brake = -int(d_gt * self.d_gain)
         return raw_vanew + brake, f"[D:{brake:+d}] "
 
-    def _run_strategies(self, state: SystemState) -> tuple[int, str]:
-        """Run all strategies with their config kwargs. Returns (raw_vanew, flags)."""
+    def _run_strategies(
+        self, state: SystemState, effective_gt: float, old_filtered_gt: float | None
+    ) -> tuple[int, str, bool]:
+        """Correct normal control before applying higher-priority operating modes."""
         raw_vanew = state.previous_setpoint
         total_flags = ""
+        burst_fired = False
         for strategy in STRATEGIES:
             # Pass config params via kwargs for each strategy
             if strategy is normal_strategy:
@@ -339,6 +348,11 @@ class SetpointCalculator:
                     export_damping=self.config.get("EXPORT_DAMPING", 1.0),
                     _state=self._normal_state,
                 )
+                raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(
+                    raw_vanew, effective_gt, old_filtered_gt
+                )
+                raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
+                flags = burst_flags + d_flags + flags
             elif strategy is only_charging_strategy or strategy is do_not_supply_charger_strategy:
                 raw_vanew, flags = strategy(
                     state,
@@ -355,15 +369,20 @@ class SetpointCalculator:
             else:
                 raw_vanew, flags = strategy(state, raw_vanew)
             total_flags += flags
-        return raw_vanew, total_flags
+        return raw_vanew, total_flags, burst_fired
 
     def calculate(self, state: SystemState) -> ControlResult:
         """Execute the control logic pipeline"""
 
-        # Update EMA filter
-        effective_gt = state.gt
-        if state.do_not_supply_charger and state.ev_power > 100:
-            effective_gt = state.gt - state.ev_power
+        # Keep the instantaneous grid and the current background EMA distinct.
+        # filtered_gt is only the previous EMA for callers using the legacy
+        # per-cycle filter; a background sample must not be filtered again or
+        # overwritten with the instantaneous reading.
+        ev_exclusion = state.ev_power if state.do_not_supply_charger and state.ev_power > 100 else 0
+        effective_gt = state.gt - ev_exclusion
+        prefiltered_gt = (
+            state.prefiltered_gt - ev_exclusion if state.prefiltered_gt is not None else None
+        )
 
         # Grid smoothing with Home total (derived_gt = home_total - pv_total)
         # Blend instantaneous CT with derived grid for stability.
@@ -373,10 +392,7 @@ class SetpointCalculator:
                 # Pre-smoothed by the background GridFilter thread (time-based
                 # tau, same notion of "smoothed grid" as the CT filter); use
                 # the value directly - no per-cycle EMA here.
-                effective_gt = (
-                    smoothing_weight * float(state.derived_gt)
-                    + (1 - smoothing_weight) * effective_gt
-                )
+                filtered_derived = float(state.derived_gt)
             else:
                 # Legacy path (GRID_SMOOTHING_DERIVED_TAU=0): per-cycle EMA on
                 # the raw derived value using GRID_SMOOTHING_DERIVED_ALPHA.
@@ -389,27 +405,36 @@ class SetpointCalculator:
                         derived_alpha * raw_derived
                         + (1 - derived_alpha) * self._filtered_derived_gt
                     )
-                effective_gt = (
-                    smoothing_weight * self._filtered_derived_gt
-                    + (1 - smoothing_weight) * effective_gt
+                filtered_derived = self._filtered_derived_gt
+
+            derived_effective_gt = filtered_derived - ev_exclusion
+            effective_gt = (
+                smoothing_weight * derived_effective_gt + (1 - smoothing_weight) * effective_gt
+            )
+            if prefiltered_gt is not None:
+                prefiltered_gt = (
+                    smoothing_weight * derived_effective_gt
+                    + (1 - smoothing_weight) * prefiltered_gt
                 )
 
-        old_filtered_gt = state.filtered_gt
+        # Burst detection must compare like-for-like effective grid values,
+        # with the same home blend and EV exclusion on both sides.
+        old_filtered_gt = prefiltered_gt if prefiltered_gt is not None else state.filtered_gt
         new_filtered_gt = (
-            float(effective_gt)
-            if old_filtered_gt is None
-            else (self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt)
+            prefiltered_gt
+            if prefiltered_gt is not None
+            else (
+                float(effective_gt)
+                if old_filtered_gt is None
+                else (self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt)
+            )
         )
         state.filtered_gt = new_filtered_gt
 
         # Run strategies
-        raw_vanew, total_flags = self._run_strategies(state)
-
-        # Apply corrections
-        raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(
-            raw_vanew, effective_gt, old_filtered_gt
+        raw_vanew, total_flags, burst_fired = self._run_strategies(
+            state, effective_gt, old_filtered_gt
         )
-        raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
         self.prev_effective_gt = effective_gt
 
         # Rate limit: apply 9/10 of the change (fast convergence)
@@ -427,6 +452,6 @@ class SetpointCalculator:
 
         return ControlResult(
             setpoint=int(vanew),
-            flags=burst_flags + d_flags + total_flags.strip(),
+            flags=total_flags.strip(),
             filtered_gt=new_filtered_gt,
         )

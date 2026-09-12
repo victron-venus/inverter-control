@@ -266,8 +266,8 @@ EMA_ALPHA = float(
 )  # EMA smoothing (0.1=smooth, 0.5=responsive)
 # Time constant (seconds) for the background GridFilter thread that owns the
 # grid EMA (see inverter_control/grid_filter.py). When > 0, the control loop
-# receives pre-smoothed values and EMA_ALPHA is forced to 1.0 to avoid double
-# smoothing. Set to 0 to disable the thread and use per-cycle EMA_ALPHA again.
+# receives an explicit pre-smoothed value and bypasses the per-cycle EMA.
+# Set to 0 to disable the thread and use per-cycle EMA_ALPHA again.
 GRID_FILTER_TAU = float(_import_local_config("GRID_FILTER_TAU", 2.0))
 SETPOINT_DELTA_LIMIT = 2000  # Maximum change in setpoint per cycle (Watts)
 
