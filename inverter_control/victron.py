@@ -1864,6 +1864,8 @@ class VictronDBus:
             service=service,
             timeout=0.5,
         )
+        if output is None:
+            return 0.0
         # dbus-send --print-reply=literal prints "variant double <val>"; take last token
         parts = output.split()
         return self._parse_float_or_zero(parts[-1]) if parts else 0.0

@@ -1,12 +1,7 @@
-This release hardens native Venus OS services, grid-loss handling and installation on constrained GX hardware.
+Inverter Control v1.23.3 fixes a background telemetry polling exception when an optional D-Bus service disappears and its CLI fallback returns no result.
 
-Changes:
-- Keep the shared D-Bus connection and subscriptions alive after an individual request timeout; clean up cancelled request handlers on dbus-fast 2.21.1.
-- Reject stale or invalid grid telemetry, pin the selected grid source when configured, and expose a bounded configurable hold before applying zero on grid loss.
-- Preserve device-local configuration and service supervisor directories during updates, validate startup with a fresh heartbeat, and keep transient state under /run.
-- Include the configuration example and every updater runtime item in the PackageManager release archive.
-- Bound logging and forward logs without replaying already-read lines.
+The missing reply now uses the existing zero fallback instead of raising an AttributeError. Other PV yield reads and subsequent battery-energy polling complete, and values recover on a later successful poll. Existing service backoff still applies.
 
-The grid-loss hold remains a device-local setting. Existing values are preserved. Home Assistant continues to own scheduling, battery reserve policy and Quattro on/off transitions.
+The runtime change is a two-line guard. Device-local configuration, grid-loss handling, control policy and limits are preserved.
 
-Validation: native transport regression suite and a read-only dbus-fast 2.21.1 target smoke test; isolated filesystem upgrade and release-archive tests. Meter-side Modbus UDP dropouts require separate investigation and are not claimed to be eliminated by this release.
+Validation: regression tests cover missing and empty CLI replies with and without native D-Bus, service backoff, continued polling of another PV service and battery energy, and recovery on a later poll.
