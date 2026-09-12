@@ -127,6 +127,25 @@ class TestLogic(unittest.TestCase):
         # Creep should have moved setpoint more negative (more discharge)
         self.assertLess(result.setpoint, -500)
 
+    def test_zero_creep_rate_holds_deadband_but_keeps_grid_correction(self):
+        """Disabling creep holds across error reversals without disabling control."""
+        self.config["CREEP_RATE"] = 0.0
+        calculator = SetpointCalculator(self.config)
+        state = self.get_base_state()
+        state.previous_setpoint = 100
+        state.inv_power = 100
+
+        for grid in [5] * 30 + [-5] * 30 + [5] * 30:
+            state.gt = grid
+            state.prefiltered_gt = float(grid)
+            result = calculator.calculate(state)
+            self.assertEqual(result.setpoint, 100)
+            state.previous_setpoint = result.setpoint
+
+        state.gt = 100
+        state.prefiltered_gt = 100.0
+        self.assertLess(calculator.calculate(state).setpoint, 100)
+
     def test_creep_export(self):
         """Creep should decrease discharge when consistently exporting in deadband"""
         state = self.get_base_state()
