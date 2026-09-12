@@ -44,7 +44,7 @@ jobs:
         # Copy files needed for PackageManager installation
         cp main.py "$ARCHIVE_DIR/"
         cp -r inverter_control "$ARCHIVE_DIR/"
-        cp version gitHubInfo setup update.sh keepalive.sh "$ARCHIVE_DIR/"
+        cp version gitHubInfo setup update.sh keepalive.sh local_config.example.py "$ARCHIVE_DIR/"
         cp -r service "$ARCHIVE_DIR/"
 
         # Create tarball
