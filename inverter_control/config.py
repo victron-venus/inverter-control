@@ -263,6 +263,11 @@ USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "f
 GRID_EXPECTED_SERVICE = _import_local_config("GRID_EXPECTED_SERVICE", "")
 GRID_EXPECTED_PHASES = _import_local_config("GRID_EXPECTED_PHASES", 0)
 
+# Optional meter-loss policy. Hold the last accepted command for this many
+# seconds, then latch 0 W until valid grid telemetry recovers. None retains
+# the legacy watchdog timing; zero skips the hold. No stale sample is reused.
+GRID_LOSS_HOLD_SECONDS = _import_local_config("GRID_LOSS_HOLD_SECONDS", None)
+
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
 GRID_ZERO_DEADBAND_LOW = -50  # Watts - lower bound (slight export OK)
 GRID_ZERO_DEADBAND_HIGH = 30  # Watts - upper bound (slight import OK)
@@ -525,6 +530,10 @@ def _validate_config():
         checks.append("GRID_EXPECTED_SERVICE must be empty or a Victron D-Bus service name")
     if type(GRID_EXPECTED_PHASES) is not int or GRID_EXPECTED_PHASES not in (0, 1, 2):
         checks.append("GRID_EXPECTED_PHASES must be 0 (learn), 1 or 2")
+    if GRID_LOSS_HOLD_SECONDS is not None and (
+        type(GRID_LOSS_HOLD_SECONDS) not in (int, float) or not 0 <= GRID_LOSS_HOLD_SECONDS <= 30
+    ):
+        checks.append("GRID_LOSS_HOLD_SECONDS must be None or a finite number from 0 to 30")
     if WATCHDOG_TIMEOUT_SECONDS <= 0:
         checks.append(
             f"WATCHDOG_TIMEOUT_SECONDS must be positive, got {WATCHDOG_TIMEOUT_SECONDS!r}"

@@ -283,6 +283,7 @@ class InverterController:
             check_interval=WATCHDOG_CHECK_INTERVAL,
             dry_run=self.dry_run,
             get_setpoint=lambda: self.previous_setpoint,
+            grid_loss_hold_seconds=_config.GRID_LOSS_HOLD_SECONDS,
         )
 
         # Webhook server for pre-charge triggers from solar-forecast
@@ -727,6 +728,7 @@ class InverterController:
             "ui_config": self.ui_config,
             "dvcc_limits": self.dvcc_limits if self.dvcc_limits else None,
         }
+        self._update_grid_loss_state()
         # Perf snapshot into state at most every 5s (percentile sort is cheap
         # but pointless at 3 Hz)
         now = time.time()
@@ -850,6 +852,10 @@ class InverterController:
         """Gate control on a usable grid snapshot and orderly watchdog recovery."""
         if sys_data.get("_grid_valid") is not True:
             self._watchdog.mark_dbus_invalid()
+            # The same watchdog owns both outage and stalled-loop writes.
+            # Check at control cadence so a short hold is not rounded to its
+            # slower background check interval. Never recalculate stale data.
+            self._watchdog.check_grid_loss()
             if not self._grid_inputs_invalid:
                 logger.warning(
                     "Grid telemetry unavailable; control paused: %s",
@@ -864,6 +870,7 @@ class InverterController:
             self._grid_inputs_invalid = True
             self.state["grid_control_valid"] = False
             self.state["grid_control_reason"] = sys_data.get("_grid_invalid_reason")
+            self._update_grid_loss_state()
             return False
         self._watchdog.mark_dbus_update()
         if self._watchdog.is_triggered():
@@ -871,13 +878,30 @@ class InverterController:
             # before a fresh normal write can otherwise race with that restore.
             self.state["grid_control_valid"] = False
             self.state["grid_control_reason"] = "Waiting for watchdog recovery"
+            self._watchdog.check_grid_loss()
+            self._update_grid_loss_state()
             return False
         if self._grid_inputs_invalid:
             logger.info("Grid telemetry recovered; control resumed")
         self._grid_inputs_invalid = False
         self.state["grid_control_valid"] = True
         self.state["grid_control_reason"] = None
+        self._update_grid_loss_state()
         return True
+
+    def _update_grid_loss_state(self) -> None:
+        """Expose outage progress even when regular telemetry rebuilds pause."""
+        status = self._watchdog.get_status()
+        self.state.update(
+            {key: value for key, value in status.items() if key.startswith("grid_loss_")}
+        )
+        if status["grid_loss_state"] == "holding":
+            self.state["setpoint"] = self.previous_setpoint
+        if status["grid_loss_zero_applied"]:
+            # Only an accepted safety write changes the displayed/applied state.
+            self.previous_setpoint = 0
+            self.current_setpoint = 0
+            self.state["setpoint"] = 0
 
     def run_cycle(self) -> bool:
         cycle_started = time.monotonic()

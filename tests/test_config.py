@@ -96,6 +96,23 @@ class TestCreepLocalConfig:
             self.load_config(monkeypatch, **{name: value})
 
 
+class TestGridLossLocalConfig:
+    """The optional hold is loaded and validated before any hardware control."""
+
+    def test_default_preserves_watchdog_policy(self, monkeypatch):
+        assert TestCreepLocalConfig.load_config(monkeypatch).GRID_LOSS_HOLD_SECONDS is None
+
+    @pytest.mark.parametrize("value", [None, 0, 0.5, 3.0, 30])
+    def test_valid_hold(self, monkeypatch, value):
+        loaded = TestCreepLocalConfig.load_config(monkeypatch, GRID_LOSS_HOLD_SECONDS=value)
+        assert loaded.GRID_LOSS_HOLD_SECONDS == value
+
+    @pytest.mark.parametrize("value", [-1, 30.1, "3", True, False, float("nan"), float("inf")])
+    def test_invalid_hold_fails_at_startup(self, monkeypatch, value):
+        with pytest.raises(ValueError, match="GRID_LOSS_HOLD_SECONDS must be"):
+            TestCreepLocalConfig.load_config(monkeypatch, GRID_LOSS_HOLD_SECONDS=value)
+
+
 class TestColors:
     """Test ANSI Colors class"""
 
