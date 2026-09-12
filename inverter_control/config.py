@@ -312,8 +312,9 @@ D_THRESHOLD = 50  # Watts/cycle — minimum derivative to trigger braking
 D_GAIN = 0.3  # Fraction of derivative to apply as brake (0.0–1.0)
 
 # Creep correction — slow drift fix when grid stays in deadband but offset from zero
-CREEP_RATE = 0.5  # Watts accumulated per cycle while in deadband
-CREEP_MAX = 100.0  # Maximum creep correction (Watts)
+# Set CREEP_RATE to 0 in local_config.py to disable accumulation.
+CREEP_RATE = float(_import_local_config("CREEP_RATE", 0.5))  # Watts accumulated per cycle
+CREEP_MAX = float(_import_local_config("CREEP_MAX", 100.0))  # Maximum creep correction (Watts)
 
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
@@ -492,8 +493,12 @@ def _validate_config():
         _check_type("POWER_LIMIT_MIN", POWER_LIMIT_MIN, (int, float)),
         _check_type("DAMPING_FACTOR", DAMPING_FACTOR, (int, float)),
         _check_type("EMA_ALPHA", EMA_ALPHA, (int, float)),
+        _check_type("CREEP_RATE", CREEP_RATE, (int, float)),
+        _check_type("CREEP_MAX", CREEP_MAX, (int, float)),
         _check_range("DAMPING_FACTOR", DAMPING_FACTOR, 0.0, 1.0),
         _check_range("EMA_ALPHA", EMA_ALPHA, 0.0, 1.0),
+        _check_range("CREEP_RATE", CREEP_RATE, 0.0, 100.0),
+        _check_range("CREEP_MAX", CREEP_MAX, 0.0, 100.0),
         _check_type("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, (int, float)),
         _check_range("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, 0.0, 1.0),
         _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),

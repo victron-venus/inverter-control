@@ -485,6 +485,12 @@ the raw and smoothed paths before burst detection.
 Burst and derivative corrections belong to the normal grid-zero strategy.
 Higher-priority operating modes constrain or replace its result afterward.
 At exact zero error, the creep stage clears its accumulator and holds the previous setpoint.
+For a controlled tuning comparison, set `CREEP_RATE = 0.0` in device-local
+`local_config.py` and restart the controller. This disables cumulative deadband
+creep while retaining normal correction outside the deadband. `CREEP_RATE` and
+`CREEP_MAX` accept finite values from 0 through 100; their defaults remain 0.5
+and 100.0. Compare raw-meter import/export energy and command movement across
+similar operating conditions before keeping a tuning change.
 The existing convergence and per-cycle delta limits still apply to mode
 transitions; a newly tightened solar limit is not an instantaneous hardware clamp.
 
