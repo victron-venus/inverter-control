@@ -87,3 +87,9 @@ WATER_VALVE_INSTANCE = 2
 # Default: EV_INSTANCE = 22 (vehicle), EVCHARGER_INSTANCE = 40 (wallbox)
 EV_INSTANCE = 22
 EVCHARGER_INSTANCE = 40
+
+# Optional grid measurement contract for startup during an external meter outage.
+# Empty/0 learn the first complete valid source and one/two-phase topology.
+# Use the well-known source shown in com.victronenergy.system /Ac/In/0/ServiceName.
+GRID_EXPECTED_SERVICE = ""
+GRID_EXPECTED_PHASES = 0

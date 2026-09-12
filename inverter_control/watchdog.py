@@ -43,6 +43,7 @@ class HardwareWatchdog:
         self._last_dbus_update = 0.0
         self._last_mqtt_update = 0.0
         self._last_setpoint_update = 0.0
+        self._telemetry_invalid = False
         self._enabled = False
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -60,6 +61,17 @@ class HardwareWatchdog:
         """Call when D-Bus telemetry is successfully read"""
         with self._lock:
             self._last_dbus_update = time.monotonic()
+            self._telemetry_invalid = False
+
+    def mark_dbus_invalid(self):
+        """Pause recovery when control telemetry is explicitly unavailable.
+
+        Keep the existing timeout and failure hysteresis: invalidation stops
+        heartbeat renewal; it does not introduce an immediate hardware action.
+        """
+        with self._lock:
+            self._telemetry_invalid = True
+            self._success_count = 0
 
     def mark_mqtt_update(self):
         """Call when MQTT state is successfully published"""
@@ -112,6 +124,7 @@ class HardwareWatchdog:
         with self._lock:
             setpoint_age = now - self._last_setpoint_update
             dbus_age = now - self._last_dbus_update
+            telemetry_invalid = self._telemetry_invalid
 
         # The loop is healthy as long as it keeps writing setpoints (even if
         # slowly). Only force the failsafe when BOTH the setpoint writes and
@@ -122,6 +135,10 @@ class HardwareWatchdog:
         if stale:
             self._fail_count += 1
             self._success_count = 0
+        elif telemetry_invalid:
+            # A brief good sample must not re-arm after an explicit new loss.
+            self._success_count = 0
+            self._fail_count = 0
         else:
             self._success_count += 1
             self._fail_count = 0
@@ -166,6 +183,9 @@ class HardwareWatchdog:
 
     def _recover_from_failsafe(self):
         """Telemetry recovered - re-arm watchdog and restore the prior setpoint"""
+        with self._lock:
+            if self._telemetry_invalid:
+                return
         if self._hardware_forced:
             try:
                 if not self.victron.set_grid_setpoint(self._pre_forced_setpoint):

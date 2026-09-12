@@ -31,7 +31,7 @@ class GridFilter(threading.Thread):
 
     def __init__(
         self,
-        getter: Callable[[], float],
+        getter: Callable[[], float | None],
         tau: float = 2.0,
         tick: float = 0.25,
     ):
@@ -46,22 +46,40 @@ class GridFilter(threading.Thread):
         self._value: float | None = None
         self._last_t: float | None = None
         self._errors = 0
+        self._generation = 0
 
     def value(self) -> float | None:
         """Latest smoothed grid power, or None before the first sample."""
         with self._lock:
             return self._value
 
+    def reset(self) -> None:
+        """Discard stale filter history after a telemetry outage."""
+        with self._lock:
+            self._generation += 1
+            self._value = None
+            self._last_t = None
+
     def run(self) -> None:
         while not self.stop_event.wait(self.tick):
+            with self._lock:
+                generation = self._generation
             try:
-                gt = float(self._getter())
+                raw = self._getter()
+                if raw is None:
+                    continue  # Expected during a measurement outage, not a loggable error.
+                gt = float(raw)
+                if not math.isfinite(gt):
+                    self._errors += 1
+                    continue
             except (TypeError, ValueError) as e:
                 self._errors += 1
                 logger.debug("GridFilter getter failed: %s", e)
                 continue
             now = time.monotonic()
             with self._lock:
+                if generation != self._generation:
+                    continue
                 if self._last_t is None or self._value is None:
                     self._value = gt
                 else:

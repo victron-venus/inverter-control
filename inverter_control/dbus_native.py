@@ -372,6 +372,20 @@ class NativeDbusClient:
         value = getattr(reply.body[0], "value", None)
         return _format_value(value)
 
+    def get_values(self, service: str, timeout: float = 0.5) -> dict[str, str | None] | None:
+        """Read one root BusItem snapshot so related fields share a reply."""
+        reply = self.call_busitem(service, "/", "GetValue", timeout=timeout)
+        if reply is None or not reply.body:
+            return None
+        values = getattr(reply.body[0], "value", reply.body[0])
+        if not isinstance(values, dict):
+            return None
+        return {
+            "/" + path.lstrip("/"): _format_value(getattr(value, "value", value))
+            for path, value in values.items()
+            if isinstance(path, str)
+        }
+
     def set_value(
         self,
         service: str,
@@ -556,6 +570,8 @@ class NativeDbusClient:
         self._resolving_senders.discard(sender)
 
     def _dispatch(self, path: str, props, service: str | None):
+        if "Value" not in props:
+            return  # Text-only changes do not invalidate the numeric value.
         value = getattr(props.get("Value"), "value", None)
         formatted = _format_value(value)
         with self._handlers_lock:

@@ -569,7 +569,7 @@ class TestVictronSignalIntegration:
         v = victron.get_victron(test_mode=True)
         v._native = MagicMock()
         v._signal_paths_subscribed = True
-        v._last_signal_reconcile = time.time()
+        v._last_signal_reconcile = time.monotonic()
 
         with patch.object(victron.VictronDBus, "_poll_system_data") as p_sys:
             v._poll_all()
@@ -579,7 +579,7 @@ class TestVictronSignalIntegration:
         v = victron.get_victron(test_mode=True)
         v._native = MagicMock()
         v._signal_paths_subscribed = True
-        v._last_signal_reconcile = time.time() - 100
+        v._last_signal_reconcile = time.monotonic() - 100
 
         with patch.object(victron.VictronDBus, "_poll_system_data") as p_sys:
             v._poll_all()
