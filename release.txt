@@ -1,8 +1,13 @@
-v1.23.0 — EV charger integration + security/fallback fixes.
+This patch restores background grid smoothing in the live control path. Previously, the calculator replaced the filtered measurement with raw grid power, and burst correction could then amplify the same load step.
 
-Highlights:
-- EV charger / vehicle data from D-Bus (no Home Assistant required)
-- Python Security workflow fails on real findings, not swallowed by || true
-- CLI dbus-send fallback no longer contends with hot-path locks
+Changes:
+- Preserve the current background EMA and retain legacy EMA fallback.
+- Align home blending and EV exclusion for raw and filtered measurements.
+- Apply burst/D corrections before higher-priority operating modes.
+- Stop creep from moving the setpoint at exact zero error.
+- Package the service definitions, updater and keepalive with the release.
+- Include watchdog retry, network hardening and console-log fixes merged since v1.23.0.
 
-Full list: CHANGELOG.md [1.23.0]
+Home Assistant continues to own scheduling, battery reserve policy and Quattro on/off transitions. Control gains and the -2300/+2250 W limits are unchanged. Device-local configuration is preserved by the updater.
+
+Validation: ten new regression tests cover the filter path and mode precedence. Unit tests establish arithmetic and integration behavior; closed-loop hardware stability and energy savings require post-deployment observation.

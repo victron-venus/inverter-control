@@ -156,11 +156,6 @@ class InverterController:
 
         # Initialize Logic and UI components
         config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
-        if GRID_FILTER_TAU > 0:
-            # EMA smoothing moves into the background GridFilter thread
-            # (time-based tau); logic receives pre-smoothed input, so the
-            # per-cycle EMA must be identity to avoid double smoothing.
-            config_dict["EMA_ALPHA"] = 1.0
         self.calculator = SetpointCalculator(config_dict)
         self.console = ConsoleUI(self.ha, self.victron, self.water, self.evcharger)
 
@@ -524,7 +519,8 @@ class InverterController:
             do_not_supply_charger=self.get_boolean("do_not_supply_charger"),
             limit_to_ev=self.get_boolean("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
-            filtered_gt=(self.grid_filter.value() if self.grid_filter else self.filtered_gt),
+            filtered_gt=self.filtered_gt,
+            prefiltered_gt=(self.grid_filter.value() if self.grid_filter else None),
             derived_gt=derived_gt,
         )
 

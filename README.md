@@ -44,7 +44,7 @@ Grid-zero feed-in controller for Victron systems with split-phase compensation.
 - ✅ **Hardware Watchdog Failsafe**: 30-second heartbeat watchdog automatically resets Victron ESS setpoint to fallback mode (0W / pass-through) if MQTT or D-Bus telemetry stops updating (PR #63, commit 0212a4c)
 - ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
 - ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
-- ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Blends derived grid (Vue total load − PV production) with instantaneous CT meter at configurable weight for stable setpoints
+- ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Optional blend of home load minus PV with measured grid; requires validation of battery flows and source timing
 
 ---
 
@@ -452,9 +452,16 @@ If already using Vue with cloud, it still works but expect:
 - Occasional missed readings
 - Less responsive grid-zero tracking
 
+## Control policy ownership
+
+Home Assistant owns the time-of-use schedule, battery reserve policy, and
+Quattro on/off transitions, including the morning start threshold for surplus
+from external AC PV inverters. `inverter-control` regulates power within the
+selected operating mode and configured limits.
+
 ## Grid Smoothing with Home Load (v1.19.1+)
 
-When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller blends a derived grid estimate with the instantaneous CT meter for dramatically more stable setpoints.
+When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller blends a home-minus-PV estimate with measured grid power. This is an experimental estimate, not a billing-meter equivalent.
 
 ### How it works
 
@@ -467,22 +474,43 @@ effective_gt = GRID_SMOOTHING_HOME_WEIGHT * derived_gt
              + (1 - GRID_SMOOTHING_HOME_WEIGHT) * instantaneous_gt
 ```
 
-The derived grid is also EMA-smoothed with `GRID_SMOOTHING_DERIVED_ALPHA` (default 0.1) before blending.
+With `GRID_FILTER_TAU > 0`, the background `GridFilter` supplies the current
+smoothed CT value explicitly; the calculator uses it without overwriting it
+with raw grid or applying a second EMA. When the background sample is not yet
+available, the legacy per-cycle `EMA_ALPHA` path is used. The optional derived
+signal uses `GRID_SMOOTHING_DERIVED_TAU`, or `GRID_SMOOTHING_DERIVED_ALPHA` when
+that time constant is zero. EV exclusion and home weighting are applied to both
+the raw and smoothed paths before burst detection.
 
-### Config options
+Burst and derivative corrections belong to the normal grid-zero strategy.
+Higher-priority operating modes constrain or replace its result afterward.
+At exact zero error, the creep stage clears its accumulator and holds the previous setpoint.
+The existing convergence and per-cycle delta limits still apply to mode
+transitions; a newly tightened solar limit is not an instantaneous hardware clamp.
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `ENABLE_GRID_SMOOTHING_WITH_HOME` | `False` | Enable blending derived grid with CT meter |
-| `GRID_SMOOTHING_HOME_WEIGHT` | `0.7` | Weight for derived grid (0.0–1.0, higher = more stable) |
-| `GRID_SMOOTHING_DERIVED_ALPHA` | `0.1` | EMA alpha for derived grid (slower = smoother) |
+### Energy-balance and tuning limits
 
-### Why it helps
+`home_total - (MPPT DC + AC PV)` omits battery charging/discharging and mixes
+DC and AC power. During battery charging, much of MPPT power never reaches the
+house AC circuit. This estimate can therefore disagree substantially with the
+actual grid even when every sensor is accurate. Do not increase its weight
+merely to make a graph smoother. It is disabled by default; use measured grid
+as the control reference until a time-aligned physical balance is validated.
 
-- **Instantaneous CT meters** (VM-3P75CT, Shelly, etc.) report noisy, jittery values that cause setpoint oscillation
-- **Home total from Vue** (via HA cloud, ~1 s latency) is rock-stable — it's a billing-grade accumulator
-- **Blending at 0.7 weight** gives you the stability of cloud data with the responsiveness of local CT
-- Bash scripts using this approach historically produced the most economical setpoints
+A quiet Vue/HA signal does not establish billing accuracy. Separate import and
+export energy must be estimated from the signed **measured** grid total before
+time averaging, and compared with actual meter registers. A filtered mean near
+zero can coexist with positive import and export energy. Verify the utility
+meter's phase-netting method before assuming L1/L2 energy compensation.
+
+`INVERTER_EFFICIENCY` only estimates available AC solar power in solar-limited
+modes. It does not scale the normal AC grid-zero feedback calculation. A fit
+between AC setpoint and delayed AC measurements is not a DC-to-AC efficiency
+measurement. The offline smoothing sweep in `inverter-monitoring` does not
+model the closed loop and cannot certify gains or energy savings.
+
+See [Victron ESS external control](https://www.victronenergy.com/live/ess:ess_mode_2_and_3)
+and [VM-3P75CT registration methods](https://www.victronenergy.com/media/pg/Energy_Meter_VM-3P75CT_Manual/en/configuration---monitoring.html).
 
 ### Requirements
 

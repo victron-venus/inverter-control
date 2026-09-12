@@ -125,10 +125,45 @@ class TestControllerWiring:
             controller = InverterController(dry_run=True)
 
         assert controller.grid_filter is not None
-        # Per-cycle EMA must be identity when the background filter owns smoothing
-        assert controller.calculator.ema_alpha == 1.0
+        # Keep the configured EMA for startup/fallback; background samples are
+        # carried explicitly and bypass it in the calculator.
+        from inverter_control.config import EMA_ALPHA
+
+        assert controller.calculator.ema_alpha == EMA_ALPHA
         # Filter not started at construction (unit tests stay single-threaded)
         assert not controller.grid_filter.is_alive()
+
+    def test_real_calculator_uses_current_background_sample(self, monkeypatch):
+        """Exercise the full controller-to-calculator path, not a mocked calculator."""
+        from unittest.mock import MagicMock
+
+        from inverter_control import controller as module
+
+        victron = MagicMock()
+        victron._test_mode = True
+        victron.get_mppt_data.return_value = {}
+        victron.get_pv_power.return_value = []
+        victron.get_inverter_power.return_value = 0
+        monkeypatch.setattr(module, "get_victron", lambda: victron)
+        monkeypatch.setattr(module, "get_ha", MagicMock())
+        monkeypatch.setattr(module, "ConsoleUI", MagicMock())
+        monkeypatch.setattr(module, "get_webhook_server", MagicMock())
+        monkeypatch.setattr(module, "DVCC_ENABLED", False)
+        monkeypatch.setattr(module, "GRID_FILTER_TAU", 2.0)
+        monkeypatch.setattr(module, "ENABLE_GRID_SMOOTHING_WITH_HOME", False)
+        controller = module.InverterController(dry_run=True)
+        monkeypatch.setattr(controller, "get_boolean", lambda _name: False)
+        with controller.grid_filter._lock:
+            controller.grid_filter._value = 100.0
+        controller.filtered_gt = 999.0  # Previous effective value is not the new sample
+        setpoint, flags = controller.calculate_setpoint(
+            {"g1": 600, "g2": -100, "gt": 500, "t1": 0, "t2": 0, "tt": 0}
+        )
+        assert controller.filtered_gt == 100.0
+        # Base -70 plus the unmatched 400 W step at burst gain .8.
+        assert setpoint == -390
+        assert "[B:-320]" in flags
+        victron.set_grid_setpoint.assert_not_called()
 
     def test_calculate_setpoint_uses_filter_value(self):
         from unittest.mock import MagicMock, patch

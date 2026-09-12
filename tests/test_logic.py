@@ -971,5 +971,99 @@ class TestDerivedTauPath(unittest.TestCase):
         assert r.filtered_gt == 300.0
 
 
+class TestPrefilteredGrid(unittest.TestCase):
+    """Control regressions for the background filter used on the GX."""
+
+    def state(self, **updates):
+        state = TestLogic().get_base_state()
+        for key, value in updates.items():
+            setattr(state, key, value)
+        return state
+
+    def test_current_background_sample_is_not_overwritten_or_double_filtered(self):
+        for alpha in (0.15, 0.3, 1.0):
+            with self.subTest(alpha=alpha):
+                calc = SetpointCalculator({"EMA_ALPHA": alpha})
+                result = calc.calculate(self.state(gt=500, filtered_gt=999, prefiltered_gt=100))
+                self.assertEqual(result.filtered_gt, 100)
+                self.assertEqual(result.setpoint, -390)
+
+    def test_legacy_ema_and_background_startup_still_work(self):
+        calc = SetpointCalculator({"EMA_ALPHA": 0.3})
+        self.assertEqual(calc.calculate(self.state(gt=500)).filtered_gt, 500)
+        self.assertEqual(calc.calculate(self.state(gt=500, filtered_gt=100)).filtered_gt, 220)
+
+    def test_load_steps_are_not_corrected_twice(self):
+        for grid, expected in ((500, -400), (-500, 400)):
+            with self.subTest(grid=grid):
+                calc = SetpointCalculator({"EMA_ALPHA": 1.0})
+                result = calc.calculate(self.state(gt=grid, prefiltered_gt=0))
+                self.assertEqual(result.filtered_gt, 0)
+                self.assertEqual(result.setpoint, expected)
+
+    def test_home_blend_does_not_create_a_false_burst(self):
+        calc = SetpointCalculator({"GRID_SMOOTHING_HOME_WEIGHT": 0.7})
+        result = calc.calculate(self.state(gt=100, prefiltered_gt=100, derived_gt=1000))
+        self.assertEqual(result.filtered_gt, 730)
+        self.assertNotIn("[B:", result.flags)
+
+    def test_ev_exclusion_applies_to_raw_and_filtered_home_blend(self):
+        calc = SetpointCalculator({"GRID_SMOOTHING_HOME_WEIGHT": 0.5})
+        result = calc.calculate(
+            self.state(
+                gt=2000,
+                prefiltered_gt=1800,
+                derived_gt=2200,
+                do_not_supply_charger=True,
+                ev_power=1500,
+                mppt_total=2000,
+            )
+        )
+        self.assertEqual(result.filtered_gt, 500)
+        self.assertNotIn("[B:", result.flags)
+
+    def test_zero_error_clears_creep_and_holds_setpoint(self):
+        calc = SetpointCalculator({})
+        calc._normal_state["creep_accumulator"] = -100.0
+        for _ in range(30):
+            result = calc.calculate(
+                self.state(gt=0, prefiltered_gt=0, previous_setpoint=-500, inv_power=-500)
+            )
+            self.assertEqual(result.setpoint, -500)
+            self.assertEqual(calc._normal_state["creep_accumulator"], 0.0)
+
+    def test_burst_cannot_bypass_solar_only_or_ev_discharge_caps(self):
+        cases = (
+            {"only_charging": True, "gt": 500, "prefiltered_gt": 0},
+            {"do_not_supply_charger": True, "ev_power": 1500, "gt": 2000, "prefiltered_gt": 1500},
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                result = SetpointCalculator({}).calculate(self.state(**case))
+                self.assertEqual(result.setpoint, 0)
+                self.assertIn("[B:-400]", result.flags)
+
+    def test_burst_cannot_shift_higher_priority_mode_targets(self):
+        cases = (
+            ({"no_feed": True, "pv_inverter_total": 300}, 300),
+            ({"house_support": True, "pv_inverter_total": 800}, 500),
+            ({"limit_to_ev": True, "ev_power": 2000, "mppt_total": 1000}, -440),
+            ({"charge_battery": True}, 2200),
+        )
+        for mode, target in cases:
+            with self.subTest(mode=mode):
+                result = SetpointCalculator({}).calculate(
+                    self.state(gt=500, prefiltered_gt=0, previous_setpoint=target, **mode)
+                )
+                self.assertEqual(result.setpoint, target)
+
+    def test_d_term_cannot_bypass_solar_only_cap(self):
+        calc = SetpointCalculator({"EMA_ALPHA": 1.0})
+        calc.prev_effective_gt = -80
+        result = calc.calculate(self.state(gt=0, prefiltered_gt=0, only_charging=True))
+        self.assertIn("[D:-24]", result.flags)
+        self.assertEqual(result.setpoint, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
