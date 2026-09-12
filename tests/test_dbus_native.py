@@ -163,6 +163,32 @@ class TestGetValue:
 class TestFailureHandling:
     """Failures enter a reconnect cooldown instead of hammering the bus."""
 
+    @pytest.mark.parametrize(
+        "service,path,member",
+        [
+            ("com.victronenergy.evcharger.40", "/Ac/Power", "GetValue"),
+            ("com.victronenergy.ev.22", "/Soc", "GetValue"),
+            ("com.victronenergy.test", "invalid/path", "GetValue"),
+            ("com.victronenergy.test", "/Ac/Power", "invalid.member"),
+        ],
+    )
+    def test_local_validation_keeps_shared_bus_and_subscriptions(
+        self, client, service, path, member
+    ):
+        bus = FakeBus(_return([0], "u"))
+        client._bus = bus
+        client._subscriptions = {"grid-rule"}
+        client._armed_subscriptions = {"grid-rule"}
+        with patch.object(client, "_get_bus", wraps=client._get_bus) as get_bus:
+            assert client.call_busitem(service, path, member) is None
+        get_bus.assert_not_called()
+        assert bus.call_count == 0
+        assert client._bus is bus
+        assert client._fail_until == 0
+        assert client.subscriptions_healthy()
+        assert client.set_value("com.victronenergy.vebus.ttyUSB2", "/Hub4/L1/AcPowerSetpoint", 0)
+        assert bus.call_count == 1
+
     def test_error_enters_cooldown(self, client):
         bus = FakeBus(TimeoutError("no reply"))
         client._bus = bus

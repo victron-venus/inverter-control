@@ -1,6 +1,6 @@
 """Tests for the dbus-evcharger / dbus-ev D-Bus EV reader (inverter_control.evcharger)."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,11 +12,12 @@ from inverter_control.evcharger import EvChargerReader
 def _reader_factory():
     """Return a callable that builds a fresh EvChargerReader with a fresh mock."""
 
-    def _make(side_effect=None):
+    def _make(side_effect=None, names=None):
         dbus_get = (
             MagicMock(side_effect=side_effect) if side_effect else MagicMock(return_value=None)
         )
-        return EvChargerReader(dbus_get), dbus_get
+        names = names or ("com.victronenergy.ev.ha", "com.victronenergy.evcharger.charger")
+        return EvChargerReader(dbus_get, lambda: names), dbus_get
 
     return _make
 
@@ -25,8 +26,9 @@ def _vehicle_responses(soc, ac_power):
     """Build a side_effect for a vehicle service (dbus-ev)."""
 
     def _fn(svc, path):
-        if svc == "com.victronenergy.ev.22":
+        if svc == "com.victronenergy.ev.ha":
             mapping = {
+                "/DeviceInstance": "22",
                 "/Mgmt/Connection": "evcharger:40",
                 "/Soc": str(soc) if soc is not None else None,
                 "/VIN": "TESTVIN",
@@ -42,9 +44,10 @@ def _wallbox_responses(ac_power, current=None, voltage=None):
     """Build a side_effect for a wallbox service (dbus-evcharger)."""
 
     def _fn(svc, path):
-        if svc == "com.victronenergy.evcharger.40":
+        if svc == "com.victronenergy.evcharger.charger":
             mapping = {
-                "/Mgmt/Connection": "evcharger:40",  # not a vehicle
+                "/DeviceInstance": "40",
+                "/Mgmt/Connection": "Home Assistant",  # not a vehicle
                 "/Ac/Power": str(ac_power) if ac_power is not None else None,
                 "/Current": str(current) if current is not None else None,
                 "/Ac/L1/Voltage": str(voltage) if voltage is not None else None,
@@ -87,11 +90,11 @@ class TestEvChargerReader:
         assert state == {"ev_power": None, "car_soc": None, "ev_charging_kw": None}
 
     def test_vehicle_service_rejected_if_no_vehicle_paths(self, reader_factory):
-        """A service at .ev.22 with no /Soc and no /VIN must NOT be treated as vehicle."""
+        """A matching vehicle service with no /Soc and no /VIN must NOT be treated as vehicle."""
 
         def _fn(svc, path):
-            if svc == "com.victronenergy.ev.22":
-                return {"/Mgmt/Connection": "evcharger:40"}.get(path)
+            if svc == "com.victronenergy.ev.ha":
+                return {"/DeviceInstance": "22", "/Mgmt/Connection": "evcharger:40"}.get(path)
             return None
 
         reader, _ = reader_factory(_fn)
@@ -99,11 +102,12 @@ class TestEvChargerReader:
         assert state == {"ev_power": None, "car_soc": None, "ev_charging_kw": None}
 
     def test_wallbox_actually_vehicle_reattributes(self, reader_factory):
-        """If evcharger.40 advertises /Soc + /Mgmt/Connection, treat as vehicle."""
+        """If a matching charger advertises /Soc + /Mgmt/Connection, treat as vehicle."""
 
         def _fn(svc, path):
-            if svc == "com.victronenergy.evcharger.40":
+            if svc == "com.victronenergy.evcharger.charger":
                 mapping = {
+                    "/DeviceInstance": "40",
                     "/Mgmt/Connection": "evcharger:40",
                     "/Soc": "42",
                     "/Ac/Power": "1100",
@@ -132,15 +136,16 @@ class TestEvChargerReader:
         # At least the read path should run twice
         assert dbus_get.call_count > 5
 
-    def test_service_names_follow_instances(self, monkeypatch, reader_factory):
+    def test_instances_select_metadata_not_service_suffixes(self, monkeypatch, reader_factory):
         monkeypatch.setattr(ev_mod, "EV_INSTANCE", 33)
         monkeypatch.setattr(ev_mod, "EVCHARGER_INSTANCE", 7)
         seen = []
 
         def _fn(svc, path):
             seen.append(svc)
-            if svc == "com.victronenergy.ev.33":
+            if svc == "com.victronenergy.ev.ha":
                 return {
+                    "/DeviceInstance": "33",
                     "/Mgmt/Connection": "evcharger:7",
                     "/Soc": "55",
                     "/Ac/Power": "100",
@@ -149,8 +154,8 @@ class TestEvChargerReader:
 
         reader, _ = reader_factory(_fn)
         reader.read(force=True)
-        assert "com.victronenergy.ev.33" in seen
-        assert "com.victronenergy.evcharger.7" in seen
+        assert "com.victronenergy.ev.ha" in seen
+        assert "com.victronenergy.evcharger.charger" in seen
 
     def test_singleton_reset(self):
         ev_mod.reset_evcharger_for_testing()
@@ -158,3 +163,62 @@ class TestEvChargerReader:
         ev_mod.reset_evcharger_for_testing()
         second = ev_mod.get_evcharger(lambda s, p: None)
         assert first is not second
+
+
+def test_missing_names_never_generate_numeric_destinations():
+    dbus_get = MagicMock()
+    reader = EvChargerReader(dbus_get, lambda: ())
+    assert reader.read() == {"ev_power": None, "car_soc": None, "ev_charging_kw": None}
+    dbus_get.assert_not_called()
+
+
+def test_service_suffix_changes_are_selected_from_new_discovery_snapshot():
+    names = ["com.victronenergy.ev.first"]
+
+    def get(_service, path):
+        return {"/DeviceInstance": "22", "/Mgmt/Connection": "evcharger:40", "/Soc": "61"}.get(path)
+
+    dbus_get = MagicMock(side_effect=get)
+    reader = EvChargerReader(dbus_get, lambda: tuple(names))
+    assert reader.read()["car_soc"] == 61
+    names[:] = ["com.victronenergy.ev.restarted"]
+    dbus_get.reset_mock()
+    assert reader.read(force=True)["car_soc"] == 61
+    assert {call.args[0] for call in dbus_get.call_args_list} == set(names)
+
+
+def test_wrong_or_duplicate_device_instances_are_not_selected():
+    get = MagicMock(side_effect=_vehicle_responses(85, 7250))
+    reader = EvChargerReader(get, lambda: ("com.victronenergy.ev.unmatched",))
+    assert reader.read()["ev_power"] is None
+    get.side_effect = lambda _service, path: "22" if path == "/DeviceInstance" else "85"
+    reader = EvChargerReader(get, lambda: ("com.victronenergy.ev.one", "com.victronenergy.ev.two"))
+    assert reader.read()["ev_power"] is None
+
+
+def test_unavailable_instance_metadata_is_retried_after_bounded_interval(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(ev_mod.time, "monotonic", lambda: now[0])
+    dbus_get = MagicMock(return_value=None)
+    reader = EvChargerReader(dbus_get, lambda: ("com.victronenergy.ev.ha",))
+    assert reader.read(force=True)["car_soc"] is None
+    dbus_get.side_effect = _vehicle_responses(71, 0)
+    assert reader.read(force=True)["car_soc"] is None
+    now[0] += ev_mod.DISCOVERY_TTL
+    assert reader.read(force=True)["car_soc"] == 71
+
+
+def test_victron_service_snapshot_uses_existing_discovery_without_extra_bus_queries():
+    from inverter_control.victron import VictronDBus
+
+    with (
+        patch.object(VictronDBus, "_discover_services"),
+        patch.object(VictronDBus, "_load_battery_daily_energy"),
+    ):
+        victron = VictronDBus(test_mode=True)
+    names = ("com.victronenergy.ev.ha", "com.victronenergy.evcharger.charger")
+    victron._apply_discovery("\n".join(names))
+    with patch.object(victron, "_run_discovery_command") as query:
+        assert victron.get_service_names() == names
+        assert victron.get_service_names() == names
+    query.assert_not_called()

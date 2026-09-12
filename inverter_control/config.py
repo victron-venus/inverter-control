@@ -51,9 +51,10 @@ WATER_VALVE_INSTANCE = int(_import_local_config("WATER_VALVE_INSTANCE", 2))
 # =============================================================================
 # EV CHARGER / VEHICLE (dbus-evcharger + dbus-ev D-Bus services on the GX)
 # =============================================================================
-# dbus-evcharger exposes com.victronenergy.evcharger.<N> (wallbox).
+# dbus-evcharger exposes com.victronenergy.evcharger.<suffix> (wallbox).
 # dbus-ev exposes com.victronenergy.ev.<suffix> (vehicle, has /Soc /VIN).
-# Both are autodetected via D-Bus; these are fallback defaults only.
+# Match these /DeviceInstance values against discovered names; a numeric
+# instance is metadata, never a valid final bus-name component.
 EV_INSTANCE = int(_import_local_config("EV_INSTANCE", 22))
 EVCHARGER_INSTANCE = int(_import_local_config("EVCHARGER_INSTANCE", 40))
 

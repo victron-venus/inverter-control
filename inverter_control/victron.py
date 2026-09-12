@@ -170,6 +170,7 @@ class VictronDBus:
     SERVICE_PROBE_INTERVAL = 30.0  # How often to probe backed-off services
 
     def __init__(self, test_mode: bool = False):
+        self._service_names: tuple[str, ...] = ()
         self._vebus_service: str | None = None
         self._shunt_service: str | None = None
         self._mppt_services: list = []
@@ -552,6 +553,7 @@ class VictronDBus:
         old_vebus = self._vebus_service
         old_shunt = self._shunt_service
         lines = stdout.strip().split("\n")
+        self._service_names = tuple(sorted(line.strip() for line in lines if line.strip()))
 
         (
             self._vebus_service,
@@ -573,6 +575,10 @@ class VictronDBus:
                 break
 
         self._log_service_changes(old_vebus, old_shunt)
+
+    def get_service_names(self) -> tuple[str, ...]:
+        """Return the current background-discovery snapshot without bus I/O."""
+        return self._service_names
 
     def _log_service_changes(self, old_vebus, old_shunt):
         """Print service discovery changes to the console."""
@@ -680,6 +686,8 @@ class VictronDBus:
                 "com.victronenergy.acload",
                 "com.victronenergy.pvinverter.",
                 "com.victronenergy.battery.",
+                "com.victronenergy.ev.",
+                "com.victronenergy.evcharger.",
             )
         ):
             tracked_services.add(service_name)

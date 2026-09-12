@@ -16,4 +16,6 @@ Normal logs go through bounded multilog. `/var/log` points to `/data/log` on the
 
 Both native and CLI SetValue paths require an explicit numeric zero result to acknowledge a write. Native reconnect failures enter cooldown; subscriptions must be armed on the current connection, and NameOwnerChanged schedules discovery on the polling thread. Fallback polling includes inverter power. A live connection is not proof of per-source measurement freshness; validate source dropout behavior before unattended control changes.
 
+EV and charger instances are matched against `/DeviceInstance` on actual names from background D-Bus discovery. A numeric instance must never be appended as a bus-name component. Missing or ambiguous matches remain unavailable and metadata is retried after 30 seconds or a change in discovered names. Local request-validation failures do not disconnect the shared native bus or force unrelated grid reads and setpoint writes into CLI fallback.
+
 The September 2026 audit deployed only the log-forwarder cursor/storage fix from this repository. The controller transport, installer and logging changes are separate reviewable source changes. The audit itself did not issue mode or setpoint commands. A separate concurrent task deployed controller 1.23.1.

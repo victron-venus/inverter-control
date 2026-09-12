@@ -54,14 +54,25 @@ def test_failed_match_replay_is_retried(monkeypatch):
     assert send.call_count == 2
 
 
-def test_discovery_runs_on_poll_thread_not_signal_callback(monkeypatch):
+@pytest.mark.parametrize(
+    "service",
+    [
+        "com.victronenergy.vebus.ttyUSB2",
+        "com.victronenergy.ev.ha",
+        "com.victronenergy.evcharger.charger",
+    ],
+)
+@pytest.mark.parametrize("old_owner,new_owner", [("", ":1.2"), (":1.2", "")])
+def test_discovery_runs_on_poll_thread_not_signal_callback(
+    monkeypatch, service, old_owner, new_owner
+):
     discover = Mock()
     monkeypatch.setattr(VictronDBus, "_discover_services", discover)
     victron = VictronDBus(test_mode=True)
     discover.reset_mock()
-    victron._on_name_owner_changed("com.victronenergy.ev.ha", "", ":1.2")
+    victron._on_name_owner_changed("com.example.unrelated", "", ":1.2")
     assert not victron._discovery_requested.is_set()
-    victron._on_name_owner_changed("com.victronenergy.vebus.ttyUSB2", "", ":1.3")
+    victron._on_name_owner_changed(service, old_owner, new_owner)
     discover.assert_not_called()
     assert victron._check_rescan_needed()
     discover.assert_called_once()
