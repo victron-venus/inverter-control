@@ -59,6 +59,14 @@ With `GRID_LOSS_HOLD_SECONDS = None`, both control heartbeats must be older than
 
 If telemetry only stops revalidating without explicit invalidation, its 40-second freshness budget precedes either outage policy. Set an explicit expected meter and phase count to protect startup during a meter outage.
 
+## Native request deadlines
+
+A slow D-Bus method is unavailable for that request; it does not by itself disconnect the shared native connection or remove grid signal subscriptions. The existing CLI fallback can retry the affected operation. Socket failures or an actually disconnected bus still trigger reconnection and subscription replay. A late failure from an older connection cannot disconnect its replacement.
+
+Each synchronous native request has a monotonic deadline. Expired work still queued on the event loop is discarded before dispatch, and an operation already awaiting its reply is cancelled locally. With dbus-fast 2.21.1, the client also removes that request's reply handler to prevent accumulation when an endpoint never responds. Other pending requests and signal handlers remain registered. A synchronous request made on the native loop itself is refused without scheduling work.
+
+Cancellation cannot recall a message already handed to dbus-fast's writer or sent to a device. A timed-out `SetValue` is therefore **unconfirmed**, even if the device later applies it; only the existing explicit success reply counts as acceptance. A late reply cannot turn that earlier failure into an accepted command. The controller's existing fallback and safety writes retain their acknowledgement checks. This change does not guarantee that an already transmitted command can be withdrawn or impose ordering on requests already being processed by a remote service.
+
 ## Diagnostics and verification
 
 The state API reports `grid_control_valid`, `grid_control_reason`, `grid_loss_state`, `grid_loss_hold_seconds`, `grid_loss_elapsed` and `grid_loss_remaining`. Outage states distinguish `holding`, `zero_pending`, `zero` and `recovering`; `disabled` means legacy policy and `normal` means valid control input. `grid_loss_zero_applied` records an accepted outage zero until the next accepted normal command. These fields refresh even while normal control is paused. Logs report transitions into an unavailable measurement state and back to normal control. Diagnostic power values may retain the last reading during an outage; the validity field determines whether they can be used for control.

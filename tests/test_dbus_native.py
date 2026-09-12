@@ -161,7 +161,7 @@ class TestGetValue:
 
 
 class TestFailureHandling:
-    """Failures enter a reconnect cooldown instead of hammering the bus."""
+    """Transport failures enter a reconnect cooldown instead of hammering the bus."""
 
     @pytest.mark.parametrize(
         "service,path,member",
@@ -190,7 +190,7 @@ class TestFailureHandling:
         assert bus.call_count == 1
 
     def test_error_enters_cooldown(self, client):
-        bus = FakeBus(TimeoutError("no reply"))
+        bus = FakeBus(ConnectionError("socket closed"))
         client._bus = bus
         assert client.get_value("com.victronenergy.test", "/x") is None
         assert client._fail_until > 0
@@ -435,7 +435,7 @@ class TestDisconnectSafety:
             return "not a coroutine"
 
     def test_mark_failure_noncoroutine_disconnect_is_safe(self, client):
-        client._bus = self.NonCoroutineBus(TimeoutError("boom"))
+        client._bus = self.NonCoroutineBus(ConnectionError("socket closed"))
         client._loop = client._ensure_loop()
         # A failed call marks _mark_failure; it must not raise and must cooldown.
         assert client.get_value("com.victronenergy.test", "/x") is None
