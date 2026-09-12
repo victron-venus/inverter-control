@@ -3,9 +3,21 @@
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, ".")
 
 from inverter_control import victron
+
+
+@pytest.fixture(autouse=True)
+def isolate_mapping_tests():
+    """Mapping tests must not start hardware discovery or background polling."""
+    with (
+        patch.object(victron.VictronDBus, "_start_background_polling"),
+        patch.object(victron.VictronDBus, "_discover_services"),
+    ):
+        yield
 
 
 class TestVictronCoverage:

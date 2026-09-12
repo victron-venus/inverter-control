@@ -46,10 +46,20 @@ def client():
     """NativeDbusClient with a running loop and an injected FakeBus."""
     native = NativeDbusClient()
     loop = asyncio.new_event_loop()
-    threading.Thread(target=loop.run_forever, daemon=True).start()
+    worker = threading.Thread(target=loop.run_forever, daemon=True)
+    worker.start()
     native._loop = loop
-    yield native
-    native.close()
+    try:
+        yield native
+    finally:
+        native.close()
+        # Some lifecycle tests intentionally detach native._loop. Retain the
+        # actual loop/thread here so fixture cleanup cannot lose the worker.
+        if loop.is_running():
+            loop.call_soon_threadsafe(loop.stop)
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+        loop.close()
 
 
 def _return(body, signature="v"):
@@ -218,7 +228,9 @@ class TestVictronDBusIntegration:
         v = victron.get_victron(test_mode=True)
         v._vebus_service = "com.victronenergy.vebus.ttyUSB2"
         v._native = MagicMock(return_value=False)
-        mock_run.return_value = MagicMock(returncode=0, stdout="method return reply_serial=1\n   int32 0\n")
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="method return reply_serial=1\n   int32 0\n"
+        )
 
         assert v._dbus_set(v._vebus_service, "/Hub4/L1/AcPowerSetpoint", -615)
         assert mock_run.called
@@ -307,9 +319,14 @@ class TestSignalSubscription:
         """A sender whose well-known name is unresolved must not reach handlers."""
         received = []
         client.add_signal_handler(lambda svc, path, value: received.append((svc, path)))
-        client._loop = None  # no loop: resolution cannot run, message still dropped
-        client._handle_message(_signal("/Dc/0/Power", Variant("d", 112.0), sender=":1.99"))
 
+        async def deliver_signal():
+            # Message handlers execute on the native event-loop thread in
+            # production, including the asynchronous sender-resolution task.
+            client._handle_message(_signal("/Dc/0/Power", Variant("d", 112.0), sender=":1.99"))
+            await asyncio.sleep(0)
+
+        asyncio.run_coroutine_threadsafe(deliver_signal(), client._loop).result(2)
         assert received == []
 
     def test_non_signal_ignored(self, client):
