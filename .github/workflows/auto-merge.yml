@@ -1,17 +1,29 @@
-name: Auto-merge
+name: Auto Merge PRs
 
+# Same-repository PRs bootstrap from the branch; forks use trusted base metadata.
+# Never check out or execute pull request code.
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited, converted_to_draft]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited, converted_to_draft]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number }}'
+  cancel-in-progress: true
 
 jobs:
   auto-merge:
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Add auto-merge label
-        run: gh pr edit ${{ github.event.number }} --add-label auto-merge
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
+    if: >-
+      ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)) &&
+      contains(fromJSON('["4alvit","californiantiramisu","dependabot[bot]","renovate[bot]"]'), github.event.pull_request.user.login) &&
+      contains(github.event.pull_request.labels.*.name, 'automerge') &&
+      !github.event.pull_request.draft
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-merge.yml@bb5ac32a58c40a529f021516476cd13744099f73
+    secrets:
+      BOT_PAT: ${{ secrets.BOT_PAT }}
