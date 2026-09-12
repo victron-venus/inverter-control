@@ -7,16 +7,12 @@ on:
       - '**.md'
       - 'docs/**'
       - '**.json'
-      - '**.yaml'
-      - '**.yml'
   pull_request:
     branches: ['**']
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - '**.json'
-      - '**.yaml'
-      - '**.yml'
 
 permissions:
   contents: read
