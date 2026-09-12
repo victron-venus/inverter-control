@@ -42,7 +42,7 @@ SYSTEM_BUS_ADDRESS = os.environ.get(
 )
 CONNECT_TIMEOUT = 2.0
 MATCH_TIMEOUT = 1.0
-# After a failure, skip native calls briefly so the CLI fallback takes over
+# After a connection failure, skip native calls briefly so the CLI fallback takes over
 # while the bus recovers; next call after cooldown reconnects automatically.
 RECONNECT_COOLDOWN = 5.0
 
@@ -123,22 +123,59 @@ class NativeDbusClient:
         to ``timeout`` seconds for the result. Safe to call from any thread -
         including the loop thread itself (a self-``run_coroutine_threadsafe``
         would deadlock the loop, see the 2026-08-27 wedge). Returns the
-        coroutine's result, or None on timeout/failure.
+        coroutine's result, or None when a synchronous self-call is refused.
+        Failures propagate so the caller can distinguish a request deadline
+        from a broken shared connection.
         """
         if self._loop is None:
             self._ensure_loop()
         if self._loop_thread_id == threading.get_ident():
             # Already on the loop thread. It is running (run_forever), so a
-            # synchronous wait is impossible here - schedule and give up rather
-            # than submit to our own loop and deadlock.
-            self._track_task(async_fn())
+            # synchronous wait is impossible here. Do not schedule a command
+            # whose acceptance we cannot report to the caller.
+            logger.debug("Native D-Bus synchronous call refused on its event-loop thread")
             return None
+        deadline = time.monotonic() + timeout
+
+        async def _run():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # A busy loop must not send an old queued setpoint after the
+                # caller has already timed out and requested a safety zero.
+                raise TimeoutError("Request expired before dispatch")
+            async with asyncio.timeout(remaining):
+                return await async_fn()
+
+        coroutine = _run()
         try:
-            future = asyncio.run_coroutine_threadsafe(async_fn(), self._loop)
+            future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        except BaseException as error:
+            coroutine.close()
+            if isinstance(error, RuntimeError):
+                # Submission failed locally; an endpoint RuntimeError raised
+                # later by future.result() must remain request-scoped.
+                raise ConnectionError("Native D-Bus event-loop submission failed") from error
+            raise
+        try:
             return future.result(timeout)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.debug("Native D-Bus loop call failed: %s", e)
-            return None
+        except BaseException:
+            # Also cancel when the control-cycle watchdog interrupts this
+            # synchronous wait. Cancellation cannot recall a wire message.
+            future.cancel()
+            raise
+
+    async def _call_message(self, bus, message):
+        """Call one message and release its reply handler, including on timeout."""
+        try:
+            return await bus.call(message)
+        finally:
+            # dbus-fast 2.21.1 leaves cancelled calls in this public Cython dict
+            # until a reply/disconnect. A silent endpoint must not leak one
+            # handler per retry on the otherwise healthy shared connection.
+            # This runs on the bus loop and only touches this message's serial.
+            handlers = getattr(bus, "_method_return_handlers", None)
+            if isinstance(handlers, dict):
+                handlers.pop(message.serial, None)
 
     def _submit_on_loop(self, async_fn) -> None:
         """Fire-and-forget a coroutine on the loop (no result wait).
@@ -232,8 +269,10 @@ class NativeDbusClient:
             signature="s",
         )
 
+        bus = self._bus
+
         def _call():
-            return self._bus.call(message)
+            return self._call_message(bus, message)
 
         if self._loop_thread_id == threading.get_ident():
             # On the loop thread (reconnect path) - cannot wait synchronously.
@@ -270,7 +309,7 @@ class NativeDbusClient:
                     self._connect()
                 return self._bus
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Native D-Bus connect failed: %s", e)
+                logger.debug("Native D-Bus connect failed (%s): %s", type(e).__name__, e)
                 self._fail_until = time.time() + RECONNECT_COOLDOWN
                 self._bus = None
                 return None
@@ -292,9 +331,11 @@ class NativeDbusClient:
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus disconnect failed: %s", e)
 
-    def _mark_failure(self):
-        """Enter reconnect cooldown and drop the broken connection."""
+    def _mark_failure(self, failed_bus):
+        """Drop only the connection that failed, never a newer replacement."""
         with self._state_lock:
+            if self._bus is not failed_bus:
+                return
             self._fail_until = time.time() + RECONNECT_COOLDOWN
             bus, self._bus = self._bus, None
         if bus is not None:
@@ -324,7 +365,10 @@ class NativeDbusClient:
         timeout: float = 0.5,
     ):
         """Call a com.victronenergy.BusItem method; reply Message or None."""
-        if not _DBUS_FAST_AVAILABLE:
+        if not _DBUS_FAST_AVAILABLE or self._loop_thread_id == threading.get_ident():
+            # A synchronous loop-thread caller cannot await acceptance. Avoid
+            # even acquiring the connection lock: a reconnect may hold it while
+            # waiting for this loop to arm signal matches.
             return None
         from dbus_fast import Message
 
@@ -349,15 +393,33 @@ class NativeDbusClient:
         try:
 
             def _call():
-                return bus.call(message)
+                return self._call_message(bus, message)
 
             reply = self._call_on_loop(_call, timeout)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.debug("Native D-Bus %s %s/%s failed: %s", service, member, path, e)
+            logger.debug(
+                "Native D-Bus %s %s/%s failed (%s): %s",
+                service,
+                member,
+                path,
+                type(e).__name__,
+                e,
+            )
+            # A remote request deadline says nothing about other services or
+            # installed signal matches. TimeoutError is also an OSError, so
+            # exclude it explicitly from socket/connection failures.
+            if isinstance(e, (ConnectionError, EOFError, OSError)) and not isinstance(
+                e, TimeoutError
+            ):
+                self._mark_failure(bus)
             reply = None
         if reply is None:
-            # Timeout/transport failure: the request never completed.
-            self._mark_failure()
+            if (
+                not getattr(bus, "connected", True)
+                or self._loop is None
+                or not self._loop.is_running()
+            ):
+                self._mark_failure(bus)
             return None
         if reply.message_type != MessageType.METHOD_RETURN:
             logger.debug(
