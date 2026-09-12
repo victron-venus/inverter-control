@@ -326,9 +326,6 @@ class NativeDbusClient:
         """Call a com.victronenergy.BusItem method; reply Message or None."""
         if not _DBUS_FAST_AVAILABLE:
             return None
-        bus = self._get_bus()
-        if bus is None:
-            return None
         from dbus_fast import Message
 
         try:
@@ -340,17 +337,26 @@ class NativeDbusClient:
                 member=member,
                 **kwargs,
             )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Invalid destinations, paths or payloads are local caller errors,
+            # not evidence that the shared system-bus connection is broken.
+            logger.debug("Invalid native D-Bus request %s %s/%s: %s", service, member, path, e)
+            return None
+
+        bus = self._get_bus()
+        if bus is None:
+            return None
+        try:
 
             def _call():
                 return bus.call(message)
 
             reply = self._call_on_loop(_call, timeout)
-            if reply is None:
-                # Timeout/failure: the request never completed
-                self._mark_failure()
-                return None
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Native D-Bus %s %s/%s failed: %s", service, member, path, e)
+            reply = None
+        if reply is None:
+            # Timeout/transport failure: the request never completed.
             self._mark_failure()
             return None
         if reply.message_type != MessageType.METHOD_RETURN:
