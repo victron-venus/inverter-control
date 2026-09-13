@@ -418,7 +418,7 @@ wheels = [
 
 [[package]]
 name = "inverter-control"
-version = "1.23.3"
+version = "1.23.4"
 source = { editable = "." }
 dependencies = [
     { name = "paho-mqtt" },
