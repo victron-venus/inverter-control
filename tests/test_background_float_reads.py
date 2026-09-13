@@ -7,8 +7,8 @@ from unittest.mock import Mock
 import pytest
 
 from inverter_control.victron import (
-    TASMOTA_ENERGY_DAILY_PATH,
-    TASMOTA_ENERGY_YESTERDAY_PATH,
+    PV_INVERTER_ENERGY_DAILY_PATH,
+    PV_INVERTER_ENERGY_YESTERDAY_PATH,
     VictronDBus,
 )
 
@@ -76,8 +76,8 @@ def test_pv_cli_failure_does_not_abort_remaining_poll_and_recovers(reader, monke
         if disappearing and clock["now"] == 1000.0:
             return None
         values = {
-            TASMOTA_ENERGY_DAILY_PATH: 2.25 if disappearing else 4.25,
-            TASMOTA_ENERGY_YESTERDAY_PATH: 1.5 if disappearing else 3.0,
+            PV_INVERTER_ENERGY_DAILY_PATH: 2.25 if disappearing else 4.25,
+            PV_INVERTER_ENERGY_YESTERDAY_PATH: 1.5 if disappearing else 3.0,
         }
         return f"variant double {values[command[4]]}"
 

@@ -80,7 +80,7 @@ class FakeVictronDBus:
                 {"power": 543.0, "current": 4.5, "yield": 4.0},
             ),
         ],
-        # Tasmota PV inverters: list of (service, {"power": W, "voltage": V, "current": A})
+        # PV inverters: list of (service, {"power": W, "voltage": V, "current": A})
         "pv_inverter": [
             (
                 "com.victronenergy.pvinverter.tasmota_1",

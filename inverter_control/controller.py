@@ -670,7 +670,7 @@ class InverterController:
         }
 
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
-        # mppt/tasmota data was already read this cycle in calculate_setpoint
+        # mppt/pv inverter data was already read this cycle in calculate_setpoint
         self._cached_battery_socs = self.victron.get_battery_chain_socs()
         _, self._cached_inv_state = self.victron.get_inverter_state()
 

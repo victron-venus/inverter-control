@@ -95,7 +95,7 @@ mosquitto_sub -L "mqtt://mqtt:***@10.10.10.10/home/power_main" \
   done
 ```
 
-That pipeline was enough to prove the idea on a bench or a single meter. It was also fragile: no persistence across reboots, no split-phase awareness, no EV or laundry logic, and no story for MPPT + Tasmota + multiple battery chains. Everything you see now — structured config, `victron.py`, MQTT bridge, optional dashboard, monitoring hooks — grew out of replacing that one-liner piece by piece while keeping the same core goal: **keep the grid where we want it without sacrificing the weird parts of a real house.**
+That pipeline was enough to prove the idea on a bench or a single meter. It was also fragile: no persistence across reboots, no split-phase awareness, no EV or laundry logic, and no story for MPPT + PV inverters + multiple battery chains. Everything you see now — structured config, `victron.py`, MQTT bridge, optional dashboard, monitoring hooks — grew out of replacing that one-liner piece by piece while keeping the same core goal: **keep the grid where we want it without sacrificing the weird parts of a real house.**
 
 If you are browsing this repo for inspiration, that history is intentional: **start simple, measure, then automate.** The current code is the same instinct with years of production bruises folded in.
 
@@ -134,8 +134,8 @@ flowchart TD
 - **Multiple Operating Modes**:
   - Normal: Automatic grid-zero targeting
   - Only Charging: Use solar only, don't discharge battery
-  - No Feed: Only use Tasmota PV, no battery
-  - House Support: Tasmota PV minus 300W
+  - No Feed: Only use PV inverters, no battery
+  - House Support: PV inverter total minus 300W
   - Charge Battery: Force battery charging
   - Do Not Supply Charger: EV charges from grid only
 - **Minimize Charging**: Auto-control dump loads to consume excess solar
@@ -348,12 +348,12 @@ python3 main.py --dry-run
 - Use MPPT solar only, minus offset
 
 ### No Feed (`[NF]`)
-- Only use Tasmota PV inverters
+- Only use PV inverters
 - Don't discharge main battery
-- Setpoint = Tasmota PV power
+- Setpoint = PV inverter power
 
 ### House Support (`[HS]`)
-- Tasmota PV minus 300W
+- PV inverter total minus 300W
 - Supports house loads partially
 
 ### Charge Battery (`[CHG]`)
@@ -467,7 +467,7 @@ When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller b
 ### How it works
 
 ```
-pv_total = MPPT DC power + Tasmota AC power
+pv_total = MPPT DC power + PV inverter AC power
 derived_gt = home_total (from Vue via HA cloud) - pv_total
 # derived_gt: positive = import, negative = export
 

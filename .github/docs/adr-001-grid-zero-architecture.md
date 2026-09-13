@@ -9,7 +9,7 @@
 We need to maintain zero grid feed-in/consumption for a split-phase (120/240V) system with:
 - Single MultiPlus-II inverter
 - JBD BMS battery chain (multiple BMS modules)
-- Multiple solar sources (MPPT + Tasmota microinverters)
+- Multiple solar sources (MPPT + PV inverters)
 - EV charger that should not be powered by battery
 
 ## Decision
