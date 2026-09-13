@@ -71,3 +71,6 @@ release-dist/
 
 # Local CI coverage output
 coverage.xml
+
+# Local coverage databases may contain absolute filesystem paths
+.coverage.*
