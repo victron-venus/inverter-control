@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "repository": "victron-venus/inverter-control",
+  "mode": "release",
+  "default_branch": "main",
+  "validation_workflows": [
+    "ci.yml",
+    "codeql.yml",
+    "release-security.yml"
+  ],
+  "artifact_pattern": "release-assets*",
+  "version_file": "version",
+  "local_checks": [
+    "bash scripts/ci.sh",
+    "bash scripts/ci.sh integration",
+    "bash scripts/ci.sh security"
+  ],
+  "notes": [
+    "Native Venus OS Python/D-Bus and hardware tests require a separate target acceptance run. Existing integration job checks shared mocks."
+  ],
+  "container_assets": {},
+  "visibility": "public"
+}

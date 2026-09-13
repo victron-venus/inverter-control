@@ -62,3 +62,12 @@ inverter-monitoring
 release.txt
 *.backup
 *.bak
+
+# Local CI/release artifacts
+release-dist/
+.release-download/
+.release-assets/
+.release-evidence/
+
+# Local CI coverage output
+coverage.xml

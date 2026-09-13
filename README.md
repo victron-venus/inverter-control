@@ -31,16 +31,17 @@ Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
 ---
 
-## Release Channels & CI/CD
+<!-- ci-release-process:start -->
+## Release process
 
-- **Stable Releases**: Tagged as `vX.Y.Z` (e.g., `v1.0.0`). Package archive (`inverter-control-*.tar.gz`) published automatically to GitHub Releases.
-- **Pre-releases**: Tagged with `-rc.N` or `-beta.N`. Automatically marked as Pre-release on GitHub Releases to protect live grid-control systems.
+See the [release strategy](RELEASING.md) for validation, nightly, beta, RC and stable promotion rules, and the [operator runbook](docs/release-workflow.md) for local commands.
+<!-- ci-release-process:end -->
 
 ---
 
 ## Completed Features
 
-- ✅ **CI/CD Releases**: Pre-release detection and package archive workflows configured
+- ✅ **Release packaging**: Candidate artifacts and checksums; see the [release strategy](RELEASING.md).
 - ✅ **Hardware Watchdog Failsafe**: 30-second heartbeat watchdog automatically resets Victron ESS setpoint to fallback mode (0W / pass-through) if MQTT or D-Bus telemetry stops updating (PR #63, commit 0212a4c)
 - ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
 - ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
@@ -176,7 +177,7 @@ inverter-control/              # Git repo root
 │   └── watchdog/              # External process watchdog
 ├── LOGIC.md                   # Control logic documentation (EN)
 ├── LOGIC_RUS.md               # Control logic documentation (RU)
-└── release.sh                 # Tag, push, create GitHub release
+└── release.sh                 # Wrapper for scripts/release.py (see operator runbook)
 ```
 
 ## Configuration
