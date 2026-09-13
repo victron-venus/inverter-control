@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 run_bandit() (
   report=$(mktemp)
   trap 'rm -f "$report"' EXIT
-  if uvx --python 3.12 --from bandit==1.8.6 bandit -r . -lll \
+  if uvx --no-build --python 3.12 --from bandit==1.8.6 bandit -r . -lll \
       -x .git,.venv,.venv-ci,tests,scripts/release.py,scripts/release_control.py \
       --format json --output "$report"; then
     scanner_status=0
@@ -51,11 +51,11 @@ if [[ "${1:-}" == security || "${1:-}" == bandit ]]; then
   exit 0
 fi
 if [[ "${1:-}" == integration ]]; then
-  uv run --locked --with pyyaml==6.0.3 python scripts/mock_integration.py
+  uv run --no-build --locked --with pyyaml==6.0.3 python scripts/mock_integration.py
   exit 0
 fi
-uv sync --locked --all-extras
-uv run --locked ruff check .
-uv run --locked ruff format --check .
-uv run --locked pytest --cov=. --cov-report=xml
+uv sync --no-build --locked --all-extras
+uv run --no-build --locked ruff check .
+uv run --no-build --locked ruff format --check .
+uv run --no-build --locked pytest --cov=. --cov-report=xml
 

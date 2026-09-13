@@ -65,6 +65,82 @@ def archive(snapshot_root: Path, names: list[str], output: Path, project: str) -
                     package.addfile(entry, io.BytesIO(content))
 
 
+def build_python_distribution(root: Path, source: Path, output: Path) -> None:
+    """Build and validate Python distributions inside the tracked snapshot."""
+    # Build backend writes remain in this snapshot, including egg-info.
+    subprocess.run(
+        [
+            "uv",
+            "build",
+            "--sdist",
+            "--wheel",
+            "--no-create-gitignore",
+            "--build-constraints",
+            str(root / "scripts/build-constraints.txt"),
+            "--out-dir",
+            str(output),
+            str(source),
+        ],
+        check=True,
+    )
+    distributions = sorted(output.glob("*.whl")) + sorted(
+        output.glob("solar_forecast_langgraph-*.tar.gz")
+    )
+    if len(distributions) != 2:
+        raise ValueError("Expected one wheel and one Python source distribution")
+    subprocess.run(
+        [
+            "uvx",
+            "--from",
+            "twine==6.1.0",
+            "twine",
+            "check",
+            "--strict",
+            *map(str, distributions),
+        ],
+        check=True,
+    )
+
+
+def build_containers(
+    source: Path, output: Path, config: dict[str, Any], policy: dict[str, Any]
+) -> None:
+    """Build declared OCI assets through a local Docker endpoint."""
+    host = subprocess.check_output(
+        ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+        text=True,
+    ).strip()
+    host = os.environ.get("DOCKER_HOST", host)
+    if not host.startswith(("unix://", "npipe://")):
+        raise ValueError("Release builds require a local Docker endpoint")
+    for asset, image in config["containers"].items():
+        if Path(asset).name != asset or not asset.endswith(".oci.tar"):
+            raise ValueError("OCI asset names must be simple .oci.tar filenames")
+        if asset not in policy.get("container_assets", {}):
+            raise ValueError(f"OCI asset has no promotion target: {asset}")
+        context = (source / image["context"]).resolve()
+        dockerfile = (source / image["dockerfile"]).resolve()
+        context.relative_to(source)
+        dockerfile.relative_to(source)
+        subprocess.run(
+            [
+                "docker",
+                "buildx",
+                "build",
+                "--platform",
+                image.get("platforms", "linux/amd64"),
+                "--provenance=true",
+                "--sbom=true",
+                "--file",
+                str(dockerfile),
+                "--output",
+                f"type=oci,dest={output / asset}",
+                str(context),
+            ],
+            check=True,
+        )
+
+
 def build_candidate(
     root: Path, version: str, channel: str, output: Path, *, containers: bool = True
 ) -> list[Path]:
@@ -73,7 +149,7 @@ def build_candidate(
     config = json.loads((root / ".release-package.json").read_text())
     if policy.get("mode") != "release":
         raise ValueError("This repository only supports validation, not product releases")
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version, flags=re.ASCII):
         raise ValueError("Expected the numeric base release version X.Y.Z")
     if read_version(root, policy) != version:
         raise ValueError("Candidate version must match project metadata")
@@ -99,73 +175,9 @@ def build_candidate(
         ]
         archive(source, archive_names, output / f"{project}-{version}.tar.gz", project)
         if config.get("python_distribution"):
-            # Build backend writes remain in this snapshot, including egg-info.
-            subprocess.run(
-                [
-                    "uv",
-                    "build",
-                    "--sdist",
-                    "--wheel",
-                    "--no-create-gitignore",
-                    "--build-constraints",
-                    str(root / "scripts/build-constraints.txt"),
-                    "--out-dir",
-                    str(output),
-                    str(source),
-                ],
-                check=True,
-            )
-            distributions = sorted(output.glob("*.whl")) + sorted(
-                output.glob("solar_forecast_langgraph-*.tar.gz")
-            )
-            if len(distributions) != 2:
-                raise ValueError("Expected one wheel and one Python source distribution")
-            subprocess.run(
-                [
-                    "uvx",
-                    "--from",
-                    "twine==6.1.0",
-                    "twine",
-                    "check",
-                    "--strict",
-                    *map(str, distributions),
-                ],
-                check=True,
-            )
+            build_python_distribution(root, source, output)
         if containers and config.get("containers"):
-            host = subprocess.check_output(
-                ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
-                text=True,
-            ).strip()
-            host = os.environ.get("DOCKER_HOST", host)
-            if not host.startswith(("unix://", "npipe://")):
-                raise ValueError("Release builds require a local Docker endpoint")
-            for asset, image in config["containers"].items():
-                if Path(asset).name != asset or not asset.endswith(".oci.tar"):
-                    raise ValueError("OCI asset names must be simple .oci.tar filenames")
-                if asset not in policy.get("container_assets", {}):
-                    raise ValueError(f"OCI asset has no promotion target: {asset}")
-                context = (source / image["context"]).resolve()
-                dockerfile = (source / image["dockerfile"]).resolve()
-                context.relative_to(source)
-                dockerfile.relative_to(source)
-                subprocess.run(
-                    [
-                        "docker",
-                        "buildx",
-                        "build",
-                        "--platform",
-                        image.get("platforms", "linux/amd64"),
-                        "--provenance=true",
-                        "--sbom=true",
-                        "--file",
-                        str(dockerfile),
-                        "--output",
-                        f"type=oci,dest={output / asset}",
-                        str(context),
-                    ],
-                    check=True,
-                )
+            build_containers(source, output, config, policy)
     assets = sorted(path for path in output.iterdir() if path.is_file())
     lines = []
     for asset in assets:
