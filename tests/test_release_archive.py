@@ -6,8 +6,28 @@ import shutil
 import subprocess
 import tarfile
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from scripts import package_release
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("channel", ["--root=/outside", "stable", "unknown"])
+def test_invalid_channel_fails_before_adapter_or_output(tmp_path, channel):
+    """Direct callers cannot pass unchecked channel arguments to the adapter."""
+    (tmp_path / ".release-policy.json").write_text(
+        json.dumps({"mode": "release", "versioning": {}})
+    )
+    (tmp_path / ".release-package.json").write_text("{}")
+    output = tmp_path / "artifacts"
+    with patch.object(package_release.subprocess, "run") as command:
+        with pytest.raises(ValueError, match="Stable releases must promote"):
+            package_release.build_candidate(tmp_path, "1.2.3", channel, output)
+    command.assert_not_called()
+    assert not output.exists()
 
 
 def test_release_archive_contains_complete_installer_payload(tmp_path):
