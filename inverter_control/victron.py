@@ -1140,7 +1140,8 @@ class VictronDBus:
         # Tasmota: dbus-tasmota-pv publishes both counters directly from the
         # plug telemetry (ENERGY.Today / ENERGY.Yesterday) - no arithmetic here.
         self._cached_pv_inverter_daily_yields = [
-            self._get_float_nolock(s, PV_INVERTER_ENERGY_DAILY_PATH) for s in self._pv_inverter_services
+            self._get_float_nolock(s, PV_INVERTER_ENERGY_DAILY_PATH)
+            for s in self._pv_inverter_services
         ]
         self._cached_pv_inverter_yesterday_yields = [
             self._get_float_nolock(s, PV_INVERTER_ENERGY_YESTERDAY_PATH)
