@@ -147,7 +147,7 @@ def _parse_mqtt_bool(value) -> bool | None:
 
 def _control_flag_key(entity: str) -> str | None:
     """Accept input_boolean.<key> or a bare control-flag key."""
-    from inverter_control.victron import CONTROL_FLAG_KEYS
+    from inverter_control.control_flags import CONTROL_FLAG_KEYS
 
     if not entity:
         return None
@@ -163,7 +163,7 @@ def _handle_toggle(controller, payload: dict) -> None:
     key = _control_flag_key(entity)
     if key:
         if "state" not in payload:
-            controller.set_boolean(key, not controller.get_boolean(key))
+            controller.set_control_flag(key, not controller.get_control_flag(key))
             return
         parsed = _parse_mqtt_bool(payload.get("state"))
         if parsed is None:
@@ -171,7 +171,7 @@ def _handle_toggle(controller, payload: dict) -> None:
                 "MQTT toggle ignored: unparseable state %r for %s", payload.get("state"), key
             )
             return
-        controller.set_boolean(key, parsed)
+        controller.set_control_flag(key, parsed)
         return
     if entity:
         controller.ha.toggle_entity(entity)

@@ -29,7 +29,7 @@ def _make_controller(**overrides):
         patch(f"{_MOD}.ConsoleUI") as mock_console_cls,
         patch(f"{_MOD}.SetpointCalculator") as mock_calc_cls,
         patch(f"{_MOD}.EvChargerReader") as mock_evcharger_cls,
-        patch("inverter_control.config.get_ui_config", return_value={}),
+        patch("inverter_control.config.get_ui_config", return_value=overrides.get("ui_config", {})),
         patch(f"{_MOD}.DRY_RUN", False),
         patch(f"{_MOD}.LOOP_INTERVAL", 0.33),
         patch(f"{_MOD}.POWER_LIMIT_MIN", -2300),
@@ -351,7 +351,7 @@ class TestGetStateForMqtt(unittest.TestCase):
             controller._cached_mppt_data = {"mppt0": {"w": 500.0, "a": 10.0}}
             controller._cached_pv_powers = [300.0]
             controller.filtered_gt = 25.0
-            controller._internal_booleans = {"no_feed": True}
+            controller._control_flags = {"no_feed": True}
 
             sys_data = {
                 "_grid_valid": True,
@@ -403,6 +403,11 @@ class TestGetStateForMqtt(unittest.TestCase):
             assert out["dry_run"] == controller.dry_run
             assert "daily_stats" in out
             assert "ui_config" in out
+            # The legacy in-process snapshot also sees commands between sweeps.
+            controller.set_control_flag("no_feed", False)
+            assert controller.get_state()["booleans"]["no_feed"] is False
+            # An already-built MQTT payload remains a stable snapshot.
+            assert out["booleans"]["no_feed"] is True
             assert "version" in out
             assert "uptime" in out
             assert out["ha_connected"] is True
@@ -658,8 +663,8 @@ class TestGetWaterState(unittest.TestCase):
             assert state == {"water_level": None, "water_valve": None, "pump_switch": None}
 
 
-class TestGetHaState(unittest.TestCase):
-    """Test InverterController._get_ha_state()"""
+class TestGetHaStatus(unittest.TestCase):
+    """HA connection status must not own the inverter control flags."""
 
     def test_returns_ha_data_when_enabled(self):
         with patch(f"{_MOD}.ENABLE_HA", True):
@@ -667,43 +672,16 @@ class TestGetHaState(unittest.TestCase):
             mock_ha.connected = True
             mock_ha.uptime = 3600
 
-            # Set the internal booleans
-            controller.set_boolean("only_charging", True)
+            controller.set_control_flag("only_charging", True)
+            state = controller._get_ha_status()
 
-            state = controller._get_ha_state()
-
-        assert state["booleans"] == {
-            "only_charging": True,
-            "no_feed": False,
-            "house_support": False,
-            "charge_battery": False,
-            "do_not_supply_charger": False,
-            "set_limit_to_ev_charger": False,
-            "minimize_charging": False,
-        }
-        # laundry_outlet, home_recliner, home_garage removed — HA no longer
-        # polled for these; relay/switch control lives in the controller.
-        assert "laundry_outlet" not in state
-        assert "home_recliner" not in state
-        assert "home_garage" not in state
-        assert state["ha_connected"] is True
-        assert state["ha_uptime"] == 3600
+        assert state == {"ha_connected": True, "ha_uptime": 3600}
+        assert controller.get_state_for_mqtt()["booleans"]["only_charging"] is True
 
     def test_returns_zeros_when_disabled(self):
         with patch(f"{_MOD}.ENABLE_HA", False):
             controller, _, _, _ = _make_controller()
-            state = controller._get_ha_state()
-            assert state["booleans"] == {
-                "only_charging": False,
-                "no_feed": False,
-                "house_support": False,
-                "charge_battery": False,
-                "do_not_supply_charger": False,
-                "set_limit_to_ev_charger": False,
-                "minimize_charging": False,
-            }
-            assert state["ha_connected"] is False
-            assert state["ha_uptime"] == 0
+            assert controller._get_ha_status() == {"ha_connected": False, "ha_uptime": 0}
 
 
 class TestSetLoopInterval(unittest.TestCase):
@@ -796,7 +774,7 @@ def test_cycle_keeps_tcp_console_without_screen_title_escapes(monkeypatch, inter
     controller.calculate_setpoint = MagicMock(return_value=(-63, ""))
     controller.handle_minimize_charging = MagicMock()
     controller.update_state = MagicMock()
-    controller.get_boolean = MagicMock(return_value=False)
+    controller.get_control_flag = MagicMock(return_value=False)
     line = "\033[32mgrid 63W\033[0m"
     controller.console.format_line.return_value = line
     client = MagicMock()

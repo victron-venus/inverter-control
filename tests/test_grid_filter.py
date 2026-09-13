@@ -152,7 +152,7 @@ class TestControllerWiring:
         monkeypatch.setattr(module, "GRID_FILTER_TAU", 2.0)
         monkeypatch.setattr(module, "ENABLE_GRID_SMOOTHING_WITH_HOME", False)
         controller = module.InverterController(dry_run=True)
-        monkeypatch.setattr(controller, "get_boolean", lambda _name: False)
+        monkeypatch.setattr(controller, "get_control_flag", lambda _name: False)
         with controller.grid_filter._lock:
             controller.grid_filter._value = 100.0
         controller.filtered_gt = 999.0  # Previous effective value is not the new sample
