@@ -8,6 +8,8 @@ import functools
 import os
 import subprocess
 
+from inverter_control.control_flags import get_control_toggle_config
+
 # =============================================================================
 # LOCAL CONFIG (imported from local_config.py - not tracked by git)
 # =============================================================================
@@ -558,10 +560,12 @@ _validate_config()
 
 
 # =============================================================================
-# UI CONFIGURATION (moved from ui_config.py)
+# DASHBOARD PRESENTATION
 # =============================================================================
 
 UI_CONFIG: dict = {
+    # Daemon controls are advertised even when Home Assistant is disabled.
+    "header_toggles": get_control_toggle_config(),
     "batteries": [
         {
             "id": "chain1",

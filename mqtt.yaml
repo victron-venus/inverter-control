@@ -1,4 +1,4 @@
-# Home Assistant MQTT Binary Sensors for Inverter Control
+# Optional Home Assistant MQTT consumers for daemon-owned inverter flags
 # Place this configuration under `mqtt:` in your HA configuration, or include via `mqtt: !include mqtt.yaml`
 # Templates emit ON/OFF (HA MQTT binary_sensor defaults) so JSON true/false and Python True/False both work.
 
@@ -47,12 +47,15 @@ binary_sensor:
 
 # MQTT switches so HA can change the same flags inverter-control consumes.
 # inverter/state is status; inverter/cmd/toggle is the input (same as Desktop).
+# State templates emit ON/OFF; commands contain JSON, so state_on/off must be explicit.
 switch:
   - name: "Inverter Only Charging Cmd"
     unique_id: inverter_only_charging_cmd
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.only_charging else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "only_charging", "state": "on"}'
     payload_off: '{"entity": "only_charging", "state": "off"}'
 
@@ -61,6 +64,8 @@ switch:
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.no_feed else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "no_feed", "state": "on"}'
     payload_off: '{"entity": "no_feed", "state": "off"}'
 
@@ -69,6 +74,8 @@ switch:
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.house_support else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "house_support", "state": "on"}'
     payload_off: '{"entity": "house_support", "state": "off"}'
 
@@ -77,6 +84,8 @@ switch:
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.charge_battery else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "charge_battery", "state": "on"}'
     payload_off: '{"entity": "charge_battery", "state": "off"}'
 
@@ -85,6 +94,8 @@ switch:
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.do_not_supply_charger else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "do_not_supply_charger", "state": "on"}'
     payload_off: '{"entity": "do_not_supply_charger", "state": "off"}'
 
@@ -93,6 +104,8 @@ switch:
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.set_limit_to_ev_charger else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "set_limit_to_ev_charger", "state": "on"}'
     payload_off: '{"entity": "set_limit_to_ev_charger", "state": "off"}'
 
@@ -101,5 +114,7 @@ switch:
     state_topic: "inverter/state"
     value_template: "{{ 'ON' if value_json.booleans.minimize_charging else 'OFF' }}"
     command_topic: "inverter/cmd/toggle"
+    state_on: "ON"
+    state_off: "OFF"
     payload_on: '{"entity": "minimize_charging", "state": "on"}'
     payload_off: '{"entity": "minimize_charging", "state": "off"}'

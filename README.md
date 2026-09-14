@@ -139,11 +139,15 @@ flowchart TD
   - Charge Battery: Force battery charging
   - Do Not Supply Charger: EV charges from grid only
 - **Minimize Charging**: Auto-control dump loads to consume excess solar
-- **Home Assistant Integration**: Sensor data and switch control
+- **MQTT Inverter Controls**: Daemon-owned flags and button definitions for Desktop and optional HA MQTT switches; no HA dependency for flag state or commands
+- **Optional Home Assistant Integration**: Sensor data and dump-load switch control (`minimize_charging` actuators still require HA)
 - **Fast Control Loop**: 3 updates per second via D-Bus
 - **Background D-Bus Polling** (v1.19.0+): 5 Hz thread caches D-Bus data; hot-path methods read instantly (< 1 ms) — eliminates subprocess overhead on Cerbo GX
 - **Async MQTT Publish** (v1.19.0+): Non-blocking publish queue; control loop never stalls on broker
 - **Home Load Grid Smoothing** (v1.19.1+): Blends derived grid (Home total load − PV production) from HA/Vue with instantaneous CT meter at configurable weight (default 0.7) for stable setpoints despite CT jitter
+
+See [MQTT control flags and optional Home Assistant switches](docs/mqtt-control-flags.md)
+for state ownership, button metadata, command payloads, and HA integration.
 
 ## Architecture
 
@@ -153,6 +157,7 @@ inverter-control/              # Git repo root
 ├── inverter_control/          # Python package
 │   ├── __init__.py
 │   ├── config.py              # Non-sensitive parameters (tuning, limits, flags)
+│   ├── control_flags.py       # Canonical inverter flag keys and dashboard button labels
 │   ├── local_config.py        # Sensitive config — NOT in git (see local_config.example.py)
 │   ├── logic.py               # SetpointCalculator, strategies, EMA, burst, D-term
 │   ├── victron.py             # D-Bus I/O — background 5 Hz polling thread, cached reads (< 1 ms)
@@ -161,7 +166,7 @@ inverter-control/              # Git repo root
 │   ├── console_ui.py          # Terminal dashboard renderer
 │   ├── console_server.py      # TCP server (port 9999) for remote console
 │   ├── keepalive.py           # Setpoint keepalive during restart
-│   ├── ui_config.py           # Dashboard layout configuration
+│   ├── controller.py          # Control loop, flag ownership, state and UI configuration publication
 │   └── log-forwarder.py       # Forwards daemontools logs to syslog
 ├── setup                      # SetupHelper-compatible installer (run by PackageManager)
 ├── gitHubInfo                 # GitHub user:branch for PackageManager auto-download
@@ -201,7 +206,8 @@ HA_TOKEN = "your_long_lived_access_token"
 TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
 TOU_EXPENSIVE_END_HOUR = 24  # midnight
 
-# HA Sensors, VUE sensors, booleans, etc.
+# Optional HA sensors, VUE sensors and dump-load switches.
+# Inverter flags are daemon-owned; no HA input_boolean mappings are needed.
 # See local_config.example.py for full template
 ```
 

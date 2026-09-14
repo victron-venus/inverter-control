@@ -292,7 +292,7 @@ def _control_fixture():
     controller.calculate_setpoint = MagicMock(return_value=(-400, ""))
     controller.handle_minimize_charging = MagicMock()
     controller.update_state = MagicMock()
-    controller.get_boolean = MagicMock(return_value=False)
+    controller.get_control_flag = MagicMock(return_value=False)
     controller._watchdog = HardwareWatchdog(victron, timeout_seconds=30, get_setpoint=lambda: -500)
     controller._watchdog._last_dbus_update = 100.0
     controller._watchdog._last_setpoint_update = 100.0

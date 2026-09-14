@@ -3,46 +3,46 @@
 ## Module Structure
 
 ```
-inverter_control/
-├── main.py              # Entry point + InverterController class
-├── config.py            # Configuration constants and settings
-├── victron.py           # D-Bus communication with Victron Venus OS
-├── water.py             # Water system reader (dbus-pump D-Bus services)
-├── homeassistant.py     # Home Assistant REST API integration
-├── mqtt_bridge.py       # MQTT bridge for remote dashboard
-├── ui_config.py         # UI configuration for dashboard
-├── keepalive.py         # Keepalive/watchdog functionality
-├── secrets.py           # API keys and sensitive data (gitignored)
-└── version              # Version file for SetupHelper
+inverter-control/
+├── main.py                  # Process entry point and MQTT command routing
+├── inverter_control/
+│   ├── controller.py        # Control loop and authoritative inverter flag state
+│   ├── control_flags.py     # Canonical flag keys and dashboard button definitions
+│   ├── config.py            # Tuning, optional integrations and UI configuration
+│   ├── victron.py           # Venus D-Bus I/O and control-flag Settings mirror
+│   ├── water.py             # dbus-pump water system reader
+│   ├── homeassistant.py     # Optional HA sensors and dump-load actuators
+│   ├── mqtt_bridge.py       # MQTT state publication and command subscription
+│   └── console_ui.py        # Console presentation
+├── mqtt.yaml                # Optional HA MQTT consumers of daemon-owned flags
+└── local_config.example.py  # Template for the untracked local_config.py
 ```
 
-## main.py - InverterController
+## controller.py and control_flags.py
 
-The main controller class (~800 lines) handles:
+`InverterController` owns grid-zero calculation, control-loop lifecycle, current
+state and inverter flags. `control_flags.py` defines the seven control keys and
+their desktop labels. The controller's `_control_flags` dictionary is
+independent of HA; `get_control_flag()` and `set_control_flag()` are the canonical
+internal API. `get_boolean()` and `set_boolean()` remain compatibility aliases.
 
-### Initialization (lines 89-180)
-- `__init__` - Setup D-Bus, Home Assistant, UI config
+`config.py` includes the control definitions in `ui_config.header_toggles`.
+`controller.py` publishes these definitions and current flag values (`booleans`)
+on retained `inverter/state`, including before the first telemetry sweep.
+`_get_ha_status()` contains only the optional HA connection status.
 
-### Setpoint Calculation (lines 187-446)
-- `calculate_setpoint` - Core algorithm for grid-zero feed-in
-- Handles modes: ONLY_CHARGING, NO_FEED, HOUSE_SUPPORT, etc.
-- EMA smoothing, split-phase compensation
+Flags start off at every daemon restart. Their Venus Settings values are a
+mirror for display, not an external command input or restart restore source.
+The [MQTT control contract](docs/mqtt-control-flags.md) specifies topics, payloads,
+compatibility aliases and the distinction between Desktop metadata and HA config.
 
-### Console Output (lines 447-580)
-- `format_console_output` - Terminal display formatting
-- `update_terminal_title` - Screen/tmux title updates
+## main.py
 
-### State Management (lines 581-695)
-- `update_state` - Collect data for MQTT/dashboard
-- `get_state` - Return current state dict
-
-### Control Loop (lines 696-764)
-- `run_cycle` - Main control cycle
-- Watchdog, error handling
-
-### Main Entry Point (lines 765-877)
-- `main` - Argument parsing, MQTT bridge setup
-- Signal handlers, exception hooks
+The process entry point creates the controller and MQTT bridge, manages signal
+handlers and drives the control loop. Recognized `cmd/toggle` keys are handled by
+the controller without HA. Other legacy entity commands can be forwarded to the
+optional HA client. The `input_boolean.` prefix on a known flag is accepted only
+for compatibility; it does not make the flag an HA entity.
 
 ## victron.py
 
@@ -81,9 +81,13 @@ dbus-pump; this project only reads state.
 
 Home Assistant integration:
 - REST API communication
-- Boolean toggles (input_boolean.*)
-- Vue energy sensors
-- Switch control
+- Optional energy sensors
+- Dump-load switch control and legacy forwarding for genuine HA entities
+
+Inverter control flags do not live here. The `minimize_charging` flag remains
+daemon-owned, while its current dump-load automation still uses HA sensor data
+and HA service calls. Desktop and HA can both consume and change flags over MQTT
+independently.
 
 ## config.py
 
@@ -97,6 +101,9 @@ All configuration constants:
 ## mqtt_bridge.py
 
 MQTT communication for remote dashboard:
-- State publishing
-- Command receiving
-- WebSocket bridge
+- Retained state publishing on `<prefix>/state`, including flags and button metadata
+- Command receiving on `<prefix>/cmd/#`
+- Optional HA MQTT switches configured separately in `mqtt.yaml`
+
+Broker transport and HA REST integration are separate. This module does not
+publish HA discovery messages or implement a WebSocket server.
