@@ -488,7 +488,7 @@ def _control(clock):
     controller.calculate_setpoint = MagicMock(return_value=(-400, ""))
     controller.handle_minimize_charging = MagicMock()
     controller.update_state = MagicMock()
-    controller.get_boolean = MagicMock(return_value=False)
+    controller.get_control_flag = MagicMock(return_value=False)
     controller.previous_setpoint = -500
     controller._watchdog = HardwareWatchdog(
         victron,

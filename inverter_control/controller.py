@@ -59,6 +59,7 @@ from inverter_control.config import (
 )
 from inverter_control.console_server import broadcast_line
 from inverter_control.console_ui import ConsoleUI
+from inverter_control.control_flags import CONTROL_FLAG_KEYS
 from inverter_control.dvcc import create_dvcc_from_config
 from inverter_control.evcharger import EvChargerReader
 from inverter_control.grid_filter import GridFilter
@@ -67,7 +68,6 @@ from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.metrics import CycleMetrics
 from inverter_control.prom_metrics import publish as prom_metrics_publish
 from inverter_control.victron import (
-    CONTROL_FLAG_KEYS,
     TOU_END_SETTING,
     TOU_START_SETTING,
     get_victron,
@@ -93,8 +93,8 @@ STAGE_SLOW_MS = 300.0
 # reads only the values it truly needs (system data, mppt/pv totals, inverter
 # power, grid-smoothing home total, and the setpoint booleans) at full speed.
 # Everything else in update_state is telemetry/display-only — acloads, full
-# battery & MPPT charger detail, EV/car charge, water level, non-setpoint HA
-# booleans, ESS mode, and daily stats — which is NOT used to derive the setpoint,
+# battery & MPPT charger detail, EV/car charge, water level, HA connection
+# status, ESS mode, and daily stats — which is NOT used to derive the setpoint,
 # so a 3-5 second staleness is acceptable. This cadence decouples that non-critical
 # work from the hot path: the heavy reads behind it already refresh on their own
 # 2s/5s/10s TTLs in the background poll thread, and the remaining per-build
@@ -133,7 +133,7 @@ class InverterController:
         self.dry_run = dry_run if dry_run is not None else DRY_RUN
         self.victron = get_victron()
         self.ha = get_ha()
-        self._internal_booleans = dict.fromkeys(CONTROL_FLAG_KEYS, False)
+        self._control_flags = dict.fromkeys(CONTROL_FLAG_KEYS, False)
 
         # Water comes from dbus-pump D-Bus services (no HA). In test mode the
         # victron client never touches the bus, so skip the reader entirely.
@@ -411,7 +411,7 @@ class InverterController:
                 return True
 
             # Set pre-charge flag - this will be picked up in run_cycle
-            # by setting the HA boolean 'charge_battery' or by overriding
+            # by setting the daemon's 'charge_battery' control flag or by overriding
             # the state.charge_battery flag directly
             self._pre_charge_requested = True
             self._pre_charge_horizon_hours = horizon_hours
@@ -517,7 +517,7 @@ class InverterController:
                     derived_gt = self.derived_grid_filter.value()
 
         # Handle pre-charge request from solar forecast webhook
-        charge_battery = self.get_boolean("charge_battery")
+        charge_battery = self.get_control_flag("charge_battery")
         if self._pre_charge_requested:
             self._pre_charge_requested = False  # One-shot
             if self._in_expensive_window():
@@ -541,12 +541,12 @@ class InverterController:
             ev_power=(self.evcharger.read()["ev_power"] or 0) if self.evcharger else 0,
             garage_power=self.ha.get_vue_sensor("garage", 0),
             home_total=home_total,
-            only_charging=self.get_boolean("only_charging"),
-            no_feed=self.get_boolean("no_feed"),
-            house_support=self.get_boolean("house_support"),
+            only_charging=self.get_control_flag("only_charging"),
+            no_feed=self.get_control_flag("no_feed"),
+            house_support=self.get_control_flag("house_support"),
             charge_battery=charge_battery,
-            do_not_supply_charger=self.get_boolean("do_not_supply_charger"),
-            limit_to_ev=self.get_boolean("set_limit_to_ev_charger"),
+            do_not_supply_charger=self.get_control_flag("do_not_supply_charger"),
+            limit_to_ev=self.get_control_flag("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
             filtered_gt=self.filtered_gt,
             prefiltered_gt=(self.grid_filter.value() if self.grid_filter else None),
@@ -567,7 +567,7 @@ class InverterController:
             if self.delay > 0:
                 self.delay -= 1
                 return
-            if not self.get_boolean("minimize_charging"):
+            if not self.get_control_flag("minimize_charging"):
                 return
             inverter_state, _ = self.victron.get_inverter_state()
             if inverter_state == 0:
@@ -622,20 +622,19 @@ class InverterController:
             return {"water_level": None, "water_valve": None, "pump_switch": None}
         return self.water.read()
 
-    def _get_ha_state(self) -> dict[str, Any]:
+    def _get_ha_status(self) -> dict[str, Any]:
         return {
-            "booleans": self._internal_booleans,
             "ha_connected": self.ha.connected if ENABLE_HA else False,
             "ha_uptime": self.ha.uptime if ENABLE_HA else 0,
         }
 
-    def get_boolean(self, key: str) -> bool:
+    def get_control_flag(self, key: str) -> bool:
         """In-process control flags. Never reads Home Assistant for these keys."""
-        return bool(self._internal_booleans.get(key, False))
+        return bool(self._control_flags.get(key, False))
 
     def _load_control_flags(self) -> None:
         """Cold-start all flags False. Register Settings (default 0). No HA/Settings restore."""
-        self._internal_booleans = dict.fromkeys(CONTROL_FLAG_KEYS, False)
+        self._control_flags = dict.fromkeys(CONTROL_FLAG_KEYS, False)
         try:
             self.victron.ensure_control_flag_settings(dict.fromkeys(CONTROL_FLAG_KEYS, 0))
         except Exception:
@@ -648,12 +647,12 @@ class InverterController:
             except Exception:
                 logger.exception("Failed to reset control flag %s", key)
 
-    def set_boolean(self, key: str, value: bool) -> None:
-        if key not in self._internal_booleans:
+    def set_control_flag(self, key: str, value: bool) -> None:
+        if key not in self._control_flags:
             logger.warning("Unknown control flag %s", key)
             return
         value = bool(value)
-        self._internal_booleans[key] = value
+        self._control_flags[key] = value
         try:
             if getattr(self.victron, "_test_mode", False):
                 pass  # ponytail: skip Settings write in test mode
@@ -668,7 +667,15 @@ class InverterController:
             if bridge:
                 bridge.publish_state(self.get_state_for_mqtt())
         except Exception:
-            logger.exception("Failed to publish inverter/state after set_boolean")
+            logger.exception("Failed to publish inverter/state after set_control_flag")
+
+    def get_boolean(self, key: str) -> bool:
+        """Compatibility alias for callers of the original control API."""
+        return self.get_control_flag(key)
+
+    def set_boolean(self, key: str, value: bool) -> None:
+        """Compatibility alias; the flag is owned by this daemon, never HA."""
+        self.set_control_flag(key, value)
 
     def _get_daily_stats(self) -> dict[str, Any]:
         # All daily stats now from D-Bus (no HA dependency)
@@ -711,7 +718,7 @@ class InverterController:
         mppt_chargers = self._get_cached_mppt_chargers()
         ev_state = self._get_ev_state()
         water_state = self._get_water_state()
-        ha_state = self._get_ha_state()
+        ha_status = self._get_ha_status()
         loads = self.victron.get_acload_powers() if ENABLE_ACLOADS else {}
         ess_mode = self.victron.get_ess_mode()
         daily_stats = self._get_daily_stats()
@@ -739,7 +746,8 @@ class InverterController:
             "mppt_chargers": mppt_chargers,
             **ev_state,
             **water_state,
-            **ha_state,
+            **ha_status,
+            "booleans": self._control_flags,
             "loads": loads,
             "ess_mode": ess_mode,
             "battery_power": sys_data.get("bp", 0),
@@ -857,11 +865,13 @@ class InverterController:
         if MQTT_SLIM_STATE:
             for k in MQTT_SLIM_EXCLUDE_KEYS:
                 out.pop(k, None)
-        # Always publish current flags so MQTT/HA see set_boolean immediately
-        out["booleans"] = dict(self._internal_booleans)
+        # Always publish current flags so MQTT/HA see set_control_flag immediately
+        out["booleans"] = dict(self._control_flags)
         out["dry_run"] = self.dry_run
         # Daemon-owned control intent is never stripped by the slim payload.
         out["setpoint_override"] = self.get_setpoint_override()
+        # Include presentation even before the first telemetry sweep.
+        out["ui_config"] = self.ui_config
         return out
 
     def _update_dvcc_limits(self) -> None:
@@ -1105,10 +1115,10 @@ class InverterController:
 
             self.metrics.record_cycle(cycle_started, self.loop_interval)
             try:
-                if self.get_boolean("no_feed"):
+                if self.get_control_flag("no_feed"):
                     time.sleep(NO_FEED_SLEEP_INTERVAL)
             except Exception:
-                pass  # Best effort - ignore HA lookup failures for this optional delay
+                pass  # Best effort - an optional delay must not stop the control loop
             return True
         except KeyboardInterrupt:
             return False

@@ -26,6 +26,7 @@ from .config import (
     USE_GRID_SUBMETER_AS_BACKUP,
     USE_NATIVE_DBUS,
 )
+from .control_flags import CONTROL_FLAG_KEYS
 from .dbus_native import NativeDbusClient
 from .grid_backup import GridBackup, parse_backup_snapshot
 from .grid_telemetry import (
@@ -50,23 +51,13 @@ HUB4_MODE_PATH = f"{_SETTINGS_PREFIX}CGwacs/Hub4Mode"
 TOU_START_SETTING = "/Settings/InverterControl/TouExpensiveStartHour"
 TOU_END_SETTING = "/Settings/InverterControl/TouExpensiveEndHour"
 
-# Control flags persisted like TOU hours (0/1). Venus mqtt-bridge then exposes
-# N/<portal>/settings/.../Settings/InverterControl/<Name>
-CONTROL_FLAG_KEYS = (
-    "only_charging",
-    "no_feed",
-    "house_support",
-    "charge_battery",
-    "do_not_supply_charger",
-    "set_limit_to_ev_charger",
-    "minimize_charging",
-)
-
 
 def _control_flag_setting_name(key: str) -> str:
     return "".join(part.capitalize() for part in key.split("_"))
 
 
+# Mirror daemon flags for Venus UI / MQTT. Startup deliberately resets them;
+# Settings values do not restore or control the daemon's in-process state.
 CONTROL_FLAG_SETTINGS = {
     key: f"/Settings/InverterControl/{_control_flag_setting_name(key)}" for key in CONTROL_FLAG_KEYS
 }

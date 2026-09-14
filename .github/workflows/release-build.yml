@@ -8,6 +8,10 @@ name: Build release assets
       channel:
         required: true
         type: string
+      release_plan_artifact:
+        description: Frozen version plan artifact allocated by the release workflow
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -21,6 +25,14 @@ jobs:
     - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       with:
         python-version: '3.12'
+    - name: Download frozen release version plan
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      with:
+        name: ${{ inputs.release_plan_artifact }}
+        path: .
+    - name: Apply frozen release version inputs
+      shell: bash
+      run: python3 scripts/version_plan.py sync --root . --plan .release-plan.json
     - name: Build exact candidate assets
       env:
         VERSION: ${{ inputs.version }}
@@ -29,9 +41,15 @@ jobs:
     - name: Verify all artifact checksums
       working-directory: release-dist
       run: sha256sum --check SHA256SUMS
+    - name: Verify and stage versioned release assets
+      shell: bash
+      env:
+        RELEASE_ASSET_TARGET: package
+        RELEASE_ASSET_PATTERN_0: release-dist/*
+      run: python3 scripts/stage_release_assets.py --target "$RELEASE_ASSET_TARGET" --pattern "$RELEASE_ASSET_PATTERN_0"
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
         name: release-assets
-        path: release-dist/*
+        path: release-assets/package/*
         if-no-files-found: error
         retention-days: 14

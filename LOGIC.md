@@ -32,12 +32,18 @@ The main control loop runs every ~0.33 seconds and performs these steps:
 
 ### Step 2: Get Control Switches
 
-All switches are in-process flags (`InverterController.get_boolean`).
+All inverter control switches are in-process flags (`InverterController.get_control_flag`).
 On start they are all False — not restored from Settings or Home Assistant.
 After start they change only via MQTT (`inverter/cmd/toggle` from Inverter Desktop
 or HA as another MQTT client). Settings `/Settings/InverterControl/<Flag>` (0/1)
 are registered (default 0) and written when a flag changes so Venus UI stays in
 sync. Published on `inverter/state` as status (`booleans`).
+
+Button definitions are published alongside the flags as `ui_config.header_toggles`.
+Their canonical keys and labels live in `inverter_control/control_flags.py`.
+The `minimize_charging` flag is independent of HA, but its dump-load actuator
+currently uses HA sensors and switch services. See the
+[MQTT control contract](docs/mqtt-control-flags.md).
 
 | Switch | Purpose |
 |--------|---------|
