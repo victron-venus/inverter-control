@@ -94,6 +94,12 @@ EVCHARGER_INSTANCE = 40
 GRID_EXPECTED_SERVICE = ""
 GRID_EXPECTED_PHASES = 0
 
+# Optional signed aggregate grid submeter published as an AC load.
+# Choose a service explicitly; leave empty to disable reserve measurements.
+GRID_BACKUP_SERVICE = ""
+GRID_BACKUP_MAX_AGE_SECONDS = 30.0
+GRID_BACKUP_RECOVERY_SECONDS = 5.0
+
 # Optional delay after grid invalidation before commanding -10 W. During this
 # delay the last accepted command remains unchanged; stale readings are not
 # used for control. The fallback is refreshed every 2 seconds to keep ESS

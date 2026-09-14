@@ -16,8 +16,17 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .config import GRID_EXPECTED_PHASES, GRID_EXPECTED_SERVICE, INVERTER_STATES, USE_NATIVE_DBUS
+from .config import (
+    GRID_BACKUP_MAX_AGE_SECONDS,
+    GRID_BACKUP_RECOVERY_SECONDS,
+    GRID_BACKUP_SERVICE,
+    GRID_EXPECTED_PHASES,
+    GRID_EXPECTED_SERVICE,
+    INVERTER_STATES,
+    USE_NATIVE_DBUS,
+)
 from .dbus_native import NativeDbusClient
+from .grid_backup import GridBackup, parse_backup_snapshot
 from .grid_telemetry import (
     GRID_PATHS,
     GridTelemetry,
@@ -264,6 +273,14 @@ class VictronDBus:
             GRID_EXPECTED_SERVICE,
             GRID_EXPECTED_PHASES,
         )
+        self._grid_backup = (
+            GridBackup(
+                GRID_BACKUP_SERVICE, GRID_BACKUP_MAX_AGE_SECONDS, GRID_BACKUP_RECOVERY_SECONDS
+            )
+            if GRID_BACKUP_SERVICE
+            else None
+        )
+        self._next_backup_poll = 0.0
 
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
@@ -670,6 +687,8 @@ class VictronDBus:
         - A service loses its owner (disappears from the bus)
         """
         grid_changed = self._grid_telemetry.owner_changed(service_name)
+        if self._grid_backup and service_name == self._grid_backup.service:
+            self._grid_backup.invalidate()
         # Only trigger discovery for services we care about
         tracked_services = {
             SYSTEM_SERVICE,
@@ -727,6 +746,7 @@ class VictronDBus:
 
     def _poll_all(self):
         """Poll all D-Bus data in one pass"""
+        self._poll_grid_backup()
 
         # A healthy-flagged path that has gone silent is lying: match rules
         # can vanish on a daemon restart without any error surfacing. Re-derive
@@ -790,6 +810,30 @@ class VictronDBus:
         # Poll daily yields and battery energy (throttled to every 5s)
         self._poll_daily_yields()
         self._poll_battery_daily_energy()
+
+    def _poll_grid_backup(self):
+        """One coherent, bounded submeter read per second, off the control thread."""
+        backup = self._grid_backup
+        if backup is None or time.monotonic() < self._next_backup_poll:
+            return
+        self._next_backup_poll = time.monotonic() + 1.0
+        generation = backup.generation
+        if self._native is not None:
+            fields = self._native.get_items_values(backup.service, timeout=0.5)
+        else:
+            output = self._safe_subprocess(
+                [
+                    "dbus-send",
+                    "--system",
+                    "--print-reply",
+                    f"--dest={backup.service}",
+                    "/",
+                    "com.victronenergy.BusItem.GetItems",
+                ],
+                timeout=0.5,
+            )
+            fields = parse_backup_snapshot(output) if output else None
+        backup.replace(fields, generation)
 
     def _reconcile_groups_if_stale(self):
         """Refresh MPPT/PV/acload/ESS/battery caches in the poll thread when their
@@ -1609,7 +1653,7 @@ class VictronDBus:
         return data
 
     def _merge_grid_status(self, data: dict[str, Any]) -> None:
-        status = self._grid_telemetry.snapshot()
+        status = self.get_grid_status()
         # Keep display data on an outage, but never label it valid for control.
         data.update(
             {
@@ -1621,7 +1665,8 @@ class VictronDBus:
 
     def get_grid_status(self) -> dict[str, Any]:
         """Read control validity without triggering synchronous device I/O."""
-        return self._grid_telemetry.snapshot()
+        primary = self._grid_telemetry.snapshot()
+        return self._grid_backup.select(primary) if self._grid_backup else primary
 
     def get_inverter_state(self) -> tuple[int, str]:
         """Get inverter state code and description - pure background-cache read.
@@ -1666,7 +1711,7 @@ class VictronDBus:
 
     def get_ac_in_power(self) -> int | None:
         """Get valid grid power for the filter; unavailable input is not zero."""
-        data = self._grid_telemetry.snapshot()
+        data = self.get_grid_status()
         return data["gt"] if data["_grid_valid"] else None
 
     def set_grid_setpoint(self, watts: int) -> bool:

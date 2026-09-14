@@ -187,6 +187,8 @@ class InverterController:
         self.delay = 0  # Delay counter for load switching
         self.filtered_gt: float | None = None
         self._grid_inputs_invalid = False
+        self._control_grid_selection = 0
+        self._last_backup_measurement = None
 
         self.loop_count = 0
         self.state: dict[str, Any] = {}
@@ -481,6 +483,13 @@ class InverterController:
 
     def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""
+        if (
+            sys_data.get("_grid_backup")
+            and sys_data.get("_grid_measurement_time") == self._last_backup_measurement
+        ):
+            # HA can report more slowly than the control loop. Refresh the
+            # accepted output, but apply feedback only once per source sample.
+            return self.previous_setpoint, "[SUBMETER HOLD] "
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
         mppt_total = sum(m["w"] for m in mppt_data.values())
@@ -496,7 +505,7 @@ class InverterController:
         # Blend with instantaneous CT meter for stable control
         home_total = 0.0
         derived_gt = None
-        if ENABLE_GRID_SMOOTHING_WITH_HOME:
+        if ENABLE_GRID_SMOOTHING_WITH_HOME and not sys_data.get("_grid_backup"):
             home_total = self.ha.get_vue_sensor("total", 0)
             if home_total > 0:
                 pv_total = mppt_total + pv_inverter_total
@@ -871,6 +880,13 @@ class InverterController:
 
     def _grid_ready_for_control(self, sys_data: dict[str, Any]) -> bool:
         """Gate control on a usable grid snapshot and orderly watchdog recovery."""
+        self.state.update(
+            grid_control_source=sys_data.get("_grid_source"),
+            grid_control_power=sys_data.get("gt") if sys_data.get("_grid_valid") else None,
+            grid_using_backup=sys_data.get("_grid_backup", False),
+            grid_backup_available=sys_data.get("_grid_backup_available", False),
+            grid_primary_reason=sys_data.get("_grid_primary_reason"),
+        )
         if sys_data.get("_grid_valid") is not True:
             self._watchdog.mark_dbus_invalid()
             # The same watchdog owns both outage and stalled-loop writes.
@@ -894,6 +910,18 @@ class InverterController:
             self._update_grid_loss_state()
             return False
         self._watchdog.mark_dbus_update()
+        selection = sys_data.get("_grid_selection_generation", 0)
+        if selection != self._control_grid_selection:
+            self._control_grid_selection = selection
+            self._last_backup_measurement = None
+            self.filtered_gt = None
+            self._raw_derived_gt = None
+            self.calculator.reset_measurement_history()
+            for grid_filter in (self.grid_filter, self.derived_grid_filter):
+                if grid_filter is not None:
+                    grid_filter.reset()
+            logger.info("Grid control source changed to %s", sys_data.get("_grid_source"))
+            return False  # Recalculate on the next cycle, including before-write switches.
         if self._watchdog.is_triggered():
             # Its two-check recovery must finish (including an accepted restore)
             # before a fresh normal write can otherwise race with that restore.
@@ -1006,7 +1034,16 @@ class InverterController:
             self.handle_minimize_charging(sys_data)
             _stage("minimize_charging")
 
-            if not self._grid_ready_for_control(self.victron.get_grid_status()):
+            current_grid = self.victron.get_grid_status()
+            if current_grid.get("_grid_selection_generation") != sys_data.get(
+                "_grid_selection_generation"
+            ) or current_grid.get("_grid_measurement_time") != sys_data.get(
+                "_grid_measurement_time"
+            ):
+                # Recalculate rather than writing across a source/sample edge.
+                self.metrics.record_cycle(cycle_started, self.loop_interval)
+                return True
+            if not self._grid_ready_for_control(current_grid):
                 self.metrics.record_cycle(cycle_started, self.loop_interval)
                 return True
             write_ok = self.dry_run
@@ -1016,6 +1053,9 @@ class InverterController:
                 # Commit the applied baseline while the hardware-write lock
                 # is held, before another thread can accept a manual override.
                 self.previous_setpoint = setpoint
+                self._last_backup_measurement = (
+                    sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
+                )
 
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags

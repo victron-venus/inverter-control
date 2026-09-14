@@ -16,8 +16,8 @@ class SystemState:
     """Snapshot of the system state for setpoint calculation"""
 
     # Grid data
-    g1: int
-    g2: int
+    g1: int | None
+    g2: int | None
     gt: int
 
     # Consumption data

@@ -454,6 +454,17 @@ class NativeDbusClient:
             if isinstance(path, str)
         }
 
+    def get_items_values(self, service: str, timeout: float = 0.5) -> dict[str, str | None] | None:
+        """Read the GetItems snapshot used by aiovelib services."""
+        reply = self.call_busitem(service, "/", "GetItems", timeout=timeout)
+        if reply is None or not reply.body or not isinstance(reply.body[0], dict):
+            return None
+        return {
+            "/" + path.lstrip("/"): _format_value(getattr(item.get("Value"), "value", None))
+            for path, item in reply.body[0].items()
+            if isinstance(path, str) and isinstance(item, dict)
+        }
+
     def set_value(
         self,
         service: str,
