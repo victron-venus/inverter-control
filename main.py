@@ -218,7 +218,21 @@ def _setup_mqtt_bridge(controller):
 
     bridge.register_callback("setpoint_override", _setpoint_override)
     controller._watchdog.set_override_status_callback(bridge.publish_setpoint_override)
-    bridge.register_callback("dry_run", lambda p: controller.toggle_dry_run())
+
+    def _dry_run(payload):
+        if isinstance(payload, dict) and "value" in payload:
+            if type(payload["value"]) is not bool:
+                logger.warning("MQTT dry_run rejected: value must be boolean")
+                return
+            controller.set_dry_run(payload["value"])
+        else:
+            # Compatibility with older desktop versions that sent a toggle.
+            controller.toggle_dry_run()
+        # Publish immediately, including when meter loss pauses normal state
+        # rebuilding. Duplicate delivery of an explicit value is idempotent.
+        bridge.publish_state(controller.get_state_for_mqtt())
+
+    bridge.register_callback("dry_run", _dry_run)
 
     def _safe_limits(p):
         try:

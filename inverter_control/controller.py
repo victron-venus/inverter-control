@@ -310,12 +310,17 @@ class InverterController:
         logger.info(f"Power limits changed to [{self.power_limit_min}, {self.power_limit_max}]")
         return {"min": self.power_limit_min, "max": self.power_limit_max}
 
+    def set_dry_run(self, enabled: bool) -> bool:
+        with self._watchdog._lock:
+            self.dry_run = enabled
+            self._watchdog.dry_run = enabled
+            mode = "DRY-RUN" if enabled else "LIVE"
+            logger.info(f"Mode changed to {mode}")
+            return self.dry_run
+
     def toggle_dry_run(self) -> bool:
-        self.dry_run = not self.dry_run
-        self._watchdog.dry_run = self.dry_run
-        mode = "DRY-RUN" if self.dry_run else "LIVE"
-        logger.info(f"Mode changed to {mode}")
-        return self.dry_run
+        with self._watchdog._lock:
+            return self.set_dry_run(not self.dry_run)
 
     def toggle_ess_mode(self) -> dict[str, Any]:
         current = self.victron.get_ess_mode()
