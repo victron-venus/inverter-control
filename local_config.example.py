@@ -94,9 +94,22 @@ EVCHARGER_INSTANCE = 40
 GRID_EXPECTED_SERVICE = ""
 GRID_EXPECTED_PHASES = 0
 
-# Optional delay after grid invalidation before commanding 0 W. During this
+# Optional signed aggregate grid submeter published as an AC load.
+# Enable use during primary meter loss, and explicitly select a whole-grid
+# measurement service. A selected service is shown in the desktop even when
+# fallback is disabled. This must measure net grid import/export, not a branch.
+# SetupHelper option /data/setupOptions/inverter-control/use_grid_submeter_as_backup
+# (true/false) takes precedence over this flag when present.
+USE_GRID_SUBMETER_AS_BACKUP = False
+GRID_BACKUP_SERVICE = ""
+GRID_BACKUP_MAX_AGE_SECONDS = 30.0
+GRID_BACKUP_RECOVERY_SECONDS = 5.0
+
+# Optional delay after grid invalidation before commanding -10 W. During this
 # delay the last accepted command remains unchanged; stale readings are not
-# used for control. None keeps legacy watchdog timing, 0 means immediate zero.
+# used for control. The fallback is refreshed every 2 seconds to keep ESS
+# active and allow solar charging. None keeps legacy watchdog timing;
+# 0 means immediate fallback. -10 W is export at the inverter's AC input.
 # For a pinned external meter, a short hold can bridge transient outages:
 # GRID_LOSS_HOLD_SECONDS = 3.0
 GRID_LOSS_HOLD_SECONDS = None

@@ -23,6 +23,15 @@ if str(_ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
+def isolated_grid_backup_config(monkeypatch):
+    """Site-private submeter choices must not change unrelated fake D-Bus tests."""
+    from inverter_control import victron
+
+    monkeypatch.setattr(victron, "GRID_BACKUP_SERVICE", "")
+    monkeypatch.setattr(victron, "USE_GRID_SUBMETER_AS_BACKUP", False)
+
+
+@pytest.fixture(autouse=True)
 def isolated_alert_storage(tmp_path, monkeypatch):
     """Keep persisted alerts local to each test, including MQTT contract tests."""
     from inverter_control import alert_state

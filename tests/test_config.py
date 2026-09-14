@@ -113,6 +113,35 @@ class TestGridLossLocalConfig:
             TestCreepLocalConfig.load_config(monkeypatch, GRID_LOSS_HOLD_SECONDS=value)
 
 
+class TestGridBackupLocalConfig:
+    def test_opt_in_default_and_explicit_flag(self, monkeypatch):
+        assert TestCreepLocalConfig.load_config(monkeypatch).USE_GRID_SUBMETER_AS_BACKUP is False
+        loaded = TestCreepLocalConfig.load_config(monkeypatch, USE_GRID_SUBMETER_AS_BACKUP=True)
+        assert loaded.USE_GRID_SUBMETER_AS_BACKUP is True
+
+    @pytest.mark.parametrize("value", ["true", 1, 0, None])
+    def test_flag_requires_real_boolean(self, monkeypatch, value):
+        with pytest.raises(ValueError, match="USE_GRID_SUBMETER_AS_BACKUP must be"):
+            TestCreepLocalConfig.load_config(monkeypatch, USE_GRID_SUBMETER_AS_BACKUP=value)
+
+    @pytest.mark.parametrize(
+        "text,value", [("true\n", True), (" FALSE ", False), ("1", True), ("0", False)]
+    )
+    def test_setuphelper_option_overrides_local_flag(self, monkeypatch, text, value):
+        monkeypatch.setattr(config.Path, "read_text", lambda _path: text)
+        loaded = TestCreepLocalConfig.load_config(
+            monkeypatch, USE_GRID_SUBMETER_AS_BACKUP=not value
+        )
+        assert loaded.USE_GRID_SUBMETER_AS_BACKUP is value
+
+    def test_invalid_setuphelper_option_fails_clearly(self, monkeypatch):
+        monkeypatch.setattr(config.Path, "read_text", lambda _path: "yes")
+        with pytest.raises(
+            ValueError, match="use_grid_submeter_as_backup must contain true or false"
+        ):
+            TestCreepLocalConfig.load_config(monkeypatch)
+
+
 class TestColors:
     """Test ANSI Colors class"""
 

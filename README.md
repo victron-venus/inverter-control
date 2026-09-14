@@ -42,7 +42,7 @@ See the [release strategy](RELEASING.md) for validation, nightly, beta, RC and s
 ## Completed Features
 
 - ✅ **Release packaging**: Candidate artifacts and checksums; see the [release strategy](RELEASING.md).
-- ✅ **Hardware Watchdog Failsafe**: 30-second heartbeat watchdog automatically resets Victron ESS setpoint to fallback mode (0W / pass-through) if MQTT or D-Bus telemetry stops updating (PR #63, commit 0212a4c)
+- ✅ **Hardware Watchdog Failsafe**: A stalled control loop falls back to 0 W. With `GRID_LOSS_HOLD_SECONDS` configured, meter loss holds the last accepted command for that duration, then maintains −10 W on the inverter's AC input, refreshed every 2 seconds. This keeps ESS active during the outage so solar charging can continue. Normal grid regulation resumes after the correct meter passes recovery checks; stale measurements and the old command are not replayed.
 - ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
 - ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
 - ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Optional blend of home load minus PV with measured grid; requires validation of battery flows and source timing
@@ -268,6 +268,21 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    scp local_config.py root@cerbo:/data/setupOptions/inverter-control/
    ```
    Config in `/data/setupOptions/` survives package reinstalls; a copy directly in `/data/inverter-control/` also works (kept on update once installed).
+
+   To allow a configured signed whole-grid AC submeter to take over when the
+   primary grid meter is unavailable, set `USE_GRID_SUBMETER_AS_BACKUP = True`
+   and `GRID_BACKUP_SERVICE` in that private config. The default is `False`.
+   SetupHelper also accepts a persistent `use_grid_submeter_as_backup` file in
+   the same directory containing `true` or `false`; when present it overrides
+   the Python flag. Manual interactive setup offers this option; automatic
+   installs preserve it without prompting. Restart/reinstall applies changes.
+   A selected submeter remains visible in the desktop when fallback is disabled.
+   Its source timestamp must be no older than `GRID_BACKUP_MAX_AGE_SECONDS`
+   (default 30). Once primary telemetry recovers continuously for
+   `GRID_BACKUP_RECOVERY_SECONDS` (default 5), control returns to the primary.
+   The native D-Bus transport preserves source timestamp precision. If a CLI
+   fallback rounds that timestamp more coarsely than one second, the backup
+   stays unavailable because its freshness cannot be established.
 
 4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
 

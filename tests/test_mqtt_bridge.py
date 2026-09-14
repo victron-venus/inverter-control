@@ -106,7 +106,12 @@ class TestMQTTBridge:
         mock_client.subscribe.assert_any_call("test/alert/ack")
         mock_client.subscribe.assert_any_call("solar/forecast")
         assert mock_client.subscribe.call_count == 3
-        mock_client.publish.assert_called_once_with("test/portal", "portal123", qos=0, retain=True)
+        mock_client.publish.assert_any_call("test/portal", "portal123", qos=0, retain=True)
+        assert mock_client.publish.call_count == 2
+        topic, payload = mock_client.publish.call_args.args
+        assert topic == "test/setpoint_override"
+        assert json.loads(payload) == {"value": None, "last_error": None, "request_id": None}
+        assert mock_client.publish.call_args.kwargs == {"qos": 1, "retain": True}
 
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
     @patch("inverter_control.mqtt_bridge.mqtt")
@@ -119,7 +124,8 @@ class TestMQTTBridge:
         with patch("inverter_control.config.PORTAL_ID", "your_portal_id"):
             bridge._on_connect(mock_client, None, None, 0)
 
-        mock_client.publish.assert_not_called()
+        mock_client.publish.assert_called_once()
+        assert mock_client.publish.call_args.args[0] == "test/setpoint_override"
 
     @pytest.mark.parametrize("connection_attempt", [1, 2])
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
@@ -143,8 +149,13 @@ class TestMQTTBridge:
             with patch("inverter_control.config.PORTAL_ID", "your_portal_id"):
                 bridge._on_connect(mock_client, None, None, 0)
             bridge.flush()
-            mock_client.publish.assert_called_once()
-            args, kwargs = mock_client.publish.call_args
+            notifications = [
+                item
+                for item in mock_client.publish.call_args_list
+                if item.args[0] == "test/notifications"
+            ]
+            assert len(notifications) == 1
+            args, kwargs = notifications[0]
             assert args[0] == "test/notifications"
             assert json.loads(args[1])["id"] == pending.id
             assert kwargs == {"qos": 0, "retain": False}

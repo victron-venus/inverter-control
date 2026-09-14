@@ -7,6 +7,7 @@ All configurable parameters in one place
 import functools
 import os
 import subprocess
+from pathlib import Path
 
 from inverter_control.control_flags import get_control_toggle_config
 
@@ -39,6 +40,18 @@ def _import_local_config(name: str, default=""):
         return getattr(local_config, name, default)
     except (ImportError, AttributeError):
         return default
+
+
+def _setup_boolean(name: str, default: bool):
+    """Read a persistent SetupHelper option without executing configuration text."""
+    path = Path("/data/setupOptions/inverter-control") / name
+    try:
+        value = path.read_text().strip().lower()
+    except FileNotFoundError:
+        return default
+    if value not in ("true", "false", "1", "0"):
+        raise ValueError(f"{path} must contain true or false")
+    return value in ("true", "1")
 
 
 # =============================================================================
@@ -265,9 +278,20 @@ USE_NATIVE_DBUS = os.environ.get("USE_NATIVE_DBUS", "1").lower() not in ("0", "f
 GRID_EXPECTED_SERVICE = _import_local_config("GRID_EXPECTED_SERVICE", "")
 GRID_EXPECTED_PHASES = _import_local_config("GRID_EXPECTED_PHASES", 0)
 
+# Optional aggregate signed grid measurement from a configured AC submeter.
+# The selected service remains observable when control fallback is disabled.
+# SetupHelper's persistent option takes precedence over local_config.py.
+USE_GRID_SUBMETER_AS_BACKUP = _setup_boolean(
+    "use_grid_submeter_as_backup", _import_local_config("USE_GRID_SUBMETER_AS_BACKUP", False)
+)
+GRID_BACKUP_SERVICE = _import_local_config("GRID_BACKUP_SERVICE", "")
+GRID_BACKUP_MAX_AGE_SECONDS = _import_local_config("GRID_BACKUP_MAX_AGE_SECONDS", 30.0)
+GRID_BACKUP_RECOVERY_SECONDS = _import_local_config("GRID_BACKUP_RECOVERY_SECONDS", 5.0)
+
 # Optional meter-loss policy. Hold the last accepted command for this many
-# seconds, then latch 0 W until valid grid telemetry recovers. None retains
-# the legacy watchdog timing; zero skips the hold. No stale sample is reused.
+# seconds, then maintain -10 W until valid grid telemetry recovers. Refreshes
+# keep ESS active during a meter outage. None retains the legacy watchdog
+# timing; zero skips the hold. No stale sample is reused.
 GRID_LOSS_HOLD_SECONDS = _import_local_config("GRID_LOSS_HOLD_SECONDS", None)
 
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
@@ -532,6 +556,18 @@ def _validate_config():
         checks.append("GRID_EXPECTED_SERVICE must be empty or a Victron D-Bus service name")
     if type(GRID_EXPECTED_PHASES) is not int or GRID_EXPECTED_PHASES not in (0, 1, 2):
         checks.append("GRID_EXPECTED_PHASES must be 0 (learn), 1 or 2")
+    if type(USE_GRID_SUBMETER_AS_BACKUP) is not bool:
+        checks.append("USE_GRID_SUBMETER_AS_BACKUP must be True or False")
+    if not isinstance(GRID_BACKUP_SERVICE, str) or (
+        GRID_BACKUP_SERVICE and not GRID_BACKUP_SERVICE.startswith("com.victronenergy.acload.")
+    ):
+        checks.append("GRID_BACKUP_SERVICE must be empty or an AC load D-Bus service name")
+    for name, value, low, high in (
+        ("GRID_BACKUP_MAX_AGE_SECONDS", GRID_BACKUP_MAX_AGE_SECONDS, 10, 300),
+        ("GRID_BACKUP_RECOVERY_SECONDS", GRID_BACKUP_RECOVERY_SECONDS, 0, 60),
+    ):
+        if type(value) not in (int, float) or not low <= value <= high:
+            checks.append(f"{name} must be a finite number from {low} to {high}")
     if GRID_LOSS_HOLD_SECONDS is not None and (
         type(GRID_LOSS_HOLD_SECONDS) not in (int, float) or not 0 <= GRID_LOSS_HOLD_SECONDS <= 30
     ):

@@ -187,6 +187,8 @@ class InverterController:
         self.delay = 0  # Delay counter for load switching
         self.filtered_gt: float | None = None
         self._grid_inputs_invalid = False
+        self._control_grid_selection = 0
+        self._last_backup_measurement = None
 
         self.loop_count = 0
         self.state: dict[str, Any] = {}
@@ -285,6 +287,7 @@ class InverterController:
             get_setpoint=lambda: self.previous_setpoint,
             grid_loss_hold_seconds=_config.GRID_LOSS_HOLD_SECONDS,
         )
+        self._control_history_generation = self._watchdog.control_generation()
 
         # Webhook server for pre-charge triggers from solar-forecast
         self._webhook_server = get_webhook_server(
@@ -309,12 +312,17 @@ class InverterController:
         logger.info(f"Power limits changed to [{self.power_limit_min}, {self.power_limit_max}]")
         return {"min": self.power_limit_min, "max": self.power_limit_max}
 
+    def set_dry_run(self, enabled: bool) -> bool:
+        with self._watchdog._lock:
+            self.dry_run = enabled
+            self._watchdog.dry_run = enabled
+            mode = "DRY-RUN" if enabled else "LIVE"
+            logger.info(f"Mode changed to {mode}")
+            return self.dry_run
+
     def toggle_dry_run(self) -> bool:
-        self.dry_run = not self.dry_run
-        self._watchdog.dry_run = self.dry_run
-        mode = "DRY-RUN" if self.dry_run else "LIVE"
-        logger.info(f"Mode changed to {mode}")
-        return self.dry_run
+        with self._watchdog._lock:
+            return self.set_dry_run(not self.dry_run)
 
     def toggle_ess_mode(self) -> dict[str, Any]:
         current = self.victron.get_ess_mode()
@@ -461,8 +469,27 @@ class InverterController:
         self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
         return True
 
+    def get_setpoint_override(self) -> dict:
+        return self._watchdog.get_setpoint_override()
+
+    def set_setpoint_override(self, value: int | None, request_id: str | None = None) -> dict:
+        status = self._watchdog.set_setpoint_override(value, request_id)
+        if status["last_error"] is None:
+            # Reset calculation history on the main thread's next cycle; MQTT
+            # callbacks must not mutate a calculator currently in use.
+            self.manual_setpoint = None
+        self._update_grid_loss_state()
+        return status
+
     def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""
+        if (
+            sys_data.get("_grid_backup")
+            and sys_data.get("_grid_measurement_time") == self._last_backup_measurement
+        ):
+            # HA can report more slowly than the control loop. Refresh the
+            # accepted output, but apply feedback only once per source sample.
+            return self.previous_setpoint, "[SUBMETER HOLD] "
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
         mppt_total = sum(m["w"] for m in mppt_data.values())
@@ -478,7 +505,7 @@ class InverterController:
         # Blend with instantaneous CT meter for stable control
         home_total = 0.0
         derived_gt = None
-        if ENABLE_GRID_SMOOTHING_WITH_HOME:
+        if ENABLE_GRID_SMOOTHING_WITH_HOME and not sys_data.get("_grid_backup"):
             home_total = self.ha.get_vue_sensor("total", 0)
             if home_total > 0:
                 pv_total = mppt_total + pv_inverter_total
@@ -840,6 +867,9 @@ class InverterController:
                 out.pop(k, None)
         # Always publish current flags so MQTT/HA see set_control_flag immediately
         out["booleans"] = dict(self._control_flags)
+        out["dry_run"] = self.dry_run
+        # Daemon-owned control intent is never stripped by the slim payload.
+        out["setpoint_override"] = self.get_setpoint_override()
         # Include presentation even before the first telemetry sweep.
         out["ui_config"] = self.ui_config
         return out
@@ -860,6 +890,14 @@ class InverterController:
 
     def _grid_ready_for_control(self, sys_data: dict[str, Any]) -> bool:
         """Gate control on a usable grid snapshot and orderly watchdog recovery."""
+        self.state.update(
+            grid_control_source=sys_data.get("_grid_source"),
+            grid_control_power=sys_data.get("gt") if sys_data.get("_grid_valid") else None,
+            grid_using_backup=sys_data.get("_grid_backup", False),
+            grid_backup_available=sys_data.get("_grid_backup_available", False),
+            grid_backup=sys_data.get("_grid_backup_status"),
+            grid_primary_reason=sys_data.get("_grid_primary_reason"),
+        )
         if sys_data.get("_grid_valid") is not True:
             self._watchdog.mark_dbus_invalid()
             # The same watchdog owns both outage and stalled-loop writes.
@@ -883,6 +921,18 @@ class InverterController:
             self._update_grid_loss_state()
             return False
         self._watchdog.mark_dbus_update()
+        selection = sys_data.get("_grid_selection_generation", 0)
+        if selection != self._control_grid_selection:
+            self._control_grid_selection = selection
+            self._last_backup_measurement = None
+            self.filtered_gt = None
+            self._raw_derived_gt = None
+            self.calculator.reset_measurement_history()
+            for grid_filter in (self.grid_filter, self.derived_grid_filter):
+                if grid_filter is not None:
+                    grid_filter.reset()
+            logger.info("Grid control source changed to %s", sys_data.get("_grid_source"))
+            return False  # Recalculate on the next cycle, including before-write switches.
         if self._watchdog.is_triggered():
             # Its two-check recovery must finish (including an accepted restore)
             # before a fresh normal write can otherwise race with that restore.
@@ -901,17 +951,33 @@ class InverterController:
 
     def _update_grid_loss_state(self) -> None:
         """Expose outage progress even when regular telemetry rebuilds pause."""
+        # Keep the applied baseline synchronized with Start/Stop and normal
+        # writes; no snapshot from before a mode change may overwrite it later.
+        with self._watchdog._lock:
+            self._update_grid_loss_state_locked()
+
+    def _update_grid_loss_state_locked(self) -> None:
         status = self._watchdog.get_status()
         self.state.update(
             {key: value for key, value in status.items() if key.startswith("grid_loss_")}
         )
+        override = self.get_setpoint_override()
+        self.state["setpoint_override"] = override
+        if override["value"] is not None:
+            # A failed refresh keeps the last accepted manual value and its
+            # explicit error; automatic policies cannot substitute another one.
+            self.previous_setpoint = override["value"]
+            self.current_setpoint = override["value"]
+            self.state["setpoint"] = override["value"]
+            return
         if status["grid_loss_state"] == "holding":
             self.state["setpoint"] = self.previous_setpoint
-        if status["grid_loss_zero_applied"]:
+        if status["grid_loss_fallback_applied"]:
             # Only an accepted safety write changes the displayed/applied state.
-            self.previous_setpoint = 0
-            self.current_setpoint = 0
-            self.state["setpoint"] = 0
+            fallback = status["grid_loss_fallback_setpoint"]
+            self.previous_setpoint = fallback
+            self.current_setpoint = fallback
+            self.state["setpoint"] = fallback
 
     def run_cycle(self) -> bool:
         cycle_started = time.monotonic()
@@ -934,7 +1000,26 @@ class InverterController:
 
         try:
             self.last_console_line = None
+            generation = self._watchdog.control_generation()
+            if generation != self._control_history_generation:
+                self.filtered_gt = None
+                self._raw_derived_gt = None
+                self.calculator.reset_measurement_history()
+                for grid_filter in (self.grid_filter, self.derived_grid_filter):
+                    if grid_filter is not None:
+                        grid_filter.reset()
+                self._control_history_generation = generation
             sys_data = self.victron.get_system_data()
+            if self.get_setpoint_override()["value"] is not None:
+                # Observe meter health for the later Stop transition, but the
+                # watchdog independently maintains the explicit manual value.
+                self._grid_ready_for_control(sys_data)
+                self._watchdog.check_grid_loss()
+                self._update_grid_loss_state()
+                self.state["grid_control_valid"] = False
+                self.state["grid_control_reason"] = "Manual setpoint override active"
+                self.metrics.record_cycle(cycle_started, self.loop_interval)
+                return True
             if not self._grid_ready_for_control(sys_data):
                 # Preserve pending manual/precharge requests and all control
                 # policy state while the established watchdog owns the output.
@@ -960,19 +1045,44 @@ class InverterController:
             self.handle_minimize_charging(sys_data)
             _stage("minimize_charging")
 
-            if not self._grid_ready_for_control(self.victron.get_grid_status()):
+            current_grid = self.victron.get_grid_status()
+            if current_grid.get("_grid_selection_generation") != sys_data.get(
+                "_grid_selection_generation"
+            ) or current_grid.get("_grid_measurement_time") != sys_data.get(
+                "_grid_measurement_time"
+            ):
+                # Recalculate rather than writing across a source/sample edge.
+                self.metrics.record_cycle(cycle_started, self.loop_interval)
+                return True
+            if not self._grid_ready_for_control(current_grid):
                 self.metrics.record_cycle(cycle_started, self.loop_interval)
                 return True
             write_ok = self.dry_run
+            previous_for_display = self.previous_setpoint
+
+            def accept_control_setpoint():
+                # Commit the applied baseline while the hardware-write lock
+                # is held, before another thread can accept a manual override.
+                self.previous_setpoint = setpoint
+                self._last_backup_measurement = (
+                    sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
+                )
+
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
+                write_ok = self._watchdog.write_control_setpoint(
+                    setpoint, generation, dry_run=True, on_accept=accept_control_setpoint
+                )
             else:
                 write_started = time.perf_counter()
-                write_ok = self.victron.set_grid_setpoint(setpoint)
+                write_ok = self._watchdog.write_control_setpoint(
+                    setpoint, generation, on_accept=accept_control_setpoint
+                )
                 self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
-                # Only an accepted write proves setpoint liveness.
-                if write_ok:
-                    self._watchdog.mark_setpoint_update()
+            if generation != self._watchdog.control_generation():
+                self._update_grid_loss_state()
+                self.metrics.record_cycle(cycle_started, self.loop_interval)
+                return True
 
             if write_ok and pending_manual is not None and self.manual_setpoint == pending_manual:
                 self.manual_setpoint = None
@@ -989,7 +1099,7 @@ class InverterController:
 
             filtered_display = self.filtered_gt if self.filtered_gt is not None else sys_data["gt"]
             line = self.console.format_line(
-                sys_data, setpoint, self.previous_setpoint, flags, filtered_display
+                sys_data, setpoint, previous_for_display, flags, filtered_display
             )
             self.last_console_line = line
             broadcast_line(line)
@@ -1001,8 +1111,6 @@ class InverterController:
             if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
                 self.update_state(sys_data, setpoint)
                 self._last_update_state_time = time.monotonic()
-            if write_ok:
-                self.previous_setpoint = setpoint
             _stage("update_state")
 
             self.metrics.record_cycle(cycle_started, self.loop_interval)

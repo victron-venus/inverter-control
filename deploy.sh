@@ -53,7 +53,9 @@ if [[ "${PUSH_LOCAL_CONFIG:-}" = "" ]]; then
     fi
 fi
 
-tar \
+COPYFILE_DISABLE=1 tar \
+    --no-xattrs \
+    --exclude='._*' \
     --exclude='.git' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \

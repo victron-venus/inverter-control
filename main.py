@@ -192,7 +192,6 @@ def _setup_mqtt_bridge(controller):
     if not bridge:
         return None
 
-    bridge.connect()
     bridge.register_callback("toggle", lambda p: _handle_toggle(controller, p))
     bridge.register_callback("press", lambda p: controller.ha.press_button(p.get("entity", "")))
 
@@ -205,7 +204,35 @@ def _setup_mqtt_bridge(controller):
         controller.set_manual_setpoint(val)
 
     bridge.register_callback("setpoint", _safe_setpoint)
-    bridge.register_callback("dry_run", lambda p: controller.toggle_dry_run())
+
+    def _setpoint_override(payload):
+        request_id = payload.get("request_id") if isinstance(payload, dict) else None
+        if request_id is not None and not isinstance(request_id, str):
+            request_id = None
+        if not isinstance(payload, dict) or "value" not in payload:
+            controller._watchdog.reject_setpoint_override(
+                "Expected JSON object with value: int32 integer or null", request_id
+            )
+            return
+        controller.set_setpoint_override(payload["value"], request_id)
+
+    bridge.register_callback("setpoint_override", _setpoint_override)
+    controller._watchdog.set_override_status_callback(bridge.publish_setpoint_override)
+
+    def _dry_run(payload):
+        if isinstance(payload, dict) and "value" in payload:
+            if type(payload["value"]) is not bool:
+                logger.warning("MQTT dry_run rejected: value must be boolean")
+                return
+            controller.set_dry_run(payload["value"])
+        else:
+            # Compatibility with older desktop versions that sent a toggle.
+            controller.toggle_dry_run()
+        # Publish immediately, including when meter loss pauses normal state
+        # rebuilding. Duplicate delivery of an explicit value is idempotent.
+        bridge.publish_state(controller.get_state_for_mqtt())
+
+    bridge.register_callback("dry_run", _dry_run)
 
     def _safe_limits(p):
         try:
@@ -228,6 +255,10 @@ def _setup_mqtt_bridge(controller):
         controller.set_loop_interval(val)
 
     bridge.register_callback("loop_interval", _safe_loop_interval)
+    # Install every command handler and the startup null status before the
+    # broker can deliver commands. Overrides intentionally do not survive a
+    # daemon restart; closing the desktop does not stop an active daemon mode.
+    bridge.connect()
     print(f"  MQTT bridge: {MQTT_BROKER}:{MQTT_PORT} (topic: {MQTT_TOPIC_PREFIX}/)")
     return bridge
 
@@ -278,6 +309,7 @@ def _publish_state(controller, mqtt_bridge) -> None:
     if not mqtt_bridge or not mqtt_bridge.connected:
         return
     mqtt_bridge.publish_state(controller.get_state_for_mqtt())
+    controller._watchdog.publish_override_status()
     # Mark MQTT telemetry as fresh for hardware watchdog
     controller._watchdog.mark_mqtt_update()
     # Publish console line if available

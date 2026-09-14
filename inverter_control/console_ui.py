@@ -51,7 +51,8 @@ class ConsoleUI:
         home_total = int(self.ha.get_vue_sensor("total", tt))
         smooth_str = f"[{int(filtered_gt)}]" if abs(gt - filtered_gt) > 10 else ""
 
-        grid_str = f"{C.GREEN}g:{gt}{smooth_str}({g1}+{g2}){net_usage}{C.RESET}"
+        phases = "submeter total" if sys_data.get("_grid_total_only") else f"{g1}+{g2}"
+        grid_str = f"{C.GREEN}g:{gt}{smooth_str}({phases}){net_usage}{C.RESET}"
         usage_str = f"{tt}({t1}+{t2}) tt:{home_total}"
 
         # Extracted sections
