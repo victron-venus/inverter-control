@@ -897,11 +897,12 @@ class InverterController:
         )
         if status["grid_loss_state"] == "holding":
             self.state["setpoint"] = self.previous_setpoint
-        if status["grid_loss_zero_applied"]:
+        if status["grid_loss_fallback_applied"]:
             # Only an accepted safety write changes the displayed/applied state.
-            self.previous_setpoint = 0
-            self.current_setpoint = 0
-            self.state["setpoint"] = 0
+            fallback = status["grid_loss_fallback_setpoint"]
+            self.previous_setpoint = fallback
+            self.current_setpoint = fallback
+            self.state["setpoint"] = fallback
 
     def run_cycle(self) -> bool:
         cycle_started = time.monotonic()

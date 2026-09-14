@@ -6,6 +6,10 @@ import time
 
 logger = logging.getLogger("inverter-control")
 
+GRID_LOSS_FALLBACK_SETPOINT = -10
+GRID_LOSS_REFRESH_INTERVAL = 10.0
+GRID_LOSS_RETRY_INTERVAL = 1.0
+
 
 class WatchdogTimeoutError(Exception):
     """Raised when a watchdog timeout occurs"""
@@ -17,11 +21,13 @@ class HardwareWatchdog:
 
     Monitors setpoint-write liveness (D-Bus + MQTT). If the control loop stops
     writing grid setpoints for timeout seconds, forces ESS setpoint to 0W
-    (pass-through/fallback mode) to prevent uncontrolled grid export/import if
-    the control loop stalls or crashes.
+    if the control loop stalls or crashes. An explicitly detected grid-meter
+    outage instead holds briefly, then maintains a -10W AC-input command so
+    the inverter's external-control timeout does not stop solar charging.
 
-    Both setpoint writes and telemetry must stop before triggering. Failed
-    fallback writes are retried once per check until the transport accepts one.
+    Both setpoint writes and telemetry must stop before the generic fallback
+    triggers. Failed generic writes retry once per check; meter-loss writes
+    retry at most once per second until the transport accepts one.
 
     Runs as a daemon thread checking heartbeats every check_interval seconds
     (WATCHDOG_CHECK_INTERVAL, default 5s).
@@ -49,7 +55,10 @@ class HardwareWatchdog:
         self._grid_invalid_since: float | None = None
         self._grid_loss_forced = False
         self._has_valid_setpoint = False
-        self._grid_loss_zero_applied = False
+        self._grid_loss_fallback_applied = False
+        self._grid_loss_refresh_pending = False
+        self._last_grid_loss_write: float | None = None
+        self._last_grid_loss_attempt: float | None = None
         self._enabled = False
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -105,7 +114,7 @@ class HardwareWatchdog:
             self._last_setpoint_update = time.monotonic()
             if not self._telemetry_invalid:
                 self._has_valid_setpoint = True
-                self._grid_loss_zero_applied = False
+                self._grid_loss_fallback_applied = False
 
     def check_grid_loss(self):
         """Enforce the optional outage deadline at control-loop cadence."""
@@ -123,18 +132,55 @@ class HardwareWatchdog:
                 or elapsed >= self.grid_loss_hold_seconds
             ):
                 if not self._grid_loss_forced:
-                    logger.warning("Grid loss: hold expired; requesting 0W until meter recovery")
+                    logger.warning(
+                        "Grid loss: hold expired; maintaining %dW until meter recovery",
+                        GRID_LOSS_FALLBACK_SETPOINT,
+                    )
+                    # A prior generic watchdog zero is not the meter-loss
+                    # fallback. Require an accepted -10W before recovery.
+                    self._hardware_forced = False
+                    self._grid_loss_refresh_pending = True
+                    self._last_grid_loss_write = None
+                    self._last_grid_loss_attempt = None
                 self._grid_loss_forced = True
                 self._triggered = True
                 # Recovery must calculate a new command from fresh data,
                 # including when an earlier generic watchdog already forced 0.
                 self._pre_forced_setpoint = 0
-                if self._hardware_forced:
-                    self._grid_loss_zero_applied = True
-        if self._grid_loss_forced and not self._hardware_forced:
-            # A rejected zero remains pending even if the meter returns before
-            # the retry; recovery cannot silently skip the required write.
-            self._apply_failsafe()
+        if self._grid_loss_forced:
+            self._maintain_grid_loss_fallback_locked(now)
+
+    def _maintain_grid_loss_fallback_locked(self, now: float) -> None:
+        """Refresh only the fallback, using monotonic accepted/attempt times."""
+        if self._last_grid_loss_attempt is not None:
+            if self._grid_loss_refresh_pending:
+                if now - self._last_grid_loss_attempt < GRID_LOSS_RETRY_INTERVAL:
+                    return
+            elif (
+                self._last_grid_loss_write is not None
+                and now - self._last_grid_loss_write < GRID_LOSS_REFRESH_INTERVAL
+            ):
+                return
+        self._last_grid_loss_attempt = now
+        self._grid_loss_refresh_pending = True
+        try:
+            if not self.victron.set_grid_setpoint(GRID_LOSS_FALLBACK_SETPOINT):
+                logger.error("Grid loss: fallback write rejected; retrying in 1s")
+                return
+        except Exception:
+            logger.exception("Grid loss: fallback write failed; retrying in 1s")
+            return
+        first_write = not self._hardware_forced
+        self._hardware_forced = True
+        self._grid_loss_fallback_applied = True
+        self._grid_loss_refresh_pending = False
+        self._last_grid_loss_write = time.monotonic()
+        if first_write:
+            logger.warning(
+                "WATCHDOG: grid telemetry lost - applied %dW AC-input fallback; refreshing every %.0fs",
+                GRID_LOSS_FALLBACK_SETPOINT,
+                GRID_LOSS_REFRESH_INTERVAL,
+            )
 
     def start(self):
         """Start the watchdog monitoring thread"""
@@ -150,7 +196,10 @@ class HardwareWatchdog:
         self._grid_invalid_since = None
         self._grid_loss_forced = False
         self._has_valid_setpoint = False
-        self._grid_loss_zero_applied = False
+        self._grid_loss_fallback_applied = False
+        self._grid_loss_refresh_pending = False
+        self._last_grid_loss_write = None
+        self._last_grid_loss_attempt = None
         self._telemetry_invalid = False
         now = time.monotonic()
         self._last_dbus_update = now
@@ -184,8 +233,21 @@ class HardwareWatchdog:
             return
         now = time.monotonic()
         self._check_grid_loss_locked(now)
-        if self._grid_loss_forced and not self._hardware_forced:
-            self._success_count = 0
+        if self._grid_loss_forced:
+            # A meter-loss command must never be replaced by the generic zero
+            # when normal control has intentionally stopped writing setpoints.
+            self._fail_count = 0
+            if (
+                not self._hardware_forced
+                or self._grid_loss_refresh_pending
+                or self._telemetry_invalid
+                or now - self._last_dbus_update > self.timeout_seconds
+            ):
+                self._success_count = 0
+                return
+            self._success_count += 1
+            if self._success_count >= self._success_threshold:
+                self._recover_from_failsafe_locked()
             return
         setpoint_age = now - self._last_setpoint_update
         dbus_age = now - self._last_dbus_update
@@ -218,15 +280,14 @@ class HardwareWatchdog:
     def _apply_failsafe(self):
         """Force a safe 0W setpoint, remembering the prior value for recovery.
 
-        Deliberately does NOT touch the ESS assistant mode: with Hub4 in
-        External control (mode 3) the GX keeps honoring AcPowerSetpoint=0,
-        which is a complete failsafe. Flipping Hub4Mode 3->1->3 on recovery
-        made vebus dip into passthru each time - and set_ess_mode(False) also
-        resets BatteryLife State to 0 - so every transient stall caused its
-        own grid disturbance.
+        Deliberately does not touch the ESS assistant mode or BatteryLife.
+        The distinct meter-loss policy owns its maintained -10W command.
         """
         if self.dry_run:
             logger.warning("[DRY] watchdog would force 0W setpoint")
+            return
+        if self._grid_loss_forced:
+            self._maintain_grid_loss_fallback_locked(time.monotonic())
             return
         if not self._hardware_forced:
             try:
@@ -244,12 +305,8 @@ class HardwareWatchdog:
                 logger.error("WATCHDOG: failsafe write rejected; retrying on the next check")
                 return
             self._hardware_forced = True
-            if self._grid_loss_forced:
-                self._grid_loss_zero_applied = True
-            logger.warning(
-                "WATCHDOG: %s - forced 0W grid setpoint",
-                "grid telemetry lost" if self._grid_loss_forced else "stalled loop detected",
-            )
+            self._grid_loss_fallback_applied = False
+            logger.warning("WATCHDOG: stalled loop detected - forced 0W grid setpoint")
         except Exception:
             logger.exception("WATCHDOG: failsafe write failed")
 
@@ -262,9 +319,9 @@ class HardwareWatchdog:
         if self._telemetry_invalid:
             return
         if self._grid_loss_forced:
-            if not self._hardware_forced:
+            if not self._hardware_forced or self._grid_loss_refresh_pending:
                 return
-            # Keep the accepted zero. The controller will calculate a fresh
+            # Keep the accepted fallback. The controller will calculate a fresh
             # command after two valid checks, never replay a pre-outage value.
             self._grid_loss_forced = False
             self._grid_invalid_since = None
@@ -302,8 +359,9 @@ class HardwareWatchdog:
             if self.grid_loss_hold_seconds is None:
                 loss_state = "disabled"
             elif self._grid_loss_forced:
-                loss_state = "zero" if self._hardware_forced else "zero_pending"
-                if self._hardware_forced and not self._telemetry_invalid:
+                pending = not self._hardware_forced or self._grid_loss_refresh_pending
+                loss_state = "fallback_pending" if pending else "fallback"
+                if not pending and not self._telemetry_invalid:
                     loss_state = "recovering"
                 remaining = 0.0
             elif self._telemetry_invalid:
@@ -327,5 +385,15 @@ class HardwareWatchdog:
                 "grid_loss_hold_seconds": self.grid_loss_hold_seconds,
                 "grid_loss_elapsed": elapsed,
                 "grid_loss_remaining": remaining,
-                "grid_loss_zero_applied": self._grid_loss_zero_applied,
+                "grid_loss_fallback_applied": self._grid_loss_fallback_applied,
+                "grid_loss_fallback_setpoint": GRID_LOSS_FALLBACK_SETPOINT,
+                "grid_loss_refresh_pending": self._grid_loss_refresh_pending,
+                "grid_loss_fallback_write_age": (
+                    None
+                    if self._last_grid_loss_write is None
+                    else max(0.0, now - self._last_grid_loss_write)
+                ),
+                # Compatibility for older consumers; -10W must never be
+                # advertised as an accepted zero command.
+                "grid_loss_zero_applied": False,
             }

@@ -94,9 +94,11 @@ EVCHARGER_INSTANCE = 40
 GRID_EXPECTED_SERVICE = ""
 GRID_EXPECTED_PHASES = 0
 
-# Optional delay after grid invalidation before commanding 0 W. During this
+# Optional delay after grid invalidation before commanding -10 W. During this
 # delay the last accepted command remains unchanged; stale readings are not
-# used for control. None keeps legacy watchdog timing, 0 means immediate zero.
+# used for control. The fallback is refreshed every 10 seconds to keep ESS
+# active and allow solar charging. None keeps legacy watchdog timing;
+# 0 means immediate fallback. -10 W is export at the inverter's AC input.
 # For a pinned external meter, a short hold can bridge transient outages:
 # GRID_LOSS_HOLD_SECONDS = 3.0
 GRID_LOSS_HOLD_SECONDS = None

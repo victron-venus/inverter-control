@@ -42,7 +42,7 @@ See the [release strategy](RELEASING.md) for validation, nightly, beta, RC and s
 ## Completed Features
 
 - ✅ **Release packaging**: Candidate artifacts and checksums; see the [release strategy](RELEASING.md).
-- ✅ **Hardware Watchdog Failsafe**: 30-second heartbeat watchdog automatically resets Victron ESS setpoint to fallback mode (0W / pass-through) if MQTT or D-Bus telemetry stops updating (PR #63, commit 0212a4c)
+- ✅ **Hardware Watchdog Failsafe**: A stalled control loop falls back to 0 W. With `GRID_LOSS_HOLD_SECONDS` configured, meter loss holds the last accepted command for that duration, then maintains −10 W on the inverter's AC input, refreshed every 10 seconds. This keeps ESS active during the outage so solar charging can continue. Normal grid regulation resumes after the correct meter passes recovery checks; stale measurements and the old command are not replayed.
 - ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
 - ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
 - ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Optional blend of home load minus PV with measured grid; requires validation of battery flows and source timing

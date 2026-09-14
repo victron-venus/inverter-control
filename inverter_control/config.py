@@ -264,8 +264,9 @@ GRID_EXPECTED_SERVICE = _import_local_config("GRID_EXPECTED_SERVICE", "")
 GRID_EXPECTED_PHASES = _import_local_config("GRID_EXPECTED_PHASES", 0)
 
 # Optional meter-loss policy. Hold the last accepted command for this many
-# seconds, then latch 0 W until valid grid telemetry recovers. None retains
-# the legacy watchdog timing; zero skips the hold. No stale sample is reused.
+# seconds, then maintain -10 W until valid grid telemetry recovers. Refreshes
+# keep ESS active during a meter outage. None retains the legacy watchdog
+# timing; zero skips the hold. No stale sample is reused.
 GRID_LOSS_HOLD_SECONDS = _import_local_config("GRID_LOSS_HOLD_SECONDS", None)
 
 # Grid zero targeting - Stability tuning for VM-3P75CT or similar fast CT meters
