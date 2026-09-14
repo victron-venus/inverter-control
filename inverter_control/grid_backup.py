@@ -3,6 +3,7 @@
 import re
 import threading
 import time
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .grid_telemetry import _number
@@ -29,6 +30,16 @@ def parse_backup_snapshot(output: str) -> dict[str, Any]:
             )
             text = re.search(r'string "Value"\s+variant\s+string\s+"([^"\n]+)"', block)
             fields[path] = numeric.group(1) if numeric else text.group(1) if text else None
+            if path == "/LastUpdate" and numeric:
+                # dbus-send formats doubles with limited significant digits:
+                # 1.78935e+09 can conceal hours of source age. Fail closed if
+                # the text cannot identify the source timestamp to a second.
+                try:
+                    timestamp = Decimal(numeric.group(1))
+                    if not timestamp.is_finite() or timestamp.as_tuple().exponent > 0:
+                        fields[path] = None
+                except InvalidOperation:
+                    fields[path] = None
     return fields
 
 

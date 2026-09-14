@@ -280,6 +280,9 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    Its source timestamp must be no older than `GRID_BACKUP_MAX_AGE_SECONDS`
    (default 30). Once primary telemetry recovers continuously for
    `GRID_BACKUP_RECOVERY_SECONDS` (default 5), control returns to the primary.
+   The native D-Bus transport preserves source timestamp precision. If a CLI
+   fallback rounds that timestamp more coarsely than one second, the backup
+   stays unavailable because its freshness cannot be established.
 
 4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
 

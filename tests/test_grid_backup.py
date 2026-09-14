@@ -150,6 +150,24 @@ string "/CustomName" array [ dict entry(string "Value" variant string "Main supp
     client.call_busitem.assert_called_once_with(SERVICE, "/", "GetItems", timeout=0.5)
 
 
+@pytest.mark.parametrize(
+    "timestamp,expected",
+    [
+        ("1.78935e+09", None),
+        ("nan", None),
+        ("invalid", None),
+        ("1789350000", "1789350000"),
+        ("1.789350000e+09", "1.789350000e+09"),
+        ("1789350000.123", "1789350000.123"),
+    ],
+)
+def test_cli_rejects_timestamp_rounding_that_can_conceal_staleness(timestamp, expected):
+    output = (
+        f'string "/LastUpdate" array [ dict entry(string "Value" variant double {timestamp} ) ]'
+    )
+    assert parse_backup_snapshot(output)["/LastUpdate"] == expected
+
+
 def test_backup_state_survives_slim_mqtt_and_unchanged_samples_hold(meter_clock, monkeypatch):
     controller, _, _, calculator = _make_controller()
     selected = ready_backup().select(PRIMARY)
@@ -168,3 +186,22 @@ def test_backup_state_survives_slim_mqtt_and_unchanged_samples_hold(meter_clock,
         "[SUBMETER HOLD] ",
     )
     calculator.calculate.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_runtime_applies_flag_but_polls_selected_service_for_display(
+    meter_clock, monkeypatch, enabled
+):
+    from inverter_control import victron
+
+    monkeypatch.setattr(victron, "GRID_BACKUP_SERVICE", SERVICE)
+    monkeypatch.setattr(victron, "USE_GRID_SUBMETER_AS_BACKUP", enabled)
+    monkeypatch.setattr(victron.VictronDBus, "_discover_services", lambda _: None)
+    reader = victron.VictronDBus(test_mode=True)
+    reader._native = SimpleNamespace(get_items_values=MagicMock(return_value=snapshot()))
+    reader._poll_grid_backup()
+    reader._poll_grid_backup()
+    reader._native.get_items_values.assert_called_once_with(SERVICE, timeout=0.5)
+    status = reader.get_grid_status()
+    assert status["_grid_backup"] is enabled
+    assert status["_grid_backup_status"]["name"] == "Main supply"
