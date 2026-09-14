@@ -19,5 +19,47 @@
     "Native Venus OS Python/D-Bus and hardware tests require a separate target acceptance run. Existing integration job checks shared mocks."
   ],
   "container_assets": {},
-  "visibility": "public"
+  "visibility": "public",
+  "versioning": {
+    "schema": 1,
+    "promotion": "promote-bytes",
+    "files": [
+      {
+        "path": "version",
+        "format": "text",
+        "value": "package"
+      },
+      {
+        "path": "pyproject.toml",
+        "format": "toml",
+        "value": "package",
+        "field": "project.version",
+        "ecosystem": "pep440"
+      },
+      {
+        "path": "uv.lock",
+        "format": "uv-lock",
+        "value": "package",
+        "package": "inverter-control",
+        "ecosystem": "pep440"
+      }
+    ],
+    "artifacts": [
+      {
+        "path": "inverter-control-*.tar.gz",
+        "format": "tar-text",
+        "value": "package",
+        "member": "inverter-control/version"
+      },
+      {
+        "path": "inverter-control-*.tar.gz",
+        "format": "tar-toml",
+        "value": "package",
+        "member": "inverter-control/pyproject.toml",
+        "field": "project.version",
+        "ecosystem": "pep440"
+      }
+    ],
+    "toolkit_revision": "5671b9a05817576a8ae6bd69cacfb3202c60ad0a"
+  }
 }
