@@ -454,7 +454,7 @@ class NativeDbusClient:
             if isinstance(path, str)
         }
 
-    def get_items_values(self, service: str, timeout: float = 0.5) -> dict[str, str | None] | None:
+    def get_items_values(self, service: str, timeout: float = 0.5) -> dict[str, object] | None:
         """Read the GetItems snapshot used by aiovelib services."""
         reply = self.call_busitem(service, "/", "GetItems", timeout=timeout)
         if reply is None or not reply.body or not isinstance(reply.body[0], dict):

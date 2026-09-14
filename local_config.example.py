@@ -95,7 +95,12 @@ GRID_EXPECTED_SERVICE = ""
 GRID_EXPECTED_PHASES = 0
 
 # Optional signed aggregate grid submeter published as an AC load.
-# Choose a service explicitly; leave empty to disable reserve measurements.
+# Enable use during primary meter loss, and explicitly select a whole-grid
+# measurement service. A selected service is shown in the desktop even when
+# fallback is disabled. This must measure net grid import/export, not a branch.
+# SetupHelper option /data/setupOptions/inverter-control/use_grid_submeter_as_backup
+# (true/false) takes precedence over this flag when present.
+USE_GRID_SUBMETER_AS_BACKUP = False
 GRID_BACKUP_SERVICE = ""
 GRID_BACKUP_MAX_AGE_SECONDS = 30.0
 GRID_BACKUP_RECOVERY_SECONDS = 5.0

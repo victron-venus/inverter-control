@@ -885,6 +885,7 @@ class InverterController:
             grid_control_power=sys_data.get("gt") if sys_data.get("_grid_valid") else None,
             grid_using_backup=sys_data.get("_grid_backup", False),
             grid_backup_available=sys_data.get("_grid_backup_available", False),
+            grid_backup=sys_data.get("_grid_backup_status"),
             grid_primary_reason=sys_data.get("_grid_primary_reason"),
         )
         if sys_data.get("_grid_valid") is not True:

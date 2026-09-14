@@ -29,6 +29,29 @@ fi
 if [ "$scriptAction" == 'INSTALL' ]; then
     logMessage "Installing $packageName"
 
+    # Optional PackageManager setting. Absence defers to local_config.py;
+    # presence explicitly overrides that flag and survives package upgrades.
+    backupOption="/data/setupOptions/$packageName/use_grid_submeter_as_backup"
+    if [ -f "$backupOption" ]; then
+        backupValue=$(tr '[:upper:]' '[:lower:]' < "$backupOption" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        case "$backupValue" in
+            true|false|1|0) ;;
+            *) echo "ERROR: $backupOption must contain true or false" >&2; exit 1 ;;
+        esac
+    fi
+    if [ -t 0 ] && [ "$userInteraction" = true ]; then
+        echo "Use the configured grid submeter when the primary meter is unavailable?"
+        read -r -p "Enter true/false, or leave blank to keep the current setting: " backupAnswer
+        case "$backupAnswer" in
+            true|false)
+                mkdir -p "$(dirname "$backupOption")" || exit $?
+                printf '%s\n' "$backupAnswer" > "$backupOption" || exit $?
+                ;;
+            '') ;;
+            *) echo "ERROR: expected true or false" >&2; exit 1 ;;
+        esac
+    fi
+
     # Use one installer for PackageManager, local updates and webhook releases.
     # The package directory may be the source; update.sh handles that safely.
     mkdir -p "$installDir"

@@ -263,6 +263,18 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    ```
    Config in `/data/setupOptions/` survives package reinstalls; a copy directly in `/data/inverter-control/` also works (kept on update once installed).
 
+   To allow a configured signed whole-grid AC submeter to take over when the
+   primary grid meter is unavailable, set `USE_GRID_SUBMETER_AS_BACKUP = True`
+   and `GRID_BACKUP_SERVICE` in that private config. The default is `False`.
+   SetupHelper also accepts a persistent `use_grid_submeter_as_backup` file in
+   the same directory containing `true` or `false`; when present it overrides
+   the Python flag. Manual interactive setup offers this option; automatic
+   installs preserve it without prompting. Restart/reinstall applies changes.
+   A selected submeter remains visible in the desktop when fallback is disabled.
+   Its source timestamp must be no older than `GRID_BACKUP_MAX_AGE_SECONDS`
+   (default 30). Once primary telemetry recovers continuously for
+   `GRID_BACKUP_RECOVERY_SECONDS` (default 5), control returns to the primary.
+
 4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
 
 #### How PackageManager Works

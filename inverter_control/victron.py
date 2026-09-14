@@ -23,6 +23,7 @@ from .config import (
     GRID_EXPECTED_PHASES,
     GRID_EXPECTED_SERVICE,
     INVERTER_STATES,
+    USE_GRID_SUBMETER_AS_BACKUP,
     USE_NATIVE_DBUS,
 )
 from .dbus_native import NativeDbusClient
@@ -275,7 +276,10 @@ class VictronDBus:
         )
         self._grid_backup = (
             GridBackup(
-                GRID_BACKUP_SERVICE, GRID_BACKUP_MAX_AGE_SECONDS, GRID_BACKUP_RECOVERY_SECONDS
+                GRID_BACKUP_SERVICE,
+                GRID_BACKUP_MAX_AGE_SECONDS,
+                GRID_BACKUP_RECOVERY_SECONDS,
+                enabled=USE_GRID_SUBMETER_AS_BACKUP,
             )
             if GRID_BACKUP_SERVICE
             else None
