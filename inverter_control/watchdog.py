@@ -7,7 +7,7 @@ import time
 logger = logging.getLogger("inverter-control")
 
 GRID_LOSS_FALLBACK_SETPOINT = -10
-GRID_LOSS_REFRESH_INTERVAL = 10.0
+GRID_LOSS_REFRESH_INTERVAL = 2.0
 GRID_LOSS_RETRY_INTERVAL = 1.0
 
 
@@ -216,11 +216,33 @@ class HardwareWatchdog:
             self._thread.join(timeout=5.0)
 
     def _run(self):
-        """Main watchdog loop - checks heartbeat every interval"""
-        while not self._stop_event.wait(self.check_interval):
+        """Maintain fallback deadlines without accelerating heartbeat checks."""
+        next_heartbeat = time.monotonic() + self.check_interval
+        while True:
+            deadline = next_heartbeat
+            if self.grid_loss_hold_seconds is not None and not self.dry_run:
+                with self._lock:
+                    now = time.monotonic()
+                    grid_deadline = now + GRID_LOSS_REFRESH_INTERVAL
+                    if self._grid_loss_forced:
+                        if self._grid_loss_refresh_pending:
+                            last_write = self._last_grid_loss_attempt
+                            interval = GRID_LOSS_RETRY_INTERVAL
+                        else:
+                            last_write = self._last_grid_loss_write
+                            interval = GRID_LOSS_REFRESH_INTERVAL
+                        grid_deadline = now if last_write is None else last_write + interval
+                    deadline = min(deadline, grid_deadline)
+            wait_seconds = max(0.0, deadline - time.monotonic())
+            if self._stop_event.wait(wait_seconds):
+                break
             if not self._enabled:
                 break
-            self._check_heartbeat()
+            if self.grid_loss_hold_seconds is not None:
+                self.check_grid_loss()
+            if time.monotonic() >= next_heartbeat:
+                self._check_heartbeat()
+                next_heartbeat = time.monotonic() + self.check_interval
 
     def _check_heartbeat(self):
         """Check if the control loop is alive and trigger failsafe if not"""

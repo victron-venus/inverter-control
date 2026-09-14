@@ -102,7 +102,7 @@ def test_control_and_watchdog_checks_share_a_single_fallback_write(
     if refresh:
         watchdog.check_grid_loss()
         victron.set_grid_setpoint.reset_mock()
-        clock[0] += 10.0
+        clock[0] += 2.0
     barrier = Barrier(3)
 
     def check(callback):
@@ -192,7 +192,7 @@ def test_twenty_second_hold_then_periodic_refresh_survives_a_long_outage(clock, 
         watchdog.check_grid_loss()
         watchdog.check_grid_loss()
         watchdog._check_heartbeat()
-    assert writes == [(float(timestamp), -10) for timestamp in range(120, 461, 10)]
+    assert writes == [(float(timestamp), -10) for timestamp in range(120, 461, 2)]
     assert watchdog.is_triggered()
     status = watchdog.get_status()
     assert status["grid_loss_fallback_setpoint"] == -10
@@ -203,6 +203,47 @@ def test_twenty_second_hold_then_periodic_refresh_survives_a_long_outage(clock, 
     victron.set_ess_mode.assert_not_called()
 
 
+@pytest.mark.parametrize("recovered", [False, True])
+def test_background_fallback_refresh_preserves_original_heartbeat_and_recovery_cadence(
+    clock, watchdog_factory, recovered
+):
+    watchdog, victron = watchdog_factory(hold=0.0)
+    writes = []
+    victron.set_grid_setpoint.side_effect = lambda value: writes.append((clock[0], value)) or True
+    watchdog.mark_dbus_invalid()
+    watchdog.check_grid_loss()
+    if recovered:
+        watchdog.mark_dbus_update()
+
+    heartbeat_checks = []
+    check_heartbeat = watchdog._check_heartbeat
+
+    def heartbeat():
+        check_heartbeat()
+        heartbeat_checks.append((clock[0], watchdog.is_triggered()))
+
+    def wait(seconds):
+        assert seconds > 0
+        if clock[0] + seconds > 115.0:
+            return True
+        clock[0] += seconds
+        return False
+
+    watchdog._check_heartbeat = heartbeat
+    watchdog._stop_event = MagicMock()
+    watchdog._stop_event.wait.side_effect = wait
+    watchdog._enabled = True
+    # No control-loop callbacks run during this deterministic background loop.
+    watchdog._run()
+    assert heartbeat_checks == [
+        (105.0, True),
+        (110.0, not recovered),
+        (115.0, not recovered),
+    ]
+    last_write = 110 if recovered else 114
+    assert writes == [(float(timestamp), -10) for timestamp in range(100, last_write + 1, 2)]
+
+
 @pytest.mark.parametrize("failure", [False, RuntimeError("D-Bus unavailable")])
 def test_rejected_refresh_preserves_last_accepted_command_and_blocks_recovery(
     clock, watchdog_factory, failure
@@ -211,12 +252,12 @@ def test_rejected_refresh_preserves_last_accepted_command_and_blocks_recovery(
     victron.set_grid_setpoint.side_effect = [True, failure, True]
     watchdog.mark_dbus_invalid()
     watchdog.check_grid_loss()
-    clock[0] += 10.0
+    clock[0] += 2.0
     watchdog.check_grid_loss()
     status = watchdog.get_status()
     assert status["grid_loss_state"] == "fallback_pending"
     assert status["grid_loss_fallback_applied"]
-    assert status["grid_loss_fallback_write_age"] == 10.0
+    assert status["grid_loss_fallback_write_age"] == 2.0
     assert status["grid_loss_refresh_pending"]
 
     # Good meter data cannot waive a rejected fallback refresh. Neither
@@ -228,7 +269,7 @@ def test_rejected_refresh_preserves_last_accepted_command_and_blocks_recovery(
         watchdog._check_heartbeat()
     assert watchdog.is_triggered()
     assert victron.set_grid_setpoint.call_args_list == [call(-10), call(-10)]
-    assert watchdog.get_status()["grid_loss_fallback_write_age"] == 10.5
+    assert watchdog.get_status()["grid_loss_fallback_write_age"] == 2.5
 
     clock[0] += 0.5
     watchdog._check_heartbeat()
@@ -243,6 +284,42 @@ def test_rejected_refresh_preserves_last_accepted_command_and_blocks_recovery(
     assert victron.set_grid_setpoint.call_count == 3
 
 
+@pytest.mark.parametrize("resume", [False, True])
+def test_background_dry_run_after_live_fallback_never_spins_or_writes_until_resumed(
+    clock, watchdog_factory, resume
+):
+    watchdog, victron = watchdog_factory(hold=0.0)
+    writes = []
+    victron.set_grid_setpoint.side_effect = lambda value: writes.append((clock[0], value)) or True
+    watchdog.mark_dbus_invalid()
+    watchdog.check_grid_loss()
+    watchdog.dry_run = True
+    waits = []
+
+    def wait(seconds):
+        assert seconds > 0
+        waits.append(seconds)
+        if clock[0] + seconds > 115.0:
+            return True
+        clock[0] += seconds
+        if resume and clock[0] == 105.0:
+            watchdog.dry_run = False
+        return False
+
+    watchdog._stop_event = MagicMock()
+    watchdog._stop_event.wait.side_effect = wait
+    watchdog._enabled = True
+    watchdog._run()
+    if resume:
+        assert writes == [(100.0, -10)] + [
+            (float(timestamp), -10) for timestamp in range(105, 116, 2)
+        ]
+    else:
+        assert writes == [(100.0, -10)]
+        assert waits == [5.0] * 4
+    assert watchdog.is_triggered()
+
+
 def test_successful_fallback_refresh_is_timed_from_acceptance(clock, watchdog_factory):
     watchdog, victron = watchdog_factory(hold=0.0)
 
@@ -254,10 +331,10 @@ def test_successful_fallback_refresh_is_timed_from_acceptance(clock, watchdog_fa
     watchdog.mark_dbus_invalid()
     watchdog.check_grid_loss()
     assert watchdog.get_status()["grid_loss_fallback_write_age"] == 0.0
-    clock[0] = 110.0
+    clock[0] = 102.0
     watchdog.check_grid_loss()
     victron.set_grid_setpoint.assert_called_once_with(-10)
-    clock[0] = 110.5
+    clock[0] = 102.5
     watchdog.check_grid_loss()
     assert victron.set_grid_setpoint.call_args_list == [call(-10)] * 2
 
@@ -283,7 +360,7 @@ def test_wall_clock_jump_does_not_change_fallback_refresh_cadence(
     watchdog.mark_dbus_invalid()
     watchdog.check_grid_loss()
     monkeypatch.setattr("time.time", lambda: wall_time)
-    clock[0] += 9.9
+    clock[0] += 1.9
     watchdog.check_grid_loss()
     victron.set_grid_setpoint.assert_called_once_with(-10)
     clock[0] += 0.1
