@@ -225,13 +225,14 @@ def test_background_fallback_refresh_preserves_original_heartbeat_and_recovery_c
     def wait(seconds):
         assert seconds > 0
         if clock[0] + seconds > 115.0:
+            watchdog._stop_event.set()
             return True
         clock[0] += seconds
         return False
 
     watchdog._check_heartbeat = heartbeat
-    watchdog._stop_event = MagicMock()
-    watchdog._stop_event.wait.side_effect = wait
+    watchdog._wake_event = MagicMock()
+    watchdog._wake_event.wait.side_effect = wait
     watchdog._enabled = True
     # No control-loop callbacks run during this deterministic background loop.
     watchdog._run()
@@ -300,14 +301,15 @@ def test_background_dry_run_after_live_fallback_never_spins_or_writes_until_resu
         assert seconds > 0
         waits.append(seconds)
         if clock[0] + seconds > 115.0:
+            watchdog._stop_event.set()
             return True
         clock[0] += seconds
         if resume and clock[0] == 105.0:
             watchdog.dry_run = False
         return False
 
-    watchdog._stop_event = MagicMock()
-    watchdog._stop_event.wait.side_effect = wait
+    watchdog._wake_event = MagicMock()
+    watchdog._wake_event.wait.side_effect = wait
     watchdog._enabled = True
     watchdog._run()
     if resume:

@@ -61,6 +61,13 @@ class MQTTBridge:
         self._client: mqtt.Client | None = None
         self._connected = False
         self._callbacks: dict[str, Callable] = {}
+        self._setpoint_override_status: dict[str, Any] = {
+            "value": None,
+            "last_error": None,
+            "request_id": None,
+        }
+        self._setpoint_override_pending = True
+        self._setpoint_override_lock = threading.RLock()
 
         # Async publish queue
         self._publish_queue: queue.Queue[tuple[str, str, int, bool]] = queue.Queue(maxsize=100)
@@ -113,7 +120,18 @@ class MQTTBridge:
             try:
                 topic, payload, qos, retain = self._publish_queue.get(timeout=0.1)
                 if self._client and self._connected:
-                    self._client.publish(topic, payload, qos=qos, retain=retain)
+                    if topic == f"{self.prefix}/setpoint_override":
+                        # Queue entries are wakeups, not snapshots: a previous
+                        # Start status must not replace a newer Stop on reconnect.
+                        with self._setpoint_override_lock:
+                            self._client.publish(
+                                topic,
+                                json.dumps(self._setpoint_override_status),
+                                qos=1,
+                                retain=True,
+                            )
+                    else:
+                        self._client.publish(topic, payload, qos=qos, retain=retain)
                 self._publish_queue.task_done()
             except queue.Empty:
                 continue
@@ -132,6 +150,14 @@ class MQTTBridge:
         # Subscribe to solar forecast
         client.subscribe("solar/forecast")
         self._publish_portal_id(client)
+        with self._setpoint_override_lock:
+            client.publish(
+                f"{self.prefix}/setpoint_override",
+                json.dumps(self._setpoint_override_status),
+                qos=1,
+                retain=True,
+            )
+            self._setpoint_override_pending = False
         # Resend any unacknowledged alerts on (re)connection
         self.resend_unacknowledged_alerts()
 
@@ -168,6 +194,9 @@ class MQTTBridge:
                 return
 
             cmd = topic.split("/")[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
+            if cmd == "setpoint_override" and msg.retain:
+                logger.warning("Ignoring retained setpoint override command")
+                return
             payload = self._parse_payload(msg.payload)
             if cmd in self._callbacks:
                 self._callbacks[cmd](payload)
@@ -228,6 +257,23 @@ class MQTTBridge:
             logger.debug("MQTT publish queue full, dropping state update")
         except Exception as e:
             logger.debug(f"MQTT publish queue error: {e}")
+
+    def publish_setpoint_override(self, status: dict[str, Any]) -> None:
+        """Retained daemon acknowledgement; reconnect republishes current intent."""
+        with self._setpoint_override_lock:
+            if status != self._setpoint_override_status:
+                self._setpoint_override_status = dict(status)
+                self._setpoint_override_pending = True
+            if not self._connected or not self._setpoint_override_pending:
+                return
+            try:
+                self._ensure_publish_thread()
+                self._publish_queue.put_nowait((f"{self.prefix}/setpoint_override", "", 1, True))
+                self._setpoint_override_pending = False
+            except queue.Full:
+                # The main loop retries the latest status; never block a hardware
+                # writer while the remote dashboard is disconnected or slow.
+                logger.warning("MQTT queue full; setpoint override acknowledgement pending")
 
     def publish_console(self, line: str):
         """Publish console line (async, non-blocking)"""
