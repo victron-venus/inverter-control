@@ -82,7 +82,7 @@ def test_ha_switch_commands_and_confirmed_state_round_trip_without_ha(controller
     assert {json.loads(switch["payload_on"])["entity"] for switch in switches} == set(
         CONTROL_FLAG_KEYS
     )
-    templates = Environment(undefined=StrictUndefined)
+    templates = Environment(undefined=StrictUndefined, autoescape=True)
 
     for switch in switches:
         for action, expected in (("on", True), ("off", False)):
