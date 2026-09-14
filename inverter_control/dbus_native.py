@@ -460,7 +460,7 @@ class NativeDbusClient:
         if reply is None or not reply.body or not isinstance(reply.body[0], dict):
             return None
         return {
-            "/" + path.lstrip("/"): _format_value(getattr(item.get("Value"), "value", None))
+            "/" + path.lstrip("/"): getattr(item.get("Value"), "value", None)
             for path, item in reply.body[0].items()
             if isinstance(path, str) and isinstance(item, dict)
         }

@@ -7,7 +7,13 @@ from typing import Any
 
 from .grid_telemetry import _number
 
-BACKUP_PATHS = ("/Connected", "/IsSubmeter", "/Ac/Power", "/LastUpdate", "/DeviceInstance")
+BACKUP_PATHS = (
+    "/Connected",
+    "/Role",
+    "/Ac/Power",
+    "/LastUpdate",
+    "/DeviceInstance",
+)
 
 
 def parse_backup_snapshot(output: str) -> dict[str, Any]:
@@ -15,11 +21,12 @@ def parse_backup_snapshot(output: str) -> dict[str, Any]:
     blocks = re.split(r'string "(/[^"\n]+)"', output)
     for path, block in zip(blocks[1::2], blocks[2::2]):
         if path in fields:
-            match = re.search(
+            numeric = re.search(
                 r'string "Value"\s+variant\s+(?:double|u?int(?:16|32|64))\s+([^\s]+)',
                 block,
             )
-            fields[path] = match.group(1) if match else None
+            text = re.search(r'string "Value"\s+variant\s+string\s+"([^"\n]+)"', block)
+            fields[path] = numeric.group(1) if numeric else text.group(1) if text else None
     return fields
 
 
@@ -58,7 +65,9 @@ class GridBackup:
         with self._lock:
             if generation != self._generation:
                 return
-            self._fields = {p: _number((fields or {}).get(p)) for p in BACKUP_PATHS}
+            source = fields or {}
+            self._fields = {p: _number(source.get(p)) for p in BACKUP_PATHS if p != "/Role"}
+            self._fields["/Role"] = source.get("/Role")
             self._read_time = time.monotonic()
             timestamp = self._fields.get("/LastUpdate")
             age = time.time() - timestamp if timestamp is not None else float("inf")
@@ -72,7 +81,7 @@ class GridBackup:
             instance = self._fields.get("/DeviceInstance")
             ready = (
                 self._fields.get("/Connected") == 1
-                and self._fields.get("/IsSubmeter") == 1
+                and self._fields.get("/Role") == "acload"
                 and self._fields.get("/Ac/Power") is not None
                 and instance is not None
                 and instance >= 0
