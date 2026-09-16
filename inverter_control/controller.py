@@ -731,6 +731,7 @@ class InverterController:
             "grid_control_valid": sys_data.get("_grid_valid") is True,
             "grid_control_reason": sys_data.get("_grid_invalid_reason"),
             **sys_data,
+            **self._grid_status_fields(sys_data),
             "setpoint": setpoint,
             "filtered_gt": self.filtered_gt,
             "dry_run": self.dry_run,
@@ -888,16 +889,21 @@ class InverterController:
         if self._cached_battery_cell_data is not None:
             self.dvcc_limits = self.dvcc_calculator.calculate(self._cached_battery_cell_data)
 
+    @staticmethod
+    def _grid_status_fields(sys_data: dict[str, Any]) -> dict[str, Any]:
+        """Map the current grid snapshot to public telemetry fields."""
+        return {
+            "grid_control_source": sys_data.get("_grid_source"),
+            "grid_control_power": sys_data.get("gt") if sys_data.get("_grid_valid") else None,
+            "grid_using_backup": sys_data.get("_grid_backup", False),
+            "grid_backup_available": sys_data.get("_grid_backup_available", False),
+            "grid_backup": sys_data.get("_grid_backup_status"),
+            "grid_primary_reason": sys_data.get("_grid_primary_reason"),
+        }
+
     def _grid_ready_for_control(self, sys_data: dict[str, Any]) -> bool:
         """Gate control on a usable grid snapshot and orderly watchdog recovery."""
-        self.state.update(
-            grid_control_source=sys_data.get("_grid_source"),
-            grid_control_power=sys_data.get("gt") if sys_data.get("_grid_valid") else None,
-            grid_using_backup=sys_data.get("_grid_backup", False),
-            grid_backup_available=sys_data.get("_grid_backup_available", False),
-            grid_backup=sys_data.get("_grid_backup_status"),
-            grid_primary_reason=sys_data.get("_grid_primary_reason"),
-        )
+        self.state.update(self._grid_status_fields(sys_data))
         if sys_data.get("_grid_valid") is not True:
             self._watchdog.mark_dbus_invalid()
             # The same watchdog owns both outage and stalled-loop writes.
