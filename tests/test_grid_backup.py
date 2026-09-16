@@ -1,5 +1,6 @@
 """Submeter identity, freshness and failover are independent of the primary meter."""
 
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -186,6 +187,64 @@ def test_backup_state_survives_slim_mqtt_and_unchanged_samples_hold(meter_clock,
         "[SUBMETER HOLD] ",
     )
     calculator.calculate.assert_not_called()
+
+
+@pytest.mark.parametrize("selection", ["available", "in_use", "unavailable", "cleared"])
+def test_state_rebuild_publishes_current_submeter_selection(meter_clock, monkeypatch, selection):
+    controller, victron, _, _ = _make_controller()
+    victron.get_battery_chain_socs.return_value = []
+    victron.get_inverter_state.return_value = (9, "Inverting")
+    victron.get_ess_mode.return_value = {"is_external": True}
+    victron.get_acload_powers.return_value = {}
+    victron.get_battery_soc_local.return_value = 50
+    for method, value in (
+        ("_get_cached_batteries", []),
+        ("_get_cached_mppt_chargers", []),
+        ("_get_ev_state", {}),
+        ("_get_water_state", {}),
+        ("_get_ha_status", {}),
+        ("_get_daily_stats", {}),
+    ):
+        monkeypatch.setattr(controller, method, MagicMock(return_value=value))
+    controller._last_perf_snapshot = time.time()
+    monkeypatch.setattr("inverter_control.controller.MQTT_SLIM_STATE", True)
+    controller._control_flags.update(house_support=True, no_feed=True)
+    flags = dict(controller._control_flags)
+
+    backup = ready_backup()
+    controller._grid_ready_for_control(backup.select(PRIMARY))
+    assert controller.get_state_for_mqtt()["grid_backup"]["power"] == -87.25
+
+    if selection == "cleared":
+        current = dict(PRIMARY)
+        expected_backup = None
+    else:
+        connected = selection in ("available", "in_use")
+        backup.replace(
+            snapshot(**{"/Connected": int(connected), "/Ac/Power": 0, "/LastUpdate": 1101}),
+            backup.generation,
+        )
+        current = backup.select(LOST if selection == "in_use" else PRIMARY)
+        expected_backup = {
+            "enabled": True,
+            "available": connected,
+            "service": SERVICE,
+            "device_instance": 78,
+            "name": "Main supply",
+            "power": 0 if connected else None,
+            "measurement_time": 1101,
+            "age_seconds": 0,
+        }
+    controller.update_state(current, -200)
+    payload = controller.get_state_for_mqtt()
+
+    assert payload["grid_backup"] == expected_backup
+    assert payload["grid_backup_available"] is (selection in ("available", "in_use"))
+    assert payload["grid_using_backup"] is (selection == "in_use")
+    assert payload["grid_control_source"] == (SERVICE if selection == "in_use" else "primary")
+    assert payload["grid_control_power"] == (0 if selection == "in_use" else 7)
+    assert payload["grid_primary_reason"] == ("offline" if selection == "in_use" else None)
+    assert payload["booleans"] == flags
 
 
 @pytest.mark.parametrize("enabled", [False, True])
