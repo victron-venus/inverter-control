@@ -353,10 +353,24 @@ class SetpointCalculator:
                     export_damping=self.config.get("EXPORT_DAMPING", 1.0),
                     _state=self._normal_state,
                 )
+                deadband_low = self._normal_state.get(
+                    "deadband_low", self.config.get("GRID_ZERO_DEADBAND_LOW", -50)
+                )
+                deadband_high = self._normal_state.get(
+                    "deadband_high", self.config.get("GRID_ZERO_DEADBAND_HIGH", 30)
+                )
+                normal_holds = (
+                    deadband_low < state.filtered_gt < deadband_high
+                    and int((raw_vanew - state.previous_setpoint) * 0.9) == 0
+                )
                 raw_vanew, burst_flags, burst_fired = self._apply_burst_correction(
                     raw_vanew, effective_gt, old_filtered_gt
                 )
-                raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
+                # A raw derivative must not turn a filtered deadband hold
+                # into alternating commands. Load-step bursts remain active.
+                d_flags = ""
+                if not normal_holds:
+                    raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
                 flags = burst_flags + d_flags + flags
             elif strategy is only_charging_strategy or strategy is do_not_supply_charger_strategy:
                 raw_vanew, flags = strategy(
