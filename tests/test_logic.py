@@ -146,6 +146,48 @@ class TestLogic(unittest.TestCase):
         state.prefiltered_gt = 100.0
         self.assertLess(calculator.calculate(state).setpoint, 100)
 
+    def test_recorded_raw_grid_reversals_do_not_break_filtered_hold(self):
+        """The observed 162 -> 148 -> 163 W pulse must stay at 162 W."""
+        calculator = SetpointCalculator({"CREEP_RATE": 0.0})
+        state = self.get_base_state()
+        state.previous_setpoint = 162
+        commands = []
+
+        # Cerbo observations: both derivative triggers occur while the
+        # background filter remains inside the configured -50/+30 W band.
+        for raw_grid, filtered_grid in ((-60, -49), (-6, -49), (-63, -38)):
+            state.gt = raw_grid
+            state.prefiltered_gt = filtered_grid
+            result = calculator.calculate(state)
+            commands.append(result.setpoint)
+            state.previous_setpoint = result.setpoint
+            self.assertNotIn("[D:", result.flags)
+            self.assertNotIn("[B:", result.flags)
+
+        self.assertEqual(commands, [162, 162, 162])
+
+    def test_default_creep_rounding_hold_is_not_overridden_by_derivative(self):
+        """A one-watt creep request still holds after 90% integer convergence."""
+        for raw_grid, filtered_grid, prior_raw, prior_creep, expected_creep in (
+            (6, 5, -60, 1.0, 1.5),
+            (-6, -5, 60, 0.0, -1.0),
+        ):
+            with self.subTest(filtered_grid=filtered_grid):
+                calculator = SetpointCalculator({})
+                calculator.prev_effective_gt = prior_raw
+                calculator._normal_state["creep_accumulator"] = prior_creep
+                state = self.get_base_state()
+                state.previous_setpoint = 162
+                state.gt = raw_grid
+                state.prefiltered_gt = filtered_grid
+
+                result = calculator.calculate(state)
+
+                self.assertEqual(result.setpoint, 162)
+                self.assertEqual(calculator._normal_state["creep_accumulator"], expected_creep)
+                self.assertNotIn("[D:", result.flags)
+                self.assertNotIn("[B:", result.flags)
+
     def test_creep_export(self):
         """Creep should decrease discharge when consistently exporting in deadband"""
         state = self.get_base_state()
@@ -1079,8 +1121,10 @@ class TestPrefilteredGrid(unittest.TestCase):
     def test_d_term_cannot_bypass_solar_only_cap(self):
         calc = SetpointCalculator({"EMA_ALPHA": 1.0})
         calc.prev_effective_gt = -80
-        result = calc.calculate(self.state(gt=0, prefiltered_gt=0, only_charging=True))
-        self.assertIn("[D:-24]", result.flags)
+        # The +30 W boundary is outside the strict deadband hold, so D
+        # remains active and its discharge request must respect the cap.
+        result = calc.calculate(self.state(gt=30, prefiltered_gt=30, only_charging=True))
+        self.assertIn("[D:-33]", result.flags)
         self.assertEqual(result.setpoint, 0)
 
 
