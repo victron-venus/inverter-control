@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/releases)
 [![Downloads](https://img.shields.io/github/downloads/victron-venus/inverter-control/total)](https://github.com/victron-venus/inverter-control/releases)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12.x](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![Venus OS](https://img.shields.io/badge/Venus%20OS-3.x-blue)](https://github.com/victronenergy/venus)
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/victron-venus/inverter-control)
 [![GitHub watchers](https://img.shields.io/github/watchers/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/watchers)
@@ -30,6 +30,15 @@
 Grid-zero feed-in controller for Victron systems with split-phase compensation.
 
 ---
+
+## Python runtime
+
+Native Venus OS packages target **Python 3.12.x**. The audited Cerbo on Venus OS
+v3.75 reports Python **3.12.13**; the [official Venus OS v3.79 manifest](https://updates.victronenergy.com/feeds/venus/release/sdk/venus-scarthgap-x86_64-arm-cortexa8hf-neon-toolchain-v3.79.target.manifest)
+also ships 3.12.13. Local development and CI use `.python-version` / Python
+3.12.13. Package metadata accepts 3.12 patch updates and rejects other minor
+versions until they have been validated. Use the firmware's system interpreter
+and its matching D-Bus/GI libraries on the device; do not replace the OS Python.
 
 <!-- ci-release-process:start -->
 ## Release process
