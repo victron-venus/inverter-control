@@ -43,6 +43,7 @@ class TestCycleMetrics:
         snap = m.snapshot()
         assert snap["setvalue_ms"]["p50"] == 20.0
         assert snap["setvalue_ms"]["max"] == 50.0
+        assert snap["setvalue_ms"]["p99"] == 50.0
         assert snap["setvalue_ms"]["failed"] == 1
 
     def test_age_recording_rejects_negative(self):
@@ -81,7 +82,12 @@ class TestStageTiming:
         m.record_stage("get_system_data", 20.0)
         m.record_stage("console_render", 100.0)
         snap = m.snapshot()
-        assert snap["stage_ms"]["get_system_data"] == {"p50": 10.0, "p95": 20.0, "max": 20.0}
+        assert snap["stage_ms"]["get_system_data"] == {
+            "p50": 10.0,
+            "p95": 20.0,
+            "p99": 20.0,
+            "max": 20.0,
+        }
         assert snap["stage_ms"]["console_render"]["max"] == 100.0
 
     def test_stage_snapshot_empty_when_none_recorded(self):
