@@ -305,6 +305,11 @@ class TestValidationErrors:
             with pytest.raises(ValueError, match="LOOP_INTERVAL must be positive"):
                 config._validate_config()
 
+    def test_trim_opt_in_rejects_string_boolean(self):
+        with patch("inverter_control.config.SUBMETER_TRIM_ENABLED", "false"):
+            with pytest.raises(ValueError, match="SUBMETER_TRIM_ENABLED must be.*bool"):
+                config._validate_config()
+
     def test_invalid_damping_factor(self):
         """Test validation catches out-of-range DAMPING_FACTOR"""
         with patch("inverter_control.config.DAMPING_FACTOR", 1.5):

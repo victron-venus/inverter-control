@@ -289,6 +289,9 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    the Python flag. Manual interactive setup offers this option; automatic
    installs preserve it without prompting. Restart/reinstall applies changes.
    A selected submeter remains visible in the desktop when fallback is disabled.
+   Optional [slow submeter zero trim](docs/submeter-trim.md) can use that same
+   source to correct a settled residual while the primary meter remains active.
+   It is disabled by default and requires explicit site configuration.
    Its source timestamp must be no older than `GRID_BACKUP_MAX_AGE_SECONDS`
    (default 30). Once primary telemetry recovers continuously for
    `GRID_BACKUP_RECOVERY_SECONDS` (default 5), control returns to the primary.

@@ -94,6 +94,10 @@ EVCHARGER_INSTANCE = 40
 GRID_EXPECTED_SERVICE = ""
 GRID_EXPECTED_PHASES = 0
 
+# Optional slow fine correction while normal primary-grid control holds.
+# See docs/submeter-trim.md. Requires CREEP_RATE=0 and GRID_BACKUP_SERVICE.
+SUBMETER_TRIM_ENABLED = False
+
 # Optional signed aggregate grid submeter published as an AC load.
 # Enable use during primary meter loss, and explicitly select a whole-grid
 # measurement service. A selected service is shown in the desktop even when

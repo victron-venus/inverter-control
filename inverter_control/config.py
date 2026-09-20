@@ -349,6 +349,11 @@ D_GAIN = 0.3  # Fraction of derivative to apply as brake (0.0–1.0)
 CREEP_RATE = float(_import_local_config("CREEP_RATE", 0.5))  # Watts accumulated per cycle
 CREEP_MAX = float(_import_local_config("CREEP_MAX", 100.0))  # Maximum creep correction (Watts)
 
+# Opt-in fine correction from the independently timestamped aggregate submeter.
+# Requires a pinned GRID_BACKUP_SERVICE and CREEP_RATE=0; operating modes,
+# primary-source loss and unsettled load changes inhibit it automatically.
+SUBMETER_TRIM_ENABLED = _import_local_config("SUBMETER_TRIM_ENABLED", False)
+
 # Solar output offset - reduce output by this amount to avoid grid export
 # Used in only_charging, do_not_supply_charger, and other solar-limited modes
 SOLAR_OUTPUT_OFFSET = 60  # Watts
@@ -528,6 +533,7 @@ def _validate_config():
         _check_type("EMA_ALPHA", EMA_ALPHA, (int, float)),
         _check_type("CREEP_RATE", CREEP_RATE, (int, float)),
         _check_type("CREEP_MAX", CREEP_MAX, (int, float)),
+        _check_type("SUBMETER_TRIM_ENABLED", SUBMETER_TRIM_ENABLED, bool),
         _check_range("DAMPING_FACTOR", DAMPING_FACTOR, 0.0, 1.0),
         _check_range("EMA_ALPHA", EMA_ALPHA, 0.0, 1.0),
         _check_range("CREEP_RATE", CREEP_RATE, 0.0, 100.0),

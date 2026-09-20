@@ -67,6 +67,7 @@ from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.metrics import CycleMetrics
 from inverter_control.prom_metrics import publish as prom_metrics_publish
+from inverter_control.submeter_trim import SubmeterTrim
 from inverter_control.victron import (
     TOU_END_SETTING,
     TOU_START_SETTING,
@@ -160,6 +161,14 @@ class InverterController:
         # Initialize Logic and UI components
         config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
         self.calculator = SetpointCalculator(config_dict)
+        self.submeter_trim = SubmeterTrim(
+            enabled=_config.SUBMETER_TRIM_ENABLED is True,
+            expected_service=_config.GRID_BACKUP_SERVICE,
+        )
+        self._trim_decision = None
+        self._trim_context = None
+        self._trim_mode_generation = 0
+        self._trim_history_mode_generation = 0
         self.console = ConsoleUI(self.ha, self.victron, self.water, self.evcharger)
 
         # Background grid EMA filter (owns filtered_gt; started with the main
@@ -307,16 +316,20 @@ class InverterController:
         return self.loop_interval
 
     def set_power_limits(self, min_val: int, max_val: int) -> dict[str, int]:
-        self.power_limit_min = max(min_val, -3000)
-        self.power_limit_max = min(max_val, 3000)
-        # Update calculator limits
-        self.calculator.power_limit_min = self.power_limit_min
-        self.calculator.power_limit_max = self.power_limit_max
+        with self._watchdog._lock:
+            self.power_limit_min = max(min_val, -3000)
+            self.power_limit_max = min(max_val, 3000)
+            # Update calculator limits
+            self.calculator.power_limit_min = self.power_limit_min
+            self.calculator.power_limit_max = self.power_limit_max
+            self._trim_mode_generation += 1
         logger.info(f"Power limits changed to [{self.power_limit_min}, {self.power_limit_max}]")
         return {"min": self.power_limit_min, "max": self.power_limit_max}
 
     def set_dry_run(self, enabled: bool) -> bool:
         with self._watchdog._lock:
+            if self.dry_run != enabled:
+                self._trim_mode_generation += 1
             self.dry_run = enabled
             self._watchdog.dry_run = enabled
             mode = "DRY-RUN" if enabled else "LIVE"
@@ -416,8 +429,10 @@ class InverterController:
             # Set pre-charge flag - this will be picked up in run_cycle
             # by setting the daemon's 'charge_battery' control flag or by overriding
             # the state.charge_battery flag directly
-            self._pre_charge_requested = True
-            self._pre_charge_horizon_hours = horizon_hours
+            with self._watchdog._lock:
+                self._pre_charge_requested = True
+                self._pre_charge_horizon_hours = horizon_hours
+                self._trim_mode_generation += 1
 
             # Notify dashboards (day-scoped id so one banner per calendar day)
             if bridge:
@@ -469,7 +484,9 @@ class InverterController:
         return {**self.state, "ui_config": {**self.ui_config, **self.tariff.snapshot()}}
 
     def set_manual_setpoint(self, value: int) -> bool:
-        self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
+        with self._watchdog._lock:
+            self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
+            self._trim_mode_generation += 1
         return True
 
     def get_setpoint_override(self) -> dict:
@@ -486,10 +503,13 @@ class InverterController:
 
     def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""
+        self._trim_decision = None
+        self._trim_context = None
         if (
             sys_data.get("_grid_backup")
             and sys_data.get("_grid_measurement_time") == self._last_backup_measurement
         ):
+            self._reset_submeter_trim("backup_source")
             # HA can report more slowly than the control loop. Refresh the
             # accepted output, but apply feedback only once per source sample.
             return self.previous_setpoint, "[SUBMETER HOLD] "
@@ -521,8 +541,10 @@ class InverterController:
 
         # Handle pre-charge request from solar forecast webhook
         charge_battery = self.get_control_flag("charge_battery")
-        if self._pre_charge_requested:
+        with self._watchdog._lock:
+            pre_charge_requested = self._pre_charge_requested
             self._pre_charge_requested = False  # One-shot
+        if pre_charge_requested:
             if self._in_expensive_window():
                 logger.info("Pre-charge suppressed: expensive grid window active")
             else:
@@ -563,7 +585,143 @@ class InverterController:
         # lives in the GridFilter thread when it is running.
         self.filtered_gt = result.filtered_gt
 
-        return result.setpoint, result.flags
+        if not self.submeter_trim.enabled:
+            return result.setpoint, result.flags
+        if self._trim_history_mode_generation != self._trim_mode_generation:
+            self._reset_submeter_trim("mode_changed")
+            self._trim_history_mode_generation = self._trim_mode_generation
+        trim_mode_generation = self._trim_mode_generation
+        reason = self._trim_block_reason(sys_data, charge_battery=charge_battery)
+        if not reason and (
+            result.setpoint != self.previous_setpoint
+            or not _config.GRID_ZERO_DEADBAND_LOW
+            < result.filtered_gt
+            < _config.GRID_ZERO_DEADBAND_HIGH
+            or "[B:" in result.flags
+            or "[D:" in result.flags
+        ):
+            reason = "fast_control_active"
+        # Apply only after the ordinary calculator has decided to hold. This
+        # leaves D suppression intact and avoids the 0.9 integer convergence
+        # swallowing a small accepted-command correction.
+        decision = self.submeter_trim.propose(
+            now=time.monotonic(),
+            wall_time=time.time(),
+            previous_setpoint=self.previous_setpoint,
+            base_setpoint=result.setpoint,
+            sample=sys_data.get("_grid_backup_status"),
+            eligible=not reason,
+            reason=reason,
+            raw_grid=sys_data["gt"],
+            filtered_grid=result.filtered_gt,
+            min_setpoint=self.power_limit_min,
+            max_setpoint=self.power_limit_max,
+            source_key=self._trim_source_key(sys_data),
+        )
+        self._trim_decision = decision
+        self._trim_context = self._submeter_trim_context(sys_data)[:2] + (trim_mode_generation,)
+        if (
+            abs(decision.setpoint - self.previous_setpoint) > self.calculator.delta_limit
+            and decision.delta
+        ):
+            self._reset_submeter_trim("delta_limit")
+            return result.setpoint, result.flags
+        if decision.delta and not self._trim_stays_in_primary_hold(decision.delta):
+            self._reset_submeter_trim("primary_deadband_limit")
+            return result.setpoint, result.flags
+        flags = result.flags
+        if decision.delta:
+            flags += f"[TRIM:{decision.delta:+d}] "
+        return decision.setpoint, flags
+
+    @staticmethod
+    def _trim_source_key(sys_data: dict[str, Any]) -> tuple:
+        return (
+            sys_data.get("_grid_source"),
+            sys_data.get("_grid_source_instance"),
+            sys_data.get("_grid_selection_generation"),
+        )
+
+    def _submeter_trim_context(self, sys_data: dict[str, Any]) -> tuple:
+        sample = sys_data.get("_grid_backup_status") or {}
+        return (
+            self._trim_source_key(sys_data),
+            tuple(
+                sample.get(key)
+                for key in ("service", "device_instance", "generation", "measurement_time")
+            ),
+            self._trim_mode_generation,
+        )
+
+    def _trim_block_reason(self, sys_data: dict[str, Any], *, charge_battery=False) -> str:
+        if (
+            sys_data.get("_grid_valid") is not True
+            or sys_data.get("_grid_primary_valid") is not True
+            or sys_data.get("_grid_backup") is not False
+        ):
+            return "primary_unavailable"
+        if not _config.GRID_BACKUP_SERVICE:
+            return "submeter_not_pinned"
+        if (
+            charge_battery
+            or self._pre_charge_requested
+            or any(self.get_control_flag(key) for key in CONTROL_FLAG_KEYS)
+        ):
+            return "operating_mode"
+        if self.manual_setpoint is not None or self.get_setpoint_override()["value"] is not None:
+            return "manual_control"
+        if self._watchdog.is_triggered():
+            return "watchdog"
+        if ENABLE_GRID_SMOOTHING_WITH_HOME or _config.CREEP_RATE != 0:
+            return "incompatible_feedback"
+        if self.victron.get_ess_mode().get("is_external") is not True:
+            return "ess_not_external"
+        return ""
+
+    def _reset_submeter_trim(self, reason: str) -> None:
+        self.submeter_trim.reset(reason)
+        self._trim_decision = None
+        self._trim_context = None
+
+    def _trim_stays_in_primary_hold(self, delta: int) -> bool:
+        # Avoid deliberately crossing the fast controller's hold boundary and
+        # creating a slow correction/fast undo cycle between the two meters.
+        return self.filtered_gt is not None and (
+            _config.GRID_ZERO_DEADBAND_LOW
+            < self.filtered_gt + delta
+            < _config.GRID_ZERO_DEADBAND_HIGH
+        )
+
+    def _trim_write_ready(self, current_grid: dict[str, Any]) -> bool:
+        decision = self._trim_decision
+        if decision is None or not decision.delta:
+            return True
+        if self._trim_context != self._submeter_trim_context(current_grid):
+            return False
+        if self._trim_block_reason(current_grid):
+            return False
+        if abs(decision.setpoint - self.previous_setpoint) > self.calculator.delta_limit:
+            return False
+        if not self._trim_stays_in_primary_hold(decision.delta):
+            return False
+        sample = current_grid.get("_grid_backup_status") or {}
+        # Revalidate the proposal against fresh availability/age and the raw
+        # grid just before writing. A sample/source edge requires a new cycle.
+        refreshed = self.submeter_trim.propose(
+            now=time.monotonic(),
+            wall_time=time.time(),
+            previous_setpoint=self.previous_setpoint,
+            base_setpoint=self.previous_setpoint,
+            sample=sample,
+            eligible=True,
+            reason="",
+            raw_grid=current_grid.get("gt"),
+            filtered_grid=self.filtered_gt,
+            min_setpoint=self.power_limit_min,
+            max_setpoint=self.power_limit_max,
+            source_key=self._trim_source_key(current_grid),
+        )
+        return refreshed == decision
 
     def handle_minimize_charging(self, sys_data: dict[str, Any]):
         try:
@@ -655,7 +813,11 @@ class InverterController:
             logger.warning("Unknown control flag %s", key)
             return
         value = bool(value)
-        self._control_flags[key] = value
+        # Serialize flag changes with the final trim gate and physical write.
+        with self._watchdog._lock:
+            if self._control_flags[key] != value:
+                self._trim_mode_generation += 1
+            self._control_flags[key] = value
         try:
             if getattr(self.victron, "_test_mode", False):
                 pass  # ponytail: skip Settings write in test mode
@@ -874,6 +1036,7 @@ class InverterController:
         out["dry_run"] = self.dry_run
         # Daemon-owned control intent is never stripped by the slim payload.
         out["setpoint_override"] = self.get_setpoint_override()
+        out["submeter_trim"] = self.submeter_trim.status()
         # Include presentation even before the first telemetry sweep.
         out["ui_config"] = {**self.ui_config, **self.tariff.snapshot()}
         return out
@@ -908,6 +1071,7 @@ class InverterController:
         """Gate control on a usable grid snapshot and orderly watchdog recovery."""
         self.state.update(self._grid_status_fields(sys_data))
         if sys_data.get("_grid_valid") is not True:
+            self._reset_submeter_trim("primary_invalid")
             self._watchdog.mark_dbus_invalid()
             # The same watchdog owns both outage and stalled-loop writes.
             # Check at control cadence so a short hold is not rounded to its
@@ -932,6 +1096,7 @@ class InverterController:
         self._watchdog.mark_dbus_update()
         selection = sys_data.get("_grid_selection_generation", 0)
         if selection != self._control_grid_selection:
+            self._reset_submeter_trim("source_changed")
             self._control_grid_selection = selection
             self._last_backup_measurement = None
             self.filtered_gt = None
@@ -944,6 +1109,7 @@ class InverterController:
             return False  # Recalculate on the next cycle, including before-write switches.
         if self._watchdog.is_triggered():
             # Its two-check recovery must finish (including an accepted restore)
+            self._reset_submeter_trim("watchdog")
             # before a fresh normal write can otherwise race with that restore.
             self.state["grid_control_valid"] = False
             self.state["grid_control_reason"] = "Waiting for watchdog recovery"
@@ -1009,8 +1175,11 @@ class InverterController:
 
         try:
             self.last_console_line = None
+            self._trim_decision = None
+            self._trim_context = None
             generation = self._watchdog.control_generation()
             if generation != self._control_history_generation:
+                self._reset_submeter_trim("control_generation")
                 self.filtered_gt = None
                 self._raw_derived_gt = None
                 self.calculator.reset_measurement_history()
@@ -1020,6 +1189,7 @@ class InverterController:
                 self._control_history_generation = generation
             sys_data = self.victron.get_system_data()
             if self.get_setpoint_override()["value"] is not None:
+                self._reset_submeter_trim("manual_control")
                 # Observe meter health for the later Stop transition, but the
                 # watchdog independently maintains the explicit manual value.
                 self._grid_ready_for_control(sys_data)
@@ -1045,6 +1215,7 @@ class InverterController:
 
             pending_manual = self.manual_setpoint
             if pending_manual is not None:
+                self._reset_submeter_trim("manual_control")
                 setpoint = pending_manual
                 flags = "[MANUAL] "
             else:
@@ -1061,6 +1232,7 @@ class InverterController:
                 "_grid_measurement_time"
             ):
                 # Recalculate rather than writing across a source/sample edge.
+                self._reset_submeter_trim("source_changed_before_write")
                 self.metrics.record_cycle(cycle_started, self.loop_interval)
                 return True
             if not self._grid_ready_for_control(current_grid):
@@ -1072,23 +1244,37 @@ class InverterController:
             def accept_control_setpoint():
                 # Commit the applied baseline while the hardware-write lock
                 # is held, before another thread can accept a manual override.
+                if self._trim_decision is not None:
+                    self.submeter_trim.commit(
+                        self._trim_decision, now=time.monotonic(), wall_time=time.time()
+                    )
                 self.previous_setpoint = setpoint
                 self._last_backup_measurement = (
                     sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
                 )
 
-            if self.dry_run:
-                flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
-                write_ok = self._watchdog.write_control_setpoint(
-                    setpoint, generation, dry_run=True, on_accept=accept_control_setpoint
-                )
-            else:
-                write_started = time.perf_counter()
-                write_ok = self._watchdog.write_control_setpoint(
-                    setpoint, generation, on_accept=accept_control_setpoint
-                )
-                self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
+            with self._watchdog._lock:
+                if not self._trim_write_ready(current_grid):
+                    self._reset_submeter_trim("changed_before_write")
+                    self.metrics.record_cycle(cycle_started, self.loop_interval)
+                    return True
+                if self.dry_run:
+                    flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
+                    write_ok = self._watchdog.write_control_setpoint(
+                        setpoint, generation, dry_run=True, on_accept=accept_control_setpoint
+                    )
+                else:
+                    write_started = time.perf_counter()
+                    write_ok = self._watchdog.write_control_setpoint(
+                        setpoint, generation, on_accept=accept_control_setpoint
+                    )
+                    self.metrics.record_write(
+                        (time.perf_counter() - write_started) * 1000.0, write_ok
+                    )
+            if not write_ok:
+                self._reset_submeter_trim("write_rejected")
             if generation != self._watchdog.control_generation():
+                self._reset_submeter_trim("control_generation")
                 self._update_grid_loss_state()
                 self.metrics.record_cycle(cycle_started, self.loop_interval)
                 return True
@@ -1132,5 +1318,6 @@ class InverterController:
         except KeyboardInterrupt:
             return False
         except Exception as e:
+            self._reset_submeter_trim("cycle_error")
             log_exception(f"Error in control cycle: {e}")
             return True

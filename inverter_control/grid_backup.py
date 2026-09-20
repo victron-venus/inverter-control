@@ -148,6 +148,7 @@ class GridBackup:
                     "enabled": self.enabled,
                     "available": ready,
                     "service": self.service,
+                    "generation": self._generation,
                     **self._identity,
                     "power": self._fields.get("/Ac/Power") if ready else None,
                     "measurement_time": self._fields.get("/LastUpdate"),
