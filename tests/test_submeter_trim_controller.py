@@ -47,6 +47,7 @@ def rig(monkeypatch, no_network):
     victron.get_ess_mode.return_value = {"is_external": True}
     victron.set_grid_setpoint.return_value = True
     ha.get_vue_sensor.return_value = 0
+    ha.get_all_vue_sensors.return_value = {}
     ha.get_boolean.return_value = False
 
     def snapshot(power=24.0, raw=0.0, **overrides):
@@ -178,12 +179,60 @@ def test_non_normal_feedback_context_blocks_trim(rig, monkeypatch, gate):
         monkeypatch.setattr(config, "CREEP_RATE", 0.5)
     elif gate == "derived":
         monkeypatch.setattr(controller_module, "ENABLE_GRID_SMOOTHING_WITH_HOME", True)
+        rig.controller.ha.get_all_vue_sensors.return_value = {"total": 0}
     else:
         monkeypatch.setattr(config, "GRID_BACKUP_SERVICE", "")
     rig.clock.elapsed = 18
     _, flags = rig.controller.calculate_setpoint(rig.snapshot())
     assert "[TRIM:" not in flags
     assert rig.controller.submeter_trim.status()["sample_count"] == 0
+
+
+def test_enabled_home_smoothing_without_total_sensor_allows_trim(rig, monkeypatch):
+    monkeypatch.setattr(controller_module, "ENABLE_GRID_SMOOTHING_WITH_HOME", True)
+    rig.controller.ha.get_all_vue_sensors.return_value = {"garage": 500}
+    rig.warm(until=18)
+    assert rig.controller.previous_setpoint == -604
+    assert rig.controller.submeter_trim.status()["total_trim"] == -4
+
+
+@pytest.mark.parametrize("total", [0, 600, None, float("nan"), float("inf")])
+def test_present_home_total_blocks_trim_even_when_zero_or_unknown(rig, monkeypatch, total):
+    monkeypatch.setattr(controller_module, "ENABLE_GRID_SMOOTHING_WITH_HOME", True)
+    rig.controller.ha.get_all_vue_sensors.return_value = {"total": total}
+    rig.warm(until=18)
+    assert rig.controller.previous_setpoint == -600
+    status = rig.controller.submeter_trim.status()
+    assert status["reason"] == "incompatible_feedback"
+    assert status["sample_count"] == 0
+
+
+def test_home_total_discovered_before_write_cancels_trim(rig, monkeypatch):
+    monkeypatch.setattr(controller_module, "ENABLE_GRID_SMOOTHING_WITH_HOME", True)
+    rig.warm()
+    rig.victron.set_grid_setpoint.reset_mock()
+
+    def discover_total(_):
+        rig.controller.ha.get_all_vue_sensors.return_value = {"total": 0}
+
+    rig.cycle(18, before_write=discover_total)
+    rig.victron.set_grid_setpoint.assert_not_called()
+    assert rig.controller.previous_setpoint == -600
+    assert rig.controller.submeter_trim.status()["total_trim"] == 0
+
+
+def test_absent_home_total_requires_new_window_after_present_period(rig, monkeypatch):
+    monkeypatch.setattr(controller_module, "ENABLE_GRID_SMOOTHING_WITH_HOME", True)
+    rig.warm()
+    rig.controller.ha.get_all_vue_sensors.return_value = {"total": 0}
+    rig.cycle(18)
+    assert rig.controller.submeter_trim.status()["sample_count"] == 0
+    rig.controller.ha.get_all_vue_sensors.return_value = {}
+    for elapsed in (21, 24, 27, 30, 33, 36):
+        rig.cycle(elapsed)
+        assert rig.controller.previous_setpoint == -600
+    rig.cycle(39)
+    assert rig.controller.previous_setpoint == -604
 
 
 @pytest.mark.parametrize(

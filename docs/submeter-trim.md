@@ -31,6 +31,10 @@ Enabling the feature is a field trial, not a promise of a particular error.
 - Only normal primary-meter operation is eligible. Every special operating
   flag, manual command/override, watchdog recovery, backup takeover, nonexternal
   ESS mode, legacy creep or derived-grid blending inhibits trim.
+  Enabling home smoothing without a configured or discovered Vue `total`
+  source does not activate blending and does not inhibit trim. Once that
+  source is present in the cache, even at zero or unknown power, trim is
+  conservatively blocked; source presence is rechecked before every trim write.
 - The ordinary calculator must already have selected a true hold, inside its
   grid deadband, without burst or derivative correction. Trim is applied after
   that decision so it cannot reactivate the raw derivative or disappear in

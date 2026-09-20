@@ -672,7 +672,13 @@ class InverterController:
             return "manual_control"
         if self._watchdog.is_triggered():
             return "watchdog"
-        if ENABLE_GRID_SMOOTHING_WITH_HOME or _config.CREEP_RATE != 0:
+        # The optional smoothing flag alone does not activate derived feedback:
+        # an installation may have no configured/discovered Vue total sensor.
+        # Presence is deliberately conservative, including zero/unknown values,
+        # and this same gate is checked again immediately before a trim write.
+        if _config.CREEP_RATE != 0 or (
+            ENABLE_GRID_SMOOTHING_WITH_HOME and "total" in self.ha.get_all_vue_sensors()
+        ):
             return "incompatible_feedback"
         if self.victron.get_ess_mode().get("is_external") is not True:
             return "ess_not_external"
