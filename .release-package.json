@@ -28,6 +28,7 @@
     "uv.lock",
     "mqtt.yaml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    ".python-version"
   ]
 }
