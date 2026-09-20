@@ -97,6 +97,7 @@ class CycleMetrics:
             "setvalue_ms": {
                 "p50": _percentile(writes, 50),
                 "p95": _percentile(writes, 95),
+                "p99": _percentile(writes, 99),
                 "max": _percentile(writes, 100),
                 "failed": self.failed_writes,
             },
@@ -108,6 +109,7 @@ class CycleMetrics:
                 name: {
                     "p50": _percentile(sorted(samples), 50),
                     "p95": _percentile(sorted(samples), 95),
+                    "p99": _percentile(sorted(samples), 99),
                     "max": _percentile(sorted(samples), 100),
                 }
                 for name, samples in sorted(self._stage_ms.items())
