@@ -27,7 +27,7 @@ jobs:
     - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       with:
         version: 0.12.7
-    - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
     - run: bash scripts/ci.sh integration
   validate-secrets-template:
     name: Validate Secrets Template
