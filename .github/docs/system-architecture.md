@@ -6,7 +6,7 @@
 flowchart TB
     subgraph Solar["☀️ Solar Sources"]
         MPPT["MPPT Charger\n(Victron)"]
-        TAS["Tasmota PV\n(2x smart plugs)"]
+        PVI["PV Inverters\n(AC-coupled)"]
     end
 
     subgraph Battery["🔋 Battery System"]
@@ -41,7 +41,7 @@ flowchart TB
 
     %% Solar to Battery
     MPPT -->|"DC Power"| INV
-    TAS -->|"Grid AC"| SYS
+    PVI -->|"Grid AC"| SYS
 
     %% Battery connections
     JBD -->|"BLE"| ESP32
@@ -101,7 +101,11 @@ graph LR
     HA -->|"Sensors"| ICM
 ```
 
-## Network Topology
+## Example Network Topology
+
+This example uses Tasmota smart plugs and `dbus-tasmota-pv` as the PV telemetry
+publisher. Other publishers exposing `com.victronenergy.pvinverter.*` D-Bus
+services can supply the same controller inputs.
 
 ```mermaid
 graph TB

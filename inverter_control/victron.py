@@ -344,7 +344,7 @@ class VictronDBus:
             subscribed.append(
                 self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH)
             )
-        # Discovered services (solarcharger C++, tasmota-pv/acload velib-python)
+        # Discovered services (solarcharger C++, pvinverter/acload velib-python)
         for service in (*self._mppt_services, *self._pv_inverter_services, *self._acload_services):
             subscribed.append(self._native.subscribe_service_items(service))
         self._set_signals_healthy(all(subscribed))
@@ -1176,8 +1176,8 @@ class VictronDBus:
             for service in self._mppt_services
         ]
 
-        # Tasmota: dbus-tasmota-pv publishes both counters directly from the
-        # plug telemetry (ENERGY.Today / ENERGY.Yesterday) - no arithmetic here.
+        # PV publishers expose both counters directly on D-Bus. For example,
+        # dbus-tasmota-pv maps ENERGY.Today / ENERGY.Yesterday; no arithmetic here.
         self._cached_pv_inverter_daily_yields = [
             self._get_float_nolock(s, PV_INVERTER_ENERGY_DAILY_PATH)
             for s in self._pv_inverter_services
@@ -2254,7 +2254,7 @@ class VictronDBus:
         return list(self._cached_mppt_daily_yields)
 
     def get_pv_inverter_daily_yields(self) -> list[float]:
-        """Get daily yield (kWh) for each Tasmota PV inverter - instant from background cache"""
+        """Get daily yield (kWh) for each PV inverter - instant from background cache"""
         return list(self._cached_pv_inverter_daily_yields)
 
     def get_mppt_yesterday_yields(self) -> list[float]:
@@ -2262,7 +2262,7 @@ class VictronDBus:
         return list(self._cached_mppt_yesterday_yields)
 
     def get_pv_inverter_yesterday_yields(self) -> list[float]:
-        """Get yesterday's yield (kWh) for each Tasmota PV inverter - instant from cache"""
+        """Get yesterday's yield (kWh) for each PV inverter - instant from cache"""
         return list(self._cached_pv_inverter_yesterday_yields)
 
     def get_battery_daily_energy(self) -> tuple[float, float]:

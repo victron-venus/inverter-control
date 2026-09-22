@@ -119,21 +119,24 @@ flowchart TD
     MPPT1 -.->|"D-Bus\nTelemetry"| Script["This Script\non Cerbo GX"]
     MPPT1 <-->|"DC"| Inverter["Victron\nInverter"]
 
-    Solar2["Solar Panels\n(Tasmota)"] -->|"DC"| MPPT2["Inline MPPT\nInverter\n(w/ Tasmota)"]
-    MPPT2 -->|"AC"| Tasmota["Tasmota\nSmart Plug"]
-    Tasmota -->|"AC"| Grid["AC Grid"]
+    Solar2["Solar Panels\n(AC-coupled)"] -->|"DC"| PVI["PV Inverter"]
+    PVI -->|"AC"| Grid["AC Grid"]
 
     Battery <-->|"DC"| Inverter
     Inverter <-->|"AC L1"| Grid
     Grid -->|"AC L1"| Loads1["Loads L1"]
     Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
 
-    Tasmota -.->|"D-Bus\n(dbustasmota-pv)"| Script
+    PVI -.->|"D-Bus\n(pvinverter.* publisher)"| Script
     HA["Home Assistant"] -.->|"HTTP\npolling"| Script
 
     Script -->|"D-Bus\nSetpoint"| Inverter
     Script -->|"MQTT"| Dashboard["Remote\nDashboard"]
 ```
+
+PV inputs are discovered through `com.victronenergy.pvinverter.*` D-Bus
+services. A publisher such as `dbus-tasmota-pv` can provide this telemetry;
+the controller does not require Tasmota hardware.
 
 
 ## Features
