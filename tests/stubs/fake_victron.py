@@ -11,7 +11,7 @@ What the fake covers
   `_cached_battery_chain_socs`, `_cached_inverter_state`,
   `_cached_battery_daily_energy`, …) read directly.
 - Public getters that build their return value from the cached properties
-  AND from per-service reads (`get_acload_powers`, `get_tasmota_pv_power`,
+  AND from per-service reads (`get_acload_powers`, `get_pv_power`,
   `get_mppt_data`, `get_battery_chain_socs`) — these now read from the same
   store the seeds populate.
 - Subprocess path is disabled: `_safe_subprocess` returns the seeded
@@ -221,7 +221,7 @@ class FakeVictronDBus:
         # MPPT
         self._v._cached_mppt_data = {svc: dict(reading) for svc, reading in cv["mppt"]}
         self._v._last_mppt_time = 1e18
-        # PV inverters (Tasmota)
+        # PV inverters
         self._v._cached_pv_powers = [dict(reading) for _, reading in cv["pv_inverter"]]
         self._v._last_pv_time = 1e18
         # Battery chains
