@@ -84,9 +84,11 @@ def test_staged_update_refreshes_code_without_replacing_supervisors(tmp_path):
     stage = tmp_path / "release"
     shutil.copytree(package, stage)
     (stage / "main.py").write_text("# new controller\n")
+    (package / "metrics.env").write_text("INVERTER_METRICS_HOST=192.0.2.10\n")
     inode = (package / "service/inverter-control/supervise").stat().st_ino
     subprocess.run(["sh", str(stage / "update.sh"), str(package)], cwd=stage, env=env, check=True)
     assert (package / "main.py").read_text() == "# new controller\n"
+    assert (package / "metrics.env").read_text() == "INVERTER_METRICS_HOST=192.0.2.10\n"
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
     assert (package / "service/inverter-control/supervise").stat().st_ino == inode
 

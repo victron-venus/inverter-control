@@ -5,6 +5,22 @@ The controller exposes metrics on `:9102/metrics` when the service runs with
 document gives ready-made alert rules; Grafana/datasource wiring lives in the
 `venus-os-observability` repo.
 
+## Remote scraping on Venus OS
+
+The listener defaults to loopback. For a Prometheus server on a trusted network,
+create `/data/inverter-control/metrics.env` on the device (mode 0600):
+
+```sh
+INVERTER_METRICS_HOST=192.168.160.150
+INVERTER_METRICS_PORT=9102
+```
+
+Use the device's own LAN address and restrict access to trusted monitoring hosts.
+The service run script loads this file; package updates preserve it. Restart the
+service under its supervisor, then check `/metrics` from the Prometheus host and
+confirm `up{job="inverter-control"} == 1`. A successful request to localhost alone
+does not verify remote scraping. Remove the override to restore loopback binding.
+
 ## Metrics of interest
 
 | Metric | Labels | Meaning |
