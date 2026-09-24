@@ -173,7 +173,11 @@ def _read_stream(stream):
     content = stream.read(MAX_BYTES + 1)
     if len(content) > MAX_BYTES:
         raise ValueError("Tariff file exceeds 100 KB")
-    return validate_tariff(json.loads(content))
+    try:
+        data = json.loads(content)
+    except RecursionError as exc:
+        raise ValueError("Tariff JSON nesting is too deep") from exc
+    return validate_tariff(data)
 
 
 def read_tariff(path):

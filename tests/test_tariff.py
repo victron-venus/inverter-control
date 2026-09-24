@@ -188,3 +188,10 @@ def test_cli_rejects_oversized_stdin_without_partial_output():
 
 def test_invalid_fallback_path_cannot_stop_controller(tmp_path):
     assert load_tariff(None, tmp_path / "missing.json") is None
+
+
+def test_deeply_nested_invalid_json_cannot_stop_controller(tmp_path, caplog):
+    path = tmp_path / "nested.json"
+    path.write_text("[" * 10_000 + "0" + "]" * 10_000)
+    assert load_tariff(path, tmp_path / "missing.json") is None
+    assert "nesting is too deep" in caplog.text
