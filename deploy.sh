@@ -11,10 +11,10 @@
 #   - SSH config with host 'Cerbo' pointing to Venus OS device
 #   - SSH key authentication configured
 #
-# Usage: ./deploy.sh [SSH_HOST]
+# Usage: [TARIFF_FILE=/path/to/tariff.json] ./deploy.sh [SSH_HOST]
 #
 
-set -e
+set -eo pipefail
 
 SSH_HOST="${1:-Cerbo}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -53,6 +53,19 @@ if [[ "${PUSH_LOCAL_CONFIG:-}" = "" ]]; then
     fi
 fi
 
+case "$PUSH_LOCAL_CONFIG" in
+    0|1) ;;
+    *) echo "ERROR: PUSH_LOCAL_CONFIG must be 0 or 1" >&2; exit 1 ;;
+esac
+
+# Tariffs are opt-in. Validate before SSH, then attach the normalized file to the bundle.
+DEPLOY_BUNDLE=$(mktemp -d)
+trap 'rm -rf "$DEPLOY_BUNDLE"' EXIT
+if [[ -n "${TARIFF_FILE:-}" ]]; then
+    python3 "$SCRIPT_DIR/inverter_control/tariff.py" --stdin --normalize \
+        < "$TARIFF_FILE" > "$DEPLOY_BUNDLE/tariff-install.json"
+fi
+
 COPYFILE_DISABLE=1 tar \
     --no-xattrs \
     --exclude='._*' \
@@ -67,10 +80,15 @@ COPYFILE_DISABLE=1 tar \
     --exclude='.venv' \
     --exclude='.mcp.json' \
     --exclude='build' \
-    -czf - -C "$SCRIPT_DIR" . \
-    | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
+    --exclude='electricity-tariff.json' \
+    --exclude='tariff-install.json' \
+    -cf "$DEPLOY_BUNDLE/source.tar" -C "$SCRIPT_DIR" .
+if [[ -n "${TARIFF_FILE:-}" ]]; then
+    tar -rf "$DEPLOY_BUNDLE/source.tar" -C "$DEPLOY_BUNDLE" ./tariff-install.json
+fi
+gzip -c "$DEPLOY_BUNDLE/source.tar" | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
-        PUSH_LOCAL_CONFIG="${PUSH_LOCAL_CONFIG:-0}" sh $DEPLOY_DIR/update.sh; \
+        PUSH_LOCAL_CONFIG='$PUSH_LOCAL_CONFIG' sh $DEPLOY_DIR/update.sh; \
         waited=0; while [ \$waited -lt 15 ] && ! [ -f /run/inverter-control/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
         rm -rf $DEPLOY_DIR"
 

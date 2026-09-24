@@ -296,6 +296,11 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    fallback rounds that timestamp more coarsely than one second, the backup
    stays unavailable because its freshness cannot be established.
 
+   **Optional electricity tariff:** run the manual tariff wizard during interactive
+   setup, or provision `/data/setupOptions/inverter-control/electricity-tariff.json`.
+   Seasonal prices, time zone and billing start day are shared with updated dashboards.
+   See [electricity tariff setup and deployment](docs/electricity-tariffs.md).
+
 4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
 
 #### How PackageManager Works
@@ -319,6 +324,7 @@ For development or testing, use `deploy.sh`:
 
 ```bash
 ./deploy.sh Cerbo    # 'Cerbo' is SSH host alias in ~/.ssh/config
+TARIFF_FILE=/path/to/electricity-tariff.json ./deploy.sh Cerbo  # optional explicit tariff
 ```
 
 This copies `main.py`, the `inverter_control/` package, `setup`, and `gitHubInfo` to the device, then restarts the service.

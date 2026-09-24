@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 from inverter_control.control_flags import get_control_toggle_config
+from inverter_control.tariff import DEFAULT_FILE, load_tariff
 
 # =============================================================================
 # LOCAL CONFIG (imported from local_config.py - not tracked by git)
@@ -599,7 +600,10 @@ _validate_config()
 # DASHBOARD PRESENTATION
 # =============================================================================
 
+ELECTRICITY_TARIFF = load_tariff(_import_local_config("ELECTRICITY_TARIFF_FILE", DEFAULT_FILE))
+
 UI_CONFIG: dict = {
+    "electricity_tariff": ELECTRICITY_TARIFF,
     # Daemon controls are advertised even when Home Assistant is disabled.
     "header_toggles": get_control_toggle_config(),
     "batteries": [

@@ -113,3 +113,7 @@ GRID_BACKUP_RECOVERY_SECONDS = 5.0
 # For a pinned external meter, a short hold can bridge transient outages:
 # GRID_LOSS_HOLD_SECONDS = 3.0
 GRID_LOSS_HOLD_SECONDS = None
+
+# Optional dashboard energy tariff. SetupHelper's persistent electricity-tariff.json
+# takes precedence. Use the manual wizard: python3 inverter_control/tariff.py --help
+# ELECTRICITY_TARIFF_FILE = "/data/inverter-control/electricity-tariff.json"
