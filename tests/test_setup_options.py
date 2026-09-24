@@ -62,3 +62,40 @@ def prepare_setup(tmp_path, option):
     script = tmp_path / "setup"
     script.write_text((REPO / "setup").read_text().replace("/data/", f"{data}/"))
     return data, package, script
+
+
+def test_automatic_setup_validates_tariff_without_prompting(tmp_path):
+    import json
+
+    from test_tariff import schedule
+
+    data, package, script = prepare_setup(tmp_path, None)
+    (package / "inverter_control").mkdir()
+    (package / "inverter_control/tariff.py").write_text(
+        (REPO / "inverter_control/tariff.py").read_text()
+    )
+    path = data / "setupOptions/inverter-control/electricity-tariff.json"
+    content = json.dumps(schedule())
+    path.write_text(content)
+    result = subprocess.run(
+        ["bash", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Configure electricity" not in result.stdout
+    assert path.read_text() == content
+    assert (data / "updated").exists()
+
+
+def test_invalid_setup_tariff_stops_before_replacing_private_config(tmp_path):
+    data, package, script = prepare_setup(tmp_path, None)
+    (package / "inverter_control").mkdir()
+    (package / "inverter_control/tariff.py").write_text(
+        (REPO / "inverter_control/tariff.py").read_text()
+    )
+    path = data / "setupOptions/inverter-control/electricity-tariff.json"
+    path.write_text("{}")
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 1
+    assert not (data / "updated").exists()
+    assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"
+    assert path.read_text() == "{}"

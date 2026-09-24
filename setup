@@ -52,6 +52,19 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         esac
     fi
 
+    tariffOption="/data/setupOptions/$packageName/electricity-tariff.json"
+    if [ -t 0 ] && [ "$userInteraction" = true ]; then
+        read -r -p "Configure electricity prices, seasons and billing day now? [y/N]: " tariffAnswer
+        case "$tariffAnswer" in
+            y|Y|yes) python3 "$scriptDir/inverter_control/tariff.py" --interactive --output "$tariffOption" || exit $? ;;
+            n|N|no|'') ;;
+            *) echo "ERROR: expected y or n" >&2; exit 1 ;;
+        esac
+    fi
+    if [ -f "$tariffOption" ]; then
+        python3 "$scriptDir/inverter_control/tariff.py" --input "$tariffOption" --check || exit $?
+    fi
+
     # Use one installer for PackageManager, local updates and webhook releases.
     # The package directory may be the source; update.sh handles that safely.
     mkdir -p "$installDir"

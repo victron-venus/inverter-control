@@ -99,3 +99,49 @@ def test_failed_startup_is_not_reported_as_installed(tmp_path):
     assert result.returncode == 1
     assert "fresh heartbeat" in result.stderr
     assert "installed version" not in result.stdout
+
+
+def tariff_python_stub(tmp_path, package):
+    """Keep fake device dependency checks isolated but run the real tariff validator."""
+    import shlex
+    import sys
+
+    (package / "inverter_control/tariff.py").write_text(
+        (REPO / "inverter_control/tariff.py").read_text()
+    )
+    stub = tmp_path / "bin/python3"
+    stub.write_text(
+        '#!/bin/sh\ncase "$1" in\n'
+        f'  */tariff.py) exec {shlex.quote(sys.executable)} "$@" ;;\n'
+        "  *) exit 0 ;;\nesac\n"
+    )
+
+
+def test_invalid_deploy_tariff_rejected_before_service_stop(tmp_path):
+    package, _, env = fake_device(tmp_path)
+    tariff_python_stub(tmp_path, package)
+    (package / "tariff-install.json").write_text("{}")
+    result = subprocess.run(
+        ["sh", "update.sh", str(package)], cwd=package, env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert not (tmp_path / "commands").exists()
+    assert (package / "main.py").read_text() == "# existing controller\n"
+
+
+def test_explicit_deploy_tariff_persists_and_ordinary_update_preserves_it(tmp_path):
+    import json
+
+    from test_tariff import schedule
+
+    package, _, env = fake_device(tmp_path)
+    tariff_python_stub(tmp_path, package)
+    incoming = package / "tariff-install.json"
+    incoming.write_text(json.dumps(schedule()))
+    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)
+    saved = package.parent / "setupOptions/inverter-control/electricity-tariff.json"
+    content = saved.read_text()
+    assert json.loads(content)["billingDay"] == 17
+    incoming.unlink()
+    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)
+    assert saved.read_text() == content

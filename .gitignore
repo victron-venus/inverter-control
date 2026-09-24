@@ -78,3 +78,7 @@ coverage.xml
 .release-plan.json
 .release-inputs.json
 release-assets/
+
+# Operator electricity tariff; deployments opt in with TARIFF_FILE
+electricity-tariff.json
+tariff-install.json
