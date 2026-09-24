@@ -1,6 +1,11 @@
 #!/bin/sh
 exec 2>&1
 
-cd /data/inverter-control
-export INVERTER_METRICS_PORT=9102
+cd /data/inverter-control || exit 1
+# Device-local options survive package updates; remote scraping is opt-in.
+if [ -f ./metrics.env ]; then
+    . ./metrics.env
+fi
+export INVERTER_METRICS_PORT="${INVERTER_METRICS_PORT:-9102}"
+export INVERTER_METRICS_HOST="${INVERTER_METRICS_HOST:-127.0.0.1}"
 exec python3 -u main.py
