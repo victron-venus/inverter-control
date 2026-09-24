@@ -60,8 +60,7 @@ To configure an already installed system directly:
 
 ```sh
 cd /data/inverter-control
-python3 inverter_control/tariff.py --interactive \
-  --output /data/setupOptions/inverter-control/electricity-tariff.json
+python3 inverter_control/tariff.py --interactive --install
 svc -t /service/inverter-control
 ```
 
@@ -81,15 +80,19 @@ period lists. The default applies to months without an override. Periods use
 Validate or normalize a file on the deployment machine:
 
 ```sh
-python3 inverter_control/tariff.py --input /path/to/my-schedule.json --check
-python3 inverter_control/tariff.py --input /path/to/my-schedule.json \
-  --output /path/to/electricity-tariff.json
+python3 inverter_control/tariff.py --stdin --check < /path/to/my-schedule.json
+python3 inverter_control/tariff.py --stdin --normalize \
+  < /path/to/my-schedule.json > /path/to/new-electricity-tariff.json
 ```
 
 The output is dashboard tariff **version 2**, with complete weekly grids. The
 same command accepts existing dashboard exports, including legacy version 1
 weekly plans. Input is limited to 100 KB; only normalized tariff fields are
-retained. Output files are written atomically with owner-only permissions.
+retained. Use a new output file when redirecting `--normalize`: shell redirection
+creates or truncates the destination before validation. Never redirect onto the
+input file. Installation with `--install` validates first and writes atomically
+with owner-only permissions to the fixed SetupHelper path; it accepts no
+arbitrary destination path.
 
 Deploy a plan explicitly:
 
@@ -105,9 +108,14 @@ It is installed at the persistent SetupHelper path. Without `TARIFF_FILE`,
 deployment leaves the device tariff unchanged. An untracked
 `electricity-tariff.json` in the source directory is not implicitly deployed.
 Normal release/webhook updates contain no operator tariff and preserve it.
-Custom provisioning tools can write the persistent file directly using the
-validator's `--output` option, then restart the service. They do not need to
-rewrite Python configuration or provide Emporia credentials.
+Custom provisioning tools can install the persistent file on the device using:
+
+```sh
+python3 inverter_control/tariff.py --stdin --install < /path/to/my-schedule.json
+svc -t /service/inverter-control
+```
+
+They do not need to rewrite Python configuration or provide Emporia credentials.
 
 ## Configuration precedence and invalid data
 

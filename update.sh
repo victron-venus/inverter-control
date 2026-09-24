@@ -53,7 +53,7 @@ done
 # Validate explicitly supplied deployment tariffs before any service interruption.
 # Ordinary releases carry no tariff-install.json and preserve the operator file.
 if [ -f "$SRC_DIR/tariff-install.json" ]; then
-    python3 "$SRC_DIR/inverter_control/tariff.py" --input "$SRC_DIR/tariff-install.json" --check
+    python3 "$SRC_DIR/inverter_control/tariff.py" --stdin --check < "$SRC_DIR/tariff-install.json"
 fi
 
 # Record freshness before any downtime; an old heartbeat cannot prove recovery.
@@ -140,8 +140,8 @@ if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; the
 fi
 
 if [ -f "$SRC_DIR/tariff-install.json" ]; then
-    python3 "$SRC_DIR/inverter_control/tariff.py" --input "$SRC_DIR/tariff-install.json" \
-        --output /data/setupOptions/inverter-control/electricity-tariff.json
+    python3 "$SRC_DIR/inverter_control/tariff.py" --stdin --install \
+        < "$SRC_DIR/tariff-install.json"
     sep "installed explicitly supplied electricity tariff"
 fi
 

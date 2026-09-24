@@ -1,5 +1,6 @@
 """Installer tariffs stay portable, complete and separate from live control policy."""
 
+import io
 import json
 import subprocess
 import sys
@@ -7,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from inverter_control import tariff
 from inverter_control.tariff import (
     interactive_tariff,
     load_tariff,
@@ -140,41 +142,48 @@ def test_interactive_entry_and_cancellation_preserve_file(tmp_path, monkeypatch)
     assert plan["billingDay"] == 17 and plan["seasons"][0]["rates"][0][0] == 0.4
     target = tmp_path / "saved.json"
     target.write_text("previous")
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "inverter_control/tariff.py"),
-            "--interactive",
-            "--output",
-            str(target),
-        ],
-        input="",
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 1 and target.read_text() == "previous"
+    monkeypatch.setattr(tariff, "SETUP_FILE", target)
+    monkeypatch.setattr(sys, "argv", ["tariff.py", "--interactive", "--install"])
+
+    def cancelled(_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", cancelled)
+    assert tariff.main() == 1 and target.read_text() == "previous"
 
 
-def test_cli_converts_manual_file_without_prompting(tmp_path):
-    source, target = tmp_path / "schedule.json", tmp_path / "tariff.json"
-    source.write_text(json.dumps(schedule()))
+def test_cli_converts_manual_file_without_prompting():
     result = subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "inverter_control/tariff.py"),
-            "--input",
-            str(source),
-            "--output",
-            str(target),
-        ],
-        stdin=subprocess.DEVNULL,
+        [sys.executable, str(REPO / "inverter_control/tariff.py"), "--stdin", "--normalize"],
+        input=json.dumps(schedule()),
         text=True,
         capture_output=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr
+    assert validate_tariff(json.loads(result.stdout))["billingDay"] == 17
+
+
+def test_install_uses_only_fixed_setup_path(tmp_path, monkeypatch):
+    target = tmp_path / "setupOptions/electricity-tariff.json"
+    monkeypatch.setattr(tariff, "SETUP_FILE", target)
+    monkeypatch.setattr(sys, "argv", ["tariff.py", "--stdin", "--install"])
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(schedule()).encode())))
+    assert tariff.main() == 0
     assert read_tariff(target)["billingDay"] == 17
+    assert target.stat().st_mode & 0o777 == 0o600
+
+
+def test_cli_rejects_oversized_stdin_without_partial_output():
+    result = subprocess.run(
+        [sys.executable, str(REPO / "inverter_control/tariff.py"), "--stdin", "--normalize"],
+        input=" " * 100_001,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 1 and result.stdout == ""
+    assert "100 KB" in result.stderr
 
 
 def test_invalid_fallback_path_cannot_stop_controller(tmp_path):

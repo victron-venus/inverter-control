@@ -58,7 +58,24 @@ def _slot(value, *, end=False):
         return 48
     if not isinstance(value, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):(?:00|30)", value):
         raise ValueError("Use half-hour times HH:00 or HH:30; 24:00 is only an end time")
-    return int(value[:2]) * 2 + (value[3:] == "30")
+    return int(value[:2]) * 2 + value.endswith("30")
+
+
+def _period_values(period):
+    if not isinstance(period, dict):
+        raise TypeError("Each period must be an object")
+    start, end = _slot(period.get("start")), _slot(period.get("end"), end=True)
+    if start >= end:
+        raise ValueError("Period end must follow start; split overnight periods at midnight")
+    days = period.get("days", list(range(1, 8)))
+    if (
+        not isinstance(days, list)
+        or not days
+        or any(not _integer(day, 1, 7) for day in days)
+        or len(set(days)) != len(days)
+    ):
+        raise ValueError("Days must be distinct integers 1 (Monday) through 7 (Sunday)")
+    return start, end, days, _number(period.get("rate"))
 
 
 def periods_grid(periods):
@@ -67,20 +84,7 @@ def periods_grid(periods):
         raise ValueError("Provide a nonempty periods list, at most 336 entries")
     grid = [[None] * 7 for _ in range(48)]
     for period in periods:
-        if not isinstance(period, dict):
-            raise TypeError("Each period must be an object")
-        start, end = _slot(period.get("start")), _slot(period.get("end"), end=True)
-        if start >= end:
-            raise ValueError("Period end must follow start; split overnight periods at midnight")
-        days = period.get("days", list(range(1, 8)))
-        if (
-            not isinstance(days, list)
-            or not days
-            or any(not _integer(day, 1, 7) for day in days)
-            or len(set(days)) != len(days)
-        ):
-            raise ValueError("Days must be distinct integers 1 (Monday) through 7 (Sunday)")
-        rate = _number(period.get("rate"))
+        start, end, days, rate = _period_values(period)
         for slot in range(start, end):
             for day in days:
                 if grid[slot][day - 1] is not None:
@@ -89,17 +93,7 @@ def periods_grid(periods):
     return _grid(grid)
 
 
-def validate_tariff(data):
-    """Normalize compact manual schedules or legacy/v2 dashboard exports to v2."""
-    if not isinstance(data, dict):
-        raise TypeError("Expected a tariff object")
-    compact = data.get("type") == "electricity-tariff-schedule"
-    version = data.get("version")
-    if not _integer(version, 1, 2) or (compact and version != 1):
-        raise ValueError("Unsupported tariff version")
-    if not compact and version == 1 and ("seasons" in data or "billingDay" in data):
-        raise ValueError("Seasonal dashboard exports require version 2")
-    name = _text(data.get("name"), "Name", 120)
+def _metadata(data, compact):
     currency = data.get("currency")
     if not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency):
         raise ValueError("Currency must be three uppercase letters, for example USD")
@@ -111,38 +105,13 @@ def validate_tariff(data):
     source = data.get("source", "manual" if compact else None)
     if source not in ("manual", "emporia"):
         raise ValueError("Invalid tariff source")
-    convert = periods_grid if compact else _grid
-    grid_key = "periods" if compact else "rates"
     result = {
         "version": 2,
-        "name": name,
+        "name": _text(data.get("name"), "Name", 120),
         "currency": currency,
         "timeZone": time_zone,
         "source": source,
-        "rates": convert(data.get(grid_key)),
-        "seasons": [],
     }
-    seasons = data.get("seasons", []) if compact or version == 1 else data.get("seasons")
-    if not isinstance(seasons, list) or len(seasons) > 12:
-        raise ValueError("Provide a seasons array with at most 12 seasons")
-    used = set()
-    for season in seasons:
-        if not isinstance(season, dict):
-            raise TypeError("Each season must be an object")
-        months = season.get("months")
-        if not isinstance(months, list) or not months:
-            raise ValueError("Each season needs calendar months")
-        for month in months:
-            if not _integer(month, 1, 12) or month in used:
-                raise ValueError("Season months must be distinct integers 1–12 with no overlap")
-            used.add(month)
-        result["seasons"].append(
-            {
-                "name": _text(season.get("name"), "Season name", 80),
-                "months": sorted(months),
-                "rates": convert(season.get(grid_key)),
-            }
-        )
     if "billingDay" in data:
         if not _integer(data["billingDay"], 1, 31):
             raise ValueError("Billing start day must be an integer 1–31, or omitted")
@@ -156,13 +125,68 @@ def validate_tariff(data):
     return result
 
 
-def read_tariff(path):
-    """Bound input size before parsing operator-owned JSON."""
-    with Path(path).open("rb") as stream:
-        content = stream.read(MAX_BYTES + 1)
+def _season_grids(seasons, convert, grid_key):
+    if not isinstance(seasons, list) or len(seasons) > 12:
+        raise ValueError("Provide a seasons array with at most 12 seasons")
+    used = set()
+    result = []
+    for season in seasons:
+        if not isinstance(season, dict):
+            raise TypeError("Each season must be an object")
+        months = season.get("months")
+        if not isinstance(months, list) or not months:
+            raise ValueError("Each season needs calendar months")
+        for month in months:
+            if not _integer(month, 1, 12) or month in used:
+                raise ValueError("Season months must be distinct integers 1–12 with no overlap")
+            used.add(month)
+        result.append(
+            {
+                "name": _text(season.get("name"), "Season name", 80),
+                "months": sorted(months),
+                "rates": convert(season.get(grid_key)),
+            }
+        )
+    return result
+
+
+def validate_tariff(data):
+    """Normalize compact manual schedules or legacy/v2 dashboard exports to v2."""
+    if not isinstance(data, dict):
+        raise TypeError("Expected a tariff object")
+    compact = data.get("type") == "electricity-tariff-schedule"
+    version = data.get("version")
+    if not _integer(version, 1, 2) or (compact and version != 1):
+        raise ValueError("Unsupported tariff version")
+    if not compact and version == 1 and ("seasons" in data or "billingDay" in data):
+        raise ValueError("Seasonal dashboard exports require version 2")
+    convert = periods_grid if compact else _grid
+    grid_key = "periods" if compact else "rates"
+    result = _metadata(data, compact)
+    result["rates"] = convert(data.get(grid_key))
+    seasons = data.get("seasons", []) if compact or version == 1 else data.get("seasons")
+    result["seasons"] = _season_grids(seasons, convert, grid_key)
+    return result
+
+
+def _read_stream(stream):
+    content = stream.read(MAX_BYTES + 1)
     if len(content) > MAX_BYTES:
         raise ValueError("Tariff file exceeds 100 KB")
     return validate_tariff(json.loads(content))
+
+
+def read_tariff(path):
+    """Read the operator-configured runtime path, with bounded input size."""
+    with Path(path).open("rb") as stream:
+        return _read_stream(stream)
+
+
+def _serialized_tariff(data):
+    content = json.dumps(validate_tariff(data), indent=2, allow_nan=False) + "\n"
+    if len(content.encode("utf-8")) > MAX_BYTES:
+        raise ValueError("Normalized tariff exceeds 100 KB")
+    return content
 
 
 def load_tariff(local_file=DEFAULT_FILE, setup_file=SETUP_FILE):
@@ -181,10 +205,7 @@ def load_tariff(local_file=DEFAULT_FILE, setup_file=SETUP_FILE):
 
 def write_tariff(path, data):
     """Validate completely, then atomically replace only the explicitly named file."""
-    plan = validate_tariff(data)
-    content = json.dumps(plan, indent=2, allow_nan=False) + "\n"
-    if len(content.encode("utf-8")) > MAX_BYTES:
-        raise ValueError("Normalized tariff exceeds 100 KB")
+    content = _serialized_tariff(data)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -252,20 +273,33 @@ def main():
     source.add_argument(
         "--interactive", action="store_true", help="manually enter rates and seasons"
     )
-    source.add_argument("--input", type=Path, help="compact schedule or dashboard tariff JSON")
+    source.add_argument("--stdin", action="store_true", help="read tariff JSON from standard input")
     target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--output", type=Path, help="atomically save normalized dashboard JSON")
+    target.add_argument(
+        "--install", action="store_true", help="atomically save at the fixed SetupHelper path"
+    )
+    target.add_argument(
+        "--normalize", action="store_true", help="write normalized JSON to standard output"
+    )
     target.add_argument(
         "--check", action="store_true", help="validate only, without changing files"
     )
     args = parser.parse_args()
     try:
-        plan = interactive_tariff() if args.interactive else read_tariff(args.input)
-        if args.output:
-            write_tariff(args.output, plan)
-        print(
-            "Electricity tariff validated" + (f" and saved to {args.output}" if args.output else "")
-        )
+        if args.interactive and args.normalize:
+            raise ValueError(
+                "Use --stdin with --normalize; interactive entry requires --install or --check"
+            )
+        plan = interactive_tariff() if args.interactive else _read_stream(sys.stdin.buffer)
+        if args.install:
+            write_tariff(SETUP_FILE, plan)
+        if args.normalize:
+            sys.stdout.write(_serialized_tariff(plan))
+        else:
+            print(
+                "Electricity tariff validated"
+                + (f" and saved to {SETUP_FILE}" if args.install else "")
+            )
         return 0
     except (EOFError, KeyboardInterrupt, OSError, ValueError, TypeError) as exc:
         print(f"Tariff configuration not saved: {exc}", file=sys.stderr)

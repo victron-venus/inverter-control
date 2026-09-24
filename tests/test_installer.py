@@ -107,7 +107,7 @@ def tariff_python_stub(tmp_path, package):
     import sys
 
     (package / "inverter_control/tariff.py").write_text(
-        (REPO / "inverter_control/tariff.py").read_text()
+        (REPO / "inverter_control/tariff.py").read_text().replace("/data/", f"{tmp_path}/data/")
     )
     stub = tmp_path / "bin/python3"
     stub.write_text(

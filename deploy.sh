@@ -61,9 +61,9 @@ esac
 # Tariffs are opt-in. Validate before SSH, then attach the normalized file to the bundle.
 DEPLOY_BUNDLE=$(mktemp -d)
 trap 'rm -rf "$DEPLOY_BUNDLE"' EXIT
-if [ -n "${TARIFF_FILE:-}" ]; then
-    python3 "$SCRIPT_DIR/inverter_control/tariff.py" --input "$TARIFF_FILE" \
-        --output "$DEPLOY_BUNDLE/tariff-install.json"
+if [[ -n "${TARIFF_FILE:-}" ]]; then
+    python3 "$SCRIPT_DIR/inverter_control/tariff.py" --stdin --normalize \
+        < "$TARIFF_FILE" > "$DEPLOY_BUNDLE/tariff-install.json"
 fi
 
 COPYFILE_DISABLE=1 tar \
@@ -83,7 +83,7 @@ COPYFILE_DISABLE=1 tar \
     --exclude='electricity-tariff.json' \
     --exclude='tariff-install.json' \
     -cf "$DEPLOY_BUNDLE/source.tar" -C "$SCRIPT_DIR" .
-if [ -n "${TARIFF_FILE:-}" ]; then
+if [[ -n "${TARIFF_FILE:-}" ]]; then
     tar -rf "$DEPLOY_BUNDLE/source.tar" -C "$DEPLOY_BUNDLE" ./tariff-install.json
 fi
 gzip -c "$DEPLOY_BUNDLE/source.tar" | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
