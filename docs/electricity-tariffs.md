@@ -22,6 +22,11 @@ Split overnight periods at midnight. This model covers energy charges only;
 it does not model holidays, tiers, demand charges, fixed fees, taxes or export
 credits. A billing period is displayed, but a time-of-use invoice total needs
 interval consumption data and is not inferred from daily kWh alone.
+Updated web and desktop dashboards accept measured grid-import CSV/JSON through
+**Interval energy cost**. See the [dashboard import guide](https://github.com/victron-venus/inverter-dashboard-vue/blob/main/docs/electricity-tariffs.md#measured-interval-energy-cost).
+The controller currently has no measured grid-energy history source and publishes
+`daily_stats.grid_kwh: null` rather than a fabricated zero. This does not affect
+instantaneous grid telemetry or control.
 
 ## SetupHelper / PackageManager
 

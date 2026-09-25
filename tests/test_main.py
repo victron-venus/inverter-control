@@ -573,6 +573,7 @@ class TestGetDailyStats(unittest.TestCase):
         assert "mppt_daily" in stats
         assert "pv_inverter_daily" in stats
         assert "pv_total_daily" in stats
+        assert stats["grid_kwh"] is None
         assert stats["produced_today"] == 12.0  # sum([5,3,2]) + sum([1.5,0.5])
         assert stats["battery_in"] == 10.5
         assert stats["battery_out"] == 8.2
