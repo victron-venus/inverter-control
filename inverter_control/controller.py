@@ -691,7 +691,7 @@ class InverterController:
         return {
             "produced_today": produced_today,
             "produced_yesterday": produced_yesterday,
-            "grid_kwh": 0.0,  # No D-Bus equivalent yet
+            "grid_kwh": None,  # No measured grid energy source; unknown is not zero
             "battery_in": battery_in,
             "battery_out": battery_out,
             "battery_in_yesterday": battery_in_yesterday,
