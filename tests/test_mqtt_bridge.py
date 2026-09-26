@@ -213,6 +213,30 @@ class TestMQTTBridge:
 
         callback.assert_called_once_with({"value": "raw_value"})
 
+    @pytest.mark.parametrize(
+        "retained,size,accepted",
+        [(False, 100_000, True), (False, 100_001, False), (True, 2, False)],
+    )
+    @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
+    @patch("inverter_control.mqtt_bridge.mqtt")
+    def test_tariff_command_rejects_retained_and_oversized_before_parsing(
+        self, mock_mqtt, retained, size, accepted
+    ):
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
+        callback = MagicMock()
+        bridge.register_callback("electricity_tariff", callback)
+        message = MagicMock(
+            topic="test/cmd/electricity_tariff", payload=b"{}" + b" " * (size - 2), retain=retained
+        )
+        with patch.object(bridge, "_parse_payload", wraps=bridge._parse_payload) as parse:
+            bridge._on_message(mock_mqtt.Client.return_value, None, message)
+        if accepted:
+            parse.assert_called_once()
+            callback.assert_called_once_with({})
+        else:
+            parse.assert_not_called()
+            callback.assert_not_called()
+
     @patch("inverter_control.mqtt_bridge.MQTT_AVAILABLE", True)
     @patch("inverter_control.mqtt_bridge.mqtt")
     def test_on_message_solar_forecast(self, mock_mqtt):
