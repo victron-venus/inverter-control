@@ -143,19 +143,40 @@ input file. Installation with `--install` validates first and writes atomically
 with owner-only permissions to the fixed SetupHelper path; it accepts no
 arbitrary destination path.
 
-Deploy a plan explicitly:
+To reuse a confirmed plan on every local deployment, keep it in this checkout's
+private deployment directory:
+
+```sh
+mkdir -p deploy.local
+cp /path/to/my-confirmed-tariff.json deploy.local/tariff.json
+./deploy.sh Cerbo
+```
+
+`./deploy.sh` (the default host is `Cerbo`) automatically selects
+`deploy.local/tariff.json` when `TARIFF_FILE` is unset. The directory is ignored
+by Git and excluded from deployment archives; only the validated, normalized
+tariff is added to the bundle. Any provenance notes can stay alongside the file
+in that directory. Keep this checkout current with the controller release before
+deploying: the script installs the checkout's controller code as well as its tariff.
+
+An explicit override takes precedence over the saved selection:
 
 ```sh
 TARIFF_FILE=/path/to/my-schedule.json ./deploy.sh Cerbo
-# Keep the device's Python configuration while provisioning only the tariff:
+# Keep the device's Python configuration while deploying code and tariff:
 PUSH_LOCAL_CONFIG=0 TARIFF_FILE=/path/to/electricity-tariff.json ./deploy.sh Cerbo
+# Skip the saved deployment tariff for this run and preserve the device's plan:
+TARIFF_FILE= ./deploy.sh Cerbo
 ```
 
 Validation runs before SSH. The normalized plan travels with the existing
 SSH deployment bundle and is validated again before stopping the controller.
-It is installed at the persistent SetupHelper path. Without `TARIFF_FILE`,
-deployment leaves the device tariff unchanged. An untracked
-`electricity-tariff.json` in the source directory is not implicitly deployed.
+It is installed at `/data/setupOptions/inverter-control/electricity-tariff.json`,
+the same persistent file used by dashboard edits, not the runtime fallback file.
+A selected file that is missing, unreadable or invalid stops deployment before
+SSH; it never falls back to another tariff. Without an explicit `TARIFF_FILE` or
+saved `deploy.local/tariff.json`, deployment leaves the device tariff unchanged.
+An untracked `electricity-tariff.json` in the source directory is not implicitly deployed.
 Normal release/webhook updates contain no operator tariff and preserve it.
 Custom provisioning tools can install the persistent file on the device using:
 

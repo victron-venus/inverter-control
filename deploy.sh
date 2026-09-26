@@ -12,6 +12,7 @@
 #   - SSH key authentication configured
 #
 # Usage: [TARIFF_FILE=/path/to/tariff.json] ./deploy.sh [SSH_HOST]
+# Default tariff: deploy.local/tariff.json when present; TARIFF_FILE= disables it.
 #
 
 set -eo pipefail
@@ -20,6 +21,16 @@ SSH_HOST="${1:-Cerbo}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_DIR="/data/.inverter-control-deploy"
 SEPARATOR="=============================================="
+
+# Saving a private deployment tariff opts this checkout into provisioning it.
+# An explicitly empty override means preserve the device tariff. A broken link
+# still counts as a selection and must fail validation rather than be skipped.
+if [[ "${TARIFF_FILE+x}" != x ]]; then
+    TARIFF_FILE=""
+    if [[ -e "$SCRIPT_DIR/deploy.local/tariff.json" || -L "$SCRIPT_DIR/deploy.local/tariff.json" ]]; then
+        TARIFF_FILE="$SCRIPT_DIR/deploy.local/tariff.json"
+    fi
+fi
 
 echo "$SEPARATOR"
 echo "  Deploying Inverter Control to Venus OS"
@@ -58,12 +69,15 @@ case "$PUSH_LOCAL_CONFIG" in
     *) echo "ERROR: PUSH_LOCAL_CONFIG must be 0 or 1" >&2; exit 1 ;;
 esac
 
-# Tariffs are opt-in. Validate before SSH, then attach the normalized file to the bundle.
+# Validate the selected tariff before SSH, then attach only its normalized content.
 DEPLOY_BUNDLE=$(mktemp -d)
 trap 'rm -rf "$DEPLOY_BUNDLE"' EXIT
 if [[ -n "${TARIFF_FILE:-}" ]]; then
+    echo "    Tariff: $TARIFF_FILE"
     python3 "$SCRIPT_DIR/inverter_control/tariff.py" --stdin --normalize \
         < "$TARIFF_FILE" > "$DEPLOY_BUNDLE/tariff-install.json"
+else
+    echo "    No deployment tariff selected - keeping device tariff"
 fi
 
 COPYFILE_DISABLE=1 tar \
@@ -80,6 +94,7 @@ COPYFILE_DISABLE=1 tar \
     --exclude='.venv' \
     --exclude='.mcp.json' \
     --exclude='build' \
+    --exclude='deploy.local' \
     --exclude='electricity-tariff.json' \
     --exclude='tariff-install.json' \
     -cf "$DEPLOY_BUNDLE/source.tar" -C "$SCRIPT_DIR" .
