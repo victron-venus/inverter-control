@@ -80,6 +80,7 @@ coverage.xml
 .release-inputs.json
 release-assets/
 
-# Operator electricity tariff; deployments opt in with TARIFF_FILE
+# Private deployment settings and operator tariffs
+deploy.local/
 electricity-tariff.json
 tariff-install.json
