@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from .alert_state import get_alert_storage
+from .tariff import MAX_BYTES as MAX_TARIFF_BYTES
 
 logger = logging.getLogger("inverter-control")
 
@@ -194,8 +195,11 @@ class MQTTBridge:
                 return
 
             cmd = topic.split("/")[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
-            if cmd == "setpoint_override" and msg.retain:
-                logger.warning("Ignoring retained setpoint override command")
+            if cmd in {"setpoint_override", "electricity_tariff"} and msg.retain:
+                logger.warning("Ignoring retained %s command", cmd)
+                return
+            if cmd == "electricity_tariff" and len(msg.payload) > MAX_TARIFF_BYTES:
+                logger.warning("Ignoring oversized electricity tariff command")
                 return
             payload = self._parse_payload(msg.payload)
             if cmd in self._callbacks:

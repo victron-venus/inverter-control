@@ -64,7 +64,8 @@ def prepare_setup(tmp_path, option):
     return data, package, script
 
 
-def test_automatic_setup_validates_tariff_without_prompting(tmp_path):
+@pytest.mark.parametrize("cleared", [False, True])
+def test_automatic_setup_validates_tariff_without_prompting(tmp_path, cleared):
     import json
 
     from test_tariff import schedule
@@ -75,7 +76,7 @@ def test_automatic_setup_validates_tariff_without_prompting(tmp_path):
         (REPO / "inverter_control/tariff.py").read_text()
     )
     path = data / "setupOptions/inverter-control/electricity-tariff.json"
-    content = json.dumps(schedule())
+    content = json.dumps(None if cleared else schedule())
     path.write_text(content)
     result = subprocess.run(
         ["bash", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5

@@ -169,7 +169,7 @@ def validate_tariff(data):
     return result
 
 
-def _read_stream(stream):
+def _read_stream(stream, *, nullable=True):
     content = stream.read(MAX_BYTES + 1)
     if len(content) > MAX_BYTES:
         raise ValueError("Tariff file exceeds 100 KB")
@@ -177,17 +177,20 @@ def _read_stream(stream):
         data = json.loads(content)
     except RecursionError as exc:
         raise ValueError("Tariff JSON nesting is too deep") from exc
-    return validate_tariff(data)
+    return None if nullable and data is None else validate_tariff(data)
 
 
 def read_tariff(path):
     """Read the operator-configured runtime path, with bounded input size."""
     with Path(path).open("rb") as stream:
-        return _read_stream(stream)
+        return _read_stream(stream, nullable=True)
 
 
 def _serialized_tariff(data):
-    content = json.dumps(validate_tariff(data), indent=2, allow_nan=False) + "\n"
+    content = (
+        json.dumps(None if data is None else validate_tariff(data), indent=2, allow_nan=False)
+        + "\n"
+    )
     if len(content.encode("utf-8")) > MAX_BYTES:
         raise ValueError("Normalized tariff exceeds 100 KB")
     return content

@@ -193,6 +193,14 @@ def _setup_mqtt_bridge(controller):
         return None
 
     bridge.register_callback("toggle", lambda p: _handle_toggle(controller, p))
+
+    def _electricity_tariff(payload):
+        controller.tariff.apply(payload)
+        # A saved plan and its acknowledgement must reach editors even while
+        # a grid telemetry outage pauses the normal state rebuild.
+        bridge.publish_state(controller.get_state_for_mqtt())
+
+    bridge.register_callback("electricity_tariff", _electricity_tariff)
     bridge.register_callback("press", lambda p: controller.ha.press_button(p.get("entity", "")))
 
     def _safe_setpoint(p):

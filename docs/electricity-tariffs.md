@@ -1,10 +1,15 @@
-# Electricity tariffs during installation and deployment
+# Controller-owned electricity tariffs
 
 Electricity tariffs describe dashboard energy prices and billing periods. They
 are optional and independent of the controller's expensive-hours settings,
 battery charging policy and inverter setpoints. No price is assumed when a
 plan is missing. Emporia is one possible source; manual tariffs work without
 an Emporia account or credentials.
+
+The controller owns the installation's tariff. Compatible dashboard editors
+save to the controller and use the plan it acknowledges; each desktop does not
+need its own tariff configuration. Updating prices does not change expensive
+hours, control flags, battery charging policy or live inverter setpoints.
 
 ## What to enter
 
@@ -60,6 +65,8 @@ Answering **n** or leaving the setup question blank preserves the current file.
 they validate an existing tariff and retain it across updates and reinstalls.
 Invalid tariff files stop setup before configuration replacement or service
 restart. Package removal also retains this operator-owned file.
+An explicitly cleared plan is stored as JSON `null`; automatic installations
+preserve this setting too, so a fallback file cannot resurrect a cleared plan.
 
 To configure an already installed system directly:
 
@@ -69,9 +76,46 @@ python3 inverter_control/tariff.py --interactive --install
 svc -t /service/inverter-control
 ```
 
-Restart the controller after changing the file; clients receive the new plan
+Restart the controller after changing the file manually; clients receive the new plan
 through its existing `ui_config.electricity_tariff` state field. The tariff is
 read at startup, not watched continuously.
+
+## Editing from a dashboard
+
+Compatible editors read `ui_config.electricity_tariff` and
+`ui_config.electricity_tariff_status` from `inverter/state`. Status contains
+`writable`, the current `revision`, the latest `request_id`, and `error`.
+The status is present before the first telemetry sweep and in slim state.
+
+An editor sends a non-retained JSON command to
+`inverter/cmd/electricity_tariff` (or the configured MQTT prefix):
+
+```json
+{
+  "request_id": "editor-unique-save-id",
+  "revision": "the-64-character-revision-from-controller-state",
+  "plan": null
+}
+```
+
+`plan` is the complete tariff object or `null` to clear it. `request_id` must
+contain 1–128 ASCII letters, digits, underscores, dots, colons or hyphens.
+The revision is an opaque concurrency token, not an authentication credential;
+commands use the installation's existing MQTT access controls. No extra command
+fields are accepted. Retained commands and payloads over 100 KB are ignored
+before parsing, so reconnect cannot replay an old edit.
+
+The controller validates and atomically saves the plan to the persistent
+SetupHelper file before publishing a successful acknowledgement. Editors should
+wait for the matching `request_id` and an empty `error`, rather than treating an
+MQTT publish as a successful save. Saving from a stale revision returns an error
+and preserves the current plan; repeating an already committed plan is safe.
+Persistence and validation errors also preserve the last accepted plan.
+
+Acknowledgements are published immediately, including when grid telemetry is
+unavailable. All connected clients then receive the same saved plan without a
+controller restart. Clearing stores `null` in the persistent file; it does not
+fall back to a desktop price or a local controller file.
 
 ## Noninteractive provisioning and deployment
 
@@ -127,55 +171,19 @@ They do not need to rewrite Python configuration or provide Emporia credentials.
 On the controller, the SetupHelper file takes priority over the local fallback
 `/data/inverter-control/electricity-tariff.json`. Set `ELECTRICITY_TARIFF_FILE`
 in private `local_config.py` to change that fallback. Absence means no configured
-plan. A malformed file at runtime logs a warning and publishes no tariff; it
+plan. A persistent JSON `null` explicitly means no tariff, even when the local
+fallback exists. A malformed file at runtime logs a warning and publishes no tariff; it
 never stops inverter control or silently substitutes a cheaper plan. Correct
 or remove that file and restart to recover.
 
-Updated dashboards apply this order:
+Controller-aware clients use the controller's plan and do not substitute a
+flat default when it is absent. Older clients may still apply a saved browser
+or application override; update those clients before relying on a shared
+installation tariff. A legacy client override is not silently uploaded to the
+controller, because it may be stale or belong to another installation.
 
-1. A tariff explicitly saved in that dashboard's local editor.
-2. A desktop/mobile application configuration tariff, if present.
-3. The tariff advertised by inverter-control.
-
-Use **Use installation tariff** in the dashboard editor to remove the local
-override. Installation changes then appear automatically after the controller
-restarts. Local overrides remain local; editing them does not write back to
-SetupHelper, another installation, or Emporia. Update older dashboard versions
-before provisioning a seasonal plan; they do not consume this installation field.
-
-## Desktop/mobile setup, settings and backups
-
-The first-run wizard and **Configuration → Electricity tariff** provide the
-same editor. Enter prices manually, use **Add season**, select calendar months,
-and set the billing start day; or import normalized dashboard JSON. **Apply
-tariff** changes the configuration draft. **Save & Continue** or Configuration
-**Save** persists it. Closing without saving discards those draft changes.
-**Use controller tariff** clears the application-level plan; any local dashboard
-override still takes priority until removed there too.
-
-The application stores the plan in its existing encrypted configuration and
-includes it in portable configuration backups:
-
-```json
-{
-  "modules": {
-    "victron.energy-tariff": {
-      "schema_version": 1,
-      "values": { "plan": null }
-    }
-  }
-}
-```
-
-For managed installations, replace `null` with the complete normalized tariff
-object and merge this namespace into the installation's regular configuration
-backup before restoring it. Do not replace the whole configuration with this
-fragment. `null` means inherit the controller tariff. The module envelope version
-is 1; the contained tariff version is 2. Unsupported or invalid plans remain
-visible as configuration errors and are not used for pricing. Other modules and
-connection credentials retain their existing backup/restore behavior. Tariff
-exports contain no account credentials, address or consumption history.
-
-For web-only installations, provision the controller file or import the
-normalized JSON through **Set tariff**. Browser-only overrides are not part of
-desktop configuration backups; use **Export tariff** to transfer those copies.
+Back up the persistent SetupHelper file to preserve the installation plan.
+Normalized tariff exports remain portable and contain no account credentials,
+address or consumption history. They can be imported into a compatible editor
+or provisioned with the commands above; desktop configuration backups do not
+replace the controller's operator-owned tariff.

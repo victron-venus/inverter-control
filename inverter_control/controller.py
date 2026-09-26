@@ -153,6 +153,9 @@ class InverterController:
         )
 
         self.ui_config = get_ui_config()
+        from .tariff_service import TariffService  # pylint: disable=import-outside-toplevel
+
+        self.tariff = TariffService(self.ui_config.get("electricity_tariff"))
 
         # Initialize Logic and UI components
         config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
@@ -463,7 +466,7 @@ class InverterController:
             return False
 
     def get_state(self) -> dict[str, Any]:
-        return self.state
+        return {**self.state, "ui_config": {**self.ui_config, **self.tariff.snapshot()}}
 
     def set_manual_setpoint(self, value: int) -> bool:
         self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
@@ -761,7 +764,7 @@ class InverterController:
             "loop_interval": self.loop_interval,
             "version": VERSION,
             "uptime": int(time.time() - self._start_time),
-            "ui_config": self.ui_config,
+            "ui_config": {**self.ui_config, **self.tariff.snapshot()},
             "dvcc_limits": self.dvcc_limits if self.dvcc_limits else None,
         }
         self._update_grid_loss_state()
@@ -872,7 +875,7 @@ class InverterController:
         # Daemon-owned control intent is never stripped by the slim payload.
         out["setpoint_override"] = self.get_setpoint_override()
         # Include presentation even before the first telemetry sweep.
-        out["ui_config"] = self.ui_config
+        out["ui_config"] = {**self.ui_config, **self.tariff.snapshot()}
         return out
 
     def _update_dvcc_limits(self) -> None:
