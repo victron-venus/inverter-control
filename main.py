@@ -342,6 +342,7 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread) -> None:
         controller.grid_filter.stop()
     if controller.derived_grid_filter:
         controller.derived_grid_filter.stop()
+    controller.stop_auxiliary_readers()
     # Stop hardware watchdog
     try:
         controller._watchdog.stop()
@@ -367,6 +368,7 @@ def _run_main_loop(controller, mqtt_bridge):
     # Start the hardware watchdog just before entering the loop, so slow
     # startup work above doesn't get mistaken for a stalled control loop.
     controller._watchdog.start()
+    controller.start_auxiliary_readers()
     if controller.grid_filter:
         controller.grid_filter.start()
     if controller.derived_grid_filter:
@@ -428,7 +430,11 @@ def _main_inner():
 
     if args.setpoint is not None:
         controller.manual_setpoint = args.setpoint
-        controller.run_cycle()
+        controller.start_auxiliary_readers()
+        try:
+            controller.run_cycle()
+        finally:
+            controller.stop_auxiliary_readers()
         return
 
     start_console_server()
