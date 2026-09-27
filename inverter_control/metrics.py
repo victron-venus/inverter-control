@@ -14,7 +14,7 @@ from collections import deque
 
 
 def _percentile(sorted_values: list[float], pct: float) -> float | None:
-    """Nearest-rank percentile of an ascending-sorted list."""
+    """Select the rounded zero-based percentile index of a sorted list."""
     if not sorted_values:
         return None
     idx = min(len(sorted_values) - 1, max(0, round(pct / 100.0 * (len(sorted_values) - 1))))
@@ -87,7 +87,9 @@ class CycleMetrics:
         writes = sorted(self._write_ms)
         ages = sorted(self._age_ms)
         return {
+            "window_capacity": self.WINDOW,
             "cycle_ms": {
+                "samples": len(cycles),
                 "p50": _percentile(cycles, 50),
                 "p95": _percentile(cycles, 95),
                 "p99": _percentile(cycles, 99),
@@ -95,6 +97,7 @@ class CycleMetrics:
                 "missed_deadlines": self.missed_deadlines,
             },
             "setvalue_ms": {
+                "samples": len(writes),
                 "p50": _percentile(writes, 50),
                 "p95": _percentile(writes, 95),
                 "p99": _percentile(writes, 99),
@@ -102,11 +105,13 @@ class CycleMetrics:
                 "failed": self.failed_writes,
             },
             "snapshot_age_ms": {
+                "samples": len(ages),
                 "p50": _percentile(ages, 50),
                 "max": _percentile(ages, 100),
             },
             "stage_ms": {
                 name: {
+                    "samples": len(samples),
                     "p50": _percentile(sorted(samples), 50),
                     "p95": _percentile(sorted(samples), 95),
                     "p99": _percentile(sorted(samples), 99),

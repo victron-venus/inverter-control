@@ -795,3 +795,61 @@ def test_cycle_keeps_tcp_console_without_screen_title_escapes(monkeypatch, inter
     assert console_server._next_line_done() is False
     client.sendall.assert_called_once_with((line + "\n").encode())
     assert console_server._sender_queue.empty()
+
+
+def test_blocked_ev_and_water_refresh_do_not_delay_control_or_console():
+    """Exercise the real calculator boundary and console while both devices wait."""
+    import threading
+
+    from inverter_control.background_reader import BackgroundReader
+    from inverter_control.console_ui import ConsoleUI
+
+    entered = [threading.Event(), threading.Event()]
+    release = threading.Event()
+
+    def blocked(index):
+        entered[index].set()
+        assert release.wait(2.0)
+        return {}
+
+    controller, victron, ha, calculator = _make_controller()
+    controller.water = BackgroundReader(
+        lambda: blocked(0),
+        {"water_level": None, "water_valve": None, "pump_switch": None},
+        name="test-water",
+    )
+    controller.evcharger = BackgroundReader(
+        lambda: blocked(1),
+        {"ev_power": None, "car_soc": None, "ev_charging_kw": None},
+        name="test-ev",
+    )
+    controller.console = ConsoleUI(ha, victron, controller.water, controller.evcharger)
+    victron.get_system_data.return_value = {
+        "_grid_valid": True,
+        "gt": 50,
+        "g1": 20,
+        "g2": 30,
+        "tt": 100,
+        "t1": 40,
+        "t2": 60,
+        "bv": 48.0,
+    }
+    victron.get_mppt_data.return_value = {}
+    victron.get_pv_power.return_value = []
+    victron.get_inverter_power.return_value = 0
+    victron.get_inverter_state.return_value = (9, "Inverting")
+    ha.get_vue_sensor.return_value = 0
+    ha.get_sensor.return_value = 0
+    calculator.calculate.return_value = MagicMock(setpoint=-50, flags="", filtered_gt=50.0)
+    controller.update_state = MagicMock()
+    controller.start_auxiliary_readers()
+    try:
+        assert all(event.wait(1.0) for event in entered)
+        assert controller.run_cycle() is True
+        victron.set_grid_setpoint.assert_called_once_with(-50)
+        assert controller.last_console_line is not None
+        assert "--%" in controller.last_console_line
+        assert not release.is_set()
+    finally:
+        release.set()
+        controller.stop_auxiliary_readers()
