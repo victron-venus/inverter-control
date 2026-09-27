@@ -853,3 +853,8 @@ Loki URLs must use HTTP or HTTPS. Redirects are rejected; configure the final pu
 ### Grid measurement validity
 
 See [Grid telemetry validity and recovery](docs/grid-telemetry-safety.md) for source and phase validation, cold-start expectations, watchdog timing and diagnostics. Sites that require an external meter should configure its expected service and phase layout before rollout.
+
+## Auxiliary reader timing candidate
+
+See [scheduling behavior and hardware acceptance boundaries](docs/auxiliary-readers.md)
+for asynchronous EV/water reads and the metric sample counts.

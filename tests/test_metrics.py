@@ -18,7 +18,7 @@ class TestPercentile:
 
     def test_ranks(self):
         vals = list(range(1, 101))  # 1..100
-        assert _percentile(vals, 50) == 51  # nearest-rank on 100 items
+        assert _percentile(vals, 50) == 51  # rounded index 50 on 100 items
         assert _percentile(vals, 0) == 1
         assert _percentile(vals, 100) == 100
 
@@ -60,6 +60,11 @@ class TestCycleMetrics:
         for _ in range(m.WINDOW + 50):
             m.record_write(1.0, True)
         assert len(m._write_ms) == m.WINDOW
+        snapshot = m.snapshot()
+        assert snapshot["window_capacity"] == m.WINDOW
+        assert snapshot["setvalue_ms"]["samples"] == m.WINDOW
+        assert snapshot["cycle_ms"]["samples"] == 0
+        assert snapshot["snapshot_age_ms"]["samples"] == 0
 
     def test_sample_process_noop_off_linux(self):
         # Must never raise on macOS / restricted environments
@@ -83,6 +88,7 @@ class TestStageTiming:
         m.record_stage("console_render", 100.0)
         snap = m.snapshot()
         assert snap["stage_ms"]["get_system_data"] == {
+            "samples": 2,
             "p50": 10.0,
             "p95": 20.0,
             "p99": 20.0,
@@ -99,6 +105,7 @@ class TestStageTiming:
         for i in range(m.WINDOW + 50):
             m.record_stage("dvcc", float(i))
         assert len(m._stage_ms["dvcc"]) == m.WINDOW
+        assert m.snapshot()["stage_ms"]["dvcc"]["samples"] == m.WINDOW
 
     def test_stages_sum_within_cycle(self):
         # Stage deltas should roughly account for the whole cycle duration.

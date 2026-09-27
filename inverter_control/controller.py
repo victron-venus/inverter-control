@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import inverter_control.config as _config
+from inverter_control.background_reader import BackgroundReader
 from inverter_control.config import (
     DRY_RUN,
     DVCC_CCL_CHANGE_RATE,
@@ -137,15 +138,25 @@ class InverterController:
 
         # Water comes from dbus-pump D-Bus services (no HA). In test mode the
         # victron client never touches the bus, so skip the reader entirely.
-        self.water: WaterSystemReader | None = None
+        self.water: BackgroundReader | None = None
         if not getattr(self.victron, "_test_mode", False):
-            self.water = WaterSystemReader(self.victron.dbus_get)
+            water = WaterSystemReader(self.victron.dbus_get)
+            self.water = BackgroundReader(
+                lambda: water.read(force=True),
+                {"water_level": None, "water_valve": None, "pump_switch": None},
+                name="water-reader",
+            )
 
         # EV charger / vehicle from D-Bus (dbus-evcharger + dbus-ev). Same
         # test-mode guard as water; no HA dependency.
-        self.evcharger: EvChargerReader | None = None
+        self.evcharger: BackgroundReader | None = None
         if not getattr(self.victron, "_test_mode", False):
-            self.evcharger = EvChargerReader(self.victron.dbus_get, self.victron.get_service_names)
+            evcharger = EvChargerReader(self.victron.dbus_get, self.victron.get_service_names)
+            self.evcharger = BackgroundReader(
+                lambda: evcharger.read(force=True),
+                {"ev_power": None, "car_soc": None, "ev_charging_kw": None},
+                name="ev-reader",
+            )
 
         # Load UI configuration
         from inverter_control.config import (
@@ -483,6 +494,17 @@ class InverterController:
             self.manual_setpoint = None
         self._update_grid_loss_state()
         return status
+
+    def start_auxiliary_readers(self) -> None:
+        """Start bounded-age EV/water snapshots without blocking startup."""
+        for reader in (self.water, self.evcharger):
+            if reader is not None:
+                reader.start()
+
+    def stop_auxiliary_readers(self) -> None:
+        for reader in (self.water, self.evcharger):
+            if reader is not None:
+                reader.stop()
 
     def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""
