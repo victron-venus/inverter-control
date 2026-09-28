@@ -887,7 +887,7 @@ def test_blocked_ev_and_water_refresh_do_not_delay_control_or_console():
         controller.stop_auxiliary_readers()
 
 
-@pytest.mark.parametrize("blocked_stage", ["procfs", "exporter"])
+@pytest.mark.parametrize("blocked_stage", ["procfs", "exporter", "write_log"])
 def test_blocked_performance_diagnostics_do_not_delay_state_update(blocked_stage):
     import threading
 
@@ -901,11 +901,13 @@ def test_blocked_performance_diagnostics_do_not_delay_state_update(blocked_stage
         entered.set()
         assert release.wait(2)
 
-    target = (
-        patch.object(controller.metrics, "sample_process", side_effect=blocked)
-        if blocked_stage == "procfs"
-        else patch(f"{_MOD}.prom_metrics_publish", side_effect=blocked)
-    )
+    if blocked_stage == "procfs":
+        target = patch.object(controller.metrics, "sample_process", side_effect=blocked)
+    elif blocked_stage == "exporter":
+        target = patch(f"{_MOD}.prom_metrics_publish", side_effect=blocked)
+    else:
+        controller.victron.drain_write_timings.return_value = [{"serial": 7}]
+        target = patch(f"{_MOD}.logger.warning", side_effect=blocked)
     with target:
         controller.performance.start()
         try:

@@ -721,6 +721,8 @@ class InverterController:
 
     def _read_performance(self) -> dict:
         """Procfs, percentile sorting and exporter locks stay off the control loop."""
+        for timing in self.victron.drain_write_timings():
+            logger.warning("Native D-Bus write timing: %s", timing)
         self.metrics.sample_process()
         perf = self.metrics.snapshot()
         perf["signals_healthy"] = bool(self.victron.is_signals_healthy())

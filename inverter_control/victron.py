@@ -391,6 +391,10 @@ class VictronDBus:
         """Public view of fast-signal path health (for perf telemetry)."""
         return self._signals_healthy()
 
+    def drain_write_timings(self) -> list[dict]:
+        """Collect native diagnostics without reading or controlling devices."""
+        return self._native.drain_write_timings() if self._native is not None else []
+
     def _set_signals_healthy(self, value: bool) -> None:
         """Update subscription flag; log each healthy<->unhealthy flip once."""
         if value == self._signal_paths_subscribed:
