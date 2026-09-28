@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 
 logger = logging.getLogger("inverter-control")
 
@@ -45,6 +46,7 @@ MATCH_TIMEOUT = 1.0
 # After a connection failure, skip native calls briefly so the CLI fallback takes over
 # while the bus recovers; next call after cooldown reconnects automatically.
 RECONNECT_COOLDOWN = 5.0
+SLOW_SET_TIMING_MS = 200.0
 
 # D-Bus signature type codes for the variant types we write.
 TYPE_CODES = {
@@ -97,6 +99,10 @@ class NativeDbusClient:
         # Called after a lost connection is re-established, so the owner can
         # refetch initial values (signals only fire on change).
         self.on_reconnect = None
+        # Bounded diagnostics only. The performance worker drains these; no
+        # logging or exporter I/O runs while a write caller waits for its ACK.
+        self._write_timings = deque(maxlen=64)
+        self._write_timings_lock = threading.Lock()
 
     # ------------------------------------------------------------------ #
     # Loop / connection lifecycle                                        #
@@ -116,7 +122,7 @@ class NativeDbusClient:
         self._loop = loop
         return loop
 
-    def _call_on_loop(self, async_fn, timeout: float):
+    def _call_on_loop(self, async_fn, timeout: float, *, timing=None):
         """Run a coroutine factory on the loop, cross-thread safe.
 
         Submits ``async_fn()`` onto the dedicated event-loop thread and waits up
@@ -138,16 +144,26 @@ class NativeDbusClient:
         deadline = time.monotonic() + timeout
 
         async def _run():
+            if timing is not None:
+                timing["dispatched_at"] = time.monotonic()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 # A busy loop must not send an old queued setpoint after the
                 # caller has already timed out and requested a safety zero.
                 raise TimeoutError("Request expired before dispatch")
             async with asyncio.timeout(remaining):
-                return await async_fn()
+                if timing is not None:
+                    timing["await_started_at"] = time.monotonic()
+                try:
+                    return await async_fn()
+                finally:
+                    if timing is not None:
+                        timing["completed_at"] = time.monotonic()
 
         coroutine = _run()
         try:
+            if timing is not None:
+                timing["submitted_at"] = time.monotonic()
             future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
         except BaseException as error:
             coroutine.close()
@@ -163,6 +179,43 @@ class NativeDbusClient:
             # synchronous wait. Cancellation cannot recall a wire message.
             future.cancel()
             raise
+        finally:
+            if timing is not None:
+                timing["returned_at"] = time.monotonic()
+
+    def _record_write_timing(self, timing, bus, message):
+        # The cancelled loop coroutine may finish later. Snapshot once, and
+        # report unavailable phases as None rather than inventing durations.
+        sampled = dict(timing)
+        returned = sampled.setdefault("returned_at", time.monotonic())
+        total_ms = (returned - sampled["started_at"]) * 1000.0
+        if total_ms < SLOW_SET_TIMING_MS:
+            return
+
+        def elapsed(start, finish):
+            a, b = sampled.get(start), sampled.get(finish)
+            if a is None or b is None or b < a or b > returned:
+                return None
+            return round((b - a) * 1000.0, 3)
+
+        sample = {
+            "sender": getattr(bus, "unique_name", None),
+            "serial": message.serial or None,
+            "total_ms": round(total_ms, 3),
+            "setup_ms": elapsed("started_at", "submitted_at"),
+            "dispatch_ms": elapsed("submitted_at", "dispatched_at"),
+            "await_reply_ms": elapsed("await_started_at", "completed_at"),
+            "caller_wakeup_ms": elapsed("completed_at", "returned_at"),
+        }
+        with self._write_timings_lock:
+            self._write_timings.append(sample)
+
+    def drain_write_timings(self) -> list[dict]:
+        """Take slow-write diagnostics for a background sink; contains no values."""
+        with self._write_timings_lock:
+            samples = list(self._write_timings)
+            self._write_timings.clear()
+        return samples
 
     async def _call_message(self, bus, message):
         """Call one message and release its reply handler, including on timeout."""
@@ -387,6 +440,7 @@ class NativeDbusClient:
             logger.debug("Invalid native D-Bus request %s %s/%s: %s", service, member, path, e)
             return None
 
+        timing = {"started_at": time.monotonic()} if member == "SetValue" else None
         bus = self._get_bus()
         if bus is None:
             return None
@@ -395,7 +449,10 @@ class NativeDbusClient:
             def _call():
                 return self._call_message(bus, message)
 
-            reply = self._call_on_loop(_call, timeout)
+            if timing is None:
+                reply = self._call_on_loop(_call, timeout)
+            else:
+                reply = self._call_on_loop(_call, timeout, timing=timing)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug(
                 "Native D-Bus %s %s/%s failed (%s): %s",
@@ -413,6 +470,9 @@ class NativeDbusClient:
             ):
                 self._mark_failure(bus)
             reply = None
+        finally:
+            if timing is not None:
+                self._record_write_timing(timing, bus, message)
         if reply is None:
             if (
                 not getattr(bus, "connected", True)
