@@ -790,7 +790,7 @@ class InverterController:
         performance = self.performance.read()
         sampled_at = performance.get("perf", {}).get("sampled_at_unix")
         if sampled_at is not None and sampled_at != self._last_perf_snapshot:
-            # Preserve the prior ~5s MQTT diagnostics cadence.
+            # Refresh diagnostics in UI/MQTT state only for a newly sampled result.
             self.state.update(performance)
             self._last_perf_snapshot = sampled_at
         self._check_ess_external()

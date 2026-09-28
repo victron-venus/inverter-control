@@ -2,9 +2,10 @@
 
 Performance diagnostics run in a separate worker: `/proc` sampling, rolling
 percentile calculation, and Prometheus export do not execute in the control
-cycle. MQTT state includes each new performance snapshot once, approximately
-every five seconds, with `sampled_at_unix`. Missing, failed, or older-than-15-second
-snapshots are omitted. The recorder only holds a lock while copying bounded
+cycle. Performance snapshots refresh approximately every five seconds and carry
+`sampled_at_unix`. Rebuilding UI/MQTT state includes only a newly sampled result;
+missing, failed, or older-than-15-second results are omitted. Intermediate MQTT
+publications may repeat the current state and its sampling timestamp. The recorder only holds a lock while copying bounded
 buffers; sorting and exporter I/O run outside that lock. This removes diagnostic
 work from the cycle but does not guarantee a bound on acknowledged D-Bus writes
 or host scheduling latency. Hardware acceptance must still measure deadline
