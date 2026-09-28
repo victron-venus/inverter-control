@@ -96,8 +96,8 @@ class TestMQTTBridge:
         mock_client = MagicMock()
         mock_mqtt.Client.return_value = mock_client
 
-        bridge = mqtt_bridge.MQTTBridge(prefix="test")
         with patch("inverter_control.config.PORTAL_ID", "portal123"):
+            bridge = mqtt_bridge.MQTTBridge(prefix="test")
             bridge._on_connect(mock_client, None, None, 0)
 
         assert bridge._connected is True
@@ -105,6 +105,8 @@ class TestMQTTBridge:
         mock_client.subscribe.assert_any_call("test/cmd/#")
         mock_client.subscribe.assert_any_call("test/alert/ack")
         mock_client.subscribe.assert_any_call("solar/forecast")
+        mock_client.subscribe.assert_any_call("solar_forecast/portal123/forecast_json", qos=1)
+        mock_client.subscribe.assert_any_call("solar_forecast/portal123/pre_charge_request", qos=1)
         assert mock_client.subscribe.call_count == 5
         mock_client.publish.assert_any_call("test/portal", "portal123", qos=0, retain=True)
         assert mock_client.publish.call_count == 2

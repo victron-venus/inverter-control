@@ -1,7 +1,7 @@
 # Solar delivery contract v1
 
-The controller consumes `N/<PORTAL_ID>/solar_forecast/forecast_json` (retained,
-QoS 1) and `N/<PORTAL_ID>/solar_forecast/pre_charge_request` (non-retained,
+The controller consumes `solar_forecast/<PORTAL_ID>/forecast_json` (retained,
+QoS 1) and `solar_forecast/<PORTAL_ID>/pre_charge_request` (non-retained,
 QoS 1). Configure the producer's `SITE_ID` to the GX portal ID and
 `MQTT_BROKER` to the reachable GX address. The legacy `solar/forecast` topic
 remains supported. Use the site's trusted MQTT network/access controls; this
@@ -14,7 +14,7 @@ forecast below threshold; lifetime is at most 300 seconds, future clock skew
 at most 30 seconds. The producer uses SHA256 of
 `precharge-v1:<site_id>:<local-calendar-date>` as its daily request ID.
 
-Subscribe to `N/<PORTAL_ID>/solar_forecast/pre_charge_ack/<request_id>` before
+Subscribe to `solar_forecast/<PORTAL_ID>/pre_charge_ack/<request_id>` before
 publishing. The receiver acknowledges with status/reason/request_id/http_status.
 HTTP `/api/v1/pre-charge` uses the same inbox and returns the indicated status:
 202 accepted (queued_one_cycle), 409 suppressed (expensive_window), 200 duplicate
@@ -34,3 +34,9 @@ Display-only reads run on a 2-second background worker; snapshots older than
 8 seconds become unknown. Control measurements and setpoint writes retain their
 existing path. This removes telemetry I/O from update_state without claiming
 hard realtime scheduling on Linux/D-Bus.
+
+The `solar_forecast/<site>` namespace is deliberately outside Venus `N/<portal>`.
+The [Venus broker plugin](https://github.com/victronenergy/dbus-flashmq/blob/master/src/flashmq-dbus-plugin.cpp)
+reserves `N/<portal>` for its own notifications and denies external publishers.
+A MQTT 3.1.1 PUBACK alone does not prove subscriber delivery on that namespace.
+Upgrade both producer and controller before using the new topic pair.
