@@ -12,7 +12,7 @@ logger = logging.getLogger("inverter-control")
 class BackgroundReader:
     """Refresh independently of the control loop and discard expired snapshots.
 
-    The callback must only read devices. No lock is held across it, and each
+    The callback must never control devices. No lock is held across it, and each
     reader owns one worker so a slow water service cannot delay the EV reader.
     Before the first result, after an error, or after max_age, read returns the
     supplied unknown values. Stopping never falls back to synchronous I/O.

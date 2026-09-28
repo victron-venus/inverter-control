@@ -9,6 +9,7 @@ dependencies, no I/O - everything is computed from in-memory deques.
 """
 
 import os
+import threading
 import time
 from collections import deque
 
@@ -27,6 +28,7 @@ class CycleMetrics:
     WINDOW = 600  # samples (~3 min at 3 Hz)
 
     def __init__(self):
+        self._lock = threading.Lock()
         self._cycle_ms = deque(maxlen=self.WINDOW)
         self._write_ms = deque(maxlen=self.WINDOW)
         self._age_ms = deque(maxlen=self.WINDOW)
@@ -39,27 +41,31 @@ class CycleMetrics:
     def record_cycle(self, started_monotonic: float, interval: float) -> None:
         """Record one control-cycle duration and deadline misses."""
         dur_ms = (time.monotonic() - started_monotonic) * 1000.0
-        self._cycle_ms.append(dur_ms)
-        if dur_ms > interval * 1000.0:
-            self.missed_deadlines += 1
+        with self._lock:
+            self._cycle_ms.append(dur_ms)
+            if dur_ms > interval * 1000.0:
+                self.missed_deadlines += 1
 
     def record_write(self, duration_ms: float, ok: bool) -> None:
         """Record one setpoint write (native or CLI fallback)."""
-        if not ok:
-            self.failed_writes += 1
-        self._write_ms.append(duration_ms)
+        with self._lock:
+            if not ok:
+                self.failed_writes += 1
+            self._write_ms.append(duration_ms)
 
     def record_age(self, age_ms: float | None) -> None:
         """Record telemetry snapshot age at calculation time."""
         if age_ms is not None and age_ms >= 0:
-            self._age_ms.append(age_ms)
+            with self._lock:
+                self._age_ms.append(age_ms)
 
     def record_stage(self, name: str, duration_ms: float) -> None:
         """Record one named control-cycle stage duration (windowed)."""
-        stage = self._stage_ms.get(name)
-        if stage is None:
-            stage = self._stage_ms[name] = deque(maxlen=self.WINDOW)
-        stage.append(duration_ms)
+        with self._lock:
+            stage = self._stage_ms.get(name)
+            if stage is None:
+                stage = self._stage_ms[name] = deque(maxlen=self.WINDOW)
+            stage.append(duration_ms)
 
     def sample_process(self) -> None:
         """Update CPU% and RSS from /proc (no-op off Linux, e.g. macOS dev)."""
@@ -83,9 +89,19 @@ class CycleMetrics:
 
     def snapshot(self) -> dict:
         """Current stats as an MQTT/console-friendly dict."""
-        cycles = sorted(self._cycle_ms)
-        writes = sorted(self._write_ms)
-        ages = sorted(self._age_ms)
+        # Only copy bounded buffers under the writer lock. Sorting and procfs /
+        # exporter work must never hold up a cycle recording its measurements.
+        with self._lock:
+            cycles = list(self._cycle_ms)
+            writes = list(self._write_ms)
+            ages = list(self._age_ms)
+            stages = {name: list(samples) for name, samples in self._stage_ms.items()}
+            missed_deadlines, failed_writes = self.missed_deadlines, self.failed_writes
+        cycles.sort()
+        writes.sort()
+        ages.sort()
+        for samples in stages.values():
+            samples.sort()
         return {
             "window_capacity": self.WINDOW,
             "cycle_ms": {
@@ -94,7 +110,7 @@ class CycleMetrics:
                 "p95": _percentile(cycles, 95),
                 "p99": _percentile(cycles, 99),
                 "max": _percentile(cycles, 100),
-                "missed_deadlines": self.missed_deadlines,
+                "missed_deadlines": missed_deadlines,
             },
             "setvalue_ms": {
                 "samples": len(writes),
@@ -102,7 +118,7 @@ class CycleMetrics:
                 "p95": _percentile(writes, 95),
                 "p99": _percentile(writes, 99),
                 "max": _percentile(writes, 100),
-                "failed": self.failed_writes,
+                "failed": failed_writes,
             },
             "snapshot_age_ms": {
                 "samples": len(ages),
@@ -112,12 +128,12 @@ class CycleMetrics:
             "stage_ms": {
                 name: {
                     "samples": len(samples),
-                    "p50": _percentile(sorted(samples), 50),
-                    "p95": _percentile(sorted(samples), 95),
-                    "p99": _percentile(sorted(samples), 99),
-                    "max": _percentile(sorted(samples), 100),
+                    "p50": _percentile(samples, 50),
+                    "p95": _percentile(samples, 95),
+                    "p99": _percentile(samples, 99),
+                    "max": _percentile(samples, 100),
                 }
-                for name, samples in sorted(self._stage_ms.items())
+                for name, samples in sorted(stages.items())
             },
             "cpu_percent": self.cpu_percent,
             "rss_mb": getattr(self, "rss_mb", None),
