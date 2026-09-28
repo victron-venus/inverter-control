@@ -18,8 +18,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
     """HTTP request handler for webhook endpoints."""
 
     # Class-level callback storage (set by server instance)
-    pre_charge_callback: Callable[[dict], bool] | None = None
-    forecast_callback: Callable[[dict], bool] | None = None
+    pre_charge_callback: Callable[[dict], bool | dict] | None = None
+    forecast_callback: Callable[[dict], bool | dict] | None = None
 
     def _send_response(self, status: int, data: dict):
         """Send JSON response."""
@@ -54,7 +54,6 @@ class WebhookHandler(BaseHTTPRequestHandler):
             trigger = payload.get("trigger")
             forecast_energy_wh = payload.get("forecast_energy_wh")
             threshold_wh = payload.get("threshold_wh")
-            horizon_hours = payload.get("horizon_hours")
 
             if trigger != "low_solar_forecast":
                 self._send_response(400, {"error": f"Unknown trigger: {trigger}"})
@@ -64,16 +63,18 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 self._send_response(400, {"error": "Missing forecast_energy_wh or threshold_wh"})
                 return
 
-            logger.info(
-                f"Pre-charge webhook received: forecast={forecast_energy_wh:.0f}Wh "
-                f"threshold={threshold_wh:.0f}Wh horizon={horizon_hours}h"
-            )
+            logger.info("Pre-charge webhook received")
 
             # Call the registered callback
             if self.pre_charge_callback:
                 success = self.pre_charge_callback(payload)
-                if success:
-                    self._send_response(200, {"status": "pre-charge triggered"})
+                if isinstance(success, dict):
+                    self._send_response(
+                        success["http_status"],
+                        {k: v for k, v in success.items() if k != "http_status"},
+                    )
+                elif success:
+                    self._send_response(202, {"status": "accepted"})
                 else:
                     self._send_response(500, {"error": "Pre-charge callback failed"})
             else:
@@ -142,8 +143,8 @@ class WebhookServer:
         self,
         host: str = "127.0.0.1",
         port: int = 8081,
-        pre_charge_callback: Callable[[dict], bool] | None = None,
-        forecast_callback: Callable[[dict], bool] | None = None,
+        pre_charge_callback: Callable[[dict], bool | dict] | None = None,
+        forecast_callback: Callable[[dict], bool | dict] | None = None,
     ):
         self.host = host
         self.port = port
@@ -152,8 +153,16 @@ class WebhookServer:
         self._running = False
 
         # Store callbacks in handler class
-        WebhookHandler.pre_charge_callback = pre_charge_callback
-        WebhookHandler.forecast_callback = forecast_callback
+        self._handler = type(
+            "BoundWebhookHandler",
+            (WebhookHandler,),
+            {
+                "pre_charge_callback": staticmethod(pre_charge_callback)
+                if pre_charge_callback
+                else None,
+                "forecast_callback": staticmethod(forecast_callback) if forecast_callback else None,
+            },
+        )
 
     def start(self):
         """Start the server in a background thread."""
@@ -161,7 +170,7 @@ class WebhookServer:
             return
 
         try:
-            self._server = ThreadingHTTPServer((self.host, self.port), WebhookHandler)
+            self._server = ThreadingHTTPServer((self.host, self.port), self._handler)
             self._running = True
             self._thread = threading.Thread(target=self._run, daemon=True, name="WebhookServer")
             self._thread.start()
@@ -193,8 +202,8 @@ _webhook_server: WebhookServer | None = None
 def get_webhook_server(
     host: str = "127.0.0.1",
     port: int = 8081,
-    pre_charge_callback: Callable[[dict], bool] | None = None,
-    forecast_callback: Callable[[dict], bool] | None = None,
+    pre_charge_callback: Callable[[dict], bool | dict] | None = None,
+    forecast_callback: Callable[[dict], bool | dict] | None = None,
 ) -> WebhookServer:
     """Get or create webhook server singleton."""
     global _webhook_server

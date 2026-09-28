@@ -121,8 +121,8 @@ class TestPreChargeContract:
                     "horizon_hours": 4,
                 },
             )
-            assert status == 200
-            assert body["status"] == "pre-charge triggered", (
+            assert status == 202
+            assert body["status"] == "accepted", (
                 f"integration-tests asserts this exact string; got {body!r}"
             )
             cb.assert_called_once()

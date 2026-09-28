@@ -59,6 +59,9 @@ class MQTTBridge:
         self.broker = broker
         self.port = port
         self.prefix = prefix
+        from .config import PORTAL_ID
+
+        self.forecast_prefix = f"N/{PORTAL_ID}/solar_forecast"
         self._client: mqtt.Client | None = None
         self._connected = False
         self._callbacks: dict[str, Callable] = {}
@@ -150,6 +153,8 @@ class MQTTBridge:
         client.subscribe(f"{self.prefix}/alert/ack")
         # Subscribe to solar forecast
         client.subscribe("solar/forecast")
+        client.subscribe(f"{self.forecast_prefix}/forecast_json", qos=1)
+        client.subscribe(f"{self.forecast_prefix}/pre_charge_request", qos=1)
         self._publish_portal_id(client)
         with self._setpoint_override_lock:
             client.publish(
@@ -186,7 +191,23 @@ class MQTTBridge:
         try:
             topic = msg.topic
 
-            if topic == "solar/forecast":
+            if topic == f"{self.forecast_prefix}/pre_charge_request":
+                if msg.retain or len(msg.payload) > 4096:
+                    return
+                callback = self._callbacks.get("pre_charge")
+                if callback:
+                    outcome = callback(json.loads(msg.payload))
+                    request_id = outcome.get("request_id")
+                    if request_id:
+                        client.publish(
+                            f"{self.forecast_prefix}/pre_charge_ack/{request_id}",
+                            json.dumps(outcome),
+                            qos=1,
+                            retain=False,
+                        )
+                return
+
+            if topic in {"solar/forecast", f"{self.forecast_prefix}/forecast_json"}:
                 self._handle_forecast(msg.payload)
                 return
 

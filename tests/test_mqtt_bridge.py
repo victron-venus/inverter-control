@@ -105,7 +105,7 @@ class TestMQTTBridge:
         mock_client.subscribe.assert_any_call("test/cmd/#")
         mock_client.subscribe.assert_any_call("test/alert/ack")
         mock_client.subscribe.assert_any_call("solar/forecast")
-        assert mock_client.subscribe.call_count == 3
+        assert mock_client.subscribe.call_count == 5
         mock_client.publish.assert_any_call("test/portal", "portal123", qos=0, retain=True)
         assert mock_client.publish.call_count == 2
         topic, payload = mock_client.publish.call_args.args
