@@ -1,0 +1,258 @@
+"""Confirmed writes must not share telemetry callbacks or reconnect work."""
+
+import threading
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from dbus_fast import Message, MessageType, Variant
+from test_dbus_native_timeouts import EndpointBus, flush_loop, reply
+
+from inverter_control.dbus_native import BUSITEM_INTERFACE
+from inverter_control.victron import VictronDBus
+
+SERVICE = "com.victronenergy.system"
+
+
+@pytest.fixture
+def facade():
+    with (
+        patch("inverter_control.victron.USE_NATIVE_DBUS", True),
+        patch.object(VictronDBus, "_discover_services"),
+        patch.object(VictronDBus, "_start_background_polling"),
+    ):
+        v = VictronDBus(test_mode=False)
+    workers = []
+    for index, client in enumerate((v._native, v._native_write)):
+        loop = client._ensure_loop()
+        ready = threading.Event()
+
+        def started(loop=loop, ready=ready):
+            workers.append((loop, threading.current_thread()))
+            ready.set()
+
+        loop.call_soon_threadsafe(started)
+        assert ready.wait(1)
+        client._bus = EndpointBus()
+        client._bus.unique_name = f":1.{index + 1}"
+    v._native._armed_subscriptions = set(v._native._subscriptions)
+    yield v
+    v.close()
+    for loop, worker in workers:
+        worker.join(2)
+        assert not worker.is_alive()
+        loop.close()
+
+
+@pytest.mark.parametrize("shared_loop", [True, False])
+def test_write_acceptance_with_blocked_telemetry_signal(facade, shared_loop):
+    """The old shared-loop route times out; the isolated route confirms its ACK."""
+    telemetry, writer = facade._native, facade._native_write
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked_signal(*_args):
+        entered.set()
+        assert release.wait(3)
+
+    telemetry.add_signal_handler(blocked_signal)
+    telemetry._sender_service[":1.42"] = SERVICE
+    signal = Message(
+        message_type=MessageType.SIGNAL,
+        path="/Ac/Grid/L1/Power",
+        interface=BUSITEM_INTERFACE,
+        member="PropertiesChanged",
+        body=[{"Value": Variant("i", 17)}],
+        signature="a{sv}",
+        serial=1,
+        sender=":1.42",
+    )
+    telemetry._loop.call_soon_threadsafe(telemetry._handle_message, signal)
+    assert entered.wait(1)
+    results = []
+    caller = threading.Thread(
+        target=lambda: results.append(facade._dbus_set(SERVICE, "/SlowWrite", 42))
+    )
+    with (
+        patch.object(facade, "_native_write", telemetry if shared_loop else writer),
+        patch.object(facade, "_safe_subprocess", return_value=None) as cli,
+    ):
+        try:
+            caller.start()
+            if shared_loop:
+                caller.join(1)
+                assert results == [False]
+                cli.assert_called_once()
+            else:
+                assert writer._bus.started.wait(1)
+                assert results == []  # Dispatch alone is not acceptance.
+                writer._loop.call_soon_threadsafe(
+                    writer._bus.pending["/SlowWrite"].set_result, reply([0], "u")
+                )
+                caller.join(1)
+                assert results == [True]
+                cli.assert_not_called()
+            assert not release.is_set()
+            assert not telemetry._bus.messages
+            assert not writer._subscriptions
+            assert writer.on_reconnect is None
+        finally:
+            release.set()
+            caller.join(2)
+    flush_loop(telemetry)
+    assert not telemetry._bus.messages  # The expired shared-loop write is never sent later.
+
+
+def test_writer_reconnect_does_not_reseed_or_disconnect_telemetry(facade):
+    telemetry, writer = facade._native, facade._native_write
+    failed = writer._bus
+    with (
+        patch.object(failed, "call", side_effect=ConnectionError("writer socket closed")),
+        patch.object(facade, "_safe_subprocess", return_value=None),
+    ):
+        assert not facade._dbus_set(SERVICE, "/Setpoint", 42)
+    assert failed.disconnections == 1
+    assert telemetry.subscriptions_healthy()
+    assert facade._dbus_get(SERVICE, "/Ac/Grid/L1/Power") == "17"
+
+    replacement = EndpointBus()
+    replacement.add_message_handler = Mock()
+    connector = Mock(connect=AsyncMock(return_value=replacement))
+    writer._fail_until = 0
+    with (
+        patch("dbus_fast.aio.message_bus.MessageBus", return_value=connector),
+        patch.object(telemetry, "_replay_subscriptions") as reseed,
+        patch.object(facade, "_safe_subprocess") as cli,
+    ):
+        assert facade._dbus_set(SERVICE, "/Setpoint", 0)
+    reseed.assert_not_called()
+    cli.assert_not_called()
+    assert [message.member for message in replacement.messages] == ["SetValue"]
+    assert telemetry.subscriptions_healthy()
+    assert telemetry._bus.disconnections == 0
+
+
+def test_telemetry_disconnect_does_not_drop_writer(facade):
+    telemetry, writer = facade._native, facade._native_write
+    with (
+        patch.object(telemetry._bus, "call", side_effect=ConnectionError("telemetry closed")),
+        patch.object(facade, "_safe_subprocess", return_value=None),
+    ):
+        assert facade._dbus_get(SERVICE, "/Ac/Grid/L1/Power") is None
+    with patch.object(facade, "_safe_subprocess") as cli:
+        assert facade._dbus_set(SERVICE, "/Setpoint", 0)
+    cli.assert_not_called()
+    assert writer._bus.disconnections == 0
+    assert writer._fail_until == 0
+
+
+@pytest.mark.parametrize("fallback,accepted", [(None, False), ("   int32 0\n", True)])
+def test_write_timeout_cancels_pending_ack_and_keeps_confirmed_cli_fallback(
+    facade, fallback, accepted
+):
+    writer = facade._native_write
+    native_set = writer.set_value
+
+    def short_deadline(service, path, value, value_type):
+        return native_set(service, path, value, value_type, timeout=0.03)
+
+    with (
+        patch.object(writer, "set_value", side_effect=short_deadline),
+        patch.object(facade, "_safe_subprocess", return_value=fallback) as cli,
+    ):
+        assert facade._dbus_set(SERVICE, "/SlowWrite", 42) is accepted
+    assert writer._bus.cancelled.wait(1)
+    flush_loop(writer)
+    assert writer._bus.pending["/SlowWrite"].cancelled()
+    assert not writer._bus._method_return_handlers
+    assert "--print-reply" in cli.call_args.args[0]
+    assert facade._native.subscriptions_healthy()
+
+
+def test_write_lock_still_serializes_callers(facade):
+    writer = facade._native_write
+    results = []
+    first = threading.Thread(
+        target=lambda: results.append(facade._dbus_set(SERVICE, "/SlowFirst", 1))
+    )
+    second = threading.Thread(
+        target=lambda: results.append(facade._dbus_set(SERVICE, "/Second", 2))
+    )
+    first.start()
+    assert writer._bus.started.wait(1)
+    try:
+        second.start()
+        assert facade._set_lock.locked()
+        assert len(writer._bus.messages) == 1
+    finally:
+        writer._loop.call_soon_threadsafe(
+            writer._bus.pending["/SlowFirst"].set_result, reply([0], "u")
+        )
+        first.join(2)
+        second.join(2)
+    assert results == [True, True]
+    assert [message.body[0].value for message in writer._bus.messages] == [1, 2]
+
+
+def test_diagnostics_follow_writer_and_close_releases_both_clients(facade):
+    telemetry, writer = facade._native, facade._native_write
+    read_bus, write_bus = telemetry._bus, writer._bus
+    with patch("inverter_control.dbus_native.SLOW_SET_TIMING_MS", 0):
+        assert facade._dbus_set(SERVICE, "/Setpoint", 0)
+    assert facade.drain_write_timings()[0]["sender"] == ":1.2"
+    assert not facade.drain_write_timings()
+    assert not telemetry.drain_write_timings()
+    facade._poll_thread = threading.Thread(target=facade._poll_stop_event.wait, daemon=True)
+    facade._poll_thread.start()
+    facade.close()
+    assert not facade._poll_thread.is_alive()
+    assert not writer.is_connected()
+    assert not telemetry.is_connected()
+    assert (read_bus.disconnections, write_bus.disconnections) == (1, 1)
+
+
+def test_close_is_bounded_and_late_poll_cannot_reconnect_native_clients(facade):
+    telemetry, writer = facade._native, facade._native_write
+    entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+    late_reads = []
+
+    def blocked_poll():
+        entered.set()
+        if release.wait(5):
+            late_reads.append(facade._dbus_get(SERVICE, "/Ac/Grid/L1/Power"))
+
+    def close():
+        facade.close()
+        closed.set()
+
+    poller = threading.Thread(target=facade._poll_loop, daemon=True)
+    closer = threading.Thread(target=close, daemon=True)
+    facade._poll_thread = poller
+    with (
+        patch.object(facade, "_check_rescan_needed"),
+        patch.object(facade, "_poll_all", side_effect=blocked_poll) as poll,
+        patch.object(facade, "_safe_subprocess", return_value=None) as cli,
+        patch.object(telemetry, "_connect") as read_connect,
+        patch.object(writer, "_connect") as write_connect,
+    ):
+        try:
+            poller.start()
+            assert entered.wait(1)
+            closer.start()
+            assert closed.wait(2)  # A blocked poll cannot hold shutdown indefinitely.
+            assert poller.is_alive()
+            assert not release.is_set()
+            assert telemetry._fail_until == writer._fail_until == float("inf")
+            release.set()
+            poller.join(2)
+            assert not poller.is_alive()
+            assert late_reads == [None]
+            poll.assert_called_once()
+            cli.assert_called_once()  # An in-flight poll retains its existing fallback.
+            assert writer._get_bus() is None
+            read_connect.assert_not_called()
+            write_connect.assert_not_called()
+            assert telemetry._loop is writer._loop is None
+        finally:
+            release.set()
+            poller.join(2)
+            if closer.ident is not None:
+                closer.join(2)

@@ -354,6 +354,7 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread) -> None:
     if mqtt_bridge:
         mqtt_bridge.disconnect()
     controller.ha.stop()
+    controller.victron.close()
 
 
 def _run_main_loop(controller, mqtt_bridge):
@@ -437,6 +438,7 @@ def _main_inner():
             controller.run_cycle()
         finally:
             controller.stop_auxiliary_readers()
+            controller.victron.close()
         return
 
     start_console_server()

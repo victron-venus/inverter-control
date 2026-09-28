@@ -142,9 +142,9 @@ class VictronDBus:
     """
     Fast D-Bus interface for Victron system.
 
-    Get/Set go through a persistent dbus_fast connection (see dbus_native)
-    with dbus-send subprocess fallback; background telemetry rides the same
-    connection via change signals plus a slow native-first reconcile pass.
+    Reads/signals and writes use separate persistent dbus_fast connections
+    and event loops, with the same confirmed dbus-send fallback. Telemetry
+    callbacks and reconciliation cannot queue work on the writer's loop.
     """
 
     # Total dbus-send invocations (perf metric; class default covers
@@ -190,6 +190,7 @@ class VictronDBus:
         self._discovery_requested = threading.Event()
         # Persistent native D-Bus connection (None in test mode / disabled)
         self._native: NativeDbusClient | None = None
+        self._native_write: NativeDbusClient | None = None
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
         # doesn't cost 2 D-Bus roundtrips every loop.
         self._ess_mode_cache: dict[str, Any] | None = None
@@ -279,6 +280,9 @@ class VictronDBus:
 
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
+            # No telemetry subscriptions or reseeding hook on the writer.
+            # Separate locks alone cannot isolate work on a shared event loop.
+            self._native_write = NativeDbusClient()
             # Set up NameOwnerChanged handler for service discovery
             self._native.add_name_owner_handler(self._on_name_owner_changed)
 
@@ -393,7 +397,16 @@ class VictronDBus:
 
     def drain_write_timings(self) -> list[dict]:
         """Collect native diagnostics without reading or controlling devices."""
-        return self._native.drain_write_timings() if self._native is not None else []
+        return self._native_write.drain_write_timings() if self._native_write is not None else []
+
+    def close(self) -> None:
+        """Request polling stop, wait briefly, and close both native clients."""
+        self._poll_stop_event.set()
+        if self._poll_thread:
+            self._poll_thread.join(timeout=1.0)
+        for client in (self._native_write, self._native):
+            if client is not None:
+                client.close()
 
     def _set_signals_healthy(self, value: bool) -> None:
         """Update subscription flag; log each healthy<->unhealthy flip once."""
@@ -1524,12 +1537,12 @@ class VictronDBus:
         return None
 
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
-        """Set a value on D-Bus (native connection, CLI fallback).
-        Uses _set_lock so writes never wait behind telemetry reads."""
+        """Set a value on the write-only native connection, then CLI fallback.
+        The existing _set_lock still serializes writes from all callers."""
 
-        if self._native is not None:
+        if self._native_write is not None:
             with self._set_lock:
-                ok = self._native.set_value(service, path, value, value_type)
+                ok = self._native_write.set_value(service, path, value, value_type)
             if ok:
                 self._consecutive_errors = 0
                 self._last_success_time = time.time()
