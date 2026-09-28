@@ -65,6 +65,7 @@ def test_metadata_and_retained_state_are_available_before_telemetry_without_ha(
         message = MagicMock(
             topic="inverter/cmd/toggle",
             payload=json.dumps({"entity": toggle["entity"], "state": "on"}).encode(),
+            retain=False,
         )
         bridge._on_message(None, None, message)
         _, payload, _, retained = bridge._publish_queue.get_nowait()
@@ -94,6 +95,7 @@ def test_ha_switch_commands_and_confirmed_state_round_trip_without_ha(controller
                 MagicMock(
                     topic=switch["command_topic"],
                     payload=switch[f"payload_{action}"].encode(),
+                    retain=False,
                 ),
             )
             topic, payload, _, retained = bridge._publish_queue.get_nowait()
@@ -113,3 +115,28 @@ def test_legacy_python_api_still_uses_canonical_control_flags(controller_without
     assert controller.get_control_flag("only_charging") is True
     controller.set_control_flag("only_charging", False)
     assert controller.get_boolean("only_charging") is False
+
+
+@pytest.mark.parametrize("explicit_state", [True, False])
+def test_retained_charge_command_cannot_restore_or_toggle_flag(
+    controller_without_ha, explicit_state
+):
+    controller, bridge = controller_without_ha
+    controller._load_control_flags()
+    payload = {"entity": "charge_battery"}
+    if explicit_state:
+        payload["state"] = "on"
+    message = MagicMock(
+        topic="inverter/cmd/toggle", payload=json.dumps(payload).encode(), retain=True
+    )
+    for _ in range(2):
+        bridge._on_message(None, None, message)
+    assert controller.get_control_flag("charge_battery") is False
+    assert bridge._publish_queue.empty()
+
+    # A new, explicit command still works, and retrying the setter is idempotent.
+    message.retain = False
+    message.payload = b'{"entity":"charge_battery","state":"on"}'
+    for _ in range(2):
+        bridge._on_message(None, None, message)
+    assert controller.get_control_flag("charge_battery") is True

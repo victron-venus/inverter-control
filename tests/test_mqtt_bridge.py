@@ -5,6 +5,7 @@ Unit tests for MQTT Bridge
 import json
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -84,8 +85,10 @@ class TestMQTTBridge:
         mock_mqtt.Client.return_value = mock_client
 
         bridge = mqtt_bridge.MQTTBridge()
+        bridge._connected = True
         bridge.disconnect()
 
+        assert bridge.connected is False
         mock_client.loop_stop.assert_called_once()
         mock_client.disconnect.assert_called_once()
 
@@ -173,7 +176,7 @@ class TestMQTTBridge:
 
         bridge = mqtt_bridge.MQTTBridge()
         bridge._connected = True
-        bridge._on_disconnect(mock_client, None, 0)
+        bridge._on_disconnect(mock_client, None, None, 0)
 
         assert bridge._connected is False
 
@@ -184,13 +187,14 @@ class TestMQTTBridge:
         mock_client = MagicMock()
         mock_mqtt.Client.return_value = mock_client
 
-        bridge = mqtt_bridge.MQTTBridge()
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
         callback = MagicMock()
         bridge.register_callback("toggle", callback)
 
         mock_msg = MagicMock()
         mock_msg.topic = "test/cmd/toggle"
         mock_msg.payload = b'{"entity": "switch.test"}'
+        mock_msg.retain = False
 
         bridge._on_message(mock_client, None, mock_msg)
 
@@ -203,13 +207,14 @@ class TestMQTTBridge:
         mock_client = MagicMock()
         mock_mqtt.Client.return_value = mock_client
 
-        bridge = mqtt_bridge.MQTTBridge()
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
         callback = MagicMock()
         bridge.register_callback("press", callback)
 
         mock_msg = MagicMock()
         mock_msg.topic = "test/cmd/press"
         mock_msg.payload = b"raw_value"
+        mock_msg.retain = False
 
         bridge._on_message(mock_client, None, mock_msg)
 
@@ -381,6 +386,157 @@ class TestGetMqttBridge:
         """Test get_mqtt_bridge returns None when MQTT unavailable"""
         bridge = mqtt_bridge.get_mqtt_bridge()
         assert bridge is None
+
+
+@pytest.fixture
+def mocked_bridge():
+    """Exercise real dispatch and persistence without connecting to a broker."""
+    with patch("inverter_control.mqtt_bridge.mqtt.Client") as factory:
+        bridge = mqtt_bridge.MQTTBridge(prefix="test")
+        yield bridge, factory.return_value
+        bridge.disconnect()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "toggle",
+        "press",
+        "setpoint",
+        "setpoint_override",
+        "dry_run",
+        "limits",
+        "ess_mode",
+        "loop_interval",
+        "electricity_tariff",
+    ],
+)
+def test_reconnect_never_replays_retained_control_commands(mocked_bridge, command):
+    bridge, client = mocked_bridge
+    callback = MagicMock()
+    bridge.register_callback(command, callback)
+    payload = {"entity": "charge_battery", "state": "on", "value": 2200}
+    message = SimpleNamespace(
+        topic=f"test/cmd/{command}", payload=json.dumps(payload).encode(), retain=True
+    )
+    for _ in range(2):
+        bridge._on_connect(client, None, None, 0)
+        bridge._on_message(client, None, message)
+        bridge._on_disconnect(client, None, None, 0)
+    callback.assert_not_called()
+
+    message.retain = False
+    bridge._on_connect(client, None, None, 0)
+    bridge._on_message(client, None, message)
+    callback.assert_called_once_with(payload)
+
+
+@pytest.mark.parametrize("topic", ["other/cmd/toggle", "test/cmd/nested/toggle", "test/toggle"])
+def test_command_requires_its_exact_namespace(mocked_bridge, topic):
+    bridge, client = mocked_bridge
+    callback = MagicMock()
+    bridge.register_callback("toggle", callback)
+    bridge._on_message(client, None, SimpleNamespace(topic=topic, payload=b"{}", retain=False))
+    callback.assert_not_called()
+
+
+def test_rejected_connack_does_not_publish_or_subscribe(mocked_bridge):
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.reasoncodes import ReasonCode
+
+    bridge, client = mocked_bridge
+    bridge._connected = True
+    with patch.object(bridge, "resend_unacknowledged_alerts") as resend:
+        bridge._on_connect(client, None, None, ReasonCode(PacketTypes.CONNACK, "Not authorized"))
+    assert bridge.connected is False
+    client.subscribe.assert_not_called()
+    client.publish.assert_not_called()
+    resend.assert_not_called()
+
+
+def test_v2_disconnect_logs_reason_not_flags(mocked_bridge, caplog):
+    from paho.mqtt.client import DisconnectFlags
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.reasoncodes import ReasonCode
+
+    bridge, client = mocked_bridge
+    bridge._connected = True
+    bridge._on_disconnect(client, None, DisconnectFlags(False), ReasonCode(PacketTypes.DISCONNECT))
+    assert bridge.connected is False
+    assert "unexpectedly" not in caplog.text
+    bridge._on_disconnect(
+        client, None, DisconnectFlags(True), ReasonCode(PacketTypes.DISCONNECT, "Not authorized")
+    )
+    assert "Not authorized" in caplog.text
+
+
+@pytest.mark.parametrize("failure", [None, "loop_stop", "disconnect"])
+def test_connect_callback_finishing_during_shutdown_cannot_restore_connected(
+    mocked_bridge, failure
+):
+    bridge, client = mocked_bridge
+
+    def finish_callback():
+        bridge._on_connect(client, None, None, 0)
+        assert bridge.connected is True  # The pending callback really ran.
+        if failure == "loop_stop":
+            raise RuntimeError("network thread stop failed")
+
+    client.loop_stop.side_effect = finish_callback
+    if failure == "disconnect":
+        client.disconnect.side_effect = RuntimeError("socket disconnect failed")
+    try:
+        if failure:
+            with pytest.raises(RuntimeError):
+                bridge.disconnect()
+        else:
+            bridge.disconnect()
+        assert bridge.connected is False
+        assert bridge._stop_event.is_set()
+        client.publish.reset_mock()
+        bridge.publish_state({"booleans": {"charge_battery": False}})
+        client.publish.assert_not_called()
+        assert bridge._publish_queue.empty()
+    finally:
+        client.loop_stop.side_effect = None
+        client.disconnect.side_effect = None
+
+
+def test_lost_precharge_ack_retry_and_restart_do_not_repeat_intent(mocked_bridge, tmp_path):
+    from test_precharge_notification import request
+
+    from inverter_control.precharge import PrechargeInbox
+
+    bridge, client = mocked_bridge
+    path = tmp_path / "precharge.json"
+    inbox = PrechargeInbox(path)
+    accepted = MagicMock()
+    bridge.register_callback("pre_charge", lambda p: inbox.handle(p, lambda: False, accepted))
+    message = SimpleNamespace(
+        topic=f"{bridge.forecast_prefix}/pre_charge_request",
+        payload=json.dumps(request()).encode(),
+        retain=False,
+    )
+    client.publish.side_effect = OSError("connection lost before application ACK")
+    bridge._on_message(client, None, message)
+    accepted.assert_called_once()
+
+    # Reconnect/restart reuses the durable inbox even when the sender never saw ACK.
+    inbox = PrechargeInbox(path)
+    client.publish.side_effect = None
+    bridge._on_message(client, None, message)
+    accepted.assert_called_once()
+    topic, raw = client.publish.call_args.args
+    ack = json.loads(raw)
+    assert topic == f"{bridge.forecast_prefix}/pre_charge_ack/test-day"
+    assert (ack["status"], ack["original_status"]) == ("duplicate", "accepted")
+    assert client.publish.call_args.kwargs == {"qos": 1, "retain": False}
+
+    message.retain = True
+    client.publish.reset_mock()
+    bridge._on_message(client, None, message)
+    accepted.assert_called_once()
+    client.publish.assert_not_called()
 
 
 if __name__ == "__main__":
