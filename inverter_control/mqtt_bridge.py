@@ -61,7 +61,7 @@ class MQTTBridge:
         self.prefix = prefix
         from .config import PORTAL_ID
 
-        self.forecast_prefix = f"N/{PORTAL_ID}/solar_forecast"
+        self.forecast_prefix = f"solar_forecast/{PORTAL_ID}"
         self._client: mqtt.Client | None = None
         self._connected = False
         self._callbacks: dict[str, Callable] = {}
