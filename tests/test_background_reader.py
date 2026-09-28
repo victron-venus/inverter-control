@@ -112,3 +112,54 @@ def test_failed_refresh_invalidates_previous_sample():
 def test_invalid_age_configuration(interval, max_age):
     with pytest.raises(ValueError):
         BackgroundReader(dict, {}, name="invalid", interval=interval, max_age=max_age)
+
+
+def test_controller_state_build_never_waits_for_display_io():
+    from test_main import _make_controller
+
+    controller, victron, *_ = _make_controller()
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked():
+        entered.set()
+        release.wait(2)
+        return []
+
+    victron.get_battery_chain_socs.side_effect = blocked
+    controller.telemetry = BackgroundReader(
+        controller._read_display_telemetry,
+        {
+            "battery_socs": [],
+            "inv_state": "unknown",
+            "batteries": [],
+            "mppt_chargers": [],
+            "loads": {},
+            "ess_mode": {},
+            "daily_stats": {},
+        },
+        name="blocked-display",
+    )
+    controller.telemetry.start()
+    try:
+        assert entered.wait(1)
+        # The refresh is blocked. State assembly must complete before release.
+        done = threading.Event()
+        errors = []
+
+        def compose():
+            try:
+                controller.update_state({"_grid_valid": True}, 0)
+            except Exception as error:
+                errors.append(error)
+            finally:
+                done.set()
+
+        thread = threading.Thread(target=compose)
+        thread.start()
+        assert done.wait(0.5), "display I/O blocked the control thread"
+        assert not errors
+        assert controller.state["inverter_state"] == "unknown"
+        thread.join()
+    finally:
+        release.set()
+        controller.telemetry.stop()

@@ -192,6 +192,7 @@ def _setup_mqtt_bridge(controller):
     if not bridge:
         return None
 
+    bridge.register_callback("pre_charge", controller._handle_pre_charge_webhook)
     bridge.register_callback("toggle", lambda p: _handle_toggle(controller, p))
 
     def _electricity_tariff(payload):

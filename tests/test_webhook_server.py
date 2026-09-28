@@ -64,8 +64,8 @@ class TestWebhookHandler:
                     "horizon_hours": 6,
                 },
             )
-            assert status == 200
-            assert body["status"] == "pre-charge triggered"
+            assert status == 202
+            assert body["status"] == "accepted"
             callback.assert_called_once()
         finally:
             server.stop()

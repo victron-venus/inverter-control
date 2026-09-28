@@ -70,6 +70,8 @@ def _make_controller(**overrides):
         controller.ha = mock_ha
         controller.console = mock_console
         controller.calculator = mock_calc
+        # Composition tests supply a synchronous fixture snapshot; production uses the worker.
+        controller.telemetry.read = controller._read_display_telemetry
         controller.evcharger = mock_evcharger
         return controller, mock_victron, mock_ha, mock_calc
 

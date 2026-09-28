@@ -3,7 +3,6 @@
 import logging
 import time
 import traceback
-from datetime import UTC, datetime
 from typing import Any
 
 import inverter_control.config as _config
@@ -67,6 +66,7 @@ from inverter_control.grid_filter import GridFilter
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
 from inverter_control.metrics import CycleMetrics
+from inverter_control.precharge import PrechargeInbox
 from inverter_control.prom_metrics import publish as prom_metrics_publish
 from inverter_control.victron import (
     TOU_END_SETTING,
@@ -211,7 +211,13 @@ class InverterController:
 
         # Pre-charge state (triggered by solar-forecast webhook)
         self._pre_charge_requested = False
+        self._precharge = PrechargeInbox(
+            None
+            if getattr(self.victron, "_test_mode", False)
+            else "/data/inverter-control/precharge-requests.json"
+        )
         self._pre_charge_horizon_hours = 24
+        self._pre_charge_expires_at = 0.0
 
         # Sustained "ESS not in External control" tracker: GX silently ignores
         # AcPowerSetpoint outside Hub4Mode=3, so live control becomes a no-op.
@@ -240,6 +246,22 @@ class InverterController:
         self._last_batteries_time = 0.0
         self._last_chargers_time = 0.0
         self._last_update_state_time = 0.0
+
+        self.telemetry = BackgroundReader(
+            self._read_display_telemetry,
+            {
+                "battery_socs": [],
+                "inv_state": "unknown",
+                "batteries": [],
+                "mppt_chargers": [],
+                "loads": {},
+                "ess_mode": {},
+                "daily_stats": {},
+            },
+            name="display-telemetry",
+            interval=2.0,
+            max_age=8.0,
+        )
 
         # Dynamic settings (overridable)
         self.power_limit_min = POWER_LIMIT_MIN
@@ -380,80 +402,28 @@ class InverterController:
             self._tou_cache_time = now
         return self._tou_cache
 
-    def _handle_pre_charge_webhook(self, payload: dict) -> bool:
-        """Handle pre-charge webhook from solar-forecast-langgraph.
+    def _handle_pre_charge_webhook(self, payload: dict) -> dict:
+        """Persist one decision before scheduling the existing one-cycle intent."""
 
-        Sets internal flag to trigger pre-charge on next control cycle.
-        The charge_battery strategy in logic.py will handle the actual
-        setpoint calculation (forces ~2200W charging).
-        """
-        try:
-            from inverter_control.mqtt_bridge import (  # pylint: disable=import-outside-toplevel
-                get_mqtt_bridge,
-            )
-
-            forecast_wh = payload.get("forecast_energy_wh", 0)
-            threshold_wh = payload.get("threshold_wh", 0)
-            horizon_hours = payload.get("horizon_hours", 24)
-            day_scope = (
-                payload.get("day") == "today"
-                or payload.get("horizon") in ("next_day", "today")
-                or int(horizon_hours or 0) >= 24
-            )
-            logger.info(
-                f"Pre-charge webhook: forecast={forecast_wh:.0f}Wh "
-                f"threshold={threshold_wh:.0f}Wh horizon={horizon_hours}h"
-                f" day_scope={day_scope}"
-            )
-            bridge = get_mqtt_bridge()
-
-            day_stamp = datetime.now(UTC).strftime("%Y%m%d")
-            if self._in_expensive_window():
-                logger.info("Pre-charge webhook ignored: expensive grid window active")
-                if bridge:
-                    bridge.publish_notification(
-                        notification_id="precharge-suppressed-" + day_stamp,
-                        level="info",
-                        title="Pre-charge skipped",
-                        body=(
-                            "Expensive grid window "
-                            f"({_config.TOU_EXPENSIVE_START_HOUR}:00"
-                            f"-{_config.TOU_EXPENSIVE_END_HOUR}:00)"
-                        ),
-                        source="inverter-control",
-                    )
-                return True
-
-            # Set pre-charge flag - this will be picked up in run_cycle
-            # by setting the daemon's 'charge_battery' control flag or by overriding
-            # the state.charge_battery flag directly
+        def accept():
+            self._pre_charge_expires_at = payload["expires_at"]
             self._pre_charge_requested = True
-            self._pre_charge_horizon_hours = horizon_hours
+            self._pre_charge_horizon_hours = payload.get("horizon_hours", 24)
 
-            # Notify dashboards (day-scoped id so one banner per calendar day)
+        outcome = self._precharge.handle(payload, self._in_expensive_window, accept)
+        if outcome["status"] in {"accepted", "suppressed"}:
+            from inverter_control.mqtt_bridge import get_mqtt_bridge
+
+            bridge = get_mqtt_bridge()
             if bridge:
-                notification_id = "precharge-" + day_stamp
-                if day_scope:
-                    body = (
-                        f"Low solar forecast: {forecast_wh / 1000:.1f} kWh "
-                        f"< {threshold_wh / 1000:.1f} kWh for today"
-                    )
-                else:
-                    body = (
-                        f"Low solar forecast: {forecast_wh / 1000:.1f} kWh "
-                        f"< {threshold_wh / 1000:.1f} kWh in {horizon_hours}h"
-                    )
                 bridge.publish_notification(
-                    notification_id=notification_id,
+                    notification_id="precharge-" + outcome["request_id"],
                     level="info",
-                    title="Pre-charge triggered",
-                    body=body,
+                    title="Pre-charge " + outcome["status"],
+                    body=outcome["reason"],
                     source="solar-forecast",
                 )
-            return True
-        except Exception:
-            logger.exception("Error handling pre-charge webhook")
-            return False
+        return outcome
 
     def _handle_forecast_webhook(self, payload: dict) -> bool:
         """Store daily forecast summary from solar-forecast-langgraph.
@@ -497,12 +467,12 @@ class InverterController:
 
     def start_auxiliary_readers(self) -> None:
         """Start bounded-age EV/water snapshots without blocking startup."""
-        for reader in (self.water, self.evcharger):
+        for reader in (self.water, self.evcharger, self.telemetry):
             if reader is not None:
                 reader.start()
 
     def stop_auxiliary_readers(self) -> None:
-        for reader in (self.water, self.evcharger):
+        for reader in (self.water, self.evcharger, self.telemetry):
             if reader is not None:
                 reader.stop()
 
@@ -545,7 +515,9 @@ class InverterController:
         charge_battery = self.get_control_flag("charge_battery")
         if self._pre_charge_requested:
             self._pre_charge_requested = False  # One-shot
-            if self._in_expensive_window():
+            if time.time() >= self._pre_charge_expires_at:
+                logger.info("Pre-charge suppressed: queued request expired")
+            elif self._in_expensive_window():
                 logger.info("Pre-charge suppressed: expensive grid window active")
             else:
                 charge_battery = True
@@ -728,25 +700,33 @@ class InverterController:
             "mppt_yesterday": mppt_yesterday,
         }
 
-    def update_state(self, sys_data: dict[str, Any], setpoint: int):
-        # mppt/pv inverter data was already read this cycle in calculate_setpoint
-        self._cached_battery_socs = self.victron.get_battery_chain_socs()
-        _, self._cached_inv_state = self.victron.get_inverter_state()
+    def _read_display_telemetry(self) -> dict:
+        """All display-only I/O runs on the snapshot worker, never the control loop."""
+        return {
+            "battery_socs": self.victron.get_battery_chain_socs(),
+            "inv_state": self.victron.get_inverter_state()[1],
+            "batteries": self._get_cached_batteries(),
+            "mppt_chargers": self._get_cached_mppt_chargers(),
+            "loads": self.victron.get_acload_powers() if ENABLE_ACLOADS else {},
+            "ess_mode": self.victron.get_ess_mode(),
+            "daily_stats": self._get_daily_stats(),
+        }
 
-        # Inject cached data into sys_data for console UI use
+    def update_state(self, sys_data: dict[str, Any], setpoint: int):
+        display = self.telemetry.read()
+        self._cached_battery_socs = display["battery_socs"]
+        self._cached_inv_state = display["inv_state"]
         sys_data["mppt_data"] = self._cached_mppt_data
         sys_data["pv_inverter_powers"] = self._cached_pv_powers
         sys_data["battery_socs"] = self._cached_battery_socs
-
-        # ---- D-Bus / HA heavy getters (all telemetry-only; 2s sweep cadence) ----
-        batteries = self._get_cached_batteries()
-        mppt_chargers = self._get_cached_mppt_chargers()
+        batteries = display["batteries"]
+        mppt_chargers = display["mppt_chargers"]
         ev_state = self._get_ev_state()
         water_state = self._get_water_state()
         ha_status = self._get_ha_status()
-        loads = self.victron.get_acload_powers() if ENABLE_ACLOADS else {}
-        ess_mode = self.victron.get_ess_mode()
-        daily_stats = self._get_daily_stats()
+        loads = display["loads"]
+        ess_mode = display["ess_mode"]
+        daily_stats = display["daily_stats"]
 
         mppt_total = sum(m["w"] for m in self._cached_mppt_data.values())
         pv_total = sum(self._cached_pv_powers)
@@ -824,6 +804,10 @@ class InverterController:
 
         ess = self.state.get("ess_mode") or {}
         now = time.time()
+
+        if "is_external" not in ess:
+            self._clear_ess_warning()
+            return
 
         if ess.get("is_external"):
             if self._ess_notification_active:
