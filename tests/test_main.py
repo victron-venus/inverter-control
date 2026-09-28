@@ -21,6 +21,36 @@ from inverter_control.logic import SystemState
 _MOD = "inverter_control.controller"
 
 
+def test_mqtt_startup_stores_retained_forecast_without_actuation():
+    """Exercise production wiring, including a retained delivery during connect."""
+    import json
+
+    from inverter_control.mqtt_bridge import MQTTBridge
+
+    controller, victron, _, _ = _make_controller()
+    bridge = MQTTBridge()
+    payload = {"date": "2026-09-27", "today_kwh": 0.94, "tomorrow_kwh": 24.12}
+    message = MagicMock(
+        topic=f"{bridge.forecast_prefix}/forecast_json",
+        payload=json.dumps(payload).encode(),
+        retain=True,
+    )
+    flags = dict(controller._control_flags)
+    with (
+        patch("main.MQTT_AVAILABLE", True),
+        patch("inverter_control.config.MQTT_BROKER", "test-broker"),
+        patch("main.get_mqtt_bridge", return_value=bridge),
+        patch.object(
+            bridge, "connect", side_effect=lambda: bridge._on_message(None, None, message)
+        ),
+    ):
+        main._setup_mqtt_bridge(controller)
+    assert controller._solar_forecast == payload
+    assert controller._control_flags == flags
+    assert not controller._pre_charge_requested
+    victron.set_grid_setpoint.assert_not_called()
+
+
 def _make_controller(**overrides):
     """Build an InverterController with all subsystems mocked."""
     with (
