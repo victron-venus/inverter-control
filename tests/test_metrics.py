@@ -117,3 +117,32 @@ class TestStageTiming:
             m.record_stage(name, total / 3)
         stages_sum = sum(s["max"] for s in m.snapshot()["stage_ms"].values())
         assert abs(stages_sum - total) < total * 0.05
+
+
+def test_slow_percentiles_do_not_hold_recording_lock(monkeypatch):
+    import threading
+
+    import inverter_control.metrics as module
+
+    metrics = CycleMetrics()
+    entered, release, recorded = threading.Event(), threading.Event(), threading.Event()
+    original = module._percentile
+
+    def slow(values, pct):
+        entered.set()
+        assert release.wait(2)
+        return original(values, pct)
+
+    monkeypatch.setattr(module, "_percentile", slow)
+    reader = threading.Thread(target=metrics.snapshot)
+    reader.start()
+    writer = threading.Thread(target=lambda: (metrics.record_write(1, True), recorded.set()))
+    try:
+        assert entered.wait(1)
+        writer.start()
+        assert recorded.wait(0.5), "recording waited for diagnostic calculations"
+    finally:
+        release.set()
+        reader.join(1)
+        writer.join(1)
+    assert metrics.snapshot()["setvalue_ms"]["samples"] == 1

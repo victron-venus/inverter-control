@@ -885,3 +885,35 @@ def test_blocked_ev_and_water_refresh_do_not_delay_control_or_console():
     finally:
         release.set()
         controller.stop_auxiliary_readers()
+
+
+@pytest.mark.parametrize("blocked_stage", ["procfs", "exporter"])
+def test_blocked_performance_diagnostics_do_not_delay_state_update(blocked_stage):
+    import threading
+
+    from inverter_control.background_reader import BackgroundReader
+
+    controller, _, _, _ = _make_controller()
+    controller.telemetry.read = BackgroundReader.read.__get__(controller.telemetry)
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked(*_args):
+        entered.set()
+        assert release.wait(2)
+
+    target = (
+        patch.object(controller.metrics, "sample_process", side_effect=blocked)
+        if blocked_stage == "procfs"
+        else patch(f"{_MOD}.prom_metrics_publish", side_effect=blocked)
+    )
+    with target:
+        controller.performance.start()
+        try:
+            assert entered.wait(1)
+            controller.update_state({"bv": 48.0}, -100)
+            assert controller.state["setpoint"] == -100
+            assert "perf" not in controller.state  # No fabricated/stale diagnostics.
+            assert not release.is_set()
+        finally:
+            release.set()
+            controller.performance.stop()

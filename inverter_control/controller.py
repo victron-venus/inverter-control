@@ -269,7 +269,14 @@ class InverterController:
         self.loop_interval = LOOP_INTERVAL
         # Rolling latency metrics for hardware-run benchmarking (see metrics.py)
         self.metrics = CycleMetrics()
-        self._last_perf_snapshot = 0.0
+        self._last_perf_snapshot = None
+        self.performance = BackgroundReader(
+            self._read_performance,
+            {},
+            name="performance-telemetry",
+            interval=5.0,
+            max_age=15.0,
+        )
 
         # DVCC Calculator for dynamic battery current limits (SoC & Cell Temp curves)
         if DVCC_ENABLED:
@@ -466,13 +473,13 @@ class InverterController:
         return status
 
     def start_auxiliary_readers(self) -> None:
-        """Start bounded-age EV/water snapshots without blocking startup."""
-        for reader in (self.water, self.evcharger, self.telemetry):
+        """Start bounded-age auxiliary snapshots without blocking startup."""
+        for reader in (self.water, self.evcharger, self.telemetry, self.performance):
             if reader is not None:
                 reader.start()
 
     def stop_auxiliary_readers(self) -> None:
-        for reader in (self.water, self.evcharger, self.telemetry):
+        for reader in (self.water, self.evcharger, self.telemetry, self.performance):
             if reader is not None:
                 reader.stop()
 
@@ -712,6 +719,16 @@ class InverterController:
             "daily_stats": self._get_daily_stats(),
         }
 
+    def _read_performance(self) -> dict:
+        """Procfs, percentile sorting and exporter locks stay off the control loop."""
+        self.metrics.sample_process()
+        perf = self.metrics.snapshot()
+        perf["signals_healthy"] = bool(self.victron.is_signals_healthy())
+        perf["dbus_subprocess_calls"] = int(getattr(self.victron, "subprocess_calls", 0))
+        perf["sampled_at_unix"] = time.time()
+        prom_metrics_publish(perf)
+        return {"perf": perf}
+
     def update_state(self, sys_data: dict[str, Any], setpoint: int):
         display = self.telemetry.read()
         self._cached_battery_socs = display["battery_socs"]
@@ -770,18 +787,12 @@ class InverterController:
             "dvcc_limits": self.dvcc_limits if self.dvcc_limits else None,
         }
         self._update_grid_loss_state()
-        # Perf snapshot into state at most every 5s (percentile sort is cheap
-        # but pointless at 3 Hz)
-        now = time.time()
-        if now - self._last_perf_snapshot >= 5.0:
-            self.metrics.sample_process()
-            perf = self.metrics.snapshot()
-            # Signal-path truth + dbus-send spawn counter (storm canary)
-            perf["signals_healthy"] = bool(self.victron.is_signals_healthy())
-            perf["dbus_subprocess_calls"] = int(getattr(self.victron, "subprocess_calls", 0))
-            self.state["perf"] = perf
-            prom_metrics_publish(perf)
-            self._last_perf_snapshot = now
+        performance = self.performance.read()
+        sampled_at = performance.get("perf", {}).get("sampled_at_unix")
+        if sampled_at is not None and sampled_at != self._last_perf_snapshot:
+            # Refresh diagnostics in UI/MQTT state only for a newly sampled result.
+            self.state.update(performance)
+            self._last_perf_snapshot = sampled_at
         self._check_ess_external()
 
     def _check_ess_external(self) -> None:

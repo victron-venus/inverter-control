@@ -1,5 +1,16 @@
 # Venus OS installation and runtime checks
 
+Performance diagnostics run in a separate worker: `/proc` sampling, rolling
+percentile calculation, and Prometheus export do not execute in the control
+cycle. Performance snapshots refresh approximately every five seconds and carry
+`sampled_at_unix`. Rebuilding UI/MQTT state includes only a newly sampled result;
+missing, failed, or older-than-15-second results are omitted. Intermediate MQTT
+publications may repeat the current state and its sampling timestamp. The recorder only holds a lock while copying bounded
+buffers; sorting and exporter I/O run outside that lock. This removes diagnostic
+work from the cycle but does not guarantee a bound on acknowledged D-Bus writes
+or host scheduling latency. Hardware acceptance must still measure deadline
+misses and write errors over an identified capture interval.
+
 Keep code, configuration and service templates under `/data/inverter-control`. `/service` is volatile and is recreated through the package's `/data/rc.local` hook. The native supervisor commands are `svc` and `svstat`, not `systemctl` or `sv`.
 
 `setup install auto` and `update.sh` share the same installer. It checks syntax/dependencies before stopping services, preserves local configuration and supervisor directory inodes, handles installation from the package directory itself, and waits for a fresh heartbeat before ending maintenance keepalive. A failed startup returns an error; inspect logs and restore a known release using the documented update procedure. Reboot and firmware-upgrade recovery still require a planned live check.
