@@ -1538,26 +1538,26 @@ class VictronDBus:
 
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
         """Set a value on the write-only native connection, then CLI fallback.
-        The existing _set_lock still serializes writes from all callers."""
-
-        if self._native_write is not None:
-            with self._set_lock:
-                ok = self._native_write.set_value(service, path, value, value_type)
-            if ok:
-                self._consecutive_errors = 0
-                self._last_success_time = time.time()
-                return True
-            else:
-                logger.warning(
-                    f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
-                )
-                logger.debug(
-                    "Native D-Bus set failed, falling back to dbus-send: %s %s",
-                    service,
-                    path,
-                )
+        Keep both attempts under one lock so a later write cannot be
+        overwritten by an older caller's delayed CLI fallback."""
 
         with self._set_lock:
+            if self._native_write is not None:
+                ok = self._native_write.set_value(service, path, value, value_type)
+                if ok:
+                    self._consecutive_errors = 0
+                    self._last_success_time = time.time()
+                    return True
+                else:
+                    logger.warning(
+                        f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
+                    )
+                    logger.debug(
+                        "Native D-Bus set failed, falling back to dbus-send: %s %s",
+                        service,
+                        path,
+                    )
+
             result = self._safe_subprocess(
                 [
                     "dbus-send",

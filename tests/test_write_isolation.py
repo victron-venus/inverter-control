@@ -192,6 +192,60 @@ def test_write_lock_still_serializes_callers(facade):
     assert [message.body[0].value for message in writer._bus.messages] == [1, 2]
 
 
+@pytest.mark.parametrize("fallback,accepted", [("int32 0\n", True), ("int32 2\n", False)])
+def test_native_failure_and_fallback_cannot_be_overtaken(facade, fallback, accepted):
+    """A later write must stay after both transport attempts of the first write."""
+    native_failed, second_done = threading.Event(), threading.Event()
+    calls, results = [], {}
+
+    class HandoffLock:
+        def __init__(self):
+            self.lock = threading.Lock()
+
+        def __enter__(self):
+            self.lock.acquire()
+
+        def __exit__(self, *_args):
+            self.lock.release()
+            # Exercise the valid scheduling interleaving when an implementation
+            # releases its lock between native failure and CLI fallback.
+            if threading.current_thread() is first and calls == [("native", 1)]:
+                assert second_done.wait(2)
+
+    def native_set(_service, _path, value, _type):
+        calls.append(("native", value))
+        if value == 1:
+            native_failed.set()
+            return False
+        return True
+
+    def cli_set(command, **_kwargs):
+        calls.append(("cli", int(command[-1].rsplit(":", 1)[1])))
+        return fallback
+
+    def later_write():
+        if native_failed.wait(2):
+            results[2] = facade._dbus_set(SERVICE, "/Setpoint", 2)
+        second_done.set()
+
+    first = threading.Thread(
+        target=lambda: results.update({1: facade._dbus_set(SERVICE, "/Setpoint", 1)})
+    )
+    second = threading.Thread(target=later_write)
+    with (
+        patch.object(facade, "_set_lock", HandoffLock()),
+        patch.object(facade._native_write, "set_value", side_effect=native_set),
+        patch.object(facade, "_safe_subprocess", side_effect=cli_set),
+    ):
+        second.start()
+        first.start()
+        first.join(3)
+        second.join(3)
+    assert not first.is_alive() and not second.is_alive()
+    assert results == {1: accepted, 2: True}
+    assert calls == [("native", 1), ("cli", 1), ("native", 2)]
+
+
 def test_diagnostics_follow_writer_and_close_releases_both_clients(facade):
     telemetry, writer = facade._native, facade._native_write
     read_bus, write_bus = telemetry._bus, writer._bus

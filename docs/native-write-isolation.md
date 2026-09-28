@@ -11,6 +11,11 @@ request deadline, cancellation and confirmed CLI fallback remain in place.
 `NativeDbusClient`'s request implementation is unchanged. A writer transport
 failure reconnects only the writer; telemetry failure does not drop that
 connection. Slow-write correlation diagnostics are drained from the writer.
+The write lock covers the native attempt and any CLI fallback together. A later
+caller cannot overtake a failed native attempt and then be overwritten by its
+older fallback. The regression exercises this scheduling interleaving with both
+accepted and rejected CLI replies; it does not establish a cause of meter UDP
+loss or a reduction in hardware latency.
 Orderly shutdown requests polling stop, waits at most one second for the poll
 thread, and closes both clients. An already running poll may finish later
 (including existing CLI read fallbacks); closed native clients cannot reconnect.
