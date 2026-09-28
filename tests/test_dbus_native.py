@@ -218,6 +218,7 @@ class TestVictronDBusIntegration:
     def test_test_mode_has_no_native(self):
         v = victron.get_victron(test_mode=True)
         assert v._native is None
+        assert v._native_write is None
 
     @patch("inverter_control.victron.USE_NATIVE_DBUS", True)
     @patch.object(victron.VictronDBus, "_start_background_polling")
@@ -225,7 +226,10 @@ class TestVictronDBusIntegration:
     def test_native_enabled_when_not_test_mode(self, _mock_disc, _mock_poll):
         v = victron.VictronDBus(test_mode=False)
         assert v._native is not None
-        v._native.close()
+        assert v._native_write is not v._native
+        assert not v._native_write._subscriptions
+        assert v._native_write.on_reconnect is None
+        v.close()
 
     @patch("inverter_control.victron.USE_NATIVE_DBUS", False)
     @patch.object(victron.VictronDBus, "_start_background_polling")
@@ -233,6 +237,7 @@ class TestVictronDBusIntegration:
     def test_native_disabled_by_config(self, _mock_disc, _mock_poll):
         v = victron.VictronDBus(test_mode=False)
         assert v._native is None
+        assert v._native_write is None
 
     @patch.object(victron.VictronDBus, "_discover_services")
     @patch("inverter_control.victron.subprocess.run")
@@ -240,7 +245,7 @@ class TestVictronDBusIntegration:
         v = victron.get_victron(test_mode=True)
         v._vebus_service = "com.victronenergy.vebus.ttyUSB2"
         fake = MagicMock(return_value=True)
-        v._native = fake
+        v._native_write = fake
 
         assert v.set_grid_setpoint(-615)
         fake.set_value.assert_called_once_with(
@@ -253,10 +258,12 @@ class TestVictronDBusIntegration:
     def test_set_falls_back_to_cli_on_native_failure(self, mock_run):
         v = victron.get_victron(test_mode=True)
         v._vebus_service = "com.victronenergy.vebus.ttyUSB2"
-        v._native = MagicMock(return_value=False)
+        v._native_write = MagicMock()
+        v._native_write.set_value.return_value = False
         mock_run.return_value = MagicMock(
             returncode=0, stdout="method return reply_serial=1\n   int32 0\n"
         )
+        mock_run.reset_mock()
 
         assert v._dbus_set(v._vebus_service, "/Hub4/L1/AcPowerSetpoint", -615)
         assert mock_run.called
