@@ -1541,6 +1541,7 @@ class VictronDBus:
         Keep both attempts under one lock so a later write cannot be
         overwritten by an older caller's delayed CLI fallback."""
 
+        native_failed = False
         with self._set_lock:
             if self._native_write is not None:
                 ok = self._native_write.set_value(service, path, value, value_type)
@@ -1548,15 +1549,7 @@ class VictronDBus:
                     self._consecutive_errors = 0
                     self._last_success_time = time.time()
                     return True
-                else:
-                    logger.warning(
-                        f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
-                    )
-                    logger.debug(
-                        "Native D-Bus set failed, falling back to dbus-send: %s %s",
-                        service,
-                        path,
-                    )
+                native_failed = True
 
             result = self._safe_subprocess(
                 [
@@ -1573,18 +1566,31 @@ class VictronDBus:
             )
             # BusItem.SetValue returns zero on acceptance, nonzero on rejection.
             # A successful dbus-send dispatch with no reply proves nothing.
-            if isinstance(result, str) and re.search(
-                r"^\s*(?:u?int32)\s+0\s*$", result, re.MULTILINE
-            ):
+            accepted = isinstance(result, str) and bool(
+                re.search(r"^\s*(?:u?int32)\s+0\s*$", result, re.MULTILINE)
+            )
+            if accepted:
                 self._consecutive_errors = 0
                 self._last_success_time = time.time()
-                return True
+            else:
+                self._consecutive_errors += 1
 
+        # Synchronous handlers can block. Finish both transport attempts and
+        # release the write lock before emitting their diagnostics.
+        if native_failed:
+            logger.warning(
+                f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
+            )
+            logger.debug(
+                "Native D-Bus set failed, used dbus-send fallback: %s %s",
+                service,
+                path,
+            )
+        if not accepted:
             logger.warning(
                 f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}"
             )
-            self._consecutive_errors += 1
-            return False
+        return accepted
 
     def get_system_data(self) -> dict[str, Any]:
         """
