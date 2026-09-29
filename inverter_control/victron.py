@@ -390,8 +390,9 @@ class VictronDBus:
             old = self._grid_energy_timezone
             self._grid_energy_timezone = name
             if name != old or not name:
+                reason = "timezone_changed" if old else "awaiting_meter"
                 self._grid_energy.invalidate(
-                    "timezone_changed" if name else "timezone_unavailable",
+                    reason if name else "timezone_unavailable",
                     reset=bool(old and name and old != name),
                 )
 

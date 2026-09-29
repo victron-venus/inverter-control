@@ -1,5 +1,6 @@
 """Existing meter snapshots feed display energy without extra reads or control I/O."""
 
+import json
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -178,6 +179,47 @@ variant double 12.25
     assert victron.get_grid_daily_energy()["source"]["serial"] == "TESTMETER001"
 
 
+def test_initial_timezone_waits_for_meter_without_resetting_saved_interval(victron, tmp_path):
+    clock = Clock()
+    path = tmp_path / "state.json"
+    saved = clock.ledger(path)
+    saved.observe(METER, readings(), ZONE)
+    clock.advance(5)
+    saved.observe(METER, readings(101, 20.25), ZONE)
+    saved.persist()
+    original = json.loads(path.read_text())
+
+    victron._grid_energy = clock.ledger(path)
+    victron._grid_energy_timezone = ""
+    victron._set_grid_energy_timezone(ZONE)
+    waiting = victron._grid_energy.snapshot()
+    assert waiting["status"] == "unknown"
+    assert waiting["reason"] == "awaiting_meter"
+    assert waiting["import_kwh"] is waiting["export_kwh"] is None
+    assert waiting["started_at"] == original["started_at"]
+    victron._grid_energy.persist()
+    assert json.loads(path.read_text()) == original
+
+    clock.advance(5)
+    victron._native.get_values_connected.return_value = readings(102, 20.5)
+    with (
+        patch("inverter_control.victron.time.time", lambda: clock.wall),
+        patch("inverter_control.victron.time.monotonic", lambda: clock.mono),
+    ):
+        refresh(victron)
+    result = victron.get_grid_daily_energy()
+    assert result["status"] == "partial"
+    assert result["reason"] == "incomplete_day"
+    assert result["import_kwh"] == 2
+    assert result["export_kwh"] == 0.5
+    assert result["started_at"] == original["started_at"]
+    victron._grid_energy.persist()
+    resumed = json.loads(path.read_text())
+    assert resumed["generation"] == original["generation"]
+    assert resumed["baseline"] == original["baseline"]
+    assert resumed["started_at"] == original["started_at"]
+
+
 def test_timezone_subscription_does_not_affect_grid_control_health(victron):
     victron._native.subscribe_service_items.side_effect = lambda service, **kwargs: (
         service != SETTINGS_SERVICE
@@ -194,7 +236,10 @@ def test_timezone_subscription_does_not_affect_grid_control_health(victron):
     refresh(victron)
     victron._apply_fast_value(SETTINGS_SERVICE, TIME_ZONE_PATH, "UTC")
     assert victron.get_grid_daily_energy()["status"] == "reset"
+    assert victron.get_grid_daily_energy()["reason"] == "timezone_changed"
     refresh(victron)
+    assert victron.get_grid_daily_energy()["status"] == "reset"
+    assert victron.get_grid_daily_energy()["reason"] == "timezone_changed"
     refresh(victron)
     assert victron.get_grid_daily_energy()["time_zone"] == "UTC"
     assert victron.get_grid_daily_energy()["status"] == "partial"
@@ -206,6 +251,7 @@ def test_settings_owner_loss_rejects_old_timezone_until_existing_reader_reseeds(
     assert victron._tz_name == ZONE
     assert victron._grid_energy_timezone == ""
     assert victron.get_grid_daily_energy()["status"] == "stale"
+    assert victron.get_grid_daily_energy()["reason"] == "timezone_unavailable"
     refresh(victron)
     assert victron.get_grid_daily_energy()["import_kwh"] is None
 
