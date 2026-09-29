@@ -26,12 +26,18 @@ class PrechargeInbox:
                 self.records = json.loads(self.path.read_text())
                 if not isinstance(self.records, dict):
                     raise ValueError("Invalid journal")
-                for value in self.records.values():
-                    if not isinstance(value, dict) or not isinstance(
-                        value.get("until"), (int, float)
+                for request_id, value in self.records.items():
+                    if (
+                        not isinstance(request_id, str)
+                        or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", request_id)
+                        or not isinstance(value, dict)
+                        or value.get("status") not in ("accepted", "suppressed")
+                        or type(value.get("until")) not in (int, float)
+                        or not math.isfinite(value["until"])
+                        or value["until"] < 0
                     ):
                         raise TypeError("Invalid journal record")
-        except (OSError, ValueError, TypeError):
+        except (OSError, ValueError, TypeError, OverflowError):
             self.error = True
 
     def _save(self, records):
@@ -68,11 +74,19 @@ class PrechargeInbox:
         ):
             request_id = None
             return result("rejected", 400, "invalid_request_id")
-        if payload.get("version") != 1 or payload.get("trigger") != "low_solar_forecast":
+        if (
+            type(payload.get("version")) is not int
+            or payload["version"] != 1
+            or payload.get("trigger") != "low_solar_forecast"
+        ):
             return result("rejected", 400, "invalid_contract")
         for key in ("forecast_energy_wh", "threshold_wh", "issued_at", "expires_at"):
             value = payload.get(key)
-            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            try:
+                valid = type(value) in (int, float) and math.isfinite(value) and value >= 0
+            except OverflowError:
+                valid = False
+            if not valid:
                 return result("rejected", 400, "invalid_" + key)
         now = time.time()
         if (

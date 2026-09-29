@@ -342,6 +342,15 @@ class TestLogic(unittest.TestCase):
         # Should hit delta limit
         self.assertIn("[!Δ", result.flags)
 
+    def test_absolute_limits_win_when_previous_manual_output_is_outside_range(self):
+        for previous, expected in ((5000, 2250), (-5000, -2300)):
+            with self.subTest(previous=previous):
+                state = self.get_base_state()
+                state.previous_setpoint = previous
+                state.prefiltered_gt = 0
+                result = self.calculator.calculate(state)
+                self.assertEqual(result.setpoint, expected)
+
     def test_ev_exclusion(self):
         """Verify that EV power is subtracted from grid when do_not_supply_charger is ON"""
         state = self.get_base_state()

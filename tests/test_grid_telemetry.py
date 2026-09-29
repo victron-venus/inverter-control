@@ -51,6 +51,9 @@ def make_victron():
     ):
         v = VictronDBus(test_mode=True)
     v._native = MagicMock()
+    v._native.get_values_connected.side_effect = lambda service, timeout: v._native.get_values(
+        service
+    )
     v._signal_paths_subscribed = True
     v._shunt_service = "com.victronenergy.battery.shunt"
     seed(v._grid_telemetry)

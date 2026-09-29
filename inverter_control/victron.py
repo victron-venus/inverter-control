@@ -7,10 +7,12 @@ Fast D-Bus access for grid control and monitoring
 import json
 import logging
 import math
+import os
 import re
 import subprocess
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any
@@ -27,7 +29,7 @@ from .config import (
     USE_NATIVE_DBUS,
 )
 from .control_flags import CONTROL_FLAG_KEYS
-from .dbus_native import NativeDbusClient
+from .dbus_native import SLOW_SET_TIMING_MS, NativeDbusClient
 from .grid_backup import GridBackup, parse_backup_snapshot
 from .grid_telemetry import (
     GRID_PATHS,
@@ -142,9 +144,9 @@ class VictronDBus:
     """
     Fast D-Bus interface for Victron system.
 
-    Get/Set go through a persistent dbus_fast connection (see dbus_native)
-    with dbus-send subprocess fallback; background telemetry rides the same
-    connection via change signals plus a slow native-first reconcile pass.
+    Reads/signals and writes use separate persistent dbus_fast connections
+    and event loops, with the same confirmed dbus-send fallback. Telemetry
+    callbacks and reconciliation cannot queue work on the writer's loop.
     """
 
     # Total dbus-send invocations (perf metric; class default covers
@@ -183,6 +185,8 @@ class VictronDBus:
         # Setpoint writes get their own lock so a telemetry read holding
         # _dbus_lock can never delay the control-loop write path.
         self._set_lock = threading.Lock()
+        self._write_lock_timings = deque(maxlen=64)
+        self._write_lock_timings_lock = threading.Lock()
         # Serializes background service discovery (startup, NameOwnerChanged on
         # the native signal thread, and the poll-thread rescan can otherwise
         # run overlapping `dbus -y` subprocesses and race the service maps).
@@ -190,6 +194,7 @@ class VictronDBus:
         self._discovery_requested = threading.Event()
         # Persistent native D-Bus connection (None in test mode / disabled)
         self._native: NativeDbusClient | None = None
+        self._native_write: NativeDbusClient | None = None
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
         # doesn't cost 2 D-Bus roundtrips every loop.
         self._ess_mode_cache: dict[str, Any] | None = None
@@ -279,6 +284,9 @@ class VictronDBus:
 
         if not test_mode and USE_NATIVE_DBUS:
             self._native = NativeDbusClient()
+            # No telemetry subscriptions or reseeding hook on the writer.
+            # Separate locks alone cannot isolate work on a shared event loop.
+            self._native_write = NativeDbusClient(observe_write_send=True)
             # Set up NameOwnerChanged handler for service discovery
             self._native.add_name_owner_handler(self._on_name_owner_changed)
 
@@ -286,6 +294,7 @@ class VictronDBus:
         self._signal_paths_subscribed = False
         self._signal_handler_attached = False
         self._last_signal_reconcile = 0.0
+        self._next_grid_retry: float | None = None
         self._last_signal_setup_try = 0.0
         self._last_signal_ok_monotonic: float | None = None
         self._next_unhealthy_poll = 0.0
@@ -373,6 +382,7 @@ class VictronDBus:
                 self._refresh_grid_meter(applied_generation)
         elif generation == self._grid_telemetry.generation:
             self._grid_telemetry.unavailable("System grid snapshot unavailable")
+        self._schedule_grid_retry()
         for service, path in self._fast_targets():
             if service == SYSTEM_SERVICE and path in GRID_PATHS:
                 continue
@@ -390,6 +400,46 @@ class VictronDBus:
     def is_signals_healthy(self) -> bool:
         """Public view of fast-signal path health (for perf telemetry)."""
         return self._signals_healthy()
+
+    def drain_write_timings(self) -> list[dict]:
+        """Collect bounded diagnostics without reading or controlling devices."""
+        samples = (
+            list(self._native_write.drain_write_timings()) if self._native_write is not None else []
+        )
+        with self._write_lock_timings_lock:
+            samples.extend(self._write_lock_timings)
+            self._write_lock_timings.clear()
+        return samples
+
+    def _record_write_lock_timing(self, requested: float, acquired: float) -> None:
+        wait_ms = (acquired - requested) * 1000.0
+        if wait_ms < SLOW_SET_TIMING_MS:
+            return
+        sample = {
+            "phase": "write_lock",
+            "clock": "monotonic",
+            "pid": os.getpid(),
+            "caller_native_tid": threading.get_native_id(),
+            "anchors": {"lock_requested_at": requested, "lock_acquired_at": acquired},
+            "lock_wait_ms": round(wait_ms, 3),
+        }
+        # The performance worker may be descheduled while draining. Never
+        # delay a control write for optional diagnostics; losing a sample is OK.
+        if not self._write_lock_timings_lock.acquire(blocking=False):
+            return
+        try:
+            self._write_lock_timings.append(sample)
+        finally:
+            self._write_lock_timings_lock.release()
+
+    def close(self) -> None:
+        """Request polling stop, wait briefly, and close both native clients."""
+        self._poll_stop_event.set()
+        if self._poll_thread:
+            self._poll_thread.join(timeout=1.0)
+        for client in (self._native_write, self._native):
+            if client is not None:
+                client.close()
 
     def _set_signals_healthy(self, value: bool) -> None:
         """Update subscription flag; log each healthy<->unhealthy flip once."""
@@ -767,6 +817,11 @@ class VictronDBus:
                 self._reconcile_pv_power()
                 self._reconcile_acload_power()
                 self._last_signal_reconcile = time.monotonic()
+            elif self._next_grid_retry is not None and time.monotonic() >= self._next_grid_retry:
+                # A failed authoritative read latches grid invalid even while
+                # signals continue. Recover the full snapshot promptly, with
+                # the same service backoff as ordinary reconciliation.
+                self._poll_system_data()
         else:
             if (
                 self._native is not None
@@ -849,9 +904,38 @@ class VictronDBus:
             self._reconcile_all_batteries()
 
     def _poll_system_data(self):
-        """Poll system data using tree query"""
+        """Reconcile one coherent snapshot without spawning a CLI on the native path."""
+        self._read_system_snapshot()
+        self._schedule_grid_retry()
+
+    def _schedule_grid_retry(self):
+        """Keep every authoritative-read path eligible for prompt grid recovery."""
+        self._next_grid_retry = (
+            None
+            if self._grid_telemetry.snapshot()["_grid_valid"]
+            else time.monotonic() + UNHEALTHY_POLL_INTERVAL
+        )
+
+    def _read_system_snapshot(self):
         generation = self._grid_telemetry.generation
-        output = self._safe_subprocess_tracked(
+        fields, deadline = self._native_reconciliation_read(SYSTEM_SERVICE)
+        if fields is not None:
+            parsed = dict.fromkeys(SYSTEM_SIGNAL_PATHS.values(), 0)
+            parsed.update(
+                {
+                    key: int(value)
+                    for key, value in self._snapshot_numbers(fields, SYSTEM_SIGNAL_PATHS).items()
+                }
+            )
+            parsed["gt"] = parsed["g1"] + parsed["g2"]
+            parsed["tt"] = parsed["t1"] + parsed["t2"]
+            applied_generation = self._grid_telemetry.replace(fields, generation)
+            if applied_generation is not None:
+                self._refresh_grid_meter(applied_generation)
+            self._system_data.update(parsed)
+            self._system_data["_last_update"] = time.time()
+            return
+        output = self._reconciliation_fallback(
             [
                 "dbus-send",
                 "--system",
@@ -861,7 +945,7 @@ class VictronDBus:
                 GET_VALUE_METHOD,
             ],
             service=SYSTEM_SERVICE,
-            timeout=0.5,
+            deadline=deadline,
         )
         if output:
             self._parse_system_data(output, generation)
@@ -882,9 +966,9 @@ class VictronDBus:
         meter = self._grid_telemetry.selected_meter()
         if not meter:
             return
-        fields = self._native.get_values(meter) if self._native is not None else None
+        fields, deadline = self._native_reconciliation_read(meter)
         if not isinstance(fields, dict):
-            output = self._safe_subprocess_tracked(
+            output = self._reconciliation_fallback(
                 [
                     "dbus-send",
                     "--system",
@@ -894,7 +978,7 @@ class VictronDBus:
                     GET_VALUE_METHOD,
                 ],
                 service=meter,
-                timeout=0.5,
+                deadline=deadline,
             )
             fields = parse_grid_meter_snapshot(output) if output else None
         self._grid_telemetry.replace_meter(meter, fields, generation)
@@ -903,7 +987,15 @@ class VictronDBus:
         """Poll bank V/I/P from the SmartShunt service (tree query)."""
         if not self._shunt_service:
             return
-        output = self._safe_subprocess_tracked(
+        fields, deadline = self._native_reconciliation_read(self._shunt_service)
+        if fields is not None:
+            parsed = self._snapshot_numbers(fields, SHUNT_SIGNAL_PATHS)
+            if "bp" in parsed:
+                parsed["bp"] = int(parsed["bp"])
+            self._system_data.update(parsed)
+            self._system_data["_last_update"] = time.time()
+            return
+        output = self._reconciliation_fallback(
             [
                 "dbus-send",
                 "--system",
@@ -913,11 +1005,53 @@ class VictronDBus:
                 GET_VALUE_METHOD,
             ],
             service=self._shunt_service,
-            timeout=0.5,
+            deadline=deadline,
         )
         if output:
             self._system_data.update(parse_shunt_data_output(output))
             self._system_data["_last_update"] = time.time()
+
+    def _native_reconciliation_read(
+        self, service: str, path: str | None = None
+    ) -> tuple[dict | str | None, float | None]:
+        """Reserve half of one 0.5s read budget for CLI; never reconnect here."""
+        if self._native is None or not self._service_healthy(service):
+            return None, None
+        deadline = time.monotonic() + 0.5
+        value = (
+            self._native.get_values_connected(service, timeout=0.25)
+            if path is None
+            else self._native.get_value_connected(service, path, timeout=0.25)
+        )
+        valid = isinstance(value, dict) if path is None else value is not None
+        if valid:
+            self._record_service_success(service)
+            return value, deadline
+        return None, deadline
+
+    def _reconciliation_fallback(
+        self, cmd: list, service: str, deadline: float | None
+    ) -> str | None:
+        """Do not spend another deadline after a native timeout exhausted this read."""
+        timeout = 0.5 if deadline is None else deadline - time.monotonic()
+        if timeout <= 0:
+            if self._service_healthy(service):
+                self._record_service_failure(service)
+            return None
+        return self._safe_subprocess_tracked(cmd, service, timeout)
+
+    @staticmethod
+    def _snapshot_numbers(fields: dict, paths: dict[str, str]) -> dict[str, float]:
+        """Extract finite readings; absent/invalid values are not measured zeroes."""
+        result = {}
+        for path, key in paths.items():
+            try:
+                value = float(fields[path])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                result[key] = value
+        return result
 
     def _read_product_name(self, service: str) -> str:
         """Product name of a battery service ('' when unreadable)."""
@@ -1013,7 +1147,11 @@ class VictronDBus:
             return
 
         for service in BATTERY_CELL_SERVICES:
-            output = self._safe_subprocess_tracked(
+            fields, deadline = self._native_reconciliation_read(service)
+            if fields is not None:
+                self._cache_chain_snapshot(service, fields)
+                continue
+            output = self._reconciliation_fallback(
                 [
                     "dbus-send",
                     "--system",
@@ -1023,7 +1161,7 @@ class VictronDBus:
                     GET_VALUE_METHOD,
                 ],
                 service=service,
-                timeout=0.5,
+                deadline=deadline,
             )
             if not output:
                 continue
@@ -1031,6 +1169,35 @@ class VictronDBus:
             self._parse_and_cache_chain_data(service, output)
 
         self._last_battery_cell_data_time = time.time()
+
+    def _cache_chain_snapshot(self, service: str, fields: dict) -> None:
+        """Cache the same contiguous voltages/sparse temperatures as the CLI tree."""
+        paths = {
+            **{f"/Cell/{i}/Voltage": f"v{i}" for i in range(1, 17)},
+            **{f"/Cell/{i}/Temperature": f"t{i}" for i in range(1, 17)},
+            "/Soc": "soc",
+            "/Info/AllowCharge": "allow_charge",
+            "/Info/AllowDischarge": "allow_discharge",
+        }
+        values = self._snapshot_numbers(fields, paths)
+        voltages = []
+        max_cell = min(self._chain_cell_counts.get(service, 16) + 1, 16)
+        for i in range(1, max_cell + 1):
+            if f"v{i}" not in values:
+                break
+            voltages.append(values[f"v{i}"])
+        if voltages:
+            self._chain_cell_counts[service] = len(voltages)
+        result = self._cached_battery_cell_data.setdefault(service, {})
+        result.update(
+            voltages=voltages,
+            temps=[values[f"t{i}"] for i in range(1, 17) if f"t{i}" in values],
+            soc=values.get("soc"),
+            allow_charge=int(values["allow_charge"]) == 1 if "allow_charge" in values else None,
+            allow_discharge=int(values["allow_discharge"]) == 1
+            if "allow_discharge" in values
+            else None,
+        )
 
     def _parse_and_cache_chain_data(self, service: str, output: str) -> None:
         """Parse tree query output and cache chain data."""
@@ -1132,29 +1299,32 @@ class VictronDBus:
         self._last_inverter_state_time = time.time()
 
     def _poll_inverter_power(self):
-        """Poll inverter power (uses _safe_subprocess directly to avoid lock contention)"""
+        """Reconcile inverter power on the persistent reader, with bounded CLI fallback."""
         if not self._vebus_service:
             return
-
-        output = self._safe_subprocess_tracked(
-            [
-                "dbus-send",
-                "--system",
-                PRINT_REPLY_LITERAL,
-                f"--dest={self._vebus_service}",
-                "/Devices/0/Ac/Inverter/P",
-                GET_VALUE_METHOD,
-            ],
-            service=self._vebus_service,
-            timeout=0.5,
+        output, deadline = self._native_reconciliation_read(
+            self._vebus_service, VEBUS_INV_POWER_PATH
         )
+        if output is None:
+            output = self._reconciliation_fallback(
+                [
+                    "dbus-send",
+                    "--system",
+                    PRINT_REPLY_LITERAL,
+                    f"--dest={self._vebus_service}",
+                    VEBUS_INV_POWER_PATH,
+                    GET_VALUE_METHOD,
+                ],
+                service=self._vebus_service,
+                deadline=deadline,
+            )
         if output:
             try:
                 parts = output.strip().split()
                 if parts:
                     self._system_data["inv_power"] = int(float(parts[-1]))
                     self._consecutive_errors = 0
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError, OverflowError) as e:
                 logger.debug("Inverter power parse failed: %s", e)
                 self._consecutive_errors += 1
         else:
@@ -1520,27 +1690,22 @@ class VictronDBus:
         return None
 
     def _dbus_set(self, service: str, path: str, value: int, value_type: str = "int16") -> bool:
-        """Set a value on D-Bus (native connection, CLI fallback).
-        Uses _set_lock so writes never wait behind telemetry reads."""
+        """Set a value on the write-only native connection, then CLI fallback.
+        Keep both attempts under one lock so a later write cannot be
+        overwritten by an older caller's delayed CLI fallback."""
 
-        if self._native is not None:
-            with self._set_lock:
-                ok = self._native.set_value(service, path, value, value_type)
-            if ok:
-                self._consecutive_errors = 0
-                self._last_success_time = time.time()
-                return True
-            else:
-                logger.warning(
-                    f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
-                )
-                logger.debug(
-                    "Native D-Bus set failed, falling back to dbus-send: %s %s",
-                    service,
-                    path,
-                )
-
+        native_failed = False
+        lock_requested = time.monotonic()
         with self._set_lock:
+            self._record_write_lock_timing(lock_requested, time.monotonic())
+            if self._native_write is not None:
+                ok = self._native_write.set_value(service, path, value, value_type)
+                if ok:
+                    self._consecutive_errors = 0
+                    self._last_success_time = time.time()
+                    return True
+                native_failed = True
+
             result = self._safe_subprocess(
                 [
                     "dbus-send",
@@ -1556,18 +1721,31 @@ class VictronDBus:
             )
             # BusItem.SetValue returns zero on acceptance, nonzero on rejection.
             # A successful dbus-send dispatch with no reply proves nothing.
-            if isinstance(result, str) and re.search(
-                r"^\s*(?:u?int32)\s+0\s*$", result, re.MULTILINE
-            ):
+            accepted = isinstance(result, str) and bool(
+                re.search(r"^\s*(?:u?int32)\s+0\s*$", result, re.MULTILINE)
+            )
+            if accepted:
                 self._consecutive_errors = 0
                 self._last_success_time = time.time()
-                return True
+            else:
+                self._consecutive_errors += 1
 
+        # Synchronous handlers can block. Finish both transport attempts and
+        # release the write lock before emitting their diagnostics.
+        if native_failed:
+            logger.warning(
+                f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
+            )
+            logger.debug(
+                "Native D-Bus set failed, used dbus-send fallback: %s %s",
+                service,
+                path,
+            )
+        if not accepted:
             logger.warning(
                 f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}"
             )
-            self._consecutive_errors += 1
-            return False
+        return accepted
 
     def get_system_data(self) -> dict[str, Any]:
         """
@@ -1620,6 +1798,7 @@ class VictronDBus:
         if not output:
             if generation == self._grid_telemetry.generation:
                 self._grid_telemetry.unavailable("System grid read unavailable")
+            self._schedule_grid_retry()
             self._merge_grid_status(data)
             return data
 
@@ -1627,6 +1806,7 @@ class VictronDBus:
         applied_generation = self._grid_telemetry.replace(parse_grid_snapshot(output), generation)
         if applied_generation is not None:
             self._refresh_grid_meter(applied_generation)
+        self._schedule_grid_retry()
         data.update(parsed)
 
         # Bank V/I/P from the SmartShunt only (see SHUNT_SIGNAL_PATHS note).

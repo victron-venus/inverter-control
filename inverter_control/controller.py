@@ -356,9 +356,11 @@ class InverterController:
         return self.loop_interval
 
     def set_power_limits(self, min_val: int, max_val: int) -> dict[str, int]:
+        if type(min_val) is not int or type(max_val) is not int or min_val > max_val:
+            raise ValueError("Power limits must be ordered integers")
         with self._watchdog._lock:
-            self.power_limit_min = max(min_val, -3000)
-            self.power_limit_max = min(max_val, 3000)
+            self.power_limit_min = max(-3000, min(3000, min_val))
+            self.power_limit_max = max(-3000, min(3000, max_val))
             # Update calculator limits
             self.calculator.power_limit_min = self.power_limit_min
             self.calculator.power_limit_max = self.power_limit_max
@@ -889,6 +891,8 @@ class InverterController:
 
     def _read_performance(self) -> dict:
         """Procfs, percentile sorting and exporter locks stay off the control loop."""
+        for timing in self.victron.drain_write_timings():
+            logger.warning("Native D-Bus write timing: %s", timing)
         self.metrics.sample_process()
         perf = self.metrics.snapshot()
         perf["signals_healthy"] = bool(self.victron.is_signals_healthy())
@@ -1088,6 +1092,9 @@ class InverterController:
             "grid_backup_available": sys_data.get("_grid_backup_available", False),
             "grid_backup": sys_data.get("_grid_backup_status"),
             "grid_primary_reason": sys_data.get("_grid_primary_reason"),
+            "grid_source_transitions": [
+                dict(event) for event in sys_data.get("_grid_source_transitions", [])
+            ],
         }
 
     def _grid_ready_for_control(self, sys_data: dict[str, Any]) -> bool:
@@ -1281,6 +1288,12 @@ class InverterController:
                     self._reset_submeter_trim("changed_before_write")
                     self.metrics.record_cycle(cycle_started, self.loop_interval)
                     return True
+                # Limits can change after calculation. Share their setter's
+                # lock so no automatic write escapes the currently active range.
+                bounded_setpoint = max(self.power_limit_min, min(self.power_limit_max, setpoint))
+                if bounded_setpoint != setpoint:
+                    self._reset_submeter_trim("power_limits_changed")
+                    setpoint = bounded_setpoint
                 if self.dry_run:
                     flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
                     write_ok = self._watchdog.write_control_setpoint(

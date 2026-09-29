@@ -111,12 +111,19 @@ class MQTTBridge:
 
     def disconnect(self):
         """Disconnect from MQTT broker"""
+        self._connected = False
         self._stop_event.set()
-        if self._publish_thread and self._publish_thread.is_alive():
-            self._publish_thread.join(timeout=1.0)
-        if self._client:
-            self._client.loop_stop()
-            self._client.disconnect()
+        try:
+            if self._publish_thread and self._publish_thread.is_alive():
+                self._publish_thread.join(timeout=1.0)
+            if self._client:
+                self._client.loop_stop()
+                self._client.disconnect()
+        finally:
+            # A connection callback can finish while loop_stop() is joining
+            # the network thread. Its state must not outlive this shutdown.
+            self._connected = False
+            self._stop_event.set()
 
     def _publish_loop(self):
         """Background thread to drain publish queue"""
@@ -144,6 +151,10 @@ class MQTTBridge:
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):  # pylint: disable=too-many-arguments,unused-argument
         """Connected to broker"""
+        if rc != 0:
+            self._connected = False
+            logger.warning("MQTT connection rejected (rc=%s)", rc)
+            return
         self._connected = True
         logger.info("MQTT connected")
 
@@ -180,11 +191,11 @@ class MQTTBridge:
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.debug("Portal ID publish failed: %s", e)
 
-    def _on_disconnect(self, client, userdata, rc, properties=None, reason_code=None):  # pylint: disable=too-many-arguments,unused-argument
+    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):  # pylint: disable=too-many-arguments,unused-argument
         """Disconnected from broker"""
         self._connected = False
-        if rc != 0:
-            logger.warning(f"MQTT disconnected unexpectedly (rc={rc})")
+        if reason_code != 0:
+            logger.warning("MQTT disconnected unexpectedly (rc=%s)", reason_code)
 
     def _on_message(self, client, userdata, msg):
         """Received message"""
@@ -215,8 +226,15 @@ class MQTTBridge:
                 self._handle_acknowledgment(msg.payload.decode().strip())
                 return
 
-            cmd = topic.split("/")[-1]  # e.g. "inverter/cmd/toggle" -> "toggle"
-            if cmd in {"setpoint_override", "electricity_tariff"} and msg.retain:
+            command_prefix = f"{self.prefix}/cmd/"
+            if not topic.startswith(command_prefix):
+                return
+            cmd = topic[len(command_prefix) :]
+            if not cmd or "/" in cmd:
+                return
+            # Retained state is replayed on subscribe/reconnect. No control
+            # command may inherit that behavior, including toggles and modes.
+            if msg.retain:
                 logger.warning("Ignoring retained %s command", cmd)
                 return
             if cmd == "electricity_tariff" and len(msg.payload) > MAX_TARIFF_BYTES:

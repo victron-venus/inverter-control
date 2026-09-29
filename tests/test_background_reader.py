@@ -49,17 +49,30 @@ def test_reads_do_no_io_before_start_or_while_refresh_is_blocked():
 
 def test_expired_snapshot_never_falls_back_to_synchronous_refresh(monkeypatch):
     calls = []
+    clock = [100.0]
+    parked, release = threading.Event(), threading.Event()
+    monkeypatch.setattr("inverter_control.background_reader.monotonic", lambda: clock[0])
     reader = BackgroundReader(
         lambda: calls.append(True) or {"value": 0}, {"value": None}, name="test-reader"
     )
+
+    def wait_after_first_snapshot(_interval):
+        # Freeze the worker after publication: a real refresh would legitimately
+        # replace the sample while this test advances only its synthetic clock.
+        parked.set()
+        release.wait()
+
+    monkeypatch.setattr(reader._stop, "wait", wait_after_first_snapshot)
     reader.start()
     try:
-        wait_for(lambda: reader.read() == {"value": 0})
-        started = reader._snapshot[0]
-        monkeypatch.setattr("inverter_control.background_reader.monotonic", lambda: started + 4)
+        assert parked.wait(1.0)
+        assert reader.read() == {"value": 0}
+        clock[0] = 104.0
         assert reader.read() == {"value": None}
         assert calls == [True]
     finally:
+        reader._stop.set()
+        release.set()
         reader.stop()
 
 

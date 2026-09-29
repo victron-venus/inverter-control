@@ -173,12 +173,14 @@ class TestCommandTopics:
         msg = MagicMock()
         msg.topic = "inverter/cmd/toggle"
         msg.payload = json.dumps({"entity": "only_charging", "state": "on"}).encode()
+        msg.retain = False
         bridge._on_message(bridge._client, None, msg)
         assert received == [{"entity": "only_charging", "state": "on"}]
 
         msg2 = MagicMock()
         msg2.topic = "inverter/cmd/toggle"
         msg2.payload = json.dumps({"entity": "no_feed", "state": "off"}).encode()
+        msg2.retain = False
         bridge._on_message(bridge._client, None, msg2)
         assert received[-1] == {"entity": "no_feed", "state": "off"}
 
@@ -192,6 +194,7 @@ class TestCommandTopics:
         msg = MagicMock()
         msg.topic = "inverter/cmd/toggle"
         msg.payload = json.dumps({"entity": "nonexistent", "state": "on"}).encode()
+        msg.retain = False
         # Should not raise
         bridge._on_message(bridge._client, None, msg)
         bridge.set_boolean.assert_not_called()

@@ -246,12 +246,19 @@ def _setup_mqtt_bridge(controller):
 
     def _safe_limits(p):
         try:
-            lo = int(p.get("min", -2300))
-            hi = int(p.get("max", 2250))
-        except (ValueError, TypeError) as e:
+            values = (p.get("min", -2300), p.get("max", 2250))
+            if any(
+                type(value) is bool or (type(value) is float and not value.is_integer())
+                for value in values
+            ):
+                raise ValueError("Power limits must be integers")
+            # Preserve integer strings from older clients, without truncating
+            # fractional values or silently interpreting booleans as watts.
+            lo, hi = map(int, values)
+            controller.set_power_limits(lo, hi)
+        except (ValueError, TypeError, OverflowError) as e:
             logger.warning("MQTT limits rejected: %s", e)
             return
-        controller.set_power_limits(lo, hi)
 
     bridge.register_callback("limits", _safe_limits)
     bridge.register_callback("ess_mode", lambda p: controller.toggle_ess_mode())
@@ -354,6 +361,7 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread) -> None:
     if mqtt_bridge:
         mqtt_bridge.disconnect()
     controller.ha.stop()
+    controller.victron.close()
 
 
 def _run_main_loop(controller, mqtt_bridge):
@@ -437,6 +445,7 @@ def _main_inner():
             controller.run_cycle()
         finally:
             controller.stop_auxiliary_readers()
+            controller.victron.close()
         return
 
     start_console_server()

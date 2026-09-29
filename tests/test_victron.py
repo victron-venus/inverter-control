@@ -749,6 +749,7 @@ class TestVictronDBus:
         )
         v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
         v._safe_subprocess = MagicMock(return_value=sample_output)
+        v._native = None
         v._cached_battery_cell_data = {}
         v._chain_cell_counts = {}
         v._last_battery_cell_data_time = 0.0
@@ -802,6 +803,7 @@ class TestVictronDBus:
     def test_get_battery_cell_data_stale_cache_falls_back(self):
         """Test stale/empty cache falls back to the live D-Bus read"""
         v = object.__new__(victron.VictronDBus)  # No __init__ -> no poll thread
+        v._native = None
         v._cached_battery_cell_data = {}
         v._last_battery_cell_data_time = 0.0
         v._service_consecutive_fails = {}

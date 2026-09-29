@@ -10,7 +10,9 @@ Two service prefixes exist:
 
 The vehicle is distinguished by presence of /Soc and/or /VIN AND
 /Mgmt/Connection matching "evcharger:<n>" (the instance of its paired charger).
-The wallbox has neither /Soc nor /VIN.
+The wallbox has neither /Soc nor /VIN. Only its site measurement is used for
+grid-control power: vehicle telemetry can describe charging elsewhere or retain
+an old power value after disconnecting. Vehicle telemetry supplies SoC only.
 
 Reads are cached with a short TTL so the control loop pays at most one round
 of busitem reads per TTL window. A missing service yields None ("no data"),
@@ -18,6 +20,7 @@ never 0/False, so consumers can distinguish outage from real values.
 """
 
 import logging
+import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -126,18 +129,34 @@ class EvChargerReader:
         if raw is None:
             return None
         try:
-            return float(raw)
-        except ValueError:
+            value = float(raw)
+            return value if math.isfinite(value) else None
+        except (ValueError, TypeError, OverflowError):
             return None
 
     def _read_int(self, service: str, path: str) -> int | None:
-        raw = self._dbus_get(service, path)
-        if raw is None:
+        value = self._read_numeric(service, path)
+        return int(value) if value is not None else None
+
+    def _read_site_power(self) -> float | None:
+        """Read a connected wallbox; unavailable power must not become vehicle power.
+
+        The existing BackgroundReader bounds the age of completed read passes.
+        The wallbox adapter must mark its own source disconnected when stale;
+        a fresh D-Bus read alone cannot establish upstream measurement freshness.
+        """
+        service = self.wallbox_service
+        if service is None or self._read_numeric(service, "/Connected") != 1:
             return None
-        try:
-            return int(float(raw))
-        except ValueError:
+        power = self._read_numeric(service, "/Ac/Power")
+        if power is not None:
+            return power if power >= 0 else None
+        current = self._read_numeric(service, "/Current")
+        voltage = self._read_numeric(service, "/Ac/L1/Voltage")
+        if current is None or voltage is None or current < 0 or voltage <= 0:
             return None
+        power = current * voltage
+        return power if math.isfinite(power) else None
 
     def read(self, force: bool = False) -> dict[str, Any]:
         """Return {"ev_power", "car_soc", "ev_charging_kw"}; values may be None."""
@@ -149,30 +168,16 @@ class EvChargerReader:
 
         state: dict[str, Any] = {"ev_power": None, "car_soc": None, "ev_charging_kw": None}
 
-        # Prefer vehicle for car_soc (has /Soc)
+        # Vehicle SoC is independent of the charger connected to this site's grid.
         if self.vehicle_service:
             soc = self._read_int(self.vehicle_service, "/Soc")
             if soc is not None:
                 state["car_soc"] = soc
-            # Vehicle also reports AC power on /Ac/Power
-            pwr = self._read_numeric(self.vehicle_service, "/Ac/Power")
-            if pwr is not None:
-                state["ev_power"] = pwr
-                state["ev_charging_kw"] = pwr / 1000.0
 
-        # Fall back to wallbox for power if vehicle didn't provide
-        if state["ev_power"] is None and self.wallbox_service:
-            pwr = self._read_numeric(self.wallbox_service, "/Ac/Power")
-            if pwr is not None:
-                state["ev_power"] = pwr
-                state["ev_charging_kw"] = pwr / 1000.0
-            else:
-                # Derive power from current and voltage
-                curr = self._read_numeric(self.wallbox_service, "/Current")
-                volt = self._read_numeric(self.wallbox_service, "/Ac/L1/Voltage")
-                if curr is not None and volt is not None:
-                    state["ev_power"] = curr * volt
-                    state["ev_charging_kw"] = state["ev_power"] / 1000.0
+        power = self._read_site_power()
+        if power is not None:
+            state["ev_power"] = power
+            state["ev_charging_kw"] = power / 1000.0
 
         # If wallbox has /Soc (rare), use as car_soc fallback
         if state["car_soc"] is None and self.wallbox_service:

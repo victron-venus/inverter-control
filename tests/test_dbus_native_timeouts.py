@@ -1,6 +1,7 @@
 """Request deadlines must not tear down a healthy shared native connection."""
 
 import asyncio
+import os
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,125 @@ from inverter_control.dbus_native import NativeDbusClient
 
 SERVICE = "com.victronenergy.system"
 GRID_PATH = "/Ac/Grid/L1/Power"
+
+
+def test_write_timing_partitions_phases_and_keeps_only_correlation_fields(native):
+    native._bus.unique_name = ":1.42"
+    message = Message(destination=SERVICE, path="/Setpoint", member="SetValue", serial=7)
+    timing = {
+        "started_at": 10.0,
+        "submitted_at": 10.02,
+        "dispatched_at": 10.12,
+        "await_started_at": 10.12,
+        "completed_at": 10.25,
+        "returned_at": 10.30,
+        "call_started_at": 10.125,
+        "send_started_at": 10.13,
+        "send_returned_at": 10.14,
+        "send_done_observed_at": 10.16,
+        "reply_observed_at": 10.20,
+        "call_finished_at": 10.24,
+        "caller_native_tid": 321,
+        "loop_native_tid": 654,
+        "command_body": "never copy this",
+    }
+    native._record_write_timing(timing, native._bus, message)
+    assert native.drain_write_timings() == [
+        {
+            "phase": "native_call",
+            "clock": "monotonic",
+            "pid": os.getpid(),
+            "caller_native_tid": 321,
+            "loop_native_tid": 654,
+            "anchors": {key: value for key, value in timing.items() if key.endswith("_at")},
+            "sender": ":1.42",
+            "serial": 7,
+            "total_ms": 300.0,
+            "setup_ms": 20.0,
+            "dispatch_ms": 100.0,
+            "await_reply_ms": 130.0,
+            "caller_wakeup_ms": 50.0,
+            "call_to_reply_observer_ms": 75.0,
+            "reply_observer_to_resume_ms": 40.0,
+            "send_sync_ms": 10.0,
+            "send_return_to_done_observer_ms": 20.0,
+            "send_future_cancelled": None,
+        }
+    ]
+    assert native.drain_write_timings() == []
+
+
+def test_slow_write_diagnostics_are_bounded_and_do_not_log_in_caller(native):
+    with (
+        patch("inverter_control.dbus_native.SLOW_SET_TIMING_MS", 0),
+        patch(
+            "inverter_control.dbus_native.logger.warning", side_effect=AssertionError("caller I/O")
+        ),
+    ):
+        for _ in range(70):
+            assert native.set_value(SERVICE, "/Setpoint", 12345)
+    samples = native.drain_write_timings()
+    assert len(samples) == 64
+    assert [x["serial"] for x in samples] == list(range(7, 71))
+
+    async def loop_tid():
+        return threading.get_native_id()
+
+    native_tid = asyncio.run_coroutine_threadsafe(loop_tid(), native._loop).result(1)
+    for sample in samples:
+        assert sample["caller_native_tid"] == threading.get_native_id()
+        assert sample["loop_native_tid"] == native_tid
+        assert native_tid != threading.get_native_id()
+        assert set(sample) == {
+            "phase",
+            "clock",
+            "pid",
+            "caller_native_tid",
+            "loop_native_tid",
+            "anchors",
+            "sender",
+            "serial",
+            "total_ms",
+            "setup_ms",
+            "dispatch_ms",
+            "await_reply_ms",
+            "caller_wakeup_ms",
+            "call_to_reply_observer_ms",
+            "reply_observer_to_resume_ms",
+            "send_sync_ms",
+            "send_return_to_done_observer_ms",
+            "send_future_cancelled",
+        }
+        assert all(
+            value >= 0 for key, value in sample.items() if key.endswith("_ms") and value is not None
+        )
+    assert not native.drain_write_timings()
+
+
+def test_overdue_queued_write_reports_missing_phases_without_late_mutation(native):
+    blocked, release = threading.Event(), threading.Event()
+
+    def stall():
+        blocked.set()
+        release.wait(1)
+
+    native._loop.call_soon_threadsafe(stall)
+    assert blocked.wait(1)
+    try:
+        with patch("inverter_control.dbus_native.SLOW_SET_TIMING_MS", 0):
+            assert not native.set_value(SERVICE, "/Setpoint", 12345, timeout=0.03)
+        samples = native.drain_write_timings()
+        assert len(samples) == 1
+        sample = dict(samples[0])
+        assert sample["serial"] is None
+        assert sample["dispatch_ms"] is None
+        assert sample["await_reply_ms"] is None
+        assert sample["caller_wakeup_ms"] is None
+    finally:
+        release.set()
+    flush_loop(native)
+    assert not native._bus.messages
+    assert samples[0] == sample
 
 
 def reply(body, signature="v"):

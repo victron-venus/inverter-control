@@ -6,6 +6,7 @@ import pytest
 
 from inverter_control import evcharger as ev_mod
 from inverter_control.evcharger import EvChargerReader
+from inverter_control.logic import SetpointCalculator, SystemState
 
 
 @pytest.fixture(name="reader_factory")
@@ -40,7 +41,7 @@ def _vehicle_responses(soc, ac_power):
     return _fn
 
 
-def _wallbox_responses(ac_power, current=None, voltage=None):
+def _wallbox_responses(ac_power, current=None, voltage=None, connected=1):
     """Build a side_effect for a wallbox service (dbus-evcharger)."""
 
     def _fn(svc, path):
@@ -48,6 +49,7 @@ def _wallbox_responses(ac_power, current=None, voltage=None):
             mapping = {
                 "/DeviceInstance": "40",
                 "/Mgmt/Connection": "Home Assistant",  # not a vehicle
+                "/Connected": str(connected) if connected is not None else None,
                 "/Ac/Power": str(ac_power) if ac_power is not None else None,
                 "/Current": str(current) if current is not None else None,
                 "/Ac/L1/Voltage": str(voltage) if voltage is not None else None,
@@ -59,12 +61,12 @@ def _wallbox_responses(ac_power, current=None, voltage=None):
 
 
 class TestEvChargerReader:
-    def test_reads_vehicle_soc_and_power(self, reader_factory):
+    def test_vehicle_soc_does_not_imply_site_charging_power(self, reader_factory):
         reader, _ = reader_factory(_vehicle_responses(soc=85, ac_power=7250))
         state = reader.read(force=True)
         assert state["car_soc"] == 85
-        assert state["ev_power"] == 7250.0
-        assert state["ev_charging_kw"] == 7.25
+        assert state["ev_power"] is None
+        assert state["ev_charging_kw"] is None
 
     def test_reads_wallbox_power(self, reader_factory):
         reader, _ = reader_factory(_wallbox_responses(ac_power=3300))
@@ -119,7 +121,7 @@ class TestEvChargerReader:
         state = reader.read(force=True)
         # /Soc=42 makes it a vehicle
         assert state["car_soc"] == 42
-        assert state["ev_power"] == 1100.0
+        assert state["ev_power"] is None
 
     def test_cache_within_ttl(self, reader_factory):
         reader, dbus_get = reader_factory(_vehicle_responses(soc=70, ac_power=2200))
@@ -222,3 +224,124 @@ def test_victron_service_snapshot_uses_existing_discovery_without_extra_bus_quer
         assert victron.get_service_names() == names
         assert victron.get_service_names() == names
     query.assert_not_called()
+
+
+def _site_and_vehicle(wallbox_power, vehicle_connected=0, **wallbox_options):
+    vehicle = _vehicle_responses(soc=62, ac_power=4400)
+    wallbox = _wallbox_responses(wallbox_power, **wallbox_options)
+
+    def read(service, path):
+        if service == "com.victronenergy.ev.ha" and path == "/Connected":
+            return str(vehicle_connected)  # Remote charging is never a home-grid load.
+        return (
+            vehicle(service, path)
+            if service.startswith("com.victronenergy.ev.")
+            else wallbox(service, path)
+        )
+
+    return read
+
+
+@pytest.mark.parametrize("wallbox_power", [0, 3200])
+@pytest.mark.parametrize("vehicle_connected", [0, 1])
+def test_site_meter_wins_over_remote_vehicle_power(
+    reader_factory, wallbox_power, vehicle_connected
+):
+    reader, dbus_get = reader_factory(
+        _site_and_vehicle(wallbox_power, vehicle_connected=vehicle_connected)
+    )
+    state = reader.read(force=True)
+    assert state == {
+        "ev_power": wallbox_power,
+        "car_soc": 62,
+        "ev_charging_kw": wallbox_power / 1000,
+    }
+    assert ("com.victronenergy.ev.ha", "/Ac/Power") not in [
+        call.args for call in dbus_get.call_args_list
+    ]
+
+
+@pytest.mark.parametrize("connected", [0, None, "unavailable", "nan", "inf", -1, 1.5])
+def test_unavailable_wallbox_never_falls_back_to_vehicle(reader_factory, connected):
+    reader, _ = reader_factory(_site_and_vehicle(3200, connected=connected))
+    assert reader.read(force=True)["ev_power"] is None
+
+
+@pytest.mark.parametrize("power", [None, "unavailable", "nan", "inf", "-inf", -100])
+def test_invalid_site_power_never_becomes_vehicle_power(reader_factory, power):
+    reader, _ = reader_factory(_site_and_vehicle(power))
+    assert reader.read(force=True)["ev_power"] is None
+
+
+@pytest.mark.parametrize(
+    ("current", "voltage"),
+    [(None, 230), (16, None), (-16, 230), (16, -230), (16, 0), ("inf", 230), (1e308, 1e308)],
+)
+def test_invalid_derived_site_power_is_unknown(reader_factory, current, voltage):
+    reader, _ = reader_factory(_site_and_vehicle(None, current=current, voltage=voltage))
+    assert reader.read(force=True)["ev_power"] is None
+
+
+def test_disconnected_wallbox_invalidates_previous_power_on_next_read(reader_factory):
+    values = {"connected": 1}
+    source = _site_and_vehicle(3200)
+
+    def read(service, path):
+        if service == "com.victronenergy.evcharger.charger" and path == "/Connected":
+            return str(values["connected"])
+        return source(service, path)
+
+    reader, _ = reader_factory(read)
+    assert reader.read(force=True)["ev_power"] == 3200
+    values["connected"] = 0
+    assert reader.read(force=True)["ev_power"] is None
+
+
+@pytest.mark.parametrize("soc", ["nan", "inf", "unavailable"])
+def test_invalid_vehicle_soc_does_not_hide_site_power(reader_factory, soc):
+    source = _site_and_vehicle(3200)
+
+    def read(service, path):
+        if service == "com.victronenergy.ev.ha" and path == "/Soc":
+            return soc
+        return source(service, path)
+
+    reader, _ = reader_factory(read)
+    state = reader.read(force=True)
+    assert state["ev_power"] == 3200
+    assert state["car_soc"] is None
+
+
+@pytest.mark.parametrize("site_power,grid_power", [(0, 2400), (3200, 5600)])
+def test_site_power_drives_ev_exclusion_without_phantom_export(
+    reader_factory, site_power, grid_power
+):
+    reader, _ = reader_factory(_site_and_vehicle(site_power))
+    measured = reader.read(force=True)
+    state = SystemState(
+        g1=grid_power,
+        g2=0,
+        gt=grid_power,
+        t1=800,
+        t2=0,
+        tt=800,
+        inv_power=2255,
+        mppt_total=1700,
+        pv_inverter_total=684,
+        pv_total=2384,
+        ev_power=measured["ev_power"] or 0,
+        garage_power=0,
+        only_charging=True,
+        no_feed=False,
+        house_support=False,
+        charge_battery=False,
+        do_not_supply_charger=True,
+        limit_to_ev=False,
+        previous_setpoint=2250,
+        prefiltered_gt=grid_power,
+    )
+    result = SetpointCalculator({}).calculate(state)
+    assert result.filtered_gt == 2400
+    assert result.setpoint == 743  # One bounded cycle away from maximum charging.
+    assert "[CHG]" not in result.flags
+    assert ("[EV:" in result.flags) is (site_power > 0)

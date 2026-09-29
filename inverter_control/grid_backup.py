@@ -3,6 +3,7 @@
 import re
 import threading
 import time
+from collections import deque
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -65,6 +66,7 @@ class GridBackup:
         self._using_backup = False
         self._primary_since: float | None = None
         self._selection_generation = 0
+        self._source_transitions: deque[dict[str, Any]] = deque(maxlen=8)
         self._identity: dict[str, Any] = {"device_instance": None, "name": None}
 
     @property
@@ -138,6 +140,25 @@ class GridBackup:
             )
             if use_backup != self._using_backup:
                 self._selection_generation += 1
+                # Any cache reader (including GridFilter) can observe this edge
+                # before the control loop. Preserve its cause through recovery;
+                # instantaneous primary status below deliberately stays current.
+                primary_source = primary.get("_grid_source")
+                primary_source = primary_source[:512] if isinstance(primary_source, str) else None
+                backup_source = self.service[:512] if isinstance(self.service, str) else None
+                reason = primary.get("_grid_invalid_reason")
+                self._source_transitions.append(
+                    {
+                        "selection_generation": self._selection_generation,
+                        "observed_at_monotonic": now,
+                        "observed_at_unix": time.time(),
+                        "from_source": backup_source if self._using_backup else primary_source,
+                        "to_source": backup_source if use_backup else primary_source,
+                        "using_backup": bool(use_backup),
+                        "primary_valid": primary_valid,
+                        "primary_reason": reason[:512] if isinstance(reason, str) else None,
+                    }
+                )
                 self._using_backup = use_backup
             status = dict(primary)
             status.update(
@@ -157,6 +178,7 @@ class GridBackup:
                     else None,
                 },
                 _grid_selection_generation=self._selection_generation,
+                _grid_source_transitions=[dict(event) for event in self._source_transitions],
                 _grid_primary_valid=primary_valid,
                 _grid_primary_reason=primary.get("_grid_invalid_reason"),
                 _grid_total_only=False,

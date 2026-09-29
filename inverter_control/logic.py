@@ -469,6 +469,10 @@ class SetpointCalculator:
             vanew = state.previous_setpoint + limited_delta
             total_flags += f"[!Δ{int(abs(delta))}] "
 
+        # A manual override or a newly reduced range can leave the previous
+        # output outside these bounds. Absolute limits win over the slew rate.
+        vanew = max(self.power_limit_min, min(self.power_limit_max, vanew))
+
         return ControlResult(
             setpoint=int(vanew),
             flags=total_flags.strip(),

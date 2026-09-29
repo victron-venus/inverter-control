@@ -145,6 +145,23 @@ def test_disabled_opt_in_preserves_existing_calculator_behavior(rig):
     assert all(call.args == (-600,) for call in rig.victron.set_grid_setpoint.call_args_list)
 
 
+def test_limit_edit_discards_an_unwritten_zero_delta_trim_proposal(rig):
+    rig.controller.previous_setpoint = 2000
+    rig.controller.current_setpoint = 2000
+    rig.victron.get_inverter_power.return_value = 2000
+    commit = MagicMock(wraps=rig.controller.submeter_trim.commit)
+    rig.controller.submeter_trim.commit = commit
+    rig.cycle(0, before_write=lambda _: rig.controller.set_power_limits(-1000, 1000))
+    assert rig.victron.set_grid_setpoint.call_args.args == (1000,)
+    assert rig.controller.previous_setpoint == 1000
+    assert rig.controller._trim_decision is None
+    commit.assert_not_called()
+    assert rig.controller.submeter_trim.status()["last_accepted_setpoint"] == 2000
+    rig.cycle(3)
+    commit.assert_called_once()
+    assert rig.controller.submeter_trim.status()["last_accepted_setpoint"] == 1000
+
+
 @pytest.mark.parametrize("flag", CONTROL_FLAG_KEYS)
 def test_every_operating_mode_excludes_slow_trim(rig, flag):
     rig.warm()
