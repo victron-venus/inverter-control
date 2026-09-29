@@ -1,10 +1,9 @@
 """Hardware watchdog for Victron ESS setpoint safety."""
 
-import logging
 import threading
 import time
 
-logger = logging.getLogger("inverter-control")
+from .write_diagnostics import WriteDiagnostics
 
 GRID_LOSS_FALLBACK_SETPOINT = -10
 GRID_LOSS_REFRESH_INTERVAL = 2.0
@@ -42,8 +41,10 @@ class HardwareWatchdog:
         dry_run: bool = False,
         get_setpoint=None,
         grid_loss_hold_seconds: float | None = None,
+        diagnostics: WriteDiagnostics | None = None,
     ):
         self.victron = victron
+        self._diagnostics = diagnostics if diagnostics is not None else WriteDiagnostics()
         self.timeout_seconds = timeout_seconds
         self.check_interval = check_interval
         self.dry_run = dry_run
@@ -87,6 +88,13 @@ class HardwareWatchdog:
         self._fail_threshold = 3  # consecutive failed checks to trigger
         self._success_threshold = 2  # consecutive successful checks to recover
 
+    def _record_diagnostic(self, event, **context) -> None:
+        try:
+            self._diagnostics.record(event, **context)
+        except Exception:
+            # Diagnostics must never replace a hardware result or block recovery.
+            pass
+
     def get_setpoint_override(self) -> dict:
         """Process-lifetime desired override; never restored after restart."""
         with self._lock:
@@ -106,8 +114,8 @@ class HardwareWatchdog:
         if self._override_status_callback is not None:
             try:
                 self._override_status_callback(self.get_setpoint_override())
-            except Exception:
-                logger.exception("Failed to publish manual setpoint override status")
+            except Exception as error:
+                self._record_diagnostic("override_status_failed", error_type=type(error).__name__)
 
     def publish_override_status(self) -> None:
         with self._lock:
@@ -169,8 +177,8 @@ class HardwareWatchdog:
                 self._has_valid_setpoint = True
             self._publish_override_locked()
             self._wake_event.set()
-            logger.info(
-                "Manual setpoint override %s", "stopped" if value is None else f"set to {value}W"
+            self._record_diagnostic(
+                "override_stopped" if value is None else "override_set", value=value
             )
             return self.get_setpoint_override()
 
@@ -194,7 +202,7 @@ class HardwareWatchdog:
             if message != self._override_error:
                 self._override_error = message
                 self._publish_override_locked()
-                logger.warning("Manual setpoint override refresh failed: %s", message)
+                self._record_diagnostic("override_refresh_failed", error_type=type(error).__name__)
             return
         had_error = self._override_error is not None
         self._override_refresh_failed = False
@@ -252,9 +260,9 @@ class HardwareWatchdog:
             if self._grid_invalid_since is None:
                 self._grid_invalid_since = time.monotonic()
                 if self.grid_loss_hold_seconds is not None:
-                    logger.warning(
-                        "Grid loss: holding last accepted command for at most %.1fs",
-                        self.grid_loss_hold_seconds if self._has_valid_setpoint else 0.0,
+                    self._record_diagnostic(
+                        "grid_hold_started",
+                        seconds=self.grid_loss_hold_seconds if self._has_valid_setpoint else 0.0,
                     )
             self._telemetry_invalid = True
             self._success_count = 0
@@ -291,10 +299,7 @@ class HardwareWatchdog:
                 or elapsed >= self.grid_loss_hold_seconds
             ):
                 if not self._grid_loss_forced:
-                    logger.warning(
-                        "Grid loss: hold expired; maintaining %dW until meter recovery",
-                        GRID_LOSS_FALLBACK_SETPOINT,
-                    )
+                    self._record_diagnostic("grid_hold_expired", value=GRID_LOSS_FALLBACK_SETPOINT)
                     # A prior generic watchdog zero is not the meter-loss
                     # fallback. Require an accepted -10W before recovery.
                     self._hardware_forced = False
@@ -324,10 +329,10 @@ class HardwareWatchdog:
         self._grid_loss_refresh_pending = True
         try:
             if not self.victron.set_grid_setpoint(GRID_LOSS_FALLBACK_SETPOINT):
-                logger.error("Grid loss: fallback write rejected; retrying in 1s")
+                self._record_diagnostic("grid_fallback_rejected")
                 return
-        except Exception:
-            logger.exception("Grid loss: fallback write failed; retrying in 1s")
+        except Exception as error:
+            self._record_diagnostic("grid_fallback_failed", error_type=type(error).__name__)
             return
         first_write = not self._hardware_forced
         self._hardware_forced = True
@@ -335,11 +340,7 @@ class HardwareWatchdog:
         self._grid_loss_refresh_pending = False
         self._last_grid_loss_write = time.monotonic()
         if first_write:
-            logger.warning(
-                "WATCHDOG: grid telemetry lost - applied %dW AC-input fallback; refreshing every %.0fs",
-                GRID_LOSS_FALLBACK_SETPOINT,
-                GRID_LOSS_REFRESH_INTERVAL,
-            )
+            self._record_diagnostic("grid_fallback_applied", value=GRID_LOSS_FALLBACK_SETPOINT)
 
     def start(self):
         """Start the watchdog monitoring thread"""
@@ -488,7 +489,7 @@ class HardwareWatchdog:
             self._maintain_override_locked(time.monotonic())
             return
         if self.dry_run:
-            logger.warning("[DRY] watchdog would force 0W setpoint")
+            self._record_diagnostic("dry_watchdog_zero", value=0)
             return
         if self._grid_loss_forced:
             self._maintain_grid_loss_fallback_locked(time.monotonic())
@@ -498,21 +499,21 @@ class HardwareWatchdog:
                 self._pre_forced_setpoint = (
                     self._get_setpoint() if self._get_setpoint and not self._grid_loss_forced else 0
                 )
-            except Exception:
+            except Exception as error:
                 # Reading the recovery value must never prevent the safety write.
                 self._pre_forced_setpoint = 0
-                logger.exception(
-                    "WATCHDOG: failed to capture prior setpoint; recovery defaults to 0W"
+                self._record_diagnostic(
+                    "prior_setpoint_unavailable", error_type=type(error).__name__
                 )
         try:
             if not self.victron.set_grid_setpoint(0):
-                logger.error("WATCHDOG: failsafe write rejected; retrying on the next check")
+                self._record_diagnostic("watchdog_zero_rejected")
                 return
             self._hardware_forced = True
             self._grid_loss_fallback_applied = False
-            logger.warning("WATCHDOG: stalled loop detected - forced 0W grid setpoint")
-        except Exception:
-            logger.exception("WATCHDOG: failsafe write failed")
+            self._record_diagnostic("watchdog_zero_applied", value=0)
+        except Exception as error:
+            self._record_diagnostic("watchdog_zero_failed", error_type=type(error).__name__)
 
     def _recover_from_failsafe(self):
         """Telemetry recovered - re-arm watchdog and restore the prior setpoint"""
@@ -535,15 +536,15 @@ class HardwareWatchdog:
         if self._hardware_forced:
             try:
                 if not self.victron.set_grid_setpoint(self._pre_forced_setpoint):
-                    logger.error("WATCHDOG: setpoint restore rejected; watchdog remains armed")
+                    self._record_diagnostic("watchdog_restore_rejected")
                     return
-            except Exception:
-                logger.exception("WATCHDOG: setpoint restore failed")
+            except Exception as error:
+                self._record_diagnostic("watchdog_restore_failed", error_type=type(error).__name__)
                 return
             self._hardware_forced = False
         self._triggered = False
         self._pre_forced_setpoint = 0
-        logger.info("hardware watchdog re-armed after telemetry recovery")
+        self._record_diagnostic("watchdog_rearmed")
 
     def is_triggered(self) -> bool:
         """Return True if watchdog has triggered failsafe"""

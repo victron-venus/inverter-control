@@ -77,6 +77,7 @@ from inverter_control.victron import (
 from inverter_control.watchdog import HardwareWatchdog
 from inverter_control.water import WaterSystemReader
 from inverter_control.webhook_server import get_webhook_server
+from inverter_control.write_diagnostics import EVENT_LEVELS
 
 logger = logging.getLogger("inverter-control")
 
@@ -338,6 +339,7 @@ class InverterController:
             dry_run=self.dry_run,
             get_setpoint=lambda: self.previous_setpoint,
             grid_loss_hold_seconds=_config.GRID_LOSS_HOLD_SECONDS,
+            diagnostics=self.victron.write_diagnostics,
         )
         self._control_history_generation = self._watchdog.control_generation()
 
@@ -902,6 +904,10 @@ class InverterController:
 
     def _read_performance(self) -> dict:
         """Procfs, percentile sorting and exporter locks stay off the control loop."""
+        for diagnostic in self.victron.drain_write_diagnostics():
+            logger.log(
+                EVENT_LEVELS[diagnostic["event"]], "Hardware write diagnostic: %s", diagnostic
+            )
         for timing in self.victron.drain_write_timings():
             logger.warning("Native D-Bus write timing: %s", timing)
         self.metrics.sample_process()

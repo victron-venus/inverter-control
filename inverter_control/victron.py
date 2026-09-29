@@ -44,6 +44,7 @@ from .victron_parse import (
     parse_shunt_data_output,
     parse_system_data_output,
 )
+from .write_diagnostics import WriteDiagnostics
 
 logger = logging.getLogger("inverter-control")
 
@@ -188,6 +189,7 @@ class VictronDBus:
         # Setpoint writes get their own lock so a telemetry read holding
         # _dbus_lock can never delay the control-loop write path.
         self._set_lock = threading.Lock()
+        self.write_diagnostics = WriteDiagnostics()
         self._write_lock_timings = deque(maxlen=64)
         self._write_lock_timings_lock = threading.Lock()
         # Serializes background service discovery (startup, NameOwnerChanged on
@@ -296,7 +298,9 @@ class VictronDBus:
             self._native = NativeDbusClient()
             # No telemetry subscriptions or reseeding hook on the writer.
             # Separate locks alone cannot isolate work on a shared event loop.
-            self._native_write = NativeDbusClient(observe_write_send=True)
+            self._native_write = NativeDbusClient(
+                observe_write_send=True, write_diagnostics=self.write_diagnostics
+            )
             # Set up NameOwnerChanged handler for service discovery
             self._native.add_name_owner_handler(self._on_name_owner_changed)
 
@@ -468,6 +472,16 @@ class VictronDBus:
             samples.extend(self._write_lock_timings)
             self._write_lock_timings.clear()
         return samples
+
+    def drain_write_diagnostics(self) -> list[dict]:
+        return self.write_diagnostics.drain()
+
+    def _record_write_diagnostic(self, event, **context) -> None:
+        try:
+            self.write_diagnostics.record(event, **context)
+        except Exception:
+            # Optional evidence cannot replace transport results or exceptions.
+            pass
 
     def _record_write_lock_timing(self, requested: float, acquired: float) -> None:
         wait_ms = (acquired - requested) * 1000.0
@@ -1699,7 +1713,9 @@ class VictronDBus:
     def mppt_services(self) -> list:
         return self._mppt_services
 
-    def _safe_subprocess(self, cmd: list, timeout: float = 0.5) -> str | None:
+    def _safe_subprocess(
+        self, cmd: list, timeout: float = 0.5, *, write_diagnostic: bool = False
+    ) -> str | None:
         """Run subprocess with strict timeout and error handling"""
         self.subprocess_calls += 1
         try:
@@ -1717,7 +1733,10 @@ class VictronDBus:
         except subprocess.TimeoutExpired:
             pass  # Timeout is expected sometimes
         except Exception as e:
-            logger.debug("D-Bus subprocess failed: %s", e)
+            if write_diagnostic:
+                self._record_write_diagnostic("cli_exception", error_type=type(e).__name__)
+            else:
+                logger.debug("D-Bus subprocess failed: %s", e)
         return None
 
     def _service_healthy(self, service: str) -> bool:
@@ -1846,6 +1865,7 @@ class VictronDBus:
                     f"variant:{value_type}:{value}",
                 ],
                 timeout=0.5,
+                write_diagnostic=True,
             )
             # BusItem.SetValue returns zero on acceptance, nonzero on rejection.
             # A successful dbus-send dispatch with no reply proves nothing.
@@ -1858,20 +1878,19 @@ class VictronDBus:
             else:
                 self._consecutive_errors += 1
 
-        # Synchronous handlers can block. Finish both transport attempts and
-        # release the write lock before emitting their diagnostics.
+        # Callers can still hold a hardware/watchdog lock after _set_lock exits.
+        # Never execute synchronous logging handlers anywhere on this write path.
         if native_failed:
-            logger.warning(
-                f"Native D-Bus set failed: service={service}, path={path}, value={value}, type={value_type}"
-            )
-            logger.debug(
-                "Native D-Bus set failed, used dbus-send fallback: %s %s",
-                service,
-                path,
+            self._record_write_diagnostic(
+                "native_fallback",
+                service=service,
+                path=path,
+                value_type=value_type,
+                accepted=accepted,
             )
         if not accepted:
-            logger.warning(
-                f"D-Bus set failed (fallback): service={service}, path={path}, value={value}, type={value_type}"
+            self._record_write_diagnostic(
+                "fallback_rejected", service=service, path=path, value_type=value_type
             )
         return accepted
 

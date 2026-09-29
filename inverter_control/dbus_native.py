@@ -398,8 +398,9 @@ class NativeDbusClient:
     writes never block each other on a lock.
     """
 
-    def __init__(self, *, observe_write_send=False):
+    def __init__(self, *, observe_write_send=False, write_diagnostics=None):
         self._observe_write_send = observe_write_send
+        self._write_diagnostics = write_diagnostics
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_thread_id: int | None = None
         self._bus = None
@@ -445,6 +446,16 @@ class NativeDbusClient:
     # Loop / connection lifecycle                                        #
     # ------------------------------------------------------------------ #
 
+    def _debug(self, event, message, *args, **context) -> None:
+        if self._write_diagnostics is None:
+            logger.debug(message, *args)
+            return
+        try:
+            self._write_diagnostics.record(event, **context)
+        except Exception:
+            # A failing diagnostic buffer cannot alter a write or its fallback.
+            pass
+
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         """Start the dedicated event-loop thread on first use."""
         if self._loop is not None and self._loop.is_running():
@@ -479,7 +490,10 @@ class NativeDbusClient:
             # Already on the loop thread. It is running (run_forever), so a
             # synchronous wait is impossible here. Do not schedule a command
             # whose acceptance we cannot report to the caller.
-            logger.debug("Native D-Bus synchronous call refused on its event-loop thread")
+            self._debug(
+                "native_self_call_refused",
+                "Native D-Bus synchronous call refused on its event-loop thread",
+            )
             return None
         deadline = time.monotonic() + timeout
 
@@ -813,7 +827,13 @@ class NativeDbusClient:
                     self._connect()
                 return self._bus
             except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("Native D-Bus connect failed (%s): %s", type(e).__name__, e)
+                self._debug(
+                    "native_connect_failed",
+                    "Native D-Bus connect failed (%s): %s",
+                    type(e).__name__,
+                    e,
+                    error_type=type(e).__name__,
+                )
                 self._fail_until = time.time() + RECONNECT_COOLDOWN
                 self._stop_send_observations(self._bus)
                 self._bus = None
@@ -843,7 +863,12 @@ class NativeDbusClient:
             if asyncio.iscoroutine(coro):
                 asyncio.run_coroutine_threadsafe(coro, loop).result(0.2)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.debug("Native D-Bus disconnect failed: %s", e)
+            self._debug(
+                "native_disconnect_failed",
+                "Native D-Bus disconnect failed: %s",
+                e,
+                error_type=type(e).__name__,
+            )
 
     def _mark_failure(self, failed_bus):
         """Drop only the connection that failed, never a newer replacement."""
@@ -903,7 +928,17 @@ class NativeDbusClient:
         except Exception as e:  # pylint: disable=broad-exception-caught
             # Invalid destinations, paths or payloads are local caller errors,
             # not evidence that the shared system-bus connection is broken.
-            logger.debug("Invalid native D-Bus request %s %s/%s: %s", service, member, path, e)
+            self._debug(
+                "native_request_invalid",
+                "Invalid native D-Bus request %s %s/%s: %s",
+                service,
+                member,
+                path,
+                e,
+                service=service,
+                path=path,
+                error_type=type(e).__name__,
+            )
             return None
 
         timing = (
@@ -924,13 +959,17 @@ class NativeDbusClient:
             else:
                 reply = self._call_on_loop(_call, timeout, timing=timing)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.debug(
+            self._debug(
+                "native_request_failed",
                 "Native D-Bus %s %s/%s failed (%s): %s",
                 service,
                 member,
                 path,
                 type(e).__name__,
                 e,
+                service=service,
+                path=path,
+                error_type=type(e).__name__,
             )
             # A remote request deadline says nothing about other services or
             # installed signal matches. TimeoutError is also an OSError, so
@@ -952,12 +991,15 @@ class NativeDbusClient:
                 self._mark_failure(bus)
             return None
         if reply.message_type != MessageType.METHOD_RETURN:
-            logger.debug(
+            self._debug(
+                "native_reply_rejected",
                 "D-Bus %s %s returned %s %s",
                 service,
                 path,
                 getattr(reply, "error_name", None),
                 reply.body,
+                service=service,
+                path=path,
             )
             return None
         return reply
@@ -1073,16 +1115,21 @@ class NativeDbusClient:
         """SetValue with an explicitly typed variant. True on success (reply 0)."""
         code = TYPE_CODES.get(value_type)
         if code is None:
-            logger.debug("Unsupported D-Bus set type: %s", value_type)
+            self._debug(
+                "native_type_unsupported",
+                "Unsupported D-Bus set type: %s",
+                value_type,
+                value_type=value_type,
+            )
             return False
         reply = self.call_busitem(
             service, path, "SetValue", body=[Variant(code, value)], timeout=timeout
         )
         if reply is None:
             return False
-        # The facade holds its write lock until the CLI fallback completes.
-        # It reports False after releasing that lock; logging here could stall
-        # both fallback and a later safety write.
+        # The facade holds its write lock until the CLI fallback completes;
+        # its caller can also hold a watchdog lock. Only queued diagnostics may
+        # run on the writer; synchronous handlers could stall a later safety write.
         return not (
             len(reply.body) != 1
             or not isinstance(reply.body[0], int)

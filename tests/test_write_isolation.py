@@ -7,6 +7,7 @@ import pytest
 from dbus_fast import Message, MessageType, Variant
 from test_dbus_native_timeouts import EndpointBus, flush_loop, reply
 
+from inverter_control import victron
 from inverter_control.dbus_native import BUSITEM_INTERFACE
 from inverter_control.victron import VictronDBus
 
@@ -266,12 +267,17 @@ def test_blocked_failure_logger_cannot_delay_fallback_or_later_zero(facade, fall
         calls.append(("cli", 1))
         return fallback
 
-    def blocked_warning(message):
-        if message.startswith("Native D-Bus set failed:"):
+    def blocked_warning(_message, diagnostic):
+        if diagnostic["event"] == "native_fallback":
             errors_at_log.append(facade._consecutive_errors)
             logging_entered.set()
             assert release_logger.wait(3)
 
+    def drain():
+        for diagnostic in facade.drain_write_diagnostics():
+            victron.logger.warning("D-Bus write diagnostic: %s", diagnostic)
+
+    consumer = threading.Thread(target=drain)
     first = threading.Thread(
         target=lambda: results.update({1: facade._dbus_set(SERVICE, "/Setpoint", 1)})
     )
@@ -285,17 +291,22 @@ def test_blocked_failure_logger_cannot_delay_fallback_or_later_zero(facade, fall
     ):
         try:
             first.start()
+            first.join(1)
+            assert not first.is_alive() and results == {1: accepted}
+            consumer.start()
             assert logging_entered.wait(1)
             assert calls == [("native", 1), ("cli", 1)]
             assert errors_at_log == [0 if accepted else 6]
             assert not facade._set_lock.locked()
             second.start()
             second.join(1)
-            assert results == {0: True}
+            assert results == {1: accepted, 0: True}
             assert not release_logger.is_set()
         finally:
             release_logger.set()
             first.join(3)
+            if consumer.ident is not None:
+                consumer.join(3)
             if second.ident is not None:
                 second.join(3)
     assert not first.is_alive() and not second.is_alive()
@@ -330,6 +341,11 @@ def test_real_native_rejection_logs_only_after_cli_and_unlock(
             logging_entered.set()
             assert release_logger.wait(3)
 
+    def drain():
+        for diagnostic in facade.drain_write_diagnostics():
+            victron.logger.warning("D-Bus write diagnostic: %s", diagnostic)
+
+    consumer = threading.Thread(target=drain)
     first = threading.Thread(
         target=lambda: results.update({1: facade._dbus_set(SERVICE, "/Setpoint", 1)})
     )
@@ -343,17 +359,22 @@ def test_real_native_rejection_logs_only_after_cli_and_unlock(
     ):
         try:
             first.start()
+            first.join(1)
+            assert not first.is_alive() and results == {1: accepted}
+            consumer.start()
             assert logging_entered.wait(1)
             assert calls == [("native", 1), ("cli", 1)]
             assert errors_at_log == [0 if accepted else 6]
             assert not facade._set_lock.locked()
             zero.start()
             zero.join(1)
-            assert results == {0: True}
+            assert results == {1: accepted, 0: True}
             assert not release_logger.is_set()
         finally:
             release_logger.set()
             first.join(3)
+            if consumer.ident is not None:
+                consumer.join(3)
             if zero.ident is not None:
                 zero.join(3)
     assert not first.is_alive() and not zero.is_alive()

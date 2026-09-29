@@ -16,8 +16,27 @@ caller cannot overtake a failed native attempt and then be overwritten by its
 older fallback. The regression exercises this scheduling interleaving with both
 accepted and rejected CLI replies; it does not establish a cause of meter UDP
 loss or a reduction in hardware latency.
-Transport-failure diagnostics run only after both attempts and after releasing
-the lock, so a blocked logger cannot delay fallback or a subsequent zero write.
+Transport and watchdog diagnostics are queued without executing log handlers on
+the command caller. Releasing the transport lock alone was insufficient: the
+caller could still hold the outer watchdog lock, delaying accepted-write
+bookkeeping and subsequent safety/manual transitions on a blocked log sink.
+
+The writer and watchdog share a 32-record buffer with nonblocking producer
+locking. Records use fixed event codes and capped builtin scalar fields; raw
+exception objects, reply bodies and tracebacks are not queued or formatted.
+The existing performance worker drains them at their original severity.
+Contention drops the new record; overflow evicts the oldest. Failed optional
+diagnostics cannot replace a command result, and there is no shutdown flush or
+durable delivery guarantee. A log timestamp is the drain time, not a command
+timestamp. Blocking that sink can still delay performance freshness, but cannot
+hold either hardware serialization lock through these diagnostic sites.
+
+This is scoped to the native writer, CLI write fallback and watchdog logging.
+Other application log callers, supplied callbacks and hardware I/O are unchanged;
+there is no claim that all application logging is nonblocking or that this
+explains measured hardware latency. Regressions use the real shared Handler lock
+with accepted/rejected fallback, failsafe zero, meter-loss fallback and manual
+set/stop transitions, including full, contended and failed diagnostic buffers.
 Orderly shutdown signals all managed workers before waiting on any of them.
 Their joins share one five-second budget, including MQTT callback drain and the
 hardware watchdog. MQTT's public disconnect/loop-stop calls run on an owned
