@@ -303,7 +303,12 @@ class MQTTBridge:
             return
 
         try:
-            payload = json.dumps(state, cls=SafeEncoder)
+            try:
+                # Finite telemetry needs no recursive copy before JSON encoding.
+                payload = json.dumps(state, allow_nan=False)
+            except ValueError:
+                # Keep the existing non-finite normalization and error behavior.
+                payload = json.dumps(state, cls=SafeEncoder)
             self._ensure_publish_thread()
             self._publish_queue.put_nowait((f"{self.prefix}/state", payload, 0, True))
         except queue.Full:
