@@ -1782,6 +1782,12 @@ class VictronDBus:
         """Public single-value read (native connection, CLI fallback)."""
         return self._dbus_get(service, path)
 
+    def dbus_get_connected(self, service: str, path: str, timeout: float = 0.25) -> str | None:
+        """Read on the existing telemetry connection; never reconnect or fork CLI."""
+        if self._native is None:
+            return None
+        return self._native.get_value_connected(service, path, timeout=timeout)
+
     def _dbus_get(self, service: str, path: str) -> str | None:
         """Get a single value from D-Bus (native connection, CLI fallback).
         Skips known-unresponsive services to avoid blocking the caller."""

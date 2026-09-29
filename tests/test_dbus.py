@@ -23,9 +23,9 @@ class TestVUESensorDBusClientInit(unittest.TestCase):
         assert client._vue_sensor_mapping == mapping
 
     @patch("inverter_control.dbus.VUESensorDBusClient._setup_dbus")
-    def test_initializes_empty_proxies(self, mock_setup):
+    def test_initializes_cli_only_when_no_getter(self, mock_setup):
         client = VUESensorDBusClient({})
-        assert client._vue_proxies == {}
+        assert client._native_get is None
         assert client._vue_services == {}
         assert client._available is False
 
@@ -62,7 +62,7 @@ class TestSetupDbusSend(unittest.TestCase):
     """Test _setup_dbus_send fallback discovery"""
 
     def test_discovers_services_from_dbus_send(self):
-        with patch("inverter_control.dbus.VUESensorDBusClient._connect_dbus"):
+        with patch("inverter_control.dbus.VUESensorDBusClient._setup_dbus"):
             client = VUESensorDBusClient({"garage": "Garage", "fridge": "Fridge"})
 
         with patch("inverter_control.dbus.subprocess.run") as mock_run:
@@ -83,7 +83,6 @@ class TestSetupDbusSend(unittest.TestCase):
 
             mock_run.side_effect = [list_names_result, garage_name, fridge_name]
 
-            client._vue_proxies = {}
             client._setup_dbus_send()
 
         assert "garage" in client._vue_services
@@ -92,19 +91,18 @@ class TestSetupDbusSend(unittest.TestCase):
         assert client._vue_services["fridge"] == "com.victronenergy.acload.ttyACM1"
 
     def test_no_services_when_dbus_send_fails(self):
-        with patch("inverter_control.dbus.VUESensorDBusClient._connect_dbus"):
+        with patch("inverter_control.dbus.VUESensorDBusClient._setup_dbus"):
             client = VUESensorDBusClient({"garage": "Garage"})
 
         with patch("inverter_control.dbus.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired("dbus-send", 3)
 
-            client._vue_proxies = {}
             client._setup_dbus_send()
 
         assert client._vue_services == {}
 
     def test_no_services_when_returncode_nonzero(self):
-        with patch("inverter_control.dbus.VUESensorDBusClient._connect_dbus"):
+        with patch("inverter_control.dbus.VUESensorDBusClient._setup_dbus"):
             client = VUESensorDBusClient({"garage": "Garage"})
 
         with patch("inverter_control.dbus.subprocess.run") as mock_run:
@@ -113,7 +111,6 @@ class TestSetupDbusSend(unittest.TestCase):
             result.stdout = ""
             mock_run.return_value = result
 
-            client._vue_proxies = {}
             client._setup_dbus_send()
 
         assert client._vue_services == {}
@@ -122,20 +119,19 @@ class TestSetupDbusSend(unittest.TestCase):
 class TestUpdateAll(unittest.TestCase):
     """Test VUESensorDBusClient.update_all()"""
 
-    def test_updates_from_proxies(self):
+    def test_updates_from_borrowed_native_reader_without_cli(self):
+        getter = MagicMock(return_value="1500.0")
         with patch("inverter_control.dbus.VUESensorDBusClient._setup_dbus"):
-            client = VUESensorDBusClient({"garage": "Garage"})
-            client._available = True
-
-        mock_props = MagicMock()
-        mock_power = MagicMock()
-        mock_power.value = 1500.0
-        mock_props.Get.return_value = mock_power
-        client._vue_proxies = {"garage": mock_props}
-
+            client = VUESensorDBusClient({"garage": "Garage"}, native_get=getter)
+        client._available = True
+        client._vue_services = {"garage": "com.victronenergy.acload.ttyACM0"}
         vue_sensors = {"garage": 0}
-        client.update_all(vue_sensors)
-
+        with patch("inverter_control.dbus.subprocess.run") as cli:
+            client.update_all(vue_sensors)
+        cli.assert_not_called()
+        getter.assert_called_once_with(
+            "com.victronenergy.acload.ttyACM0", "/Ac/Power", timeout=0.25
+        )
         assert vue_sensors["garage"] == 1500.0
 
     def test_updates_from_dbus_send_services(self):
@@ -143,7 +139,6 @@ class TestUpdateAll(unittest.TestCase):
             client = VUESensorDBusClient({"garage": "Garage"})
             client._available = True
 
-        client._vue_proxies = {}
         client._vue_services = {"garage": "com.victronenergy.acload.ttyACM0"}
 
         with patch("inverter_control.dbus.subprocess.run") as mock_run:
@@ -167,19 +162,18 @@ class TestUpdateAll(unittest.TestCase):
 
         assert vue_sensors["garage"] == 0
 
-    def test_handles_proxy_exception(self):
+    def test_keeps_cache_when_native_and_cli_fail(self):
+        getter = MagicMock(side_effect=OSError("D-Bus error"))
         with patch("inverter_control.dbus.VUESensorDBusClient._setup_dbus"):
-            client = VUESensorDBusClient({"garage": "Garage"})
-            client._available = True
-
-        mock_props = MagicMock()
-        mock_props.Get.side_effect = Exception("D-Bus error")
-        client._vue_proxies = {"garage": mock_props}
-
-        vue_sensors = {"garage": 0}
-        client.update_all(vue_sensors)
-
-        assert vue_sensors["garage"] == 0
+            client = VUESensorDBusClient({"garage": "Garage"}, native_get=getter)
+        client._available = True
+        client._vue_services = {"garage": "com.victronenergy.acload.ttyACM0"}
+        vue_sensors = {"garage": 80}
+        with patch("inverter_control.dbus.subprocess.run") as cli:
+            cli.return_value.returncode = 1
+            client.update_all(vue_sensors)
+        cli.assert_called_once()
+        assert vue_sensors["garage"] == 80
 
 
 class TestDbusSendFallback(unittest.TestCase):
