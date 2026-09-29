@@ -1,24 +1,15 @@
 """D-Bus client for VUE sensors from dbus-emporia-vue service."""
 
-import importlib
 import logging
+import math
 import re
 import subprocess
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 logger = logging.getLogger("inverter-control")
-
-
-def _import_dbus() -> tuple[Any, Any] | tuple[None, None]:
-    """Return the BusType and MessageBus classes from the first available library."""
-    for library in ("dbus_fast", "dbus_next"):
-        try:
-            module = importlib.import_module(library)
-            return module.BusType, module.MessageBus
-        except (ImportError, AttributeError):
-            continue
-    return None, None
 
 
 class VUESensorDBusClient:
@@ -30,11 +21,16 @@ class VUESensorDBusClient:
         expected custom_name string (e.g., "Garage") as defined in VUE_SENSORS.
     """
 
-    def __init__(self, vue_sensor_mapping: dict[str, str]):
+    def __init__(
+        self,
+        vue_sensor_mapping: dict[str, str],
+        *,
+        native_get: Callable[..., str | None] | None = None,
+    ):
         self._vue_sensor_mapping = vue_sensor_mapping
-        self._vue_proxies: dict[str, Any] = {}  # sensor key -> Properties interface
+        # Borrow an already-connected read client; do not own/close its transport.
+        self._native_get = native_get
         self._vue_services: dict[str, str] = {}  # sensor key -> dbus service name
-        self._bus = None
         self._available = False
         self._setup_dbus()
 
@@ -48,42 +44,14 @@ class VUESensorDBusClient:
 
     def _setup_dbus(self) -> None:
         """Set up D-Bus connection or service mapping."""
-        bus_type, message_bus = _import_dbus()
-        if message_bus is not None:
-            self._connect_dbus(bus_type, message_bus)
-
-        # Fallback to dbus-send CLI tool (native on Victron Venus OS) if proxies empty
-        if not self._vue_proxies:
-            self._setup_dbus_send()
-
-        self._available = bool(self._vue_proxies or self._vue_services)
+        # Discovery stays on the existing CLI path. Polling can borrow a native
+        # read connection without creating another loop or reconnecting here.
+        self._setup_dbus_send()
+        self._available = bool(self._vue_services)
         if self._available:
-            count = len(self._vue_proxies) or len(self._vue_services)
-            logger.info(f"D-Bus VUE client initialized with {count} sensors")
+            logger.info("D-Bus VUE client initialized with %d sensors", len(self._vue_services))
         else:
-            logger.warning("No VUE sensor services or proxies could be created")
-
-    def _connect_dbus(self, bus_type: Any, message_bus: Any) -> None:
-        """Connect via dbus_fast/dbus_next and populate service proxies."""
-        try:
-            self._bus = message_bus(bus_type.SYSTEM).connect()
-            service_names = self._bus.list_names()
-            prefix = "com.victronenergy.acload."
-            acload_names = [name for name in service_names if name.startswith(prefix)]
-            for service_name in acload_names:
-                try:
-                    introspection = self._bus.introspect(service_name, "/")
-                    proxy = self._bus.get_proxy_object(service_name, "/", introspection)
-                    props = proxy.get_interface("org.freedesktop.DBus.Properties")
-                    custom_name = props.Get("com.victronenergy.BusItem", "/CustomName")
-                    custom_name_str = str(getattr(custom_name, "value", custom_name))
-                    key = self._key_for_custom_name(custom_name_str)
-                    self._vue_proxies[key] = props
-                except Exception as e:
-                    logger.warning(f"Failed to process service {service_name}: {e}")
-        except Exception as e:
-            logger.warning(f"Failed to connect via dbus_fast/next: {e}")
-            self._bus = None
+            logger.warning("No VUE sensor services could be discovered")
 
     def _setup_dbus_send(self) -> None:
         """Discover acload services using dbus-send CLI tool."""
@@ -134,20 +102,28 @@ class VUESensorDBusClient:
         if not self._available:
             return
 
-        # 1. Update from dbus_fast/next proxies
-        for key, props in self._vue_proxies.items():
-            try:
-                power = props.Get("com.victronenergy.BusItem", "/Ac/Power")
-                val = getattr(power, "value", power)
-                vue_sensors[key] = float(val)
-            except Exception as e:
-                logger.warning(f"Failed to update VUE sensor {key} from D-Bus proxy: {e}")
-
-        # 2. Update from dbus-send services (parallel)
         if not self._vue_services:
             return
 
-        def _query_power(key: str, service: str) -> tuple[str, float | None]:
+        def _query_power(key: str, service: str) -> tuple[str, float | None, float]:
+            deadline = time.monotonic() + 2.0
+            if self._native_get is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return key, None, deadline
+                try:
+                    raw = self._native_get(service, "/Ac/Power", timeout=min(0.25, remaining))
+                    if isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
+                        value = float(raw)
+                        if math.isfinite(value) and time.monotonic() < deadline:
+                            return key, value, deadline
+                except Exception:
+                    # Keep CLI availability on endpoint failures/invalid data.
+                    # Cancellation (BaseException) is deliberately not swallowed.
+                    pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return key, None, deadline
             try:
                 cmd = [
                     "dbus-send",
@@ -157,22 +133,24 @@ class VUESensorDBusClient:
                     "/Ac/Power",
                     "com.victronenergy.BusItem.GetValue",
                 ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining)
                 if res.returncode == 0:
                     m = re.search(
                         r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)", res.stdout
                     )
                     if m:
-                        return key, float(m.group(1))
+                        value = float(m.group(1))
+                        if math.isfinite(value) and time.monotonic() < deadline:
+                            return key, value, deadline
             except Exception as e:
                 logger.warning(f"Failed to update VUE sensor {key} via dbus-send: {e}")
-            return key, None
+            return key, None, deadline
 
         with ThreadPoolExecutor(max_workers=len(self._vue_services)) as pool:
             futures = [
                 pool.submit(_query_power, key, svc) for key, svc in self._vue_services.items()
             ]
             for future in as_completed(futures):
-                key, value = future.result()
-                if value is not None:
+                key, value, deadline = future.result()
+                if value is not None and time.monotonic() < deadline:
                     vue_sensors[key] = value

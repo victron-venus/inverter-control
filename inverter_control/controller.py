@@ -135,7 +135,7 @@ class InverterController:
         self._start_time = time.time()
         self.dry_run = dry_run if dry_run is not None else DRY_RUN
         self.victron = get_victron()
-        self.ha = get_ha()
+        self.ha = get_ha(vue_native_get=self.victron.dbus_get_connected)
         self._control_flags = dict.fromkeys(CONTROL_FLAG_KEYS, False)
 
         # Water comes from dbus-pump D-Bus services (no HA). In test mode the
@@ -376,8 +376,8 @@ class InverterController:
                 self._trim_mode_generation += 1
             self.dry_run = enabled
             self._watchdog.dry_run = enabled
-            mode = "DRY-RUN" if enabled else "LIVE"
-            logger.info(f"Mode changed to {mode}")
+            # toggle_dry_run also owns this lock; sinks must run off the write path.
+            self._watchdog._record_diagnostic("dry_run_changed", dry_run=enabled)
             return self.dry_run
 
     def toggle_dry_run(self) -> bool:

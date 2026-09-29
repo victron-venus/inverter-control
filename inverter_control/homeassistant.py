@@ -8,6 +8,7 @@ import logging
 import re
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -66,7 +67,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
     CIRCUIT_OPEN_THRESHOLD = 5  # Open circuit after N consecutive failures
     CIRCUIT_RESET_TIMEOUT = 60  # Try again after N seconds
 
-    def __init__(self):
+    def __init__(self, *, vue_native_get: Callable[..., str | None] | None = None):
         # Use session for connection pooling (reuses TCP connections)
         self._session = requests.Session()
         self._session.headers.update(
@@ -87,7 +88,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._vue_sensors: dict[str, Any] = dict.fromkeys(VUE_SENSORS, 0)
 
         # D-Bus client for VUE sensors (if available)
-        self._vue_dbus_client = VUESensorDBusClient(VUE_SENSORS)
+        self._vue_dbus_client = VUESensorDBusClient(VUE_SENSORS, native_get=vue_native_get)
 
         # Connection status
         self._connected = False
@@ -395,10 +396,10 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 _ha_client: HomeAssistantClient | None = None
 
 
-def get_ha() -> HomeAssistantClient:
-    """Get or create HA client"""
+def get_ha(*, vue_native_get: Callable[..., str | None] | None = None) -> HomeAssistantClient:
+    """Get HA; the optional borrowed VUE reader is bound at first construction."""
     global _ha_client  # pylint: disable=global-statement
     if _ha_client is None:
-        _ha_client = HomeAssistantClient()
+        _ha_client = HomeAssistantClient(vue_native_get=vue_native_get)
         _ha_client.start()
     return _ha_client
