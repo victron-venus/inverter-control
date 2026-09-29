@@ -40,7 +40,8 @@ def test_blocked_performance_sink_cannot_hold_outer_hardware_lock(facade, ack, a
 
     def sink(*_args):
         entered.set()
-        assert release.wait(3)
+        released = release.wait(3)
+        assert released
 
     writer = threading.Thread(
         target=lambda: results.append(watchdog.write_control_setpoint(100, 0))
@@ -59,12 +60,15 @@ def test_blocked_performance_sink_cannot_hold_outer_hardware_lock(facade, ack, a
             assert watchdog._has_valid_setpoint is accepted
             assert facade._consecutive_errors == (0 if accepted else 1)
             consumer.start()
-            assert entered.wait(1)
+            sink_entered = entered.wait(1)
+            assert sink_entered
             assert not facade._set_lock.locked()
             assert watchdog.control_generation() == 0
             # A manual rejection/status transition uses the same outer lock.
-            assert watchdog.reject_setpoint_override("fixture")["last_error"] == "fixture"
-            assert watchdog.write_control_setpoint(0, 0) is True
+            rejected = watchdog.reject_setpoint_override("fixture")
+            assert rejected["last_error"] == "fixture"
+            written = watchdog.write_control_setpoint(0, 0)
+            assert written is True
             assert writes == [("native", 100), ("cli", 100), ("native", 0)]
             controller.metrics.sample_process.assert_not_called()  # Sink can delay metrics only.
             assert not release.is_set()
@@ -96,7 +100,8 @@ def test_buffer_is_bounded_scalar_only_and_drops_under_contention():
     buffer.record("arbitrary_unreviewed_event")
     with buffer._lock:
         buffer.record("native_fallback", path="contention")  # Must not wait for itself.
-    assert buffer.drain() == []
+    records = buffer.drain()
+    assert records == []
 
 
 @pytest.mark.parametrize("queue_failure", [False, True])
@@ -110,12 +115,15 @@ def test_full_busy_or_failing_buffer_cannot_change_accepted_write(facade, queue_
     ):
         if queue_failure:
             with patch.object(buffer, "record", side_effect=RuntimeError("broken diagnostic")):
-                assert facade._dbus_set(SERVICE, "/Setpoint", 100)
+                written = facade._dbus_set(SERVICE, "/Setpoint", 100)
+                assert written
         else:
             with buffer._lock:
-                assert facade._dbus_set(SERVICE, "/Setpoint", 100)
+                written = facade._dbus_set(SERVICE, "/Setpoint", 100)
+                assert written
     assert facade._consecutive_errors == 0
-    assert len(buffer.drain()) == CAPACITY
+    records = buffer.drain()
+    assert len(records) == CAPACITY
 
 
 def test_cli_exception_never_formats_or_logs_under_write_lock(facade):
@@ -129,7 +137,8 @@ def test_cli_exception_never_formats_or_logs_under_write_lock(facade):
         patch("inverter_control.victron.logger.debug") as debug,
         patch("inverter_control.victron.logger.warning") as warning,
     ):
-        assert facade._dbus_set(SERVICE, "/Setpoint", 100) is False
+        written = facade._dbus_set(SERVICE, "/Setpoint", 100)
+        assert written is False
     debug.assert_not_called()
     warning.assert_not_called()
     assert facade.subprocess_calls == 1 and facade._consecutive_errors == 1
@@ -180,7 +189,8 @@ def test_actual_native_failure_paths_do_not_execute_logger(facade, failure):
         patch("inverter_control.dbus_native.logger.warning") as warning,
         patch.object(facade, "_safe_subprocess", return_value="int32 0") as cli,
     ):
-        assert facade._dbus_set(SERVICE, path, 100, kind) is True
+        written = facade._dbus_set(SERVICE, path, 100, kind)
+        assert written is True
     debug.assert_not_called()
     warning.assert_not_called()
     cli.assert_called_once()
@@ -208,16 +218,16 @@ def test_disconnect_exception_and_failed_buffer_do_not_change_native_result(faca
     ):
         writer._try_disconnect(bus, writer._loop)
     debug.assert_not_called()
-    assert facade.drain_write_diagnostics() == [
-        {"event": "native_disconnect_failed", "error_type": "OSError"}
-    ]
+    records = facade.drain_write_diagnostics()
+    assert records == [{"event": "native_disconnect_failed", "error_type": "OSError"}]
     with (
         patch.object(writer, "_connect", side_effect=OSError()),
         patch.object(facade.write_diagnostics, "record", side_effect=RuntimeError()),
         patch.object(facade, "_safe_subprocess", return_value="int32 0"),
     ):
         writer._bus = None
-        assert facade._dbus_set(SERVICE, "/Setpoint", 100)
+        written = facade._dbus_set(SERVICE, "/Setpoint", 100)
+        assert written
 
 
 def test_failing_drain_sink_delays_metrics_but_not_next_command(facade):
@@ -227,13 +237,16 @@ def test_failing_drain_sink_delays_metrics_but_not_next_command(facade):
         patch.object(facade, "_safe_subprocess", return_value="int32 0"),
         patch("inverter_control.controller.logger.log", side_effect=RuntimeError("sink failed")),
     ):
-        assert facade._dbus_set(SERVICE, "/Setpoint", 100)
+        written = facade._dbus_set(SERVICE, "/Setpoint", 100)
+        assert written
         with pytest.raises(RuntimeError, match="sink failed"):
             InverterController._read_performance(controller)
         controller.metrics.sample_process.assert_not_called()
         for _ in range(CAPACITY + 1):
-            assert facade._dbus_set(SERVICE, "/Setpoint", 0)
-    assert len(facade.drain_write_diagnostics()) == CAPACITY
+            written = facade._dbus_set(SERVICE, "/Setpoint", 0)
+            assert written
+    records = facade.drain_write_diagnostics()
+    assert len(records) == CAPACITY
 
 
 @pytest.mark.parametrize("action", ["zero", "grid", "manual", "dry", "status_callback"])
@@ -251,7 +264,8 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
 
         def emit(self, _record):
             self.entered.set()
-            assert self.release_sink.wait(3)
+            released = self.release_sink.wait(3)
+            assert released
 
     sink = BlockingSink()
     logger = logging.getLogger("isolated-write-diagnostic-fixture")
@@ -287,8 +301,10 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
                 watchdog._grid_invalid_since = time.monotonic() - 1
                 watchdog.check_grid_loss()
             elif action == "manual":
-                assert watchdog.set_setpoint_override(150)["value"] == 150
-                assert watchdog.set_setpoint_override(None)["value"] is None
+                override = watchdog.set_setpoint_override(150)
+                assert override["value"] == 150
+                override = watchdog.set_setpoint_override(None)
+                assert override["value"] is None
                 assert watchdog.control_generation() == 2
             elif action == "dry":
                 watchdog.dry_run = True
@@ -298,7 +314,8 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
                 watchdog.set_override_status_callback(
                     Mock(side_effect=RuntimeError("status failed"))
                 )
-            assert watchdog._lock.acquire(blocking=False)
+            acquired = watchdog._lock.acquire(blocking=False)
+            assert acquired
             watchdog._lock.release()
         except BaseException as error:
             errors.append(error)
@@ -308,7 +325,8 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
     actor = threading.Thread(target=act)
     consumer.start()
     try:
-        assert sink.entered.wait(1)
+        sink_entered = sink.entered.wait(1)
+        assert sink_entered
         if queue_state == "full":
             for _ in range(CAPACITY):
                 buffer.record("native_fallback")
@@ -317,7 +335,8 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
         elif queue_state == "broken":
             monkeypatch.setattr(buffer, "record", Mock(side_effect=RuntimeError("buffer failed")))
         actor.start()
-        assert done.wait(1), "A real shared logging handler must not hold a hardware transition"
+        completed = done.wait(1)
+        assert completed, "A real shared logging handler must not hold a hardware transition"
         assert errors == []
         assert not sink.release_sink.is_set()
         values = [message.body[0].value for message in facade._native_write._bus.messages]
@@ -338,7 +357,8 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
         logger.removeHandler(sink)
         sink.close()
     assert not actor.is_alive() and not consumer.is_alive()
-    assert len(buffer.drain()) <= CAPACITY
+    records = buffer.drain()
+    assert len(records) <= CAPACITY
 
 
 def test_controller_explicitly_shares_one_buffer_with_watchdog():
