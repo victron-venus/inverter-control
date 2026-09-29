@@ -328,10 +328,11 @@ def _publish_state(controller, mqtt_bridge) -> None:
     """Publish current state + latest console line over MQTT."""
     if not mqtt_bridge or not mqtt_bridge.connected:
         return
-    mqtt_bridge.publish_state(controller.get_state_for_mqtt())
+    accepted = mqtt_bridge.publish_state(controller.get_state_for_mqtt())
     controller._watchdog.publish_override_status()
-    # Mark MQTT telemetry as fresh for hardware watchdog
-    controller._watchdog.mark_mqtt_update()
+    # Track local queue acceptance; this does not confirm delivery to the broker.
+    if accepted:
+        controller._watchdog.mark_mqtt_update()
     # Publish console line if available
     if controller.last_console_line:
         mqtt_bridge.publish_console(controller.last_console_line)
