@@ -6,12 +6,14 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+import test_write_isolation
 from dbus_fast import Message, MessageType
-from test_write_isolation import facade as facade  # noqa: PLC0414 - re-export pytest fixture
 
 from inverter_control.controller import InverterController
 from inverter_control.watchdog import HardwareWatchdog
 from inverter_control.write_diagnostics import CAPACITY, MAX_TEXT, WriteDiagnostics
+
+facade = test_write_isolation.facade
 
 SERVICE = "com.victronenergy.system"
 
@@ -317,7 +319,7 @@ def test_global_handler_cannot_delay_watchdog_commands_or_transitions(
             acquired = watchdog._lock.acquire(blocking=False)
             assert acquired
             watchdog._lock.release()
-        except BaseException as error:
+        except Exception as error:
             errors.append(error)
         finally:
             done.set()
