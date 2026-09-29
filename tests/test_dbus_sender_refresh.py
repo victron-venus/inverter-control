@@ -1,6 +1,9 @@
 """Sender discovery stays bounded and cannot revive owners from a stale reply."""
 
 import asyncio
+import gc
+import threading
+import warnings
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -137,3 +140,33 @@ def test_subscription_added_during_refresh_is_resolved_in_same_round():
         assert [message.body[0] for message in bus.messages] == [SERVICE, OTHER_SERVICE]
 
     asyncio.run(scenario())
+
+
+def test_unknown_sender_outside_event_loop_never_creates_coroutine():
+    """A defensive outside-loop callback neither raises nor leaks an awaitable."""
+    client = NativeDbusClient()
+    failures = []
+
+    def callback():
+        try:
+            client._handle_unresolved_sender(":1.99")
+        except Exception as error:
+            failures.append(error)
+
+    with (
+        warnings.catch_warnings(record=True) as observed,
+        patch.object(
+            client, "_refresh_sender_map", side_effect=AssertionError("coroutine created")
+        ) as refresh,
+    ):
+        warnings.simplefilter("always", RuntimeWarning)
+        worker = threading.Thread(target=callback)
+        worker.start()
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+        gc.collect()
+        refresh.assert_not_called()
+    assert failures == []
+    assert not any(issubclass(warning.category, RuntimeWarning) for warning in observed)
+    assert not client._tasks
+    assert client._sender_refresh_after == 0

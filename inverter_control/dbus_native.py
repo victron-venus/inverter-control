@@ -1245,6 +1245,12 @@ class NativeDbusClient:
             self._dispatch(obj_path, props, service)
 
     def _handle_unresolved_sender(self, _sender: str):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # A signal callback outside its bus loop cannot schedule discovery.
+            # Refuse before creating a coroutine or consuming the retry window.
+            return
         now = time.monotonic()
         if now < self._sender_refresh_after:
             return
