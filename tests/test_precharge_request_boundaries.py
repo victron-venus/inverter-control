@@ -167,7 +167,7 @@ def test_request_expiring_behind_another_delivery_never_enqueues(tmp_path, monke
     def deliver(name, accept):
         try:
             outcomes[name] = inbox.handle(request(name), lambda: False, accept)
-        except BaseException as error:
+        except Exception as error:
             errors.append(error)
 
     monkeypatch.setattr("inverter_control.precharge.time.time", clock)
