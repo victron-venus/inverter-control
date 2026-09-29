@@ -90,6 +90,7 @@ def _make_controller(**overrides):
         mock_evcharger_cls.return_value = mock_evcharger
 
         mock_victron.get_cell_counts.return_value = {}
+        mock_victron.get_grid_daily_energy.return_value = None
         mock_victron.get_grid_status.return_value = {"_grid_valid": True}
         mock_calc.power_limit_min = -2300
         mock_calc.power_limit_max = 2250
@@ -658,7 +659,11 @@ class TestGetDailyStats(unittest.TestCase):
         mock_victron.get_mppt_yesterday_yields.return_value = []
         mock_victron.get_pv_inverter_yesterday_yields.return_value = []
 
+        grid_energy = {"status": "partial", "import_kwh": 1.2, "export_kwh": 0.01}
+        mock_victron.get_grid_daily_energy.return_value = grid_energy
         stats = controller._get_daily_stats()
+        assert stats["grid_energy"] == grid_energy
+        mock_victron.persist_grid_energy.assert_not_called()
 
         assert "produced_today" in stats
         assert "battery_in" in stats

@@ -865,7 +865,8 @@ class InverterController:
         return {
             "produced_today": produced_today,
             "produced_yesterday": produced_yesterday,
-            "grid_kwh": None,  # No measured grid energy source; unknown is not zero
+            "grid_kwh": None,  # Legacy field: directional energy has its own coverage contract
+            "grid_energy": self.victron.get_grid_daily_energy(),
             "battery_in": battery_in,
             "battery_out": battery_out,
             "battery_in_yesterday": battery_in_yesterday,
@@ -879,6 +880,7 @@ class InverterController:
 
     def _read_display_telemetry(self) -> dict:
         """All display-only I/O runs on the snapshot worker, never the control loop."""
+        self.victron.persist_grid_energy()
         return {
             "battery_socs": self.victron.get_battery_chain_socs(),
             "inv_state": self.victron.get_inverter_state()[1],

@@ -29,8 +29,10 @@ credits. A billing period is displayed, but a time-of-use invoice total needs
 interval consumption data and is not inferred from daily kWh alone.
 Updated web and desktop dashboards accept measured grid-import CSV/JSON through
 **Interval energy cost**. See the [dashboard import guide](https://github.com/victron-venus/inverter-dashboard-vue/blob/main/docs/electricity-tariffs.md#measured-interval-energy-cost).
-The controller currently has no measured grid-energy history source and publishes
-`daily_stats.grid_kwh: null` rather than a fabricated zero. This does not affect
+The controller publishes measured directional energy from the physical grid
+meter in [`daily_stats.grid_energy`](daily-grid-energy.md), with explicit
+complete-day or partial-period coverage. The legacy `daily_stats.grid_kwh` stays
+`null`. These totals do not reconstruct historical tariff intervals or change
 instantaneous grid telemetry or control.
 
 ## SetupHelper / PackageManager

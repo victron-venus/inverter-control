@@ -152,6 +152,16 @@ class GridTelemetry:
                 return candidates[0][0]
             return None
 
+    def selected_meter_identity(self) -> tuple[str, int] | None:
+        """Unambiguous physical source for display energy, independent of power."""
+        with self._lock:
+            identities = {(name, instance) for name, instance, _ in self._source_candidates()}
+            if len(identities) == 1:
+                identity = next(iter(identities))
+                if identity[0].startswith("com.victronenergy.grid."):
+                    return identity
+            return None
+
     def update_meter(
         self, service: str | None, path: str, raw: Any, generation: int | None = None
     ) -> bool:

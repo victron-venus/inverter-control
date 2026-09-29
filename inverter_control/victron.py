@@ -31,6 +31,8 @@ from .config import (
 from .control_flags import CONTROL_FLAG_KEYS
 from .dbus_native import SLOW_SET_TIMING_MS, NativeDbusClient
 from .grid_backup import GridBackup, parse_backup_snapshot
+from .grid_energy import STATE_FILE as GRID_ENERGY_STATE_FILE
+from .grid_energy import GridEnergyLedger, parse_energy_snapshot
 from .grid_telemetry import (
     GRID_PATHS,
     GridTelemetry,
@@ -48,6 +50,7 @@ logger = logging.getLogger("inverter-control")
 # D-Bus path constants
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
+TIME_ZONE_PATH = "/Settings/System/TimeZone"
 _SETTINGS_PREFIX = "/Settings/"
 HUB4_MODE_PATH = f"{_SETTINGS_PREFIX}CGwacs/Hub4Mode"
 TOU_START_SETTING = "/Settings/InverterControl/TouExpensiveStartHour"
@@ -257,6 +260,13 @@ class VictronDBus:
         # Venus OS system clock runs UTC; user timezone lives in localsettings,
         # read lazily on first _local_today() (localsettings may lag at boot).
         self._tz_name: str = ""
+        self._grid_energy = GridEnergyLedger(None if test_mode else GRID_ENERGY_STATE_FILE)
+        self._grid_energy_generation = -1
+        self._timezone_subscriptions_ready = False
+        self._next_timezone_subscription_retry = 0.0
+        self._grid_energy_timezone = ""
+        self._grid_energy_timezone_revision = 0
+        self._grid_energy_timezone_lock = threading.Lock()
         self._load_battery_daily_energy()
 
         self._test_mode = test_mode
@@ -366,10 +376,58 @@ class VictronDBus:
 
         self._seed_fast_values()
 
+    def _set_grid_energy_timezone(self, raw, *, revision=None):
+        """Update display trust without changing the legacy control/battery timezone cache."""
+        with self._grid_energy_timezone_lock:
+            if revision is not None and revision != self._grid_energy_timezone_revision:
+                return  # A newer signal/owner change wins over an in-flight settings read.
+            self._grid_energy_timezone_revision += 1
+            name = raw if isinstance(raw, str) else ""
+            old = self._grid_energy_timezone
+            self._grid_energy_timezone = name
+            if name != old or not name:
+                self._grid_energy.invalidate(
+                    "timezone_changed" if name else "timezone_unavailable",
+                    reset=bool(old and name and old != name),
+                )
+
+    def _maintain_timezone_subscriptions(self):
+        """Bounded display-worker repair; never invoked by the grid poll/control path."""
+        if self._native is not None and not self._native.optional_subscriptions_healthy():
+            self._timezone_subscriptions_ready = False
+            self._set_grid_energy_timezone(None)
+        now = time.monotonic()
+        if now < self._next_timezone_subscription_retry:
+            return
+        if (
+            self._native is not None
+            and self._timezone_subscriptions_ready
+            and self._grid_energy_timezone
+        ):
+            return
+        self._next_timezone_subscription_retry = now + (
+            SIGNAL_SETUP_RETRY_INTERVAL if self._native is not None else 60.0
+        )
+        if self._native is not None:
+            bulk = self._native.subscribe_service_items(SETTINGS_SERVICE, required=False)
+            item = self._native.subscribe_busitem(SETTINGS_SERVICE, TIME_ZONE_PATH, required=False)
+            if not (bulk and item):
+                return
+            self._timezone_subscriptions_ready = True
+        revision = self._grid_energy_timezone_revision
+        raw = (
+            self._native.get_value_connected(SETTINGS_SERVICE, TIME_ZONE_PATH, timeout=0.25)
+            if self._native is not None
+            else self._dbus_get(SETTINGS_SERVICE, TIME_ZONE_PATH)
+        )
+        self._set_grid_energy_timezone(raw, revision=revision)
+
     def _seed_fast_values(self):
         """Fetch current values for all subscribed paths (initial/reconnect)."""
         if self._native is None:
             return
+        # A reconnect can miss a display timezone change; its worker reseeds.
+        self._set_grid_energy_timezone(None)
         generation = self._grid_telemetry.generation
         grid_fields = self._native.get_values(SYSTEM_SERVICE)
         if isinstance(grid_fields, dict):
@@ -464,6 +522,9 @@ class VictronDBus:
         SmartShunt's bank truth — a path-only route let them overwrite bp/bc/bv
         every snapshot and made battery power flicker between two realities.
         """
+        if service == SETTINGS_SERVICE and path == TIME_ZONE_PATH:
+            self._set_grid_energy_timezone(raw)
+            return
         meter_updated = False
         if service == SYSTEM_SERVICE and path in GRID_PATHS:
             old_meter = self._grid_telemetry.selected_meter()
@@ -732,6 +793,8 @@ class VictronDBus:
         - A service loses its owner (disappears from the bus)
         """
         grid_changed = self._grid_telemetry.owner_changed(service_name)
+        if service_name == SETTINGS_SERVICE:
+            self._set_grid_energy_timezone(None)
         if self._grid_backup and service_name == self._grid_backup.service:
             self._grid_backup.invalidate()
         # Only trigger discovery for services we care about
@@ -980,8 +1043,25 @@ class VictronDBus:
                 service=meter,
                 deadline=deadline,
             )
-            fields = parse_grid_meter_snapshot(output) if output else None
-        self._grid_telemetry.replace_meter(meter, fields, generation)
+            fields = (
+                (parse_grid_meter_snapshot(output) | parse_energy_snapshot(output))
+                if output
+                else None
+            )
+        # Timestamp the full reply, never individual change signals: unchanged
+        # counters are fresh when read again. The existing generation guard
+        # rejects replies acquired across owner or source changes.
+        observed_at, observed_mono = time.time(), time.monotonic()
+        if self._grid_telemetry.replace_meter(meter, fields, generation):
+            with self._grid_energy_timezone_lock:
+                self._grid_energy.observe(
+                    meter,
+                    fields,
+                    self._grid_energy_timezone,
+                    observed_at=observed_at,
+                    observed_mono=observed_mono,
+                )
+            self._grid_energy_generation = generation + 1
 
     def _poll_shunt_data(self):
         """Poll bank V/I/P from the SmartShunt service (tree query)."""
@@ -2444,6 +2524,26 @@ class VictronDBus:
     def get_pv_inverter_yesterday_yields(self) -> list[float]:
         """Get yesterday's yield (kWh) for each PV inverter - instant from cache"""
         return list(self._cached_pv_inverter_yesterday_yields)
+
+    def get_grid_daily_energy(self) -> dict:
+        """Daily physical-meter kWh from memory only; no D-Bus or filesystem I/O."""
+        if self._native is not None and not self._native.optional_subscriptions_healthy():
+            self._grid_energy.invalidate("timezone_unavailable")
+        result = self._grid_energy.snapshot()
+        source = result["source"]
+        identity = self._grid_telemetry.selected_meter_identity()
+        if source and (
+            self._grid_energy_generation != self._grid_telemetry.generation
+            or identity != (source["service"], source["device_instance"])
+        ):
+            self._grid_energy.invalidate("meter_unavailable")
+            result = self._grid_energy.snapshot()
+        return result
+
+    def persist_grid_energy(self) -> None:
+        """Called only by the display snapshot worker, separate from grid control."""
+        self._maintain_timezone_subscriptions()
+        self._grid_energy.persist()
 
     def get_battery_daily_energy(self) -> tuple[float, float]:
         """Get battery daily charge/discharge energy (kWh) - instant from background cache"""

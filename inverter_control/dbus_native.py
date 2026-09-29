@@ -415,6 +415,7 @@ class NativeDbusClient:
         self._handlers_lock = threading.Lock()
         # Armed match rules (strings), replayed after reconnect
         self._subscriptions: set[str] = set()
+        self._optional_subscriptions: set[str] = set()
         self._armed_subscriptions: set[str] = set()
         # Well-known services behind the armed rules (for sender resolution)
         self._subscription_services: set[str] = set()
@@ -717,7 +718,9 @@ class NativeDbusClient:
         self._sender_service.clear()
         # Snapshot: subscribe_signal can add to _subscriptions concurrently.
         self._armed_subscriptions.clear()
-        for rule in tuple(self._subscriptions):
+        # Optional display rules are repaired on their owner's worker, never
+        # delaying the required rules or a caller reconnecting for control.
+        for rule in tuple(self._subscriptions - self._optional_subscriptions):
             try:
                 self._send_add_match(rule)
                 self._armed_subscriptions.add(rule)
@@ -790,8 +793,15 @@ class NativeDbusClient:
         )
 
     def subscriptions_healthy(self) -> bool:
-        """All requested match rules must be armed on the current connection."""
-        return self.is_connected() and self._subscriptions.issubset(self._armed_subscriptions)
+        """Every required control rule must be armed on the current connection."""
+        required = self._subscriptions - self._optional_subscriptions
+        return self.is_connected() and required.issubset(self._armed_subscriptions)
+
+    def optional_subscriptions_healthy(self) -> bool:
+        """Display-only rules cannot affect control health, but still need repair."""
+        return self.is_connected() and self._optional_subscriptions.issubset(
+            self._armed_subscriptions
+        )
 
     def _get_bus(self):
         """Return a connected bus or None (cooldown active / connect failed)."""
@@ -1109,11 +1119,20 @@ class NativeDbusClient:
             except Exception as exc:
                 logger.debug("NameOwnerChanged subscribe failed: %s", exc)
 
-    def subscribe_signal(self, service: str, member: str, path: str) -> bool:
+    def subscribe_signal(
+        self, service: str, member: str, path: str, *, required: bool = True
+    ) -> bool:
         """Arm one match rule. Idempotent; re-armed automatically after a
         reconnect. Initial values must still be fetched (signals fire on
         change only)."""
         rule = self._build_rule(service, member, path)
+        if required:
+            # A required caller can upgrade an optional rule, never downgrade it.
+            self._optional_subscriptions.discard(rule)
+        elif rule not in self._subscriptions:
+            self._optional_subscriptions.add(rule)
+            self._subscriptions.add(rule)
+            self._subscription_services.add(service)
         bus = self._get_bus()
         if bus is None:
             return False
@@ -1194,13 +1213,13 @@ class NativeDbusClient:
                     self._sender_service.pop(sender, None)
             self._sender_service[str(reply.body[0])] = service
 
-    def subscribe_busitem(self, service: str, path: str) -> bool:
+    def subscribe_busitem(self, service: str, path: str, *, required: bool = True) -> bool:
         """Forward per-item PropertiesChanged for one BusItem object."""
-        return self.subscribe_signal(service, "PropertiesChanged", path)
+        return self.subscribe_signal(service, "PropertiesChanged", path, required=required)
 
-    def subscribe_service_items(self, service: str) -> bool:
+    def subscribe_service_items(self, service: str, *, required: bool = True) -> bool:
         """Forward the bulk ItemsChanged signal a service emits on '/'."""
-        return self.subscribe_signal(service, "ItemsChanged", "/")
+        return self.subscribe_signal(service, "ItemsChanged", "/", required=required)
 
     def _handle_message(self, message):
         """Dispatch BusItem change signals to registered handlers.
