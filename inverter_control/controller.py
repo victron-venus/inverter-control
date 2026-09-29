@@ -1194,7 +1194,6 @@ class InverterController:
             now = time.perf_counter()
             elapsed_ms = (now - stage_started) * 1000.0
             self.metrics.record_stage(name, elapsed_ms)
-            stage_started = now
             # Surface an unexpectedly slow stage via metrics/logging. We do NOT
             # abort the cycle on a signal: each native/CLI D-Bus call is already
             # time-boxed by its own timeout, so a slow stage is a symptom to
@@ -1202,6 +1201,8 @@ class InverterController:
             # corrupted cross-thread futures on the reconnect path, 2026-08-27).
             if elapsed_ms > STAGE_SLOW_MS:
                 logger.warning("Control cycle stage %s slow: %.0fms", name, elapsed_ms)
+            # Keep diagnostic overhead out of the next stage, but in the full cycle.
+            stage_started = time.perf_counter()
 
         try:
             self.last_console_line = None

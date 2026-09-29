@@ -107,6 +107,68 @@ def _make_controller(**overrides):
         return controller, mock_victron, mock_ha, mock_calc
 
 
+@pytest.mark.parametrize("read_ms", [1.0, 400.0])
+def test_stage_diagnostics_do_not_charge_the_next_stage(read_ms):
+    controller, victron, _, _ = _make_controller()
+    now = 1000.0
+
+    def advance(milliseconds):
+        nonlocal now
+        now += milliseconds / 1000.0
+
+    def read_system():
+        advance(read_ms)
+        return {"_grid_valid": True, "gt": 0}
+
+    def calculate(_data):
+        advance(3.0)
+        return -100, ""
+
+    record_stage = controller.metrics.record_stage
+
+    def record_with_overhead(name, elapsed_ms):
+        record_stage(name, elapsed_ms)
+        advance(10.0)
+
+    victron.get_system_data.side_effect = read_system
+    controller._last_update_state_time = 0
+    with (
+        patch(f"{_MOD}.time.perf_counter", side_effect=lambda: now),
+        patch(f"{_MOD}.time.monotonic", side_effect=lambda: now),
+        patch.object(controller, "_grid_ready_for_control", return_value=True),
+        patch.object(controller, "_update_dvcc_limits", side_effect=lambda: advance(2.0)),
+        patch.object(controller, "calculate_setpoint", side_effect=calculate),
+        patch.object(controller, "handle_minimize_charging"),
+        patch.object(controller, "update_state"),
+        patch.object(controller, "get_control_flag", return_value=False),
+        patch.object(controller.metrics, "record_stage", side_effect=record_with_overhead),
+        patch(f"{_MOD}.logger.warning", side_effect=lambda *_args: advance(50.0)) as warning,
+        patch(f"{_MOD}.broadcast_line"),
+    ):
+        assert controller.run_cycle() is True
+
+    snapshot = controller.metrics.snapshot()
+    stages = snapshot["stage_ms"]
+    assert stages["get_system_data"]["max"] == read_ms
+    assert stages["dvcc"]["max"] == 2.0
+    assert stages["calculate_setpoint"]["max"] == 3.0
+    assert all(
+        stages[name]["max"] == 0.0
+        for name in (
+            "minimize_charging",
+            "setpoint_write",
+            "console_render",
+            "update_state",
+        )
+    )
+    # Diagnostics still consume cycle time and count toward its deadline.
+    warning_count = 1 if read_ms == 400.0 else 0
+    assert warning.call_count == warning_count
+    assert snapshot["cycle_ms"]["max"] == read_ms + 5.0 + 70.0 + 50.0 * warning_count
+    assert snapshot["cycle_ms"]["missed_deadlines"] == warning_count
+    victron.set_grid_setpoint.assert_called_once_with(-100)
+
+
 class TestInverterControllerInit(unittest.TestCase):
     """Test InverterController.__init__"""
 
