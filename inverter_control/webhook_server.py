@@ -13,6 +13,46 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 logger = logging.getLogger("inverter-control")
 
+# Match the existing MQTT pre-charge request bound; forecast summaries are small JSON objects.
+MAX_WEBHOOK_BODY_BYTES = 4096
+
+
+def _read_json_payload(handler) -> dict | None:
+    """Read one bounded object, or respond without invoking a callback."""
+    lengths = handler.headers.get_all("Content-Length", ["0"])
+    raw_length = lengths[0].strip(" \t") if len(lengths) == 1 else ""
+    content_length = -1
+    if (
+        handler.headers.get_all("Transfer-Encoding") is None
+        and raw_length
+        and raw_length.isascii()
+        and raw_length.isdecimal()
+    ):
+        digits = raw_length.lstrip("0") or "0"
+        # Avoid parsing an unbounded integer, while allowing leading zeroes.
+        content_length = (
+            MAX_WEBHOOK_BODY_BYTES + 1
+            if len(digits) > len(str(MAX_WEBHOOK_BODY_BYTES))
+            else int(digits)
+        )
+    if content_length < 0 or content_length > MAX_WEBHOOK_BODY_BYTES:
+        # The body remains unread. Never interpret it as another keep-alive request.
+        handler.close_connection = True
+        status = 400 if content_length < 0 else 413
+        error = "Invalid request framing" if status == 400 else "Request body too large"
+        handler._send_response(status, {"error": error})
+        return None
+    raw_data = handler.rfile.read(content_length)
+    if len(raw_data) != content_length:
+        handler.close_connection = True
+        handler._send_response(400, {"error": "Incomplete request body"})
+        return None
+    payload = json.loads(raw_data.decode("utf-8")) if raw_data else {}
+    if not isinstance(payload, dict):
+        handler._send_response(400, {"error": "Invalid JSON payload"})
+        return None
+    return payload
+
 
 class WebhookHandler(BaseHTTPRequestHandler):
     """HTTP request handler for webhook endpoints."""
@@ -42,13 +82,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
     def _handle_pre_charge(self):
         """Handle pre-charge webhook."""
         try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw_data = self.rfile.read(content_length).decode("utf-8")
-            payload = json.loads(raw_data) if raw_data else {}
-
-            # Validate payload
-            if not isinstance(payload, dict):
-                self._send_response(400, {"error": "Invalid JSON payload"})
+            payload = _read_json_payload(self)
+            if payload is None:
                 return
 
             trigger = payload.get("trigger")
@@ -80,7 +115,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             else:
                 self._send_response(503, {"error": "Pre-charge handler not configured"})
 
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             self._send_response(400, {"error": "Invalid JSON"})
         except Exception as e:
             logger.exception("Pre-charge webhook error")
@@ -89,12 +124,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
     def _handle_forecast(self):
         """Handle daily forecast summary from solar-forecast-langgraph."""
         try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw_data = self.rfile.read(content_length).decode("utf-8")
-            payload = json.loads(raw_data) if raw_data else {}
-
-            if not isinstance(payload, dict):
-                self._send_response(400, {"error": "Invalid JSON payload"})
+            payload = _read_json_payload(self)
+            if payload is None:
                 return
 
             today_kwh = payload.get("today_kwh")
@@ -118,7 +149,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             else:
                 self._send_response(503, {"error": "Forecast handler not configured"})
 
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             self._send_response(400, {"error": "Invalid JSON"})
         except Exception as e:
             logger.exception("Forecast webhook error")

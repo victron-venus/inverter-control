@@ -114,6 +114,15 @@ class PrechargeInbox:
                     **result("duplicate", 200, "already_decided"),
                     "original_status": previous["status"],
                 }
+            # Another HTTP/MQTT delivery may have held the lock across durable
+            # writes and enqueue. Revalidate new decisions using the current time;
+            # previously persisted outcomes above retain their existing responses.
+            now = time.time()
+            if (
+                not now - 300 <= payload["issued_at"] <= now + 30
+                or not now < payload["expires_at"] <= payload["issued_at"] + 300
+            ):
+                return result("rejected", 410, "expired_or_invalid_time")
             try:
                 blocked = suppressed()
                 outcome = result(

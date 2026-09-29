@@ -9,6 +9,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from http.client import HTTPMessage
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -29,8 +30,10 @@ def test_enqueue_failure_is_sticky_across_http_mqtt_and_restart(tmp_path):
     raw = json.dumps(payload).encode()
     responses = []
     callback = lambda p: inbox.handle(p, lambda: False, accept)
+    headers = HTTPMessage()
+    headers["Content-Length"] = str(len(raw))
     handler = SimpleNamespace(
-        headers={"Content-Length": str(len(raw))},
+        headers=headers,
         rfile=io.BytesIO(raw),
         pre_charge_callback=callback,
         _send_response=lambda status, body: responses.append((status, body)),
