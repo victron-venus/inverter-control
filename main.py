@@ -352,6 +352,7 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0
     The public Paho loop_stop can wait for a hardware-writing callback. Keep
     that wait off the main thread, and do not close its shared D-Bus connection
     unless both MQTT and watchdog writers (and the readers) actually finished.
+    One-shot mode has no heartbeat worker; pass None for its event and thread.
     Native loop exit is not acknowledged. This bounds our waits, not logging,
     kernel I/O or interpreter finalization.
     """
@@ -362,13 +363,14 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0
 
     requests_ok = True
     requests = [
-        hb_stop.set,
         controller._watchdog.request_stop,
         controller.request_stop_auxiliary_readers,
         controller.ha.request_stop,
         controller.victron.request_stop,
         request_stop_console_server,
     ]
+    if hb_stop is not None:
+        requests.insert(0, hb_stop.set)
     requests.extend(
         f.request_stop
         for f in (controller.grid_filter, controller.derived_grid_filter)
@@ -410,8 +412,9 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0
 
     # Wakeups above let these operations settle concurrently before each join.
     stopped = stop(controller._watchdog.stop)
-    hb_thread.join(timeout=remaining())
-    stopped = not hb_thread.is_alive() and stopped
+    if hb_thread is not None:
+        hb_thread.join(timeout=remaining())
+        stopped = not hb_thread.is_alive() and stopped
     for worker in (controller.grid_filter, controller.derived_grid_filter):
         if worker is not None:
             stopped = stop(worker.stop) and stopped
@@ -503,12 +506,12 @@ def _main_inner():
 
     if args.setpoint is not None:
         controller.manual_setpoint = args.setpoint
-        controller.start_auxiliary_readers()
         try:
+            controller.start_auxiliary_readers()
             controller.run_cycle()
         finally:
-            controller.stop_auxiliary_readers()
-            controller.victron.close()
+            if not _shutdown_main_loop(controller, mqtt_bridge, None, None):
+                logger.warning("Shutdown workers or native close request did not complete")
         return
 
     start_console_server()

@@ -28,6 +28,7 @@ EVENT_LEVELS = {
     "grid_fallback_failed": logging.ERROR,
     "grid_fallback_applied": logging.WARNING,
     "dry_watchdog_zero": logging.WARNING,
+    "dry_run_changed": logging.INFO,
     "prior_setpoint_unavailable": logging.ERROR,
     "watchdog_zero_rejected": logging.ERROR,
     "watchdog_zero_applied": logging.WARNING,
@@ -54,6 +55,7 @@ class WriteDiagnostics:
         error_type=None,
         value_type=None,
         accepted=None,
+        dry_run=None,
         value=None,
         seconds=None,
     ):
@@ -70,6 +72,8 @@ class WriteDiagnostics:
                 record[key] = text[:MAX_TEXT]
         if type(accepted) is bool:
             record["accepted"] = accepted
+        if type(dry_run) is bool:
+            record["dry_run"] = dry_run
         if type(value) is int and -(2**31) <= value < 2**31:
             record["value"] = value
         if (type(seconds) is float and math.isfinite(seconds)) or (
