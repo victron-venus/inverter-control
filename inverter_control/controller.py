@@ -376,8 +376,8 @@ class InverterController:
                 self._trim_mode_generation += 1
             self.dry_run = enabled
             self._watchdog.dry_run = enabled
-            mode = "DRY-RUN" if enabled else "LIVE"
-            logger.info(f"Mode changed to {mode}")
+            # toggle_dry_run also owns this lock; sinks must run off the write path.
+            self._watchdog._record_diagnostic("dry_run_changed", dry_run=enabled)
             return self.dry_run
 
     def toggle_dry_run(self) -> bool:
