@@ -1,5 +1,8 @@
 """Tariff writes cannot acknowledge failed persistence or overwrite stale edits."""
 
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 import pytest
@@ -155,3 +158,113 @@ def test_invalid_commands_never_write(tmp_path, payload):
     assert service.snapshot()["electricity_tariff_status"]["error"]
     assert service.snapshot()["electricity_tariff"] is None
     assert not file.exists()
+
+
+@pytest.mark.parametrize("persistence_fails", [False, True])
+def test_control_snapshot_does_not_wait_for_tariff_fsync(tmp_path, persistence_fails):
+    from test_main import _make_controller
+
+    file = tmp_path / "tariff.json"
+    original, changed = plan(), plan(0.4)
+    write_tariff(file, original)
+    controller, victron, _, _ = _make_controller()
+    controller.tariff = TariffService(original, file)
+    previous = controller.get_state_for_mqtt()["ui_config"]
+    fsync_entered, release_fsync = threading.Event(), threading.Event()
+    real_fsync = os.fsync
+
+    def delayed_fsync(fd):
+        fsync_entered.set()
+        if not release_fsync.wait(2):
+            raise TimeoutError("test did not release persistence")
+        if persistence_fails:
+            raise OSError("disk full")
+        real_fsync(fd)
+
+    with (
+        ThreadPoolExecutor(max_workers=2) as workers,
+        patch("inverter_control.tariff.os.fsync", side_effect=delayed_fsync),
+    ):
+        write = workers.submit(controller.tariff.apply, command(changed, original, "saving"))
+        try:
+            assert fsync_entered.wait(1)
+            # Exercise the real controller publication path, not a test-only getter.
+            read = workers.submit(controller.get_state_for_mqtt)
+            during = read.result(timeout=0.5)["ui_config"]
+            assert during == previous
+            assert not write.done()
+            assert load_tariff(setup_file=file) == original
+        finally:
+            release_fsync.set()
+        write.result(timeout=1)
+
+    after = controller.get_state_for_mqtt()["ui_config"]
+    expected = original if persistence_fails else changed
+    assert after["electricity_tariff"] == expected
+    assert after["electricity_tariff_status"] == {
+        "writable": True,
+        "revision": revision(expected),
+        "request_id": "saving",
+        "error": "disk full" if persistence_fails else None,
+    }
+    assert load_tariff(setup_file=file) == expected
+    victron.set_grid_setpoint.assert_not_called()
+
+
+@pytest.mark.parametrize("chained_revision", [False, True])
+def test_overlapping_tariff_edits_serialize_revision_and_persistence(tmp_path, chained_revision):
+    file = tmp_path / "tariff.json"
+    original, first, second = plan(), plan(0.3), plan(0.4)
+    write_tariff(file, original)
+    service = TariffService(original, file)
+    first_fsync, release_first, second_started, second_fsync = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    fsync_calls = []
+    real_fsync = os.fsync
+
+    def delayed_first_fsync(fd):
+        fsync_calls.append(fd)
+        if len(fsync_calls) == 1:
+            first_fsync.set()
+            if not release_first.wait(2):
+                raise TimeoutError("test did not release persistence")
+        else:
+            second_fsync.set()
+        real_fsync(fd)
+
+    def second_edit():
+        second_started.set()
+        service.apply(command(second, first if chained_revision else original, "second"))
+
+    with (
+        ThreadPoolExecutor(max_workers=2) as workers,
+        patch("inverter_control.tariff.os.fsync", side_effect=delayed_first_fsync),
+    ):
+        write_one = workers.submit(service.apply, command(first, original, "first"))
+        try:
+            assert first_fsync.wait(1)
+            write_two = workers.submit(second_edit)
+            assert second_started.wait(1)
+            assert not write_one.done()
+            assert not second_fsync.wait(0.1)
+            assert len(fsync_calls) == 1
+        finally:
+            release_first.set()
+        write_one.result(timeout=1)
+        write_two.result(timeout=1)
+
+    result = service.snapshot()
+    expected = second if chained_revision else first
+    assert result["electricity_tariff"] == expected
+    assert result["electricity_tariff_status"]["revision"] == revision(expected)
+    assert result["electricity_tariff_status"]["request_id"] == "second"
+    if chained_revision:
+        assert result["electricity_tariff_status"]["error"] is None
+    else:
+        assert "changed" in result["electricity_tariff_status"]["error"]
+    assert len(fsync_calls) == (2 if chained_revision else 1)
+    assert load_tariff(setup_file=file) == expected
