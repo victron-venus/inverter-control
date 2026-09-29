@@ -304,6 +304,66 @@ def test_blocked_failure_logger_cannot_delay_fallback_or_later_zero(facade, fall
     assert facade._consecutive_errors == 0
 
 
+@pytest.mark.parametrize("body,signature", [([1], "u"), ([], ""), ([False], "b"), (["bad"], "s")])
+@pytest.mark.parametrize("fallback,accepted", [("int32 0\n", True), ("int32 2\n", False)])
+def test_real_native_rejection_logs_only_after_cli_and_unlock(
+    facade, body, signature, fallback, accepted
+):
+    """The real setter must not emit a second warning inside the facade's lock."""
+    writer = facade._native_write
+    logging_entered, release_logger = threading.Event(), threading.Event()
+    calls, results, errors_at_log = [], {}, []
+    facade._consecutive_errors = 5
+
+    async def native_call(message):
+        value = message.body[0].value
+        calls.append(("native", value))
+        return reply(body, signature) if value else reply([0], "u")
+
+    def cli_set(command, **_kwargs):
+        calls.append(("cli", int(command[-1].rsplit(":", 1)[1])))
+        return fallback
+
+    def blocked_warning(*_args):
+        if not logging_entered.is_set():
+            errors_at_log.append(facade._consecutive_errors)
+            logging_entered.set()
+            assert release_logger.wait(3)
+
+    first = threading.Thread(
+        target=lambda: results.update({1: facade._dbus_set(SERVICE, "/Setpoint", 1)})
+    )
+    zero = threading.Thread(
+        target=lambda: results.update({0: facade._dbus_set(SERVICE, "/Setpoint", 0)})
+    )
+    with (
+        patch.object(writer._bus, "call", side_effect=native_call),
+        patch.object(facade, "_safe_subprocess", side_effect=cli_set),
+        patch("inverter_control.dbus_native.logger.warning", side_effect=blocked_warning),
+    ):
+        try:
+            first.start()
+            assert logging_entered.wait(1)
+            assert calls == [("native", 1), ("cli", 1)]
+            assert errors_at_log == [0 if accepted else 6]
+            assert not facade._set_lock.locked()
+            zero.start()
+            zero.join(1)
+            assert results == {0: True}
+            assert not release_logger.is_set()
+        finally:
+            release_logger.set()
+            first.join(3)
+            if zero.ident is not None:
+                zero.join(3)
+    assert not first.is_alive() and not zero.is_alive()
+    assert calls == [("native", 1), ("cli", 1), ("native", 0)]
+    assert results == {1: accepted, 0: True}
+    assert facade._consecutive_errors == 0
+    assert writer._fail_until == 0
+    assert writer._bus.disconnections == 0
+
+
 def test_diagnostics_follow_writer_and_close_releases_both_clients(facade):
     telemetry, writer = facade._native, facade._native_write
     read_bus, write_bus = telemetry._bus, writer._bus

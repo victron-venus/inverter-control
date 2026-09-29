@@ -1066,15 +1066,15 @@ class NativeDbusClient:
         )
         if reply is None:
             return False
-        if (
+        # The facade holds its write lock until the CLI fallback completes.
+        # It reports False after releasing that lock; logging here could stall
+        # both fallback and a later safety write.
+        return not (
             len(reply.body) != 1
             or not isinstance(reply.body[0], int)
             or isinstance(reply.body[0], bool)
             or reply.body[0] != 0
-        ):
-            logger.warning("SetValue %s%s rejected or malformed: %s", service, path, reply.body)
-            return False
-        return True
+        )
 
     # ------------------------------------------------------------------ #
     # Signal subscriptions (BusItem change signals)                      #
