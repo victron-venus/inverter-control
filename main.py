@@ -466,10 +466,13 @@ def signal_handler(signum, frame):
         signal.SIGHUP: "SIGHUP",
     }
     sig_name = sig_names.get(signum, f"signal {signum}")
-    logger.warning(f"Received {sig_name} - shutting down")
     # Force-exit watchdog: if graceful shutdown blocks (e.g., full log pipe
     # or stuck MQTT socket), make sure the supervisor can still restart us.
-    threading.Timer(10.0, os._exit, args=(0,)).start()
+    # Arm it before logging, but do not let the watchdog itself delay exit.
+    watchdog = threading.Timer(10.0, os._exit, args=(0,))
+    watchdog.daemon = True
+    watchdog.start()
+    logger.warning(f"Received {sig_name} - shutting down")
     sys.exit(0)
 
 
