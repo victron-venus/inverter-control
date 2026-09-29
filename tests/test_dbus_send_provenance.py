@@ -349,7 +349,7 @@ def test_python_code_budget_and_compiled_callable_are_explicit():
 def test_schema_bounds_allowlist_and_log_payload_limit(monkeypatch):
     refs = captured_refs()
     refs["sender"] = "s" * 1024
-    refs["unused_body"] = "private"
+    refs["unused_body"] = "PRIVATE_DBUS_PAYLOAD_SENTINEL"
     record = native._serialize_send_provenance(refs)
     assert set(record) == {
         "phase",
@@ -371,7 +371,7 @@ def test_schema_bounds_allowlist_and_log_payload_limit(monkeypatch):
     assert len(record["modules"]) <= 8
     assert all(len(record[role]["mro"]) <= 8 for role in ("bus", "writer", "future"))
     assert "unused_body" not in repr(record)
-    assert "private" not in repr(record)
+    assert "PRIVATE_DBUS_PAYLOAD_SENTINEL" not in repr(record)
     assert len(repr(record).encode("utf-8")) <= 32768
     monkeypatch.setattr(native, "PROVENANCE_RECORD_LIMIT", 100)
     with pytest.raises(ValueError, match="record budget"):

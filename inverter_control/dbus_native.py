@@ -422,7 +422,11 @@ class NativeDbusClient:
         # inputs collide across services (vebus's bulk ItemsChanged carries its
         # own /Dc/0/* items), so handlers must know WHO sent a signal.
         self._sender_service: dict[str, str] = {}
-        self._resolving_senders: set[str] = set()
+        # Sender discovery is single-flight per connection. Unknown-sender
+        # bursts must not allocate one task or daemon call per signal.
+        self._sender_refresh_bus = None
+        self._sender_refresh_after = 0.0
+        self._sender_owner_versions: dict[str, int] = {}
         # Fire-and-forget task registry (see _track_task): keeps references to
         # background tasks so GC can't collect them mid-run.
         self._tasks: set[asyncio.Future] = set()
@@ -1133,28 +1137,62 @@ class NativeDbusClient:
         return True
 
     async def _refresh_sender_map(self):
-        """Map subscribed well-known names to their current unique senders."""
+        """Resolve each service once per round, bounded to the captured connection."""
+        bus = self._bus
+        if bus is None or not getattr(bus, "connected", True) or self._sender_refresh_bus is bus:
+            return
+        self._sender_refresh_bus = bus
+        attempted = set()
+        try:
+            while self._bus is bus and getattr(bus, "connected", True):
+                # New subscriptions can arrive while a daemon reply is pending.
+                # Coalesce them into this round without rereading earlier names.
+                pending = tuple(self._subscription_services - attempted)
+                if not pending:
+                    break
+                for service in pending:
+                    if self._bus is not bus or not getattr(bus, "connected", True):
+                        return
+                    attempted.add(service)
+                    await self._resolve_sender(bus, service)
+        finally:
+            if self._sender_refresh_bus is bus:
+                self._sender_refresh_bus = None
+
+    async def _resolve_sender(self, bus, service):
+        """Publish a bounded daemon reply only while its connection/owner is current."""
         from dbus_fast import Message
 
-        # Snapshot these shared sets: subscribe_signal/_replay_subscriptions can
-        # mutate them from another thread while this async loop iterates, which
-        # raised "Set changed size during iteration" at startup (2026-08-27).
-        for svc in tuple(self._subscription_services):
-            try:
-                reply = await self._bus.call(
-                    Message(
-                        destination=DBUS_DAEMON,
-                        path=DBUS_DAEMON_PATH,
-                        interface=DBUS_DAEMON,
-                        member="GetNameOwner",
-                        body=[svc],
-                        signature="s",
-                    )
-                )
-                if reply.message_type == MessageType.METHOD_RETURN and reply.body:
-                    self._sender_service[str(reply.body[0])] = svc
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.debug("GetNameOwner %s failed: %s", svc, e)
+        owner_version = self._sender_owner_versions.get(service, 0)
+        message = Message(
+            destination=DBUS_DAEMON,
+            path=DBUS_DAEMON_PATH,
+            interface=DBUS_DAEMON,
+            member="GetNameOwner",
+            body=[service],
+            signature="s",
+        )
+        try:
+            # A daemon timeout cannot retain a task/pending handler
+            # forever or tear down a healthy shared connection.
+            async with asyncio.timeout(MATCH_TIMEOUT):
+                reply = await self._call_message(bus, message)
+        except Exception as error:
+            logger.debug("GetNameOwner %s failed: %s", service, error)
+            return
+        if (
+            self._bus is not bus
+            or not getattr(bus, "connected", True)
+            or self._sender_owner_versions.get(service, 0) != owner_version
+        ):
+            return
+        if reply is not None and reply.message_type == MessageType.METHOD_RETURN and reply.body:
+            # Replies queued before a NameOwnerChanged or reconnect
+            # must not restore an obsolete service-to-sender binding.
+            for sender, known_service in tuple(self._sender_service.items()):
+                if known_service == service:
+                    self._sender_service.pop(sender, None)
+            self._sender_service[str(reply.body[0])] = service
 
     def subscribe_busitem(self, service: str, path: str) -> bool:
         """Forward per-item PropertiesChanged for one BusItem object."""
@@ -1206,17 +1244,22 @@ class NativeDbusClient:
         for obj_path, props in items.items():
             self._dispatch(obj_path, props, service)
 
-    def _handle_unresolved_sender(self, sender: str):
-        if sender not in self._resolving_senders:
-            self._resolving_senders.add(sender)
-            try:
-                self._track_task(self._refresh_and_clear(sender))
-            except RuntimeError:
-                self._resolving_senders.discard(sender)
+    def _handle_unresolved_sender(self, _sender: str):
+        now = time.monotonic()
+        if now < self._sender_refresh_after:
+            return
+        # Also rate-limit unresolved names which the subscribed services do not
+        # own. A burst of distinct unique names must have a fixed task budget.
+        self._sender_refresh_after = now + MATCH_TIMEOUT
+        self._track_task(self._refresh_sender_map())
 
     def _handle_name_owner_changed(self, message):
         if len(message.body) >= 3:
             service_name, old_owner, new_owner = map(str, message.body[:3])
+            if service_name in self._subscription_services:
+                self._sender_owner_versions[service_name] = (
+                    self._sender_owner_versions.get(service_name, 0) + 1
+                )
             if old_owner:
                 self._sender_service.pop(old_owner, None)
             if new_owner and service_name in self._subscription_services:
@@ -1225,11 +1268,6 @@ class NativeDbusClient:
                 handlers = list(self._name_owner_handlers)
             for callback in handlers:
                 callback(service_name, old_owner, new_owner)
-
-    async def _refresh_and_clear(self, sender: str):
-        """Refresh the sender map, then stop skipping this sender."""
-        await self._refresh_sender_map()
-        self._resolving_senders.discard(sender)
 
     def _dispatch(self, path: str, props, service: str | None):
         if "Value" not in props:
