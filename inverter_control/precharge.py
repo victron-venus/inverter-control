@@ -10,10 +10,11 @@ from pathlib import Path
 
 
 class PrechargeInbox:
-    """Record before enqueue: a crash may lose an intent, but cannot replay it.
+    """Reserve before enqueue: an uncertain intent is never replayed.
 
     The accepted status means queued for the existing one control cycle; it is
-    not evidence of physical charging. Unreadable persistence fails closed.
+    not evidence of physical charging. Only a completed callback gets the
+    durable queued marker. Unreadable persistence fails closed.
     """
 
     def __init__(self, path=None):
@@ -31,7 +32,11 @@ class PrechargeInbox:
                         not isinstance(request_id, str)
                         or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", request_id)
                         or not isinstance(value, dict)
-                        or value.get("status") not in ("accepted", "suppressed")
+                        or value.get("status") not in ("accepted", "suppressed", "uncertain")
+                        or (
+                            "queued" in value
+                            and (value["status"] != "accepted" or value["queued"] is not True)
+                        )
                         or type(value.get("until")) not in (int, float)
                         or not math.isfinite(value["until"])
                         or value["until"] < 0
@@ -101,6 +106,10 @@ class PrechargeInbox:
                 return result("unavailable", 503, "journal_unavailable")
             previous = self.records.get(request_id)
             if previous and previous["until"] > now:
+                if previous["status"] == "uncertain":
+                    return result("unavailable", 503, "decision_uncertain")
+                if previous["status"] == "accepted" and previous.get("queued") is not True:
+                    return result("unavailable", 503, "legacy_decision_unverified")
                 return {
                     **result("duplicate", 200, "already_decided"),
                     "original_status": previous["status"],
@@ -115,10 +124,29 @@ class PrechargeInbox:
                 records = {k: v for k, v in self.records.items() if v["until"] > now}
                 if len(records) >= 4096:
                     return result("unavailable", 503, "journal_full")
-                records[request_id] = {"status": outcome["status"], "until": now + 172800}
+                records[request_id] = {
+                    "status": "suppressed" if blocked else "uncertain",
+                    "until": now + 172800,
+                }
+                if not blocked:
+                    # Keep the reservation in memory even if persistence raises
+                    # after replace/fsync. A retry must never call accept again.
+                    self.records = records
                 self._save(records)
                 if not blocked:
                     accept()
+                    confirmed = {
+                        **records,
+                        request_id: {**records[request_id], "status": "accepted", "queued": True},
+                    }
+                    try:
+                        self._save(confirmed)
+                    except (OSError, ValueError, RuntimeError):
+                        # _save may have published before failing. Locally keep
+                        # uncertainty sticky; on disk queued=True still proves
+                        # the callback returned, never physical actuation.
+                        self.records = records
+                        raise
                 return outcome
             except (OSError, ValueError, RuntimeError):
                 return result("unavailable", 503, "decision_unavailable")

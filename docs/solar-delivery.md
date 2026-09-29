@@ -23,12 +23,30 @@ Legacy requests without an ID/version/expiry now receive 400.
 
 Accepted means queued for the existing **one control cycle**, not confirmed
 charging or a sustained charging policy. The tariff gate is rechecked at use.
-The decision is fsynced before enqueue into `/data/inverter-control/precharge-requests.json`.
-IDs are remembered for 48 hours, across restart and ordinary upgrades. An
-unreadable/unwritable journal fails closed. A crash after recording but before
-enqueue can lose a request; it cannot repeat it. QoS1 does not imply exactly-once
-physical action. Retained commands are ignored. Retries retain the same ID;
-changing the forecast during the same local day does not create another intent.
+A reservation is fsynced in `/data/inverter-control/precharge-requests.json`
+before enqueue. Only after the enqueue callback returns successfully is the
+decision saved as `accepted` with `queued: true`, before returning 202. IDs are
+remembered for 48 hours, across restart and ordinary upgrades. An uncertain
+reservation returns 503 `unavailable` with reason `decision_uncertain` on retry;
+it is never enqueued again. An enqueue or confirmation-write failure also returns
+503 and keeps the in-memory reservation uncertain. If the confirmation reached
+disk before a later filesystem error, its queued marker still records the
+completed callback; it does not prove the subsequent control cycle ran.
+
+Old `accepted` journal records have no queued marker and cannot prove whether
+enqueue happened. They return 503 `legacy_decision_unverified` without replay
+until their original retention expires. Old `suppressed` records remain terminal
+duplicates. Unreadable/unwritable journals fail closed. A crash before enqueue or
+before the control cycle uses a queued intent can still lose the request; no
+startup recovery or replay is attempted. QoS1 does not imply exactly-once physical
+action. Retained commands are ignored. Retries retain the same ID; changing the
+forecast during the same local day does not create another intent.
+
+Downgrading to an older controller is not journal-compatible when an `uncertain`
+entry exists: the old reader rejects the journal and returns 503 for pre-charge
+requests. It cannot prune that unknown entry, even after its retention expires.
+Keep the upgraded reader; do not delete or rewrite journal entries to bypass
+this fail-closed boundary. No automatic downgrade migration is performed.
 
 Display-only reads run on a 2-second background worker; snapshots older than
 8 seconds become unknown. Control measurements and setpoint writes retain their
