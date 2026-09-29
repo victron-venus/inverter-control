@@ -88,6 +88,11 @@ class GridFilter(threading.Thread):
                     self._value += alpha * (gt - self._value)
                 self._last_t = now
 
-    def stop(self) -> None:
+    def request_stop(self) -> None:
         self.stop_event.set()
-        self.join(timeout=self.tick * 10 + 2.0)
+
+    def stop(self, timeout: float | None = None) -> bool:
+        self.request_stop()
+        if self.ident is not None:
+            self.join(timeout=self.tick * 10 + 2.0 if timeout is None else max(0.0, timeout))
+        return not self.is_alive()

@@ -18,6 +18,9 @@ import traceback
 from logging.handlers import RotatingFileHandler
 
 from inverter_control.console_server import (
+    request_stop_server as request_stop_console_server,
+)
+from inverter_control.console_server import (
     start_server as start_console_server,
 )
 from inverter_control.console_server import (
@@ -343,25 +346,84 @@ def _maybe_run_gc(last_gc_time: float, gc_interval: float) -> float:
     return now
 
 
-def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread) -> None:
-    """Orderly teardown: heartbeat, filters, watchdog, console, MQTT, HA."""
-    hb_stop.set()
-    hb_thread.join(timeout=HEARTBEAT_INTERVAL + 2.0)
-    if controller.grid_filter:
-        controller.grid_filter.stop()
-    if controller.derived_grid_filter:
-        controller.derived_grid_filter.stop()
-    controller.stop_auxiliary_readers()
-    # Stop hardware watchdog
-    try:
-        controller._watchdog.stop()
-    except Exception:
-        pass  # Best effort - shutdown must proceed even if watchdog stop fails
-    stop_console_server()
+def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0) -> bool:
+    """Confirm managed workers stopped and native close requested in one budget.
+
+    The public Paho loop_stop can wait for a hardware-writing callback. Keep
+    that wait off the main thread, and do not close its shared D-Bus connection
+    unless both MQTT and watchdog writers (and the readers) actually finished.
+    Native loop exit is not acknowledged. This bounds our waits, not logging,
+    kernel I/O or interpreter finalization.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+
+    def remaining():
+        return max(0.0, deadline - time.monotonic())
+
+    requests_ok = True
+    requests = [
+        hb_stop.set,
+        controller._watchdog.request_stop,
+        controller.request_stop_auxiliary_readers,
+        controller.ha.request_stop,
+        controller.victron.request_stop,
+        request_stop_console_server,
+    ]
+    requests.extend(
+        f.request_stop
+        for f in (controller.grid_filter, controller.derived_grid_filter)
+        if f is not None
+    )
     if mqtt_bridge:
-        mqtt_bridge.disconnect()
-    controller.ha.stop()
-    controller.victron.close()
+        requests.insert(0, mqtt_bridge.request_stop)
+    for request in requests:
+        try:
+            request()
+        except Exception:
+            requests_ok = False
+
+    mqtt_done = threading.Event()
+    close_allowed = threading.Event()
+    completed = {"mqtt": False, "close_requested": False}
+
+    def close_io():
+        try:
+            completed["mqtt"] = mqtt_bridge is None or mqtt_bridge.disconnect() is True
+        except Exception:
+            return
+        finally:
+            mqtt_done.set()
+        if close_allowed.wait(remaining()) and remaining() > 0:
+            try:
+                completed["close_requested"] = controller.victron.close(timeout=remaining()) is True
+            except Exception:
+                return
+
+    io_thread = threading.Thread(target=close_io, name="shutdown-io", daemon=True)
+    io_thread.start()
+
+    def stop(worker):
+        try:
+            return worker(timeout=remaining()) is True
+        except Exception:
+            return False
+
+    # Wakeups above let these operations settle concurrently before each join.
+    stopped = stop(controller._watchdog.stop)
+    hb_thread.join(timeout=remaining())
+    stopped = not hb_thread.is_alive() and stopped
+    for worker in (controller.grid_filter, controller.derived_grid_filter):
+        if worker is not None:
+            stopped = stop(worker.stop) and stopped
+    stopped = stop(controller.stop_auxiliary_readers) and stopped
+    stopped = stop(controller.ha.stop) and stopped
+    stopped = stop(controller.victron.stop_polling) and stopped
+    stopped = stop(stop_console_server) and stopped
+    mqtt_done.wait(remaining())
+    if requests_ok and stopped and completed["mqtt"] and remaining() > 0:
+        close_allowed.set()
+    io_thread.join(timeout=remaining())
+    return requests_ok and stopped and completed["mqtt"] and completed["close_requested"]
 
 
 def _run_main_loop(controller, mqtt_bridge):
@@ -413,7 +475,8 @@ def _run_main_loop(controller, mqtt_bridge):
         print("\nShutting down...")
     finally:
         logger.info("Inverter Control shutting down")
-        _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread)
+        if not _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread):
+            logger.warning("Shutdown workers or native close request did not complete")
 
 
 def _main_inner():

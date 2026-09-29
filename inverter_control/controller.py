@@ -497,10 +497,19 @@ class InverterController:
             if reader is not None:
                 reader.start()
 
-    def stop_auxiliary_readers(self) -> None:
+    def request_stop_auxiliary_readers(self) -> None:
         for reader in (self.water, self.evcharger, self.telemetry, self.performance):
             if reader is not None:
-                reader.stop()
+                reader.request_stop()
+
+    def stop_auxiliary_readers(self, timeout: float = 1.0) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        self.request_stop_auxiliary_readers()
+        stopped = True
+        for reader in (self.water, self.evcharger, self.telemetry, self.performance):
+            if reader is not None:
+                stopped = reader.stop(max(0.0, deadline - time.monotonic())) and stopped
+        return stopped
 
     def calculate_setpoint(self, sys_data: dict[str, Any]) -> tuple[int, str]:
         """Orchestrate state collection and delegate calculation to logic.py"""

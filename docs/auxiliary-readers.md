@@ -5,8 +5,10 @@ loop and console only copy cached values; a blocked device read cannot execute
 synchronously through `read()`. Each worker waits two seconds after a refresh.
 A snapshot older than four seconds, an initial read, or a failed refresh yields
 unknown fields. Age starts before the I/O pass, so a slow result is not relabelled
-fresh when it finally arrives. Stopping clears cached data and joins for at most
-one second per worker; it never falls back to synchronous I/O.
+fresh when it finally arrives. Stopping clears all cached data and signals every
+reader before joining. The readers share one one-second default join budget (or
+the main shutdown's remaining budget); a timed-out join reports incomplete
+cleanup and never falls back to synchronous I/O.
 
 The existing control policy maps unknown EV power to zero. This candidate does
 not change or qualify that policy. It needs device acceptance with the installed

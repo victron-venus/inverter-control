@@ -102,15 +102,17 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
         # Thread control
         self._running = False
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._start_time: float = 0
 
     def start(self):
         """Start background polling thread"""
-        if self._running:
+        if self._running or (self._thread is not None and self._thread.is_alive()):
             return
 
+        self._stop_event.clear()
         self._running = True
         self._start_time = time.time()
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
@@ -123,16 +125,23 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             return int(time.time() - self._start_time)
         return 0
 
-    def stop(self):
-        """Stop background polling and cleanup"""
+    def request_stop(self):
         self._running = False
+        self._stop_event.set()
+
+    def stop(self, timeout: float = 2.0) -> bool:
+        """Wake idle polling; keep an active request's Session intact on timeout."""
+        self.request_stop()
         if self._thread:
-            self._thread.join(timeout=2)
-        # Close session to release connections
+            self._thread.join(timeout=max(0.0, timeout))
+            if self._thread.is_alive():
+                return False
+        # Close session only after its polling thread has returned.
         try:
             self._session.close()
         except Exception:
             pass
+        return True
 
     def _get_state(self, entity_id: str) -> str | None:
         """Get entity state from HA"""
@@ -198,7 +207,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                     self._circuit_open = False
                     logger.info("HA circuit breaker: attempting reset")
                 else:
-                    time.sleep(HA_POLL_INTERVAL)
+                    self._stop_event.wait(HA_POLL_INTERVAL)
                     continue
 
             try:
@@ -225,7 +234,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                     logger.warning(f"HA poll failed ({self._consecutive_failures}x): {e}")
                     self._last_error_log = now
 
-            time.sleep(HA_POLL_INTERVAL)
+            self._stop_event.wait(HA_POLL_INTERVAL)
 
     def _poll_all(self):
         """Poll all entities from HA and dbus for VUE sensors"""

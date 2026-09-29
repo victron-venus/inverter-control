@@ -490,14 +490,23 @@ class VictronDBus:
         finally:
             self._write_lock_timings_lock.release()
 
-    def close(self) -> None:
-        """Request polling stop, wait briefly, and close both native clients."""
+    def request_stop(self) -> None:
         self._poll_stop_event.set()
+
+    def stop_polling(self, timeout: float = 1.0) -> bool:
+        self.request_stop()
         if self._poll_thread:
-            self._poll_thread.join(timeout=1.0)
+            self._poll_thread.join(timeout=max(0.0, timeout))
+        return self._poll_thread is None or not self._poll_thread.is_alive()
+
+    def close(self, timeout: float = 1.0) -> bool:
+        """Confirm polling stopped and native close requested, not loop exit."""
+        if not self.stop_polling(timeout=timeout):
+            return False
         for client in (self._native_write, self._native):
             if client is not None:
                 client.close()
+        return True
 
     def _set_signals_healthy(self, value: bool) -> None:
         """Update subscription flag; log each healthy<->unhealthy flip once."""

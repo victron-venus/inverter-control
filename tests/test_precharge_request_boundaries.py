@@ -93,7 +93,11 @@ def test_http_mqtt_size_boundary_parity(size, expected):
     callback.reset_mock()
     client = Mock()
     MQTTBridge._on_message(
-        SimpleNamespace(forecast_prefix="synthetic/site", _callbacks={"pre_charge": callback}),
+        SimpleNamespace(
+            forecast_prefix="synthetic/site",
+            _callbacks={"pre_charge": callback},
+            _disconnect_requested=False,
+        ),
         client,
         None,
         SimpleNamespace(topic="synthetic/site/pre_charge_request", payload=raw, retain=False),

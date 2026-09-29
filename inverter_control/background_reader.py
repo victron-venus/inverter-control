@@ -55,12 +55,17 @@ class BackgroundReader:
         self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
         self._thread.start()
 
-    def stop(self) -> None:
+    def request_stop(self) -> None:
+        """Signal cancellation without waiting for an in-flight read."""
         self._stop.set()
         with self._lock:
             self._snapshot = None
+
+    def stop(self, timeout: float = 1.0) -> bool:
+        self.request_stop()
         if self._thread is not None:
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=max(0.0, timeout))
+        return self._thread is None or not self._thread.is_alive()
 
     def _run(self) -> None:
         while not self._stop.is_set():

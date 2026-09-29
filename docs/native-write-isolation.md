@@ -18,9 +18,20 @@ accepted and rejected CLI replies; it does not establish a cause of meter UDP
 loss or a reduction in hardware latency.
 Transport-failure diagnostics run only after both attempts and after releasing
 the lock, so a blocked logger cannot delay fallback or a subsequent zero write.
-Orderly shutdown requests polling stop, waits at most one second for the poll
-thread, and closes both clients. An already running poll may finish later
-(including existing CLI read fallbacks); closed native clients cannot reconnect.
+Orderly shutdown signals all managed workers before waiting on any of them.
+Their joins share one five-second budget, including MQTT callback drain and the
+hardware watchdog. MQTT's public disconnect/loop-stop calls run on an owned
+daemon cleanup thread. Shared native close is requested only after the MQTT
+callback, watchdog, polling and auxiliary readers are confirmed stopped. If a
+worker is still active, shutdown reports incomplete cleanup and leaves shared
+I/O open rather than interrupting an in-flight hardware write.
+
+A successful cleanup result means managed workers stopped and native close was
+requested. Native event-loop stop is asynchronous; its thread exit is not
+acknowledged by this result. Logging, kernel calls and whole Python process
+termination are not hard bounded. The external installer's two-second graceful
+stop interval is unchanged, so this source change does not promise retirement
+before that deadline or establish a hardware timing improvement.
 
 The regression test blocks a real telemetry signal callback. Routing writes
 through that same loop times out without dispatching a late command; routing

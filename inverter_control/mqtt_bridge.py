@@ -77,6 +77,7 @@ class MQTTBridge:
         self._publish_queue: queue.Queue[tuple[str, str, int, bool]] = queue.Queue(maxsize=100)
         self._publish_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._disconnect_requested = False
 
         # Alert storage for persistence
         self._alert_storage = get_alert_storage()
@@ -95,6 +96,7 @@ class MQTTBridge:
             return False
 
         try:
+            self._disconnect_requested = False
             self._client.connect_async(self.broker, self.port, 60)
             self._client.loop_start()
             # Start async publish thread
@@ -109,10 +111,15 @@ class MQTTBridge:
             logger.warning(f"MQTT connection failed: {e}")
             return False
 
-    def disconnect(self):
-        """Disconnect from MQTT broker"""
+    def request_stop(self):
+        """Reject new commands while the public client shutdown drains a callback."""
         self._connected = False
         self._stop_event.set()
+        self._disconnect_requested = True
+
+    def disconnect(self) -> bool:
+        """Drain the public client callback and report publisher thread exit."""
+        self.request_stop()
         try:
             if self._publish_thread and self._publish_thread.is_alive():
                 self._publish_thread.join(timeout=1.0)
@@ -124,6 +131,7 @@ class MQTTBridge:
             # the network thread. Its state must not outlive this shutdown.
             self._connected = False
             self._stop_event.set()
+        return self._publish_thread is None or not self._publish_thread.is_alive()
 
     def _publish_loop(self):
         """Background thread to drain publish queue"""
@@ -199,6 +207,8 @@ class MQTTBridge:
 
     def _on_message(self, client, userdata, msg):
         """Received message"""
+        if self._disconnect_requested:
+            return
         try:
             topic = msg.topic
 

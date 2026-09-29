@@ -10,6 +10,7 @@ import os
 import queue
 import socket
 import threading
+import time
 from collections import deque
 
 logger = logging.getLogger("inverter-control")
@@ -35,6 +36,9 @@ def _accept_clients():
             logger.info(f"Console client connected: {addr}")
 
             with _clients_lock:
+                if not _running:
+                    client.close()
+                    return
                 _clients.add(client)
 
             # Send buffered lines on a non-blocking socket; a full send buffer
@@ -137,12 +141,10 @@ def start_server():
         logging.exception("Failed to start TCP console server")
 
 
-def stop_server():
-    """Stop the TCP console server"""
-    global _server_socket, _server_thread, _sender_thread, _running
-
+def request_stop_server():
+    """Stop accepting without waiting for the accept thread."""
+    global _server_socket, _running
     _running = False
-
     if _server_socket:
         try:
             _server_socket.close()
@@ -150,20 +152,38 @@ def stop_server():
             pass
         _server_socket = None
 
-    # Close all clients
-    with _clients_lock:
+
+def stop_server(timeout: float = 2.0) -> bool:
+    """Stop the TCP console server within the caller's remaining join budget."""
+    global _server_thread, _sender_thread
+    deadline = time.monotonic() + max(0.0, timeout)
+    request_stop_server()
+    # The sender owns this lock during sends; waiting is part of the budget.
+    if not _clients_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+        return False
+    try:
         for client in _clients.copy():
             try:
                 client.close()
             except Exception:
                 pass
         _clients.clear()
+    finally:
+        _clients_lock.release()
 
+    stopped = True
     if _server_thread:
-        _server_thread.join(timeout=2)
-        _server_thread = None
+        _server_thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        stopped = not _server_thread.is_alive()
+        if stopped:
+            _server_thread = None
 
-    # Drain the outstanding queue, then let the sender thread exit on the next
-    # idle timeout (it checks _running). Daemon threads would stop on process
-    # exit regardless; joining here keeps shutdown clean.
-    _sender_thread = None
+    # The sender drains queued lines and exits on its next idle timeout. Keep
+    # a live handle when the shared budget cannot confirm that it has exited.
+    if _sender_thread:
+        _sender_thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        sender_stopped = not _sender_thread.is_alive()
+        if sender_stopped:
+            _sender_thread = None
+        stopped = sender_stopped and stopped
+    return stopped

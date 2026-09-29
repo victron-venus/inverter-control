@@ -43,7 +43,11 @@ def test_enqueue_failure_is_sticky_across_http_mqtt_and_restart(tmp_path):
     assert responses[0][1]["reason"] == "decision_unavailable"
 
     inbox = PrechargeInbox(path)
-    bridge = SimpleNamespace(forecast_prefix="synthetic/site", _callbacks={"pre_charge": callback})
+    bridge = SimpleNamespace(
+        forecast_prefix="synthetic/site",
+        _callbacks={"pre_charge": callback},
+        _disconnect_requested=False,
+    )
     client = Mock()
     message = SimpleNamespace(topic="synthetic/site/pre_charge_request", payload=raw, retain=False)
     MQTTBridge._on_message(bridge, client, None, message)

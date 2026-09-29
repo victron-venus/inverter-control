@@ -381,7 +381,7 @@ def test_diagnostics_follow_writer_and_close_releases_both_clients(facade):
     assert (read_bus.disconnections, write_bus.disconnections) == (1, 1)
 
 
-def test_close_is_bounded_and_late_poll_cannot_reconnect_native_clients(facade):
+def test_close_is_bounded_and_leaves_inflight_poll_connection_intact(facade):
     telemetry, writer = facade._native, facade._native_write
     entered, release, closed = threading.Event(), threading.Event(), threading.Event()
     late_reads = []
@@ -391,8 +391,10 @@ def test_close_is_bounded_and_late_poll_cannot_reconnect_native_clients(facade):
         if release.wait(5):
             late_reads.append(facade._dbus_get(SERVICE, "/Ac/Grid/L1/Power"))
 
+    close_results = []
+
     def close():
-        facade.close()
+        close_results.append(facade.close())
         closed.set()
 
     poller = threading.Thread(target=facade._poll_loop, daemon=True)
@@ -412,13 +414,16 @@ def test_close_is_bounded_and_late_poll_cannot_reconnect_native_clients(facade):
             assert closed.wait(2)  # A blocked poll cannot hold shutdown indefinitely.
             assert poller.is_alive()
             assert not release.is_set()
-            assert telemetry._fail_until == writer._fail_until == float("inf")
+            assert close_results == [False]
+            assert telemetry.is_connected() and writer.is_connected()
             release.set()
             poller.join(2)
             assert not poller.is_alive()
-            assert late_reads == [None]
+            assert late_reads == ["17"]
             poll.assert_called_once()
-            cli.assert_called_once()  # An in-flight poll retains its existing fallback.
+            cli.assert_not_called()  # The accepted in-flight read stays on its connection.
+            assert facade.close() is True
+            assert telemetry._fail_until == writer._fail_until == float("inf")
             assert writer._get_bus() is None
             read_connect.assert_not_called()
             write_connect.assert_not_called()

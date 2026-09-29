@@ -101,7 +101,9 @@ class TestConsoleServer:
         mock_client2.close.assert_called_once()
         mock_server.close.assert_called_once()
         assert console_server._running is False
-        mock_thread.join.assert_called_once_with(timeout=2)
+        mock_thread.join.assert_called_once()
+        assert 0 <= mock_thread.join.call_args.kwargs["timeout"] <= 2
+        assert console_server._server_thread is mock_thread  # Still alive.
         assert len(console_server._clients) == 0
 
     def test_stop_server_no_server(self):

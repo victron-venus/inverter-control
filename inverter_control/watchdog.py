@@ -368,13 +368,17 @@ class HardwareWatchdog:
         self._thread = threading.Thread(target=self._run, name="hardware-watchdog", daemon=True)
         self._thread.start()
 
-    def stop(self):
-        """Stop the watchdog thread"""
+    def request_stop(self):
+        """Wake the writer; an in-flight write must still finish before teardown."""
         self._enabled = False
         self._stop_event.set()
         self._wake_event.set()
+
+    def stop(self, timeout: float = 5.0) -> bool:
+        self.request_stop()
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=5.0)
+            self._thread.join(timeout=max(0.0, timeout))
+        return self._thread is None or not self._thread.is_alive()
 
     def _run(self):
         """Maintain fallback deadlines without accelerating heartbeat checks."""
