@@ -323,3 +323,131 @@ def test_grid_poll_never_repairs_optional_subscriptions(victron):
         ):
             setattr(victron, name, Mock())
         victron._poll_all()
+
+
+@pytest.mark.parametrize(
+    "gap",
+    [
+        "none",
+        "meter",
+        "system",
+        "missing_source",
+        "ambiguous_source",
+        "owner",
+        "source_signal",
+        "disconnected",
+    ],
+)
+def test_midnight_proof_cannot_span_gap_without_an_intervening_display_read(victron, gap):
+    clock = Clock("2026-09-29T23:59:50")
+    victron._grid_energy = clock.ledger()
+    mode = "valid"
+
+    def reply(service, timeout):
+        if service == SYSTEM_SERVICE:
+            if mode == "system":
+                return None
+            if mode == "missing_source":
+                return {}
+            if mode == "ambiguous_source":
+                return system_fields() | {
+                    "/Ac/In/1/Source": 1,
+                    "/Ac/In/1/ServiceName": METER + "_other",
+                    "/Ac/In/1/DeviceInstance": 41,
+                }
+            return system_fields()
+        return None if mode == "meter" else readings() | {"/NrOfPhases": 2}
+
+    victron._native.get_values_connected.side_effect = reply
+    with (
+        patch("inverter_control.victron.time.time", lambda: clock.wall),
+        patch("inverter_control.victron.time.monotonic", lambda: clock.mono),
+        patch.object(victron, "_reconciliation_fallback", return_value=None),
+    ):
+        victron._read_system_snapshot()
+        clock.advance(5)
+        if gap == "owner":
+            victron._on_name_owner_changed(METER, ":1.1", "")
+        elif gap == "source_signal":
+            victron._apply_fast_value(SYSTEM_SERVICE, "/Ac/In/0/Source", None)
+            victron._apply_fast_value(SYSTEM_SERVICE, "/Ac/In/0/Source", "1")
+        elif gap == "disconnected":
+            victron._apply_fast_value(METER, "/Connected", "0")
+            victron._apply_fast_value(METER, "/Connected", "1")
+        else:
+            mode = gap
+            victron._read_system_snapshot()
+        # Deliberately no get_grid_daily_energy() call between the gap and recovery.
+        clock.advance(15)
+        mode = "valid"
+        victron._read_system_snapshot()
+        result = victron.get_grid_daily_energy()
+    assert result["status"] == ("complete" if gap == "none" else "partial")
+    assert result["complete"] == (gap == "none")
+    assert result["started_at"] == (clock.wall - 10 if gap == "none" else clock.wall)
+    assert result["import_kwh"] == result["export_kwh"] == 0
+
+
+@pytest.mark.parametrize("failed_service", [SYSTEM_SERVICE, METER])
+def test_late_failed_reply_does_not_invalidate_a_newer_accepted_energy_read(
+    victron, failed_service
+):
+    clock = Clock()
+    victron._grid_energy = clock.ledger()
+    newer_read = False
+
+    def reply(service):
+        nonlocal newer_read
+        if service == failed_service and not newer_read:
+            newer_read = True
+            clock.advance(5)
+            victron._read_system_snapshot()
+            return None, clock.mono + 0.1
+        return (system_fields() if service == SYSTEM_SERVICE else readings(102)), clock.mono + 0.1
+
+    with (
+        patch("inverter_control.victron.time.time", lambda: clock.wall),
+        patch("inverter_control.victron.time.monotonic", lambda: clock.mono),
+        patch.object(victron, "_reconciliation_fallback", return_value=None),
+    ):
+        refresh(victron)
+        with patch.object(victron, "_native_reconciliation_read", side_effect=reply):
+            victron._read_system_snapshot()
+        result = victron.get_grid_daily_energy()
+    assert result["status"] == "partial"
+    assert result["import_kwh"] == 2
+    assert result["observed_at"] == clock.wall
+
+
+def test_selected_instance_mismatch_cannot_establish_midnight_baseline_without_getters(victron):
+    clock = Clock("2026-09-29T23:59:50")
+    victron._grid_energy = clock.ledger()
+    selected_instance = 40
+
+    def reply(service, timeout):
+        return (
+            system_fields(instance=selected_instance)
+            if service == SYSTEM_SERVICE
+            else readings() | {"/NrOfPhases": 2}
+        )
+
+    victron._native.get_values_connected.side_effect = reply
+    with (
+        patch("inverter_control.victron.time.time", lambda: clock.wall),
+        patch("inverter_control.victron.time.monotonic", lambda: clock.mono),
+    ):
+        victron._read_system_snapshot()
+        clock.advance(5)
+        selected_instance = 41  # The physical meter still reports DeviceInstance 40.
+        victron._read_system_snapshot()
+        clock.advance(15)
+        victron._read_system_snapshot()
+        clock.advance(10)
+        selected_instance = 40
+        victron._read_system_snapshot()
+        # No getter while mismatched; those replies cannot become a hidden baseline.
+        result = victron.get_grid_daily_energy()
+    assert result["status"] == "partial"
+    assert not result["complete"]
+    assert result["started_at"] == clock.wall
+    assert result["import_kwh"] == result["export_kwh"] == 0

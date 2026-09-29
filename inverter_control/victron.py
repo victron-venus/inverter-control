@@ -32,7 +32,7 @@ from .control_flags import CONTROL_FLAG_KEYS
 from .dbus_native import SLOW_SET_TIMING_MS, NativeDbusClient
 from .grid_backup import GridBackup, parse_backup_snapshot
 from .grid_energy import STATE_FILE as GRID_ENERGY_STATE_FILE
-from .grid_energy import GridEnergyLedger, parse_energy_snapshot
+from .grid_energy import GridEnergyLedger, parse_energy_snapshot, parse_meter_source
 from .grid_telemetry import (
     GRID_PATHS,
     GridTelemetry,
@@ -266,7 +266,7 @@ class VictronDBus:
         self._next_timezone_subscription_retry = 0.0
         self._grid_energy_timezone = ""
         self._grid_energy_timezone_revision = 0
-        self._grid_energy_timezone_lock = threading.Lock()
+        self._grid_energy_timezone_lock = threading.RLock()
         self._load_battery_daily_energy()
 
         self._test_mode = test_mode
@@ -431,7 +431,7 @@ class VictronDBus:
         generation = self._grid_telemetry.generation
         grid_fields = self._native.get_values(SYSTEM_SERVICE)
         if isinstance(grid_fields, dict):
-            applied_generation = self._grid_telemetry.replace(grid_fields, generation)
+            applied_generation = self._replace_grid_snapshot(grid_fields, generation)
             if applied_generation is not None:
                 self._system_data["_last_update"] = time.time()
                 meter = self._grid_telemetry.selected_meter()
@@ -439,7 +439,7 @@ class VictronDBus:
                     self._set_signals_healthy(False)
                 self._refresh_grid_meter(applied_generation)
         elif generation == self._grid_telemetry.generation:
-            self._grid_telemetry.unavailable("System grid snapshot unavailable")
+            self._invalidate_grid_snapshot(generation, "System grid snapshot unavailable")
         self._schedule_grid_retry()
         for service, path in self._fast_targets():
             if service == SYSTEM_SERVICE and path in GRID_PATHS:
@@ -526,13 +526,17 @@ class VictronDBus:
             self._set_grid_energy_timezone(raw)
             return
         meter_updated = False
-        if service == SYSTEM_SERVICE and path in GRID_PATHS:
-            old_meter = self._grid_telemetry.selected_meter()
-            self._grid_telemetry.update(path, raw)
-            if self._grid_telemetry.selected_meter() != old_meter:
-                self._discovery_requested.set()
-        else:
-            meter_updated = self._grid_telemetry.update_meter(service, path, raw)
+        with self._grid_energy_timezone_lock:
+            generation = self._grid_telemetry.generation
+            if service == SYSTEM_SERVICE and path in GRID_PATHS:
+                old_meter = self._grid_telemetry.selected_meter()
+                self._grid_telemetry.update(path, raw)
+                if self._grid_telemetry.selected_meter() != old_meter:
+                    self._discovery_requested.set()
+            else:
+                meter_updated = self._grid_telemetry.update_meter(service, path, raw)
+            if self._grid_telemetry.generation != generation:
+                self._grid_energy.invalidate()
         if raw is None or meter_updated:
             return
         if service == SYSTEM_SERVICE:
@@ -792,7 +796,10 @@ class VictronDBus:
         - A service gains an owner (appears on the bus)
         - A service loses its owner (disappears from the bus)
         """
-        grid_changed = self._grid_telemetry.owner_changed(service_name)
+        with self._grid_energy_timezone_lock:
+            grid_changed = self._grid_telemetry.owner_changed(service_name)
+            if grid_changed:
+                self._grid_energy.invalidate()
         if service_name == SETTINGS_SERVICE:
             self._set_grid_energy_timezone(None)
         if self._grid_backup and service_name == self._grid_backup.service:
@@ -979,6 +986,23 @@ class VictronDBus:
             else time.monotonic() + UNHEALTHY_POLL_INTERVAL
         )
 
+    def _replace_grid_snapshot(self, fields, generation):
+        """Record selection gaps immediately, even if no display read occurs between replies."""
+        with self._grid_energy_timezone_lock:
+            previous = self._grid_telemetry.selected_meter_identity()
+            applied = self._grid_telemetry.replace(fields, generation)
+            current = self._grid_telemetry.selected_meter_identity()
+            if applied is not None and (current is None or current != previous):
+                self._grid_energy.invalidate()
+            return applied
+
+    def _invalidate_grid_snapshot(self, generation, reason):
+        """An old failed reply must not invalidate a newer accepted observation."""
+        with self._grid_energy_timezone_lock:
+            if generation == self._grid_telemetry.generation:
+                self._grid_telemetry.unavailable(reason)
+                self._grid_energy.invalidate()
+
     def _read_system_snapshot(self):
         generation = self._grid_telemetry.generation
         fields, deadline = self._native_reconciliation_read(SYSTEM_SERVICE)
@@ -992,7 +1016,7 @@ class VictronDBus:
             )
             parsed["gt"] = parsed["g1"] + parsed["g2"]
             parsed["tt"] = parsed["t1"] + parsed["t2"]
-            applied_generation = self._grid_telemetry.replace(fields, generation)
+            applied_generation = self._replace_grid_snapshot(fields, generation)
             if applied_generation is not None:
                 self._refresh_grid_meter(applied_generation)
             self._system_data.update(parsed)
@@ -1013,12 +1037,12 @@ class VictronDBus:
         if output:
             self._parse_system_data(output, generation)
         elif generation == self._grid_telemetry.generation:
-            self._grid_telemetry.unavailable("System grid read unavailable")
+            self._invalidate_grid_snapshot(generation, "System grid read unavailable")
 
     def _parse_system_data(self, output: str, generation: int | None = None):
         """Parse system data from tree query output using shared parser"""
         parsed = parse_system_data_output(output)
-        applied_generation = self._grid_telemetry.replace(parse_grid_snapshot(output), generation)
+        applied_generation = self._replace_grid_snapshot(parse_grid_snapshot(output), generation)
         if applied_generation is not None:
             self._refresh_grid_meter(applied_generation)
         self._system_data.update(parsed)
@@ -1028,6 +1052,9 @@ class VictronDBus:
         """Revalidate the selected external meter without using inverter input flags."""
         meter = self._grid_telemetry.selected_meter()
         if not meter:
+            with self._grid_energy_timezone_lock:
+                if generation == self._grid_telemetry.generation:
+                    self._grid_energy.invalidate()
             return
         fields, deadline = self._native_reconciliation_read(meter)
         if not isinstance(fields, dict):
@@ -1052,8 +1079,16 @@ class VictronDBus:
         # counters are fresh when read again. The existing generation guard
         # rejects replies acquired across owner or source changes.
         observed_at, observed_mono = time.time(), time.monotonic()
-        if self._grid_telemetry.replace_meter(meter, fields, generation):
-            with self._grid_energy_timezone_lock:
+        with self._grid_energy_timezone_lock:
+            current = generation == self._grid_telemetry.generation
+            accepted = self._grid_telemetry.replace_meter(meter, fields, generation)
+            source = parse_meter_source(meter, fields) if isinstance(fields, dict) else None
+            identity_matches = (
+                source is not None
+                and self._grid_telemetry.selected_meter_identity()
+                == (source["service"], source["device_instance"])
+            )
+            if accepted and identity_matches:
                 self._grid_energy.observe(
                     meter,
                     fields,
@@ -1061,7 +1096,11 @@ class VictronDBus:
                     observed_at=observed_at,
                     observed_mono=observed_mono,
                 )
-            self._grid_energy_generation = generation + 1
+                self._grid_energy_generation = generation + 1
+            elif current:
+                # Record the gap at acquisition time; waiting for a display getter
+                # would allow an unchanged midnight bracket to span a failed read.
+                self._grid_energy.invalidate()
 
     def _poll_shunt_data(self):
         """Poll bank V/I/P from the SmartShunt service (tree query)."""
@@ -1877,13 +1916,13 @@ class VictronDBus:
 
         if not output:
             if generation == self._grid_telemetry.generation:
-                self._grid_telemetry.unavailable("System grid read unavailable")
+                self._invalidate_grid_snapshot(generation, "System grid read unavailable")
             self._schedule_grid_retry()
             self._merge_grid_status(data)
             return data
 
         parsed = parse_system_data_output(output)
-        applied_generation = self._grid_telemetry.replace(parse_grid_snapshot(output), generation)
+        applied_generation = self._replace_grid_snapshot(parse_grid_snapshot(output), generation)
         if applied_generation is not None:
             self._refresh_grid_meter(applied_generation)
         self._schedule_grid_retry()

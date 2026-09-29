@@ -57,7 +57,8 @@ def _number(value):
     return value if math.isfinite(value) and value >= 0 else None
 
 
-def _source(service, fields):
+def parse_meter_source(service, fields):
+    """Validate and normalize physical meter identity from a complete D-Bus reply."""
     instance = _number(fields.get("/DeviceInstance"))
     serial = fields.get("/Serial")
     if (
@@ -116,6 +117,7 @@ class GridEnergyLedger:
             self._validate_state(state)
             self._state = state
         except FileNotFoundError:
+            # First start has no persisted baseline yet.
             pass
         except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
             self._read_error = "state_unavailable"
@@ -130,7 +132,7 @@ class GridEnergyLedger:
         ):
             raise ValueError("Invalid energy state schema")
         source = state["source"]
-        if type(source["device_instance"]) is not int or source != _source(
+        if type(source["device_instance"]) is not int or source != parse_meter_source(
             source["service"],
             {"/DeviceInstance": source["device_instance"], "/Serial": source["serial"]},
         ):
@@ -179,7 +181,7 @@ class GridEnergyLedger:
             self.invalidate()
             return
         at, mono = float(at), float(mono)
-        source = _source(service, fields)
+        source = parse_meter_source(service, fields)
         counters = [_number(fields.get(path)) for path in _COUNTERS]
         if source is None or None in counters or _number(fields.get("/Connected")) != 1:
             self.invalidate()
