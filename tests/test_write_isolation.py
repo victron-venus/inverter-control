@@ -422,7 +422,8 @@ def test_close_is_bounded_and_leaves_inflight_poll_connection_intact(facade):
             assert late_reads == ["17"]
             poll.assert_called_once()
             cli.assert_not_called()  # The accepted in-flight read stays on its connection.
-            assert facade.close() is True
+            close_result = facade.close()
+            assert close_result is True
             assert telemetry._fail_until == writer._fail_until == float("inf")
             assert writer._get_bus() is None
             read_connect.assert_not_called()

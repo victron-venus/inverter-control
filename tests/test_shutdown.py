@@ -357,13 +357,15 @@ def test_native_close_is_not_requested_while_polling_is_alive():
     victron._poll_thread.start()
     try:
         assert entered.wait(1)
-        assert victron.close(timeout=0) is False
+        close_result = victron.close(timeout=0)
+        assert close_result is False
         victron._native_write.close.assert_not_called()
         victron._native.close.assert_not_called()
     finally:
         release.set()
         victron._poll_thread.join(timeout=1)
-    assert victron.close(timeout=0.1) is True
+    close_result = victron.close(timeout=0.1)
+    assert close_result is True
     victron._native_write.close.assert_called_once()
     victron._native.close.assert_called_once()
 
