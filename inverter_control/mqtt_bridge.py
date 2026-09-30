@@ -72,6 +72,7 @@ class MQTTBridge:
         }
         self._setpoint_override_pending = True
         self._setpoint_override_lock = threading.RLock()
+        self._setpoint_override_publish_lock = threading.Lock()
 
         # Async publish queue
         self._publish_queue: queue.Queue[tuple[str, str, int, bool]] = queue.Queue(maxsize=100)
@@ -142,13 +143,7 @@ class MQTTBridge:
                     if topic == f"{self.prefix}/setpoint_override":
                         # Queue entries are wakeups, not snapshots: a previous
                         # Start status must not replace a newer Stop on reconnect.
-                        with self._setpoint_override_lock:
-                            self._client.publish(
-                                topic,
-                                json.dumps(self._setpoint_override_status),
-                                qos=1,
-                                retain=True,
-                            )
+                        self._publish_latest_setpoint_override(self._client)
                     else:
                         self._client.publish(topic, payload, qos=qos, retain=retain)
             except Exception as e:
@@ -156,6 +151,17 @@ class MQTTBridge:
             finally:
                 # Completion tracks local processing, even when publish fails.
                 self._publish_queue.task_done()
+
+    def _publish_latest_setpoint_override(self, client):
+        # Both senders serialize before taking their latest snapshot. Keep
+        # client.publish outside the state lock used by control callbacks.
+        with self._setpoint_override_publish_lock:
+            with self._setpoint_override_lock:
+                status = self._setpoint_override_status
+            client.publish(
+                f"{self.prefix}/setpoint_override", json.dumps(status), qos=1, retain=True
+            )
+            return status
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):  # pylint: disable=too-many-arguments,unused-argument
         """Connected to broker"""
@@ -175,14 +181,12 @@ class MQTTBridge:
         client.subscribe(f"{self.forecast_prefix}/forecast_json", qos=1)
         client.subscribe(f"{self.forecast_prefix}/pre_charge_request", qos=1)
         self._publish_portal_id(client)
+        published_status = self._publish_latest_setpoint_override(client)
         with self._setpoint_override_lock:
-            client.publish(
-                f"{self.prefix}/setpoint_override",
-                json.dumps(self._setpoint_override_status),
-                qos=1,
-                retain=True,
-            )
-            self._setpoint_override_pending = False
+            # A producer may have changed intent during the send and found the
+            # queue full. Its pending retry must survive this older replay.
+            if self._setpoint_override_status is published_status:
+                self._setpoint_override_pending = False
         # Resend any unacknowledged alerts on (re)connection
         self.resend_unacknowledged_alerts()
 
