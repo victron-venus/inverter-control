@@ -70,16 +70,23 @@ class BackgroundReader:
     def _run(self) -> None:
         while not self._stop.is_set():
             started = monotonic()
+            error_type = None
             try:
                 values = {**self._unknown, **self._refresh()}
                 # Age from the beginning of the read pass: a delayed result is
                 # not relabelled fresh just because its last call returned now.
                 snapshot = (started, values)
             except Exception as error:
-                logger.warning("Auxiliary reader %s failed: %s", self._name, type(error).__name__)
                 snapshot = None
+                error_type = type(error).__name__
             with self._lock:
                 if not self._stop.is_set():
                     self._snapshot = snapshot
+            if error_type is not None:
+                # Invalidate failed data before an optional sink can block or fail.
+                try:
+                    logger.warning("Auxiliary reader %s failed: %s", self._name, error_type)
+                except Exception:
+                    pass  # Diagnostics must not terminate the refresh worker.
             # Keep a slow/erroring service from spinning or queuing catch-up work.
             self._stop.wait(self._interval)
