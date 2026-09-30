@@ -143,7 +143,12 @@ def test_stage_diagnostics_do_not_charge_the_next_stage(read_ms):
         patch.object(controller, "update_state"),
         patch.object(controller, "get_control_flag", return_value=False),
         patch.object(controller.metrics, "record_stage", side_effect=record_with_overhead),
-        patch(f"{_MOD}.logger.warning", side_effect=lambda *_args: advance(50.0)) as warning,
+        patch.object(
+            controller._watchdog,
+            "_record_diagnostic",
+            side_effect=lambda *_args, **_kw: advance(50.0),
+        ) as diagnostic,
+        patch(f"{_MOD}.logger.warning") as warning,
         patch(f"{_MOD}.broadcast_line"),
     ):
         assert controller.run_cycle() is True
@@ -164,7 +169,8 @@ def test_stage_diagnostics_do_not_charge_the_next_stage(read_ms):
     )
     # Diagnostics still consume cycle time and count toward its deadline.
     warning_count = 1 if read_ms == 400.0 else 0
-    assert warning.call_count == warning_count
+    warning.assert_not_called()
+    assert diagnostic.call_count == warning_count
     assert snapshot["cycle_ms"]["max"] == read_ms + 5.0 + 70.0 + 50.0 * warning_count
     assert snapshot["cycle_ms"]["missed_deadlines"] == warning_count
     victron.set_grid_setpoint.assert_called_once_with(-100)

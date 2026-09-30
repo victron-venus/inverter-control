@@ -36,6 +36,7 @@ EVENT_LEVELS = {
     "watchdog_restore_rejected": logging.ERROR,
     "watchdog_restore_failed": logging.ERROR,
     "watchdog_rearmed": logging.INFO,
+    "control_stage_slow": logging.WARNING,
 }
 
 
@@ -58,6 +59,7 @@ class WriteDiagnostics:
         dry_run=None,
         value=None,
         seconds=None,
+        stage=None,
     ):
         if type(event) is not str or event not in EVENT_LEVELS:
             return
@@ -80,6 +82,10 @@ class WriteDiagnostics:
             type(seconds) is int and 0 <= seconds <= 2**31
         ):
             record["seconds"] = seconds
+        if event == "control_stage_slow":
+            if type(stage) is not str or "seconds" not in record or record["seconds"] < 0:
+                return
+            record["stage"] = stage[:MAX_TEXT]
         if not self._lock.acquire(blocking=False):
             return
         try:

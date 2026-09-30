@@ -905,9 +905,16 @@ class InverterController:
     def _read_performance(self) -> dict:
         """Procfs, percentile sorting and exporter locks stay off the control loop."""
         for diagnostic in self.victron.drain_write_diagnostics():
-            logger.log(
-                EVENT_LEVELS[diagnostic["event"]], "Hardware write diagnostic: %s", diagnostic
-            )
+            if diagnostic["event"] == "control_stage_slow":
+                logger.warning(
+                    "Control cycle stage %s slow: %.0fms",
+                    diagnostic["stage"],
+                    diagnostic["seconds"] * 1000.0,
+                )
+            else:
+                logger.log(
+                    EVENT_LEVELS[diagnostic["event"]], "Hardware write diagnostic: %s", diagnostic
+                )
         for timing in self.victron.drain_write_timings():
             logger.warning("Native D-Bus write timing: %s", timing)
         self.metrics.sample_process()
@@ -1217,7 +1224,9 @@ class InverterController:
             # debug, not a hang to force-interrupt (the old SIGALRM approach
             # corrupted cross-thread futures on the reconnect path, 2026-08-27).
             if elapsed_ms > STAGE_SLOW_MS:
-                logger.warning("Control cycle stage %s slow: %.0fms", name, elapsed_ms)
+                self._watchdog._record_diagnostic(
+                    "control_stage_slow", stage=name, seconds=elapsed_ms / 1000.0
+                )
             # Keep diagnostic overhead out of the next stage, but in the full cycle.
             stage_started = time.perf_counter()
 
@@ -1372,6 +1381,10 @@ class InverterController:
         except KeyboardInterrupt:
             return False
         except Exception as e:
-            self._reset_submeter_trim("cycle_error")
-            log_exception(f"Error in control cycle: {e}")
+            try:
+                self._reset_submeter_trim("cycle_error")
+                log_exception(f"Error in control cycle: {e}")
+            finally:
+                # Failed iterations must not disappear from latency/deadline stats.
+                self.metrics.record_cycle(cycle_started, self.loop_interval)
             return True
