@@ -76,6 +76,7 @@ class MQTTBridge:
         # Async publish queue
         self._publish_queue: queue.Queue[tuple[str, str, int, bool]] = queue.Queue(maxsize=100)
         self._publish_thread: threading.Thread | None = None
+        self._publish_thread_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._disconnect_requested = False
 
@@ -99,12 +100,8 @@ class MQTTBridge:
             self._disconnect_requested = False
             self._client.connect_async(self.broker, self.port, 60)
             self._client.loop_start()
-            # Start async publish thread
-            self._stop_event.clear()
-            self._publish_thread = threading.Thread(
-                target=self._publish_loop, daemon=True, name="MQTTPublish"
-            )
-            self._publish_thread.start()
+            # on_connect may already have started it while resending alerts.
+            self._ensure_publish_thread()
             logger.info(f"MQTT connecting to {self.broker}:{self.port}")
             return True
         except Exception as e:
@@ -138,6 +135,9 @@ class MQTTBridge:
         while not self._stop_event.is_set():
             try:
                 topic, payload, qos, retain = self._publish_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
                 if self._client and self._connected:
                     if topic == f"{self.prefix}/setpoint_override":
                         # Queue entries are wakeups, not snapshots: a previous
@@ -151,11 +151,11 @@ class MQTTBridge:
                             )
                     else:
                         self._client.publish(topic, payload, qos=qos, retain=retain)
-                self._publish_queue.task_done()
-            except queue.Empty:
-                continue
             except Exception as e:
                 logger.debug(f"MQTT publish loop error: {e}")
+            finally:
+                # Completion tracks local processing, even when publish fails.
+                self._publish_queue.task_done()
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):  # pylint: disable=too-many-arguments,unused-argument
         """Connected to broker"""
@@ -290,7 +290,11 @@ class MQTTBridge:
 
     def _ensure_publish_thread(self):
         """Start publish thread if not running (lazy init for tests)"""
-        if self._publish_thread is None or not self._publish_thread.is_alive():
+        if self._publish_thread is not None and self._publish_thread.is_alive():
+            return
+        with self._publish_thread_lock:
+            if self._publish_thread is not None and self._publish_thread.is_alive():
+                return
             self._stop_event.clear()
             self._publish_thread = threading.Thread(
                 target=self._publish_loop, daemon=True, name="MQTTPublish"
