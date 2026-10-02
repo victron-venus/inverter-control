@@ -266,6 +266,17 @@ def _setup_mqtt_bridge(controller):
     bridge.register_callback("limits", _safe_limits)
     bridge.register_callback("ess_mode", lambda p: controller.toggle_ess_mode())
 
+    def _select_ess_mode(payload):
+        try:
+            controller.select_ess_mode(payload)
+        except ValueError as exc:
+            logger.warning("MQTT ESS selection rejected: %s", exc)
+            return
+        bridge.publish_state(controller.get_state_for_mqtt())
+
+    bridge.register_callback("set_ess_mode", _select_ess_mode)
+
+
     def _safe_loop_interval(p):
         try:
             val = float(p.get("interval", 0.33))

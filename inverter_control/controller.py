@@ -169,6 +169,9 @@ class InverterController:
         from .tariff_service import TariffService  # pylint: disable=import-outside-toplevel
 
         self.tariff = TariffService(self.ui_config.get("electricity_tariff"))
+        from .ess_modes import EssSelection
+
+        self.ess_selection = EssSelection()
 
         # Initialize Logic and UI components
         config_dict = {k: getattr(_config, k) for k in _config.EXPORTED_KEYS}
@@ -383,6 +386,16 @@ class InverterController:
     def toggle_dry_run(self) -> bool:
         with self._watchdog._lock:
             return self.set_dry_run(not self.dry_run)
+
+    def select_ess_mode(self, payload: dict) -> None:
+        def write(mode):
+            with self._watchdog._lock:
+                if self.dry_run:
+                    raise RuntimeError("ESS changes are unavailable in DRY mode")
+                self.victron.select_ess_mode(mode)
+                self._trim_mode_generation += 1
+
+        self.ess_selection.apply(payload, write)
 
     def toggle_ess_mode(self) -> dict[str, Any]:
         current = self.victron.get_ess_mode()
@@ -1085,6 +1098,7 @@ class InverterController:
         # Always publish current flags so MQTT/HA see set_control_flag immediately
         out["booleans"] = dict(self._control_flags)
         out["dry_run"] = self.dry_run
+        out["ess_mode"] = {**self.victron.get_ess_mode(), **self.ess_selection.snapshot()}
         # Daemon-owned control intent is never stripped by the slim payload.
         out["setpoint_override"] = self.get_setpoint_override()
         out["submeter_trim"] = self.submeter_trim.status()

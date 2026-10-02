@@ -151,6 +151,7 @@ the controller does not require Tasmota hardware.
   - Charge Battery: Force battery charging
   - Do Not Supply Charger: EV charges from grid only
 - **Minimize Charging**: Auto-control dump loads to consume excess solar
+- **Explicit ESS Mode Selection**: [Six absolute power/profile choices](docs/ess-mode-selection.md) with observed-state feedback; the legacy toggle remains compatible
 - **MQTT Inverter Controls**: Daemon-owned flags and button definitions for Desktop and optional HA MQTT switches; no HA dependency for flag state or commands
 - **Optional Home Assistant Integration**: Sensor data and dump-load switch control (`minimize_charging` actuators still require HA)
 - **Fast Control Loop**: 3 updates per second via D-Bus

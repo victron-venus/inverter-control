@@ -202,6 +202,7 @@ class VictronDBus:
         self._native_write: NativeDbusClient | None = None
         # ESS mode rarely changes; cache it so the per-cycle dashboard read
         # doesn't cost 2 D-Bus roundtrips every loop.
+        self._ess_selection_lock = threading.RLock()
         self._ess_mode_cache: dict[str, Any] | None = None
         self._ess_mode_cache_time: float = 0.0
         # Cache of discovered cell counts per chain service, so we don't probe
@@ -2123,17 +2124,22 @@ class VictronDBus:
         main-thread native read here contended with the poll on the same bus,
         contributing to the update_state tail spikes. The only synchronous
         read is a one-shot on startup."""
-        with self._dbus_lock:
-            if self._ess_mode_cache is not None and self._ess_mode_cache_time > 0:
+        with self._ess_selection_lock:
+            with self._dbus_lock:
+                if self._ess_mode_cache is not None and self._ess_mode_cache_time > 0:
+                    return dict(self._ess_mode_cache)
+            self._reconcile_ess_mode()
+            with self._dbus_lock:
                 return dict(self._ess_mode_cache)
-        self._reconcile_ess_mode()
-        with self._dbus_lock:
-            return dict(self._ess_mode_cache)
 
     def _reconcile_ess_mode(self) -> None:
         """Refresh the ESS mode cache from settings (poll thread only)."""
-        hub4_mode = 0
-        bl_state = 0
+        with self._ess_selection_lock:
+            self._read_ess_mode()
+
+    def _read_ess_mode(self) -> None:
+        hub4_mode = None
+        bl_state = None
 
         val = self._dbus_get(SETTINGS_SERVICE, HUB4_MODE_PATH)
         if val:
@@ -2152,19 +2158,32 @@ class VictronDBus:
         if hub4_mode == 3:
             mode_name = "External control"
             is_external = True
-        elif hub4_mode == 1:
+        elif hub4_mode in (1, 2):
             is_external = False
-            if bl_state in (0, 10):
+            if bl_state in (0, 10, 11, 12):
                 mode_name = "Optimized without BatteryLife"
             elif bl_state == 9:
                 mode_name = "Keep batteries charged"
-            else:
+            elif bl_state in range(1, 9):
                 mode_name = "Optimized (BatteryLife)"
+            else:
+                mode_name = "Unknown ESS profile"
         else:
             mode_name = f"Unknown ({hub4_mode})"
             is_external = False
 
+        from .ess_modes import selected_mode
+
+        vebus_mode = None
+        if self._vebus_service:
+            raw = self._dbus_get_native_only(self._vebus_service, "/Mode")
+            try:
+                vebus_mode = int(raw) if raw is not None else None
+            except (ValueError, TypeError):
+                pass
         result = {
+            "selected": selected_mode(hub4_mode, bl_state, vebus_mode),
+            "vebus_mode": vebus_mode,
             "hub4_mode": hub4_mode,
             "battery_life_state": bl_state,
             "mode_name": mode_name,
@@ -2175,7 +2194,11 @@ class VictronDBus:
             self._ess_mode_cache_time = time.time()
 
     def set_ess_mode(self, external: bool) -> bool:
-        """Set ESS mode"""
+        """Legacy toggle setter, serialized with explicit selections and observations."""
+        with self._ess_selection_lock:
+            return self._set_legacy_ess_mode(external)
+
+    def _set_legacy_ess_mode(self, external: bool) -> bool:
         if external:
             result = self._dbus_set(SETTINGS_SERVICE, HUB4_MODE_PATH, 3, "int32")
         else:
@@ -2191,6 +2214,41 @@ class VictronDBus:
             self._ess_mode_cache = None
             self._ess_mode_cache_time = 0.0
         return result
+
+    def select_ess_mode(self, mode: str) -> None:
+        """Apply an absolute choice; never turn power on as a side effect of ESS selection."""
+        from .ess_modes import BATTERY_LIFE_PATH, MODES
+
+        if mode not in MODES:
+            raise ValueError("Unknown ESS mode")
+        with self._ess_selection_lock:
+            if mode in ("off", "on"):
+                service = self._vebus_service
+                if not service or self._dbus_get(service, "/ModeIsAdjustable") != "1":
+                    raise RuntimeError("Inverter switch is unavailable or not adjustable")
+                writes = [(service, "/Mode", 4 if mode == "off" else 3)]
+            else:
+                raw = self._dbus_get(SETTINGS_SERVICE, HUB4_MODE_PATH)
+                if raw not in ("1", "2", "3"):
+                    raise RuntimeError("Current ESS settings are unavailable")
+                if mode == "external_control":
+                    writes = [(SETTINGS_SERVICE, HUB4_MODE_PATH, 3)]
+                else:
+                    value = {"optimized_with_battery_life": 1,
+                             "optimized_without_battery_life": 10,
+                             "keep_batteries_charged": 9}[mode]
+                    # Preserve phase compensation mode 2 when already selected.
+                    # Write the profile first; a rejection must not enable another profile.
+                    writes = [(SETTINGS_SERVICE, BATTERY_LIFE_PATH, value),
+                              (SETTINGS_SERVICE, HUB4_MODE_PATH, 2 if raw == "2" else 1)]
+            try:
+                for service, path, value in writes:
+                    if not self._dbus_set(service, path, value, "int32"):
+                        raise RuntimeError("ESS change unconfirmed; check the current mode before retrying")
+            finally:
+                with self._dbus_lock:
+                    self._ess_mode_cache = None
+                    self._ess_mode_cache_time = 0.0
 
     @staticmethod
     def _parse_float_or_zero(raw: str) -> float:
