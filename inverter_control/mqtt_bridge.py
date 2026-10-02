@@ -9,6 +9,7 @@ import logging
 import math
 import queue
 import threading
+from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -80,6 +81,10 @@ class MQTTBridge:
         self._publish_thread_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._disconnect_requested = False
+        # Lossy diagnostics are separate from the bounded MQTT payload queue.
+        self._publish_diagnostics = deque(maxlen=32)
+        self._publish_diagnostics_lock = threading.Lock()
+        self._draining_publish_diagnostics = False
 
         # Alert storage for persistence
         self._alert_storage = get_alert_storage()
@@ -137,6 +142,7 @@ class MQTTBridge:
             try:
                 topic, payload, qos, retain = self._publish_queue.get(timeout=0.1)
             except queue.Empty:
+                self._drain_publish_diagnostics()
                 continue
             try:
                 if self._client and self._connected:
@@ -151,6 +157,45 @@ class MQTTBridge:
             finally:
                 # Completion tracks local processing, even when publish fails.
                 self._publish_queue.task_done()
+            self._drain_publish_diagnostics()
+
+    def _record_publish_diagnostic(self, level, message, error=None):
+        """Best effort only: no sink, exception stringification or lock waits."""
+        lock = getattr(self, "_publish_diagnostics_lock", None)
+        if lock is None:
+            return
+        # A logging handler may forward its output through publish_console.
+        # Do not turn its enqueue error into another diagnostic forever.
+        if (
+            self._draining_publish_diagnostics
+            and threading.current_thread() is self._publish_thread
+        ):
+            return
+        error_type = type(error).__name__[:128] if error is not None else None
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            self._publish_diagnostics.append((level, message[:256], error_type))
+        finally:
+            lock.release()
+
+    def _drain_publish_diagnostics(self):
+        """Emit one bounded batch in the existing worker, outside producer locks."""
+        with self._publish_diagnostics_lock:
+            pending = list(self._publish_diagnostics)
+            self._publish_diagnostics.clear()
+        self._draining_publish_diagnostics = True
+        try:
+            for level, message, error_type in pending:
+                if self._stop_event.is_set():
+                    break
+                try:
+                    logger.log(level, "%s%s", message, f" ({error_type})" if error_type else "")
+                except Exception:
+                    # A broken diagnostic sink must not kill the MQTT worker.
+                    pass
+        finally:
+            self._draining_publish_diagnostics = False
 
     def _publish_latest_setpoint_override(self, client):
         # Both senders serialize before taking their latest snapshot. Keep
@@ -321,9 +366,11 @@ class MQTTBridge:
             self._publish_queue.put_nowait((f"{self.prefix}/state", payload, 0, True))
             return True
         except queue.Full:
-            logger.debug("MQTT publish queue full, dropping state update")
+            self._record_publish_diagnostic(
+                logging.DEBUG, "MQTT publish queue full, dropping state update"
+            )
         except Exception as e:
-            logger.debug(f"MQTT publish queue error: {e}")
+            self._record_publish_diagnostic(logging.DEBUG, "MQTT publish queue error", e)
         return False
 
     def publish_setpoint_override(self, status: dict[str, Any]) -> None:
@@ -341,7 +388,9 @@ class MQTTBridge:
             except queue.Full:
                 # The main loop retries the latest status; never block a hardware
                 # writer while the remote dashboard is disconnected or slow.
-                logger.warning("MQTT queue full; setpoint override acknowledgement pending")
+                self._record_publish_diagnostic(
+                    logging.WARNING, "MQTT queue full; setpoint override acknowledgement pending"
+                )
 
     def publish_console(self, line: str):
         """Publish console line (async, non-blocking)"""
@@ -354,7 +403,7 @@ class MQTTBridge:
         except queue.Full:
             pass  # Drop console lines silently when queue full
         except Exception as e:
-            logger.debug(f"MQTT console queue error: {e}")
+            self._record_publish_diagnostic(logging.DEBUG, "MQTT console queue error", e)
 
     def publish_notification(
         self,
