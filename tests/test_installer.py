@@ -147,3 +147,34 @@ def test_explicit_deploy_tariff_persists_and_ordinary_update_preserves_it(tmp_pa
     incoming.unlink()
     subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)
     assert saved.read_text() == content
+
+
+def test_setup_uninstall_removes_both_hook_variants_and_preserves_other_content(tmp_path):
+    package, _, env = fake_device(tmp_path)
+    data = package.parent
+    rc = data / "rc.local"
+    rc.chmod(0o750)
+    rc.write_text(
+        "#!/bin/sh\n# another package\n"
+        "# === inverter-control persistence ===\nold hook\n"
+        "# === end inverter-control ===\n"
+        "# === inverter-control service persistence ===\nnew hook\n"
+        "# === end inverter-control ===\nexit 0\n"
+    )
+    helpers = data / "SetupHelper/HelperResources/IncludeHelpers"
+    helpers.parent.mkdir(parents=True)
+    helpers.write_text(
+        "scriptAction=UNINSTALL\npackageName=inverter-control\n"
+        "logMessage() { :; }\nremoveDbusSettings() { :; }\nendScript() { :; }\n"
+    )
+    script = (REPO / "setup").read_text().replace("/data/", f"{data}/")
+    script = script.replace("/service/", f"{tmp_path}/service/")
+    (package / "setup").write_text(script)
+    result = subprocess.run(
+        ["bash", "setup"], cwd=package, env=env, capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, result.stderr
+    assert rc.read_text() == "#!/bin/sh\n# another package\nexit 0\n"
+    assert rc.stat().st_mode & 0o777 == 0o750
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+    assert not list(data.glob(".inverter-control-uninstall.*"))

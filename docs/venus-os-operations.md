@@ -15,6 +15,25 @@ Keep code, configuration and service templates under `/data/inverter-control`. `
 
 `setup install auto` and `update.sh` share the same installer. It checks syntax/dependencies before stopping services, preserves local configuration and supervisor directory inodes, handles installation from the package directory itself, and waits for a fresh heartbeat before ending maintenance keepalive. A failed startup returns an error; inspect logs and restore a known release using the documented update procedure. Reboot and firmware-upgrade recovery still require a planned live check.
 
+Heartbeat files are primed after creating their runtime directory and refreshed
+every five seconds. Deployment keepalive accepts an age below 15 seconds to allow
+for missed ticks. It removes the old controller heartbeat at startup, so only a
+new write can end the maintenance hold.
+
+After three forced restarts within 300 seconds, the external watchdog pauses
+forced restarts for 600 seconds while leaving the service enabled under its
+supervisor. `WATCHDOG_RESTART_BACKOFF` sets that pause;
+`WATCHDOG_DISABLE_BACKOFF` remains a legacy alias. A fresh heartbeat clears the
+pause. Expired restart records under `/run/inverter-control/.watchdog_restarts`
+are pruned on every check, including healthy checks. Legacy disable markers are
+cleared only after successfully requesting the service up. `WATCHDOG_ALERT_ONLY=1`
+does not issue supervisor commands.
+
+The GUI-configured TOU window suppresses automatic solar-forecast pre-charge,
+including requests queued before the window starts. A manual `charge_battery`
+selection through MQTT or the desktop is an explicit exception and remains
+effective during expensive hours until the operator turns it off.
+
 ```sh
 svstat /service/inverter-control /service/log-forwarder /service/watchdog
 tail -n 80 /var/log/inverter-control/current

@@ -56,13 +56,16 @@ write_setpoint() {
 
 # The heartbeat file survives a killed service (nothing removes it), so
 # presence alone is not proof the main service is alive - check mtime.
-HEARTBEAT_FRESH_SEC=3
+# main.py writes every 5 seconds; tolerate two missed ticks under CPU load.
+HEARTBEAT_FRESH_SEC=15
 
 is_main_running() {
     [ -f "$HEARTBEAT_FILE" ] || return 1
     now=$(date +%s)
-    mtime=$(stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null) || return 1
-    [ $((now - mtime)) -lt "$HEARTBEAT_FRESH_SEC" ]
+    mtime=$(stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null) ||
+        mtime=$(stat -f %m "$HEARTBEAT_FILE" 2>/dev/null) || return 1
+    age=$((now - mtime))
+    [ "$age" -ge 0 ] && [ "$age" -lt "$HEARTBEAT_FRESH_SEC" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -123,7 +126,7 @@ do_start() {
 
     # Drop any leftover heartbeat so the daemon cannot mistake the pre-update
     # service state for "already restarted". If the service is genuinely
-    # still alive it rewrites the file within a second and the daemon exits,
+    # still alive it rewrites the file on its next 5-second tick and the daemon exits,
     # which is exactly what we want in that case.
     rm -f "$HEARTBEAT_FILE"
 

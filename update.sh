@@ -160,7 +160,6 @@ done
 # Refresh both historical marker variants and insert before a final exit 0.
 RC_LOCAL=/data/rc.local
 [ -f "$RC_LOCAL" ] || printf '#!/bin/sh\n' > "$RC_LOCAL"
-sed -i '/# === inverter-control.*persistence ===/,/# === end inverter-control ===/d' "$RC_LOCAL"
 HOOK=$(mktemp /data/.inverter-control-boot.XXXXXX)
 cat > "$HOOK" <<'RCEOF'
 # === inverter-control service persistence ===
@@ -171,6 +170,8 @@ ln -snf /data/inverter-control/service/watchdog /service/watchdog
 RCEOF
 awk -v hook="$HOOK" '
     function insert_hook() { while ((getline line < hook) > 0) print line; close(hook) }
+    /# === inverter-control.*persistence ===/ { removing=1 }
+    removing { if (/# === end inverter-control ===/) removing=0; next }
     !inserted && /^[[:space:]]*exit[[:space:]]+0[[:space:]]*$/ { insert_hook(); inserted=1 }
     { print }
     END { if (!inserted) insert_hook() }

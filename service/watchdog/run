@@ -1,6 +1,6 @@
 #!/bin/sh
 # Venus OS Service Watchdog
-# Monitors services via heartbeat files; restarts if stale; disables after repeated failures
+# Monitors services via heartbeat files; limits forced restarts after repeated failures
 #
 # Usage: ./watchdog.sh
 # Heartbeat file format: timestamp (unix epoch) written by monitored service
@@ -10,23 +10,25 @@
 #   WATCHDOG_TIMEOUT   - consider stale if heartbeat older than this (default: 300)
 #                        A restart cannot fix slow cycles - only process death -
 #                        so the default leaves generous headroom for load spikes.
-#   WATCHDOG_MAX_RESTARTS - restarts before disable (default: 3)
+#   WATCHDOG_MAX_RESTARTS - forced restarts before backoff (default: 3)
 #   WATCHDOG_WINDOW   - time window in seconds for restart count (default: 300)
 #   WATCHDOG_LOG       - optional duplicate log file (default: stdout via multilog)
-#   WATCHDOG_DISABLE_BACKOFF - seconds to back off after disabling a service (default: 600)
-#   WATCHDOG_ALERT_ONLY - 1 = log stale services but never restart/disable
+#   WATCHDOG_RESTART_BACKOFF - seconds to pause forced restarts (default: 600)
+#                             Service stays up under its normal supervisor.
+#                             WATCHDOG_DISABLE_BACKOFF is a legacy alias.
+#   WATCHDOG_ALERT_ONLY - 1 = log stale services but never change service state
 #                         (escape hatch after a restart storm; default: 0)
 
-set -euo pipefail
+set -eu
 
 NAME="watchdog"
-VERSION="1.2.0"
+VERSION="1.3.0"
 WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-10}"
 WATCHDOG_TIMEOUT="${WATCHDOG_TIMEOUT:-300}"
 WATCHDOG_MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-3}"
 WATCHDOG_WINDOW="${WATCHDOG_WINDOW:-300}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-}"
-WATCHDOG_DISABLE_BACKOFF="${WATCHDOG_DISABLE_BACKOFF:-600}"
+WATCHDOG_RESTART_BACKOFF="${WATCHDOG_RESTART_BACKOFF:-${WATCHDOG_DISABLE_BACKOFF:-600}}"
 WATCHDOG_ALERT_ONLY="${WATCHDOG_ALERT_ONLY:-0}"
 HB_DIR="/run/inverter-control"
 
@@ -54,13 +56,18 @@ get_restart_count() {
     local window_start=$((now - WATCHDOG_WINDOW))
     local count=0
     local dir="$HB_DIR/.watchdog_restarts"
+    local ts restarts_ts
 
-    [ -d "$dir" ] || return 0
-
-    for ts in $(ls "$dir/${service}_"*.time 2>/dev/null); do
-        local restarts_ts=$(cat "$ts" 2>/dev/null) || continue
-        if [ -n "$restarts_ts" ] && [ "$restarts_ts" -ge "$window_start" ]; then
+    for ts in "$dir/${service}_"*.time; do
+        [ -f "$ts" ] || continue
+        restarts_ts=$(cat "$ts" 2>/dev/null) || continue
+        case "$restarts_ts" in
+            ''|*[!0-9]*) rm -f "$ts"; continue ;;
+        esac
+        if [ "$restarts_ts" -ge "$window_start" ] && [ "$restarts_ts" -le "$now" ]; then
             count=$((count + 1))
+        else
+            rm -f "$ts"
         fi
     done
     echo "$count"
@@ -75,16 +82,14 @@ record_restart() {
     echo "$(date +%s)" > "$dir/${service}_$(date +%s).time"
 }
 
-disable_service() {
+backoff_restarts() {
     local service="$1"
     local svc_dir="/service/${service}"
 
-    log "WARN: $service exceeded max restarts ($WATCHDOG_MAX_RESTARTS in ${WATCHDOG_WINDOW}s), disabling for ${WATCHDOG_DISABLE_BACKOFF}s"
-    # Marker makes the disable sticky for a backoff window so we stop hammering
-    # the stale service (and flooding the log) while it recovers.
-    echo "$(date +%s)" > "$HB_DIR/.watchdog_disabled_${service}"
+    log "WARN: $service exceeded max restarts ($WATCHDOG_MAX_RESTARTS in ${WATCHDOG_WINDOW}s), pausing forced restarts for ${WATCHDOG_RESTART_BACKOFF}s; service stays up"
+    echo "$(date +%s)" > "$HB_DIR/.watchdog_restart_backoff_${service}"
     if [ -d "$svc_dir" ]; then
-        svc -d "$svc_dir" 2>/dev/null || true
+        svc -u "$svc_dir" 2>/dev/null || true
     fi
 }
 
@@ -93,33 +98,51 @@ check_service() {
     local hb_file="$HB_DIR/${service}.heartbeat"
     local svc_dir="/service/${service}"
 
+    # Prune even on healthy ticks, so /run does not accumulate expired records.
+    local restarts
+    restarts=$(get_restart_count "$service")
+
+    # Older watchdogs left the supervisor down for ten minutes. Recover that
+    # state on upgrade, even if no heartbeat remains. Alert-only never actuates.
+    local disabled_file="$HB_DIR/.watchdog_disabled_${service}"
+    if [ -f "$disabled_file" ] && [ "$WATCHDOG_ALERT_ONLY" != "1" ]; then
+        if svc -u "$svc_dir" 2>/dev/null; then
+            rm -f "$disabled_file"
+            log "INFO: $service released from legacy watchdog disable"
+        fi
+    fi
+
     # No heartbeat file -> nothing to judge (service not wired up)
     [ -f "$hb_file" ] || return 0
 
     local hb_time
     hb_time=$(cat "$hb_file" 2>/dev/null) || return 0
 
-    if [ -z "$hb_time" ]; then
-        log "WARN: $service heartbeat is empty"
-        return 0
-    fi
+    case "$hb_time" in
+        ''|*[!0-9]*) log "WARN: $service heartbeat is empty or invalid"; return 0 ;;
+    esac
 
     local now
     now=$(date +%s)
 
-    # While a service is disabled, back off and leave it alone so it can
-    # recover (or the operator can intervene) without the log being flooded.
-    local disabled_file="$HB_DIR/.watchdog_disabled_${service}"
-    if [ -f "$disabled_file" ]; then
-        local disabled_at
-        disabled_at=$(cat "$disabled_file" 2>/dev/null) || disabled_at=0
-        if [ $(( now - disabled_at )) -lt "$WATCHDOG_DISABLE_BACKOFF" ]; then
-            return 0
-        fi
-        rm -f "$disabled_file"
+    local age=$((now - hb_time))
+    local backoff_file="$HB_DIR/.watchdog_restart_backoff_${service}"
+
+    if [ "$age" -ge 0 ] && [ "$age" -le "$WATCHDOG_TIMEOUT" ]; then
+        rm -f "$backoff_file"
+        return 0
     fi
 
-    local age=$((now - hb_time))
+    if [ -f "$backoff_file" ]; then
+        local backoff_at
+        backoff_at=$(cat "$backoff_file" 2>/dev/null) || backoff_at=0
+        case "$backoff_at" in ''|*[!0-9]*) backoff_at=0 ;; esac
+        local backoff_age=$((now - backoff_at))
+        if [ "$backoff_age" -ge 0 ] && [ "$backoff_age" -lt "$WATCHDOG_RESTART_BACKOFF" ]; then
+            return 0
+        fi
+        rm -f "$backoff_file"
+    fi
 
     if [ "$age" -gt "$WATCHDOG_TIMEOUT" ]; then
         log "WARN: $service stale (${age}s > ${WATCHDOG_TIMEOUT}s)"
@@ -131,17 +154,13 @@ check_service() {
             return 0
         fi
 
-        # Count recent restarts
-        local restarts
-        restarts=$(get_restart_count "$service")
-
         if [ "$restarts" -ge "$WATCHDOG_MAX_RESTARTS" ]; then
-            disable_service "$service"
-            return 1
+            backoff_restarts "$service"
+            return 0
         fi
 
-        # Restart service. NOTE: svc -k only KILLS the process; runit never
-        # auto-restarts, so we must follow with svc -u to bring it back up.
+        # Explicitly request up after killing: a previous svc -d may have left
+        # the supervisor down, in which case killing alone cannot recover it.
         log "INFO: restarting $service"
         record_restart "$service"
         svc -k "$svc_dir" 2>/dev/null || true

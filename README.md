@@ -213,6 +213,7 @@ HA_TOKEN = "your_long_lived_access_token"
 
 # Time-of-use expensive grid window (local hours; -1/-1 disables).
 # Solar-forecast pre-charge is suppressed inside [START, END).
+# Manual charge_battery (MQTT/desktop) is an explicit exception to this window.
 # On Cerbo these are also created as GUI-editable Settings entries under
 # /Settings/InverterControl — edit them from the Venus Settings menu (no SSH
 # needed); those values take precedence over local_config.

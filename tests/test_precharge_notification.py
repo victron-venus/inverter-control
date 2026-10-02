@@ -153,3 +153,25 @@ def test_queued_intent_rechecks_expiry_and_tariff(expired, expensive, expected):
         )
     assert calc.calculate.call_args.args[0].charge_battery is expected
     assert controller._pre_charge_requested is False
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_manual_charge_is_an_explicit_tou_exception_even_with_queued_precharge(manual):
+    from test_main import _make_controller
+
+    import main
+
+    controller, victron, _, calc = _make_controller()
+    controller._pre_charge_requested = True
+    controller._pre_charge_expires_at = time.time() + 100
+    victron.get_mppt_data.return_value = {}
+    victron.get_pv_power.return_value = []
+    if manual:
+        # Use the same toggle handler as MQTT/desktop, not a calculator-only flag.
+        main._handle_toggle(controller, {"entity": "charge_battery"})
+    with patch.object(controller, "_in_expensive_window", return_value=True):
+        controller.calculate_setpoint(
+            {"_grid_valid": True, **dict.fromkeys(("g1", "g2", "gt", "t1", "t2", "tt"), 0)}
+        )
+    assert calc.calculate.call_args.args[0].charge_battery is manual
+    assert controller._pre_charge_requested is False

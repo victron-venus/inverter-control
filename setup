@@ -86,7 +86,12 @@ if [ "$scriptAction" == 'UNINSTALL' ]; then
         rm -f "/service/$name"
     done
     if [ -f /data/rc.local ]; then
-        sed -i '/# === inverter-control.*persistence ===/,/# === end inverter-control ===/d' /data/rc.local
+        rcTemp=$(mktemp /data/.inverter-control-uninstall.XXXXXX) || exit $?
+        sed '/# === inverter-control.*persistence ===/,/# === end inverter-control ===/d' \
+            /data/rc.local > "$rcTemp" && cat "$rcTemp" > /data/rc.local
+        rcStatus=$?
+        rm -f "$rcTemp"
+        [ "$rcStatus" -eq 0 ] || exit "$rcStatus"
     fi
     # Retain configuration, certificates and persisted data for explicit cleanup.
     removeDbusSettings \

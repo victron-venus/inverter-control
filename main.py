@@ -450,6 +450,9 @@ def _run_main_loop(controller, mqtt_bridge):
     # Also mirror in the same directory for the external watchdog service
     # (services/watchdog/run) which checks {heartbeat_dir}/inverter-control.heartbeat
     watchdog_heartbeat_file = f"{heartbeat_dir}/inverter-control.heartbeat"
+    # /run is empty after reboot. Create it before starting workers or priming
+    # the heartbeat so keepalive can observe the first successful startup.
+    os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
 
     # Start the hardware watchdog just before entering the loop, so slow
     # startup work above doesn't get mistaken for a stalled control loop.
@@ -467,13 +470,12 @@ def _run_main_loop(controller, mqtt_bridge):
         name="heartbeat-writer",
         daemon=True,
     )
-    hb_thread.start()
     # Prime the heartbeat immediately so a freshly started service isn't
     # seen as stale by the external watchdog during first-loop warmup.
     _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
+    hb_thread.start()
 
     try:
-        os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
         next_deadline = time.monotonic() + controller.loop_interval
         while True:
             if not controller.run_cycle():
