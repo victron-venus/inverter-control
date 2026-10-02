@@ -1098,7 +1098,7 @@ class InverterController:
         # Always publish current flags so MQTT/HA see set_control_flag immediately
         out["booleans"] = dict(self._control_flags)
         out["dry_run"] = self.dry_run
-        out["ess_mode"] = {**self.victron.get_ess_mode(), **self.ess_selection.snapshot()}
+        out["ess_mode"] = self.ess_selection.observe(self.victron.get_ess_mode)
         # Daemon-owned control intent is never stripped by the slim payload.
         out["setpoint_override"] = self.get_setpoint_override()
         out["submeter_trim"] = self.submeter_trim.status()

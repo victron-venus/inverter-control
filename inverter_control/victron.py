@@ -2124,6 +2124,11 @@ class VictronDBus:
         main-thread native read here contended with the poll on the same bus,
         contributing to the update_state tail spikes. The only synchronous
         read is a one-shot on startup."""
+        # Keep the normal 5Hz control-loop read independent of slow settings
+        # reconciliation. Only an empty cache (startup or explicit write) waits.
+        with self._dbus_lock:
+            if self._ess_mode_cache is not None and self._ess_mode_cache_time > 0:
+                return dict(self._ess_mode_cache)
         with self._ess_selection_lock:
             with self._dbus_lock:
                 if self._ess_mode_cache is not None and self._ess_mode_cache_time > 0:
@@ -2234,17 +2239,23 @@ class VictronDBus:
                 if mode == "external_control":
                     writes = [(SETTINGS_SERVICE, HUB4_MODE_PATH, 3)]
                 else:
-                    value = {"optimized_with_battery_life": 1,
-                             "optimized_without_battery_life": 10,
-                             "keep_batteries_charged": 9}[mode]
+                    value = {
+                        "optimized_with_battery_life": 1,
+                        "optimized_without_battery_life": 10,
+                        "keep_batteries_charged": 9,
+                    }[mode]
                     # Preserve phase compensation mode 2 when already selected.
                     # Write the profile first; a rejection must not enable another profile.
-                    writes = [(SETTINGS_SERVICE, BATTERY_LIFE_PATH, value),
-                              (SETTINGS_SERVICE, HUB4_MODE_PATH, 2 if raw == "2" else 1)]
+                    writes = [
+                        (SETTINGS_SERVICE, BATTERY_LIFE_PATH, value),
+                        (SETTINGS_SERVICE, HUB4_MODE_PATH, 2 if raw == "2" else 1),
+                    ]
             try:
                 for service, path, value in writes:
                     if not self._dbus_set(service, path, value, "int32"):
-                        raise RuntimeError("ESS change unconfirmed; check the current mode before retrying")
+                        raise RuntimeError(
+                            "ESS change unconfirmed; check the current mode before retrying"
+                        )
             finally:
                 with self._dbus_lock:
                     self._ess_mode_cache = None

@@ -183,3 +183,48 @@ def test_retained_selection_is_never_dispatched(mqtt_bridge_stub):
     msg.payload = json.dumps({"mode": "off", "request_id": "a"}).encode()
     bridge._on_message(None, None, msg)
     callback.assert_not_called()
+
+
+def test_cached_mode_read_does_not_wait_for_settings_reconciliation(device):
+    import threading
+
+    device._ess_mode_cache = {"selected": "external_control"}
+    device._ess_mode_cache_time = 1.0
+    completed = threading.Event()
+    with device._ess_selection_lock:
+        reader = threading.Thread(target=lambda: (device.get_ess_mode(), completed.set()))
+        reader.start()
+        finished_while_locked = completed.wait(1)
+    reader.join(1)
+    assert finished_while_locked
+
+
+def test_observation_cannot_pair_old_state_with_new_receipt():
+    import threading
+
+    selection = EssSelection()
+    entered = threading.Event()
+    release = threading.Event()
+    result = []
+    observed = {"selected": "external_control"}
+
+    def write(mode):
+        entered.set()
+        assert release.wait(2)
+        observed["selected"] = mode
+
+    writer = threading.Thread(
+        target=lambda: selection.apply({"mode": "off", "request_id": "a"}, write)
+    )
+    writer.start()
+    assert entered.wait(1)
+    reader = threading.Thread(
+        target=lambda: result.append(selection.observe(lambda: dict(observed)))
+    )
+    reader.start()
+    release.set()
+    writer.join(2)
+    reader.join(2)
+    assert result == [
+        {"selected": "off", "selection_supported": True, "request_id": "a", "error": None}
+    ]

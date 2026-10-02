@@ -56,6 +56,11 @@ class EssSelection:
         with self._lock:
             return dict(self._status)
 
+    def observe(self, read):
+        """Do not pair a pre-write observation with a newer command receipt."""
+        with self._lock:
+            return {**read(), **self._status}
+
     def apply(self, payload, write):
         mode, request_id = validate_selection(payload)
         with self._lock:

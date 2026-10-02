@@ -276,7 +276,6 @@ def _setup_mqtt_bridge(controller):
 
     bridge.register_callback("set_ess_mode", _select_ess_mode)
 
-
     def _safe_loop_interval(p):
         try:
             val = float(p.get("interval", 0.33))
