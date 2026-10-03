@@ -104,7 +104,8 @@ def validate(directory: Path, *, actions_only=False) -> None:
     """Reject duplicate validation triggers, missing gate jobs and mixed CodeQL pins."""
     policy = json.loads((directory / ".release-policy.json").read_text())
     workflows = {
-        path.name: yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        # BaseLoader constructs only strings, lists and dicts, never Python objects.
+        path.name: yaml.load(path.read_text(), Loader=yaml.BaseLoader)  # nosec B506
         for path in (directory / ".github/workflows").glob("*.y*ml")
     }
     validate_codeql(workflows)
