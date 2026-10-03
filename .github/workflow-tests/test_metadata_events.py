@@ -17,7 +17,8 @@ CALLERS = (
 
 def definition(path):
     """Preserve GitHub's on key and expression scalars."""
-    return yaml.load((ROOT / path).read_text(), Loader=yaml.BaseLoader)
+    # BaseLoader creates only strings, lists and maps; preserve GitHub on as text.
+    return yaml.load((ROOT / path).read_text(), Loader=yaml.BaseLoader)  # nosec B506
 
 
 def evaluate(expression, context):
