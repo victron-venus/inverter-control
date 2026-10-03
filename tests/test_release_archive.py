@@ -38,6 +38,7 @@ def test_release_archive_contains_complete_installer_payload(tmp_path):
         "scripts/package-release.sh",
         "scripts/package_release.py",
         "scripts/release_version_adapter.py",
+        "scripts/release_control.py",
         "scripts/version_plan.py",
     ]
     for name in inputs:
