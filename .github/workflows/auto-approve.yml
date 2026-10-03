@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number }}'
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number }}-${{ (github.event.action != 'edited' || github.event.changes.base) && 'state' || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -20,6 +20,7 @@ jobs:
       contents: read
       pull-requests: write
     if: >-
+      (github.event.action != 'edited' || github.event.changes.base) &&
       ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
        (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)) &&
       contains(fromJSON('["4alvit","californiantiramisu","dependabot[bot]","renovate[bot]"]'), github.event.pull_request.user.login) &&
