@@ -10,17 +10,3 @@ updates:
       prefix: "deps"
     labels:
       - "dependencies"
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    commit-message:
-      prefix: "ci"
-    labels:
-      - "ci"
-    groups:
-      codeql:
-        patterns:
-          - github/codeql-action/*
