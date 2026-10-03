@@ -1,0 +1,54 @@
+name: Python Security Scan
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '35 7 * * 2'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+
+jobs:
+  python-security:
+    name: Python Security
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install security tools
+        run: |
+          python3 -m pip install --require-hashes --only-binary=:all: -r .github/requirements-bandit.txt
+
+      - name: Run Bandit security linter
+        id: scan
+        run: |
+          # Exit 1 means findings; any other failure must fail the job.
+          bandit -c .github/bandit.yml -r . -f json -o bandit-results.json || test "$?" -eq 1
+          python3 scripts/bandit_sarif.py
+
+      - name: Enforce high-severity Bandit findings
+        run: bandit -c .github/bandit.yml -r . -lll
+
+      - name: Upload Bandit results
+        if: always() && steps.scan.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
+        with:
+          sarif_file: bandit-results.sarif
+          category: python-bandit
+    timeout-minutes: 30
