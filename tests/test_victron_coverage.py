@@ -48,7 +48,7 @@ class TestVictronCoverage:
 
         for service, path in targets:
             if service == v._shunt_service:
-                assert path in SHUNT_SIGNAL_PATHS
+                assert path in SHUNT_SIGNAL_PATHS or path == "/Connected"
 
     def test_fast_targets_with_vebus_service(self):
         """Cover lines in _fast_targets that involve vebus service"""

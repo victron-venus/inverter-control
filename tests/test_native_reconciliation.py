@@ -184,7 +184,7 @@ def test_empty_snapshot_is_successful_transport_but_not_valid_grid(reader):
 
 
 @pytest.mark.parametrize("invalid", [None, "nan", "inf", "-inf", "invalid", []])
-def test_invalid_shunt_reading_preserves_last_good_without_system_aggregate(reader, invalid):
+def test_invalid_shunt_reading_clears_last_good_without_system_aggregate(reader, invalid):
     reader._system_data.update(bv=51.5, bc=-3.2, bp=-165)
     reader._native.get_values_connected.side_effect = None
     reader._native.get_values_connected.return_value = {
@@ -192,8 +192,8 @@ def test_invalid_shunt_reading_preserves_last_good_without_system_aggregate(read
         "/Dc/0/Power": "0",
     }
     reader._poll_shunt_data()
-    assert reader._system_data["bv"] == 51.5
-    assert reader._system_data["bc"] == -3.2
+    assert reader._system_data["bv"] is None
+    assert reader._system_data["bc"] is None
     assert reader._system_data["bp"] == 0
     reader._safe_subprocess.assert_not_called()
 
@@ -283,7 +283,7 @@ def test_reconciliation_native_and_cli_share_one_monotonic_budget(reader, elapse
         reader._safe_subprocess.assert_not_called()
         assert not grid_valid
         assert reader._cached_battery_cell_data == old_cells
-        assert reader._system_data["bp"] == -224
+        assert reader._system_data["bp"] is None
         assert reader._system_data["inv_power"] == -600
         assert reader._service_consecutive_fails == {
             **{service: 1 for service in (SYSTEM_SERVICE, SHUNT, VEBUS, *BATTERY_CELL_SERVICES)},

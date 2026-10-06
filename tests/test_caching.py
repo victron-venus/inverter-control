@@ -183,7 +183,9 @@ def test_battery_chain_socs_caching():
         m = MagicMock()
         m.returncode = 0
         cmd = args[0]
-        if any("mqtt_chain1" in x for x in cmd) and "/Soc" in cmd:
+        if "/Connected" in cmd:
+            m.stdout = "variant       int32 1\n"
+        elif any("mqtt_chain1" in x for x in cmd) and "/Soc" in cmd:
             m.stdout = "variant       double 75.0\n"
         elif any("mqtt_chain2" in x for x in cmd) and "/Soc" in cmd:
             m.stdout = "variant       double 80.0\n"
@@ -213,17 +215,17 @@ def test_battery_chain_socs_caching():
         assert socs1 == [75.0, 80.0]
 
         # Verify caching behavior
-        # First call: 2 services * 1 call each = 2 subprocess calls
-        assert first_call_count == 2, (
-            f"Expected 2 calls on first invocation, got {first_call_count}"
+        # First call: 2 services * (Connected + Soc) = 4 subprocess calls
+        assert first_call_count == 4, (
+            f"Expected 4 calls on first invocation, got {first_call_count}"
         )
         # Second call: should use cache, so no additional calls
-        assert second_call_count == 2, (
-            f"Expected 2 calls total after second invocation (cached), got {second_call_count}"
+        assert second_call_count == 4, (
+            f"Expected 4 calls total after second invocation (cached), got {second_call_count}"
         )
         # Third call: pure-cache getter must not re-read, so still 2 calls total
-        assert third_call_count == 2, (
-            f"Expected 2 calls total after third invocation (pure cache), got {third_call_count}"
+        assert third_call_count == 4, (
+            f"Expected 4 calls total after third invocation (pure cache), got {third_call_count}"
         )
 
         print("✓ Battery chain SoC caching test passed")

@@ -767,7 +767,9 @@ class InverterController:
             if inverter_state == 0:
                 return
             net_usage = self.ha.get_sensor("net_usage", 0)
-            bp = sys_data.get("bp", 0)
+            bp = sys_data.get("bp")
+            if bp is None:
+                return
             if 0 < net_usage < 200 and bp > 750:
                 changed = self.ha.control_dump_loads(turn_on=True)
                 if changed > 0:
@@ -982,9 +984,9 @@ class InverterController:
             "booleans": self._control_flags,
             "loads": loads,
             "ess_mode": ess_mode,
-            "battery_power": sys_data.get("bp", 0),
-            "battery_voltage": sys_data.get("bv", 0),
-            "battery_current": sys_data.get("bc", 0),
+            "battery_power": sys_data.get("bp"),
+            "battery_voltage": sys_data.get("bv"),
+            "battery_current": sys_data.get("bc"),
             "battery_soc": self.victron.get_battery_soc_local(sys_data),
             "daily_stats": daily_stats,
             "solar_forecast": self._solar_forecast,

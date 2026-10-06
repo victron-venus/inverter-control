@@ -109,8 +109,8 @@ class TestBatterySocFromVoltage:
             prev = soc
             v += 0.1
 
-    def test_garbage_voltage_returns_zero(self):
-        assert vp.calculate_battery_soc_from_voltage("not-a-number") == 0.0  # type: ignore[arg-type]
+    def test_garbage_voltage_returns_unknown(self):
+        assert vp.calculate_battery_soc_from_voltage("not-a-number") is None  # type: ignore[arg-type]
 
-    def test_none_voltage_returns_zero(self):
-        assert vp.calculate_battery_soc_from_voltage(None) == 0.0  # type: ignore[arg-type]
+    def test_none_voltage_returns_unknown(self):
+        assert vp.calculate_battery_soc_from_voltage(None) is None  # type: ignore[arg-type]

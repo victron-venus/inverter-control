@@ -863,3 +863,9 @@ See [Grid telemetry validity and recovery](docs/grid-telemetry-safety.md) for so
 
 See [scheduling behavior and hardware acceptance boundaries](docs/auxiliary-readers.md)
 for asynchronous EV/water reads and the metric sample counts.
+
+### Battery telemetry validity
+
+Missing, disconnected, invalid, or expired battery measurements are published as JSON `null`, including the voltage-derived SoC. Real 0 A, 0 W, and 0% remain numeric. The console displays an em dash for unknown values. `battery_data` identifies the SmartShunt source and local read age; its `sample_age_seconds` stays null because a D-Bus read cannot prove a new physical measurement. Battery detail records carry availability and upstream sample age when the battery driver supplies monotonic measurement timestamps. A frozen driver cannot renew that age by answering another read.
+
+Battery telemetry does not select inverter power mode. Grid-control behavior and hardware/BMS protections are unchanged; missing battery power also pauses optional dump-load decisions.

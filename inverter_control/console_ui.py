@@ -44,7 +44,8 @@ class ConsoleUI:
 
         g1, g2, gt = sys_data["g1"], sys_data["g2"], sys_data["gt"]
         t1, t2, tt = sys_data["t1"], sys_data["t2"], sys_data["tt"]
-        bv = sys_data.get("bv", 0)
+        bv = sys_data.get("bv")
+        voltage_text = f"{bv:.2f}" if bv is not None else "—"
 
         # Grid/Usage section
         net_usage = int(self.ha.get_sensor("net_usage", gt))
@@ -64,22 +65,27 @@ class ConsoleUI:
         line = (
             f"{now}{flags}>{C.CYAN}{setpoint}{C.RESET}({previous_setpoint}) "
             f"{grid_str}\t{usage_str} {battery_str} "
-            f"{solar_str} {loads_str} {extra_str} {bv:.2f}"
+            f"{solar_str} {loads_str} {extra_str} {voltage_text}"
         )
 
         return line
 
     def _fmt_battery_section(self, sys_data: dict[str, Any]) -> str:
-        bp = sys_data.get("bp", 0)
+        bp = sys_data.get("bp")
+        bp = bp if bp is not None else "—"
         battery_socs = sys_data.get("battery_socs", [])
-        soc1 = int(battery_socs[0]) if len(battery_socs) > 0 else 0
-        soc2 = int(battery_socs[1]) if len(battery_socs) > 1 else 0
+        soc1 = (
+            int(battery_socs[0]) if len(battery_socs) > 0 and battery_socs[0] is not None else "—"
+        )
+        soc2 = (
+            int(battery_socs[1]) if len(battery_socs) > 1 and battery_socs[1] is not None else "—"
+        )
         # Calculate compensation voltage locally from D-Bus (was HA sensor)
         # Approximation: voltage sag/rise under load as % of nominal
-        bv = sys_data.get("bv", 48.0)
-        bc = sys_data.get("bc", 0.0)
-        comp_v = 0
-        if bv > 0 and bc != 0:
+        bv = sys_data.get("bv")
+        bc = sys_data.get("bc")
+        comp_v = "—" if bv is None or bc is None else 0
+        if bv is not None and bc is not None and bv > 0 and bc != 0:
             # Internal resistance estimate * current / nominal voltage * 100
             # Typical LiFePO4 IR ~ 0.01-0.02 ohm per cell * 16 cells = 0.16-0.32 ohm
             ir_est = 0.24  # ohm

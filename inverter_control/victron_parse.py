@@ -1,6 +1,7 @@
 """D-Bus tree output parsers and battery SOC calculation."""
 
 import logging
+import math
 import re
 from typing import Any
 
@@ -67,7 +68,7 @@ def parse_shunt_data_output(output: str) -> dict[str, Any]:
     return data
 
 
-def calculate_battery_soc_from_voltage(voltage: float) -> float:
+def calculate_battery_soc_from_voltage(voltage: float | None) -> float | None:
     """
     Calculate bank SOC from pack voltage the same way the HA "Battery %" sensor
     does: linear between min and max voltage, clamped to 0-100, rounded.
@@ -79,9 +80,12 @@ def calculate_battery_soc_from_voltage(voltage: float) -> float:
         SOC percentage as whole number 0-100
     """
     try:
+        voltage = float(voltage)
+        if not math.isfinite(voltage) or voltage <= 0:
+            return None
         pct = (
-            (float(voltage) - BATTERY_VOLTAGE_MIN) / (BATTERY_VOLTAGE_MAX - BATTERY_VOLTAGE_MIN)
+            (voltage - BATTERY_VOLTAGE_MIN) / (BATTERY_VOLTAGE_MAX - BATTERY_VOLTAGE_MIN)
         ) * 100.0
     except (ValueError, TypeError):
-        return 0.0
+        return None
     return float(round(min(100.0, max(0.0, pct))))

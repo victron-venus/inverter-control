@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.5] - 2026-10-06
+
+### Fixed
+- Publish unknown battery voltage, current, power and SoC as null when the
+  source is absent, disconnected, incomplete or stale, and display an em dash
+  in the console. Preserve real zero measurements.
+- Report battery source and availability separately from physical sample age.
+  Use upstream MQTT timestamps when available; a local D-Bus read is not a new
+  physical measurement. Clear stale chain SoC instead of retaining it forever.
+- Skip dump-load decisions when battery power is unavailable.
+- Ignore SmartShunt readings received while disconnected. Require fresh readings
+  after reconnecting, and reject in-flight poll or seed responses superseded by
+  a newer signal or source-owner change. Read values and availability coherently.
+- Preserve observed freshness/completeness requirements when a later native
+  metadata read fails, instead of treating the source as a legacy battery.
+
+### Validation
+- Cover delayed and disconnected sources, null readings, stale local reads,
+  frozen upstream timestamps and recovery, valid zero SoC, and console output.
+- Full Python 3.12 suite: 1667 tests and 15 subtests passed, 92.24% coverage.
+- Review follow-up: deterministic disconnect/reconnect and interleaving regressions
+  cover native reads, CLI reads, synchronous fallback, and reconnect seeding.
+  This follow-up is included in the release; it has not been installed on Cerbo.
+
 ## [1.23.3] - 2026-09-12
 
 ### Fixed

@@ -217,7 +217,7 @@ class TestVictronDBus:
         assert data["g2"] == 0
         assert data["t1"] == 0
         assert data["tt"] == 0
-        assert data["bv"] == 0
+        assert data["bv"] is None
         assert data["gt"] == 0
         # Real signal value preserved.
         assert data["g1"] == 500
@@ -428,6 +428,7 @@ class TestVictronDBus:
             def side_effect(service, path):
                 values = {
                     "com.victronenergy.battery.mqtt_chain1": {
+                        "/Connected": "1",
                         "/Dc/0/Current": "5.0",
                         "/Dc/0/Voltage": "52.0",
                         "/Dc/0/Power": "260.0",
@@ -435,6 +436,7 @@ class TestVictronDBus:
                         "/TimeToGo": "3600",
                     },
                     "com.victronenergy.battery.mqtt_chain2": {
+                        "/Connected": "1",
                         "/Dc/0/Current": "-3.0",
                         "/Dc/0/Voltage": "51.0",
                         "/Dc/0/Power": "-153.0",
