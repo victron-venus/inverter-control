@@ -740,19 +740,20 @@ ENABLE_CONSOLE_SERVER = False  # Disable TCP console entirely
 
 ## Related Projects
 
-This project is part of the Victron Venus OS integration suite:
+- [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) — Go web dashboard for telemetry and controller commands.
+- [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) — Python web dashboard for Docker and NAS deployments.
+- [inverter-desktop](https://github.com/victron-venus/inverter-desktop) — native Tauri client.
+- [dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) — MQTT battery measurements and BMS permissions exposed on D-Bus.
+- [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) — Tasmota PV measurements exposed on D-Bus.
+- [dbus-ev](https://github.com/victron-venus/dbus-ev) — maintained vehicle and optional Mercedes charger telemetry; migration from the standalone charger requires a single service owner.
+- [dbus-pump](https://github.com/victron-venus/dbus-pump) — water tank, pump and valve services with their own command and automation path.
+- [inverter-climate](https://github.com/victron-venus/inverter-climate) — separate thermostat coordinator using local energy data and Home Assistant; observation and control are enabled independently.
+- [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) — Telegraf, InfluxDB and Grafana for historical telemetry.
 
-| Project | Description |
-|---------|-------------|
-| **inverter-control** (this) | Advanced ESS external control system with grid-zero targeting |
-| [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) | Real-time web dashboard (Python/FastAPI) via MQTT |
-| [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
-| [inverter-desktop](https://github.com/victron-venus/inverter-desktop) | Native desktop application (Rust/Tauri) for system monitoring |
-| [dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) | MQTT to D-Bus bridge for JBD BMS battery integration |
-| [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Tasmota smart plug integration as a PV inverter on D-Bus |
-| [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) | ESP32 Bluetooth monitor for JBD BMS batteries |
-| [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) | TIG (Telegraf, InfluxDB, Grafana) monitoring stack |
-| [terraform-github-victron](https://github.com/4alvit/terraform-github-victron) | Infrastructure as Code for the GitHub organization |
+Browse the [public project catalog](https://victron-venus.github.io/.github/projects.html)
+for other Venus OS packages and companion tools. Each project documents its own
+installation, compatibility and release requirements.
+
 
 ## Development Workflow
 
