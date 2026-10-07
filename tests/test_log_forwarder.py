@@ -27,6 +27,10 @@ class TestLogForwarder:
         # Patch the global constants
         self.state_patcher = patch.object(log_forwarder, "STATE_FILE", self.temp_state_file)
         self.state_patcher.start()
+        self.url_patcher = patch.object(
+            log_forwarder, "LOKI_URL", "http://localhost:3100/loki/api/v1/push"
+        )
+        self.url_patcher.start()
 
         # Create test log file
         with open(self.temp_log_file, "w", encoding="utf-8") as f:
@@ -37,6 +41,7 @@ class TestLogForwarder:
     def teardown_method(self):
         """Clean up test environment."""
         self.state_patcher.stop()
+        self.url_patcher.stop()
         if os.path.exists(self.temp_state_file):
             os.unlink(self.temp_state_file)
         if os.path.exists(self.temp_log_file):

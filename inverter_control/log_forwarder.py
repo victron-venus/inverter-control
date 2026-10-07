@@ -8,7 +8,9 @@ Designed for Venus OS with minimal dependencies.
 
 import json
 import os
+import re
 import sys
+import tempfile
 import time
 import traceback
 
@@ -25,11 +27,14 @@ except ImportError:
     USE_REQUESTS = False
 
 # Configuration
-LOKI_URL = os.environ.get("LOKI_URL", "http://192.168.167.25:3100/loki/api/v1/push")  # nosec B310 # nosonar — local Loki # nosem S1313
+LOKI_URL = os.environ.get("LOKI_URL", "")
+LOKI_URL_FILE = "/data/setupOptions/inverter-control/loki_url"
 STATE_FILE = os.environ.get("STATE_FILE", "/run/inverter-control/log-forwarder-state.json")  # nosec B310 # nosonar — single-user embedded device
 POLL_INTERVAL = 5  # seconds
+CONFIG_RETRY_INTERVAL = 60  # seconds, while configuration is missing or invalid
 BATCH_SIZE = 100  # max lines per push
 JOB_LABEL = "cerbo"
+ROTATED_LOG = re.compile(r"^@[0-9a-fA-F]{24}\.[su]$")
 
 # Log sources: service_name -> log file path
 LOG_SOURCES = {
@@ -40,23 +45,102 @@ LOG_SOURCES = {
 }
 
 
+def validate_loki_url(url):
+    """Reject malformed endpoints before sending any log content."""
+    endpoint = urllib.parse.urlsplit(url)
+    if (
+        endpoint.scheme not in {"http", "https"}
+        or not endpoint.hostname
+        or endpoint.fragment
+        or any(char.isspace() for char in url)
+    ):
+        raise ValueError(
+            "Loki endpoint must be an absolute HTTP(S) URL without whitespace or a fragment"
+        )
+    # Accessing port validates its syntax and range, even without a network call.
+    if endpoint.port == 0:
+        raise ValueError("Loki endpoint port must be greater than zero")
+
+
+def load_loki_url():
+    """Load the operator endpoint outside the replaceable release directory."""
+    if "LOKI_URL" in os.environ:
+        url = os.environ["LOKI_URL"].strip()
+    else:
+        filename = os.environ.get("LOKI_URL_FILE", LOKI_URL_FILE)
+        try:
+            with open(filename, encoding="utf-8") as config:
+                url = config.read(8193).strip()
+        except FileNotFoundError:
+            return ""
+    if len(url) > 8192:
+        raise ValueError("Loki endpoint exceeds 8192 characters")
+    if url:
+        validate_loki_url(url)
+    return url
+
+
+def wait_for_loki_url():
+    """Retry absent or invalid configuration without a supervisor restart loop."""
+    last_problem = None
+    while True:
+        try:
+            url = load_loki_url()
+            if url:
+                return url
+            problem = "Loki endpoint is not configured; forwarding is idle"
+        except (OSError, ValueError) as error:
+            # Do not print URL contents, which can include authentication data.
+            problem = (
+                f"Loki endpoint configuration is unreadable or invalid ({type(error).__name__})"
+            )
+        if problem != last_problem:
+            print(
+                f"{problem}; set LOKI_URL or {os.environ.get('LOKI_URL_FILE', LOKI_URL_FILE)}. "
+                f"Retrying in {CONFIG_RETRY_INTERVAL}s",
+                file=sys.stderr,
+            )
+            last_problem = problem
+        time.sleep(CONFIG_RETRY_INTERVAL)
+
+
 def load_state():
     """Load file positions from state file."""
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            state = json.load(f)
+        if not isinstance(state, dict):
+            return {}
+        # A partially corrupted entry must not prevent all services forwarding.
+        return {
+            service: cursor
+            for service, cursor in state.items()
+            if isinstance(cursor, dict)
+            and type(cursor.get("position")) is int
+            and cursor["position"] >= 0
+            and (cursor.get("inode") is None or type(cursor["inode"]) is int)
+        }
     except (OSError, ValueError):
         return {}
 
 
 def save_state(state):
-    """Save file positions to state file."""
+    """Atomically replace the cursor; a crash may replay, but cannot skip logs."""
+    temporary = None
     try:
-        os.makedirs(os.path.dirname(os.path.abspath(STATE_FILE)), exist_ok=True)
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
+        directory = os.path.dirname(os.path.abspath(STATE_FILE))
+        os.makedirs(directory, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=directory, prefix=".log-forwarder-", delete=False
+        ) as f:
+            temporary = f.name
             json.dump(state, f)
+        os.replace(temporary, STATE_FILE)
     except OSError as e:
         print(f"Warning: Could not save state: {e}", file=sys.stderr)
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def parse_multilog_timestamp(line):
@@ -89,48 +173,87 @@ def parse_multilog_timestamp(line):
         return None, line
 
 
+def retained_log_files(filepath):
+    """List retained files in order; return None if rotation raced the scan."""
+    directory = os.path.dirname(os.path.abspath(filepath))
+    current_name = os.path.basename(filepath)
+
+    def relevant_names():
+        return {
+            name
+            for name in os.listdir(directory)
+            if ROTATED_LOG.fullmatch(name) or name in {"previous", current_name}
+        }
+
+    names = relevant_names()
+    paths = [os.path.join(directory, name) for name in sorted(names) if ROTATED_LOG.fullmatch(name)]
+    paths.extend([os.path.join(directory, "previous"), filepath])
+    files = []
+    seen = set()
+    for path in paths:
+        try:
+            stat = os.stat(path)
+        except FileNotFoundError:
+            continue  # multilog may rename an archive while this list is built
+        if stat.st_ino not in seen:
+            files.append((path, stat.st_ino))
+            seen.add(stat.st_ino)
+    if relevant_names() != names:
+        # In particular, do not declare the saved inode lost when current was
+        # renamed after listdir but before stat and its new name was not seen.
+        return None
+    return files
+
+
 def read_new_lines(filepath, position, inode):
-    """
-    Read new lines from a file starting at position.
-
-    Handles file rotation by checking inode.
-    Returns (lines, new_position, new_inode).
-    """
-    lines = []
-    new_position = position
-    new_inode = inode
-
+    """Drain the saved inode and newer retained files, advancing only whole lines."""
     try:
-        stat = os.stat(filepath)
-        new_inode = stat.st_ino
-
-        # File rotated (different inode) - start from beginning
-        if inode and new_inode != inode:
-            new_position = 0
-
-        # File truncated - start from beginning
-        if stat.st_size < new_position:
-            new_position = 0
-
-        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-            f.seek(new_position)
-            # readline preserves tell() even when a full batch stops before EOF.
-            # TextIO iteration disables tell() until EOF on CPython.
-            while len(lines) < BATCH_SIZE:
-                line = f.readline()
-                if not line:
-                    break
-                line = line.rstrip("\n\r")
-                if line:
-                    lines.append(line)
-                if len(lines) >= BATCH_SIZE:
-                    break
-            new_position = f.tell()
-
+        files = retained_log_files(filepath)
+        if not files:
+            return [], position, inode
+        start = next((index for index, (_, number) in enumerate(files) if number == inode), None)
+        if inode is not None and start is None:
+            print(
+                f"Warning: Retention loss for {filepath}: saved inode {inode} is no longer "
+                "available; replaying all retained logs (duplicates are possible)",
+                file=sys.stderr,
+            )
+        new_position, new_inode = position, inode
+        for path, expected_inode in files[start or 0 :]:
+            with open(path, "rb") as f:
+                stat = os.fstat(f.fileno())
+                if stat.st_ino != expected_inode:
+                    # A second rotation raced our directory scan. Retry the same
+                    # acknowledged cursor next poll rather than skip an archive.
+                    return [], position, inode
+                new_inode = stat.st_ino
+                new_position = position if inode == new_inode else 0
+                if stat.st_size < new_position:
+                    print(f"Warning: Log truncated: {path}; replaying it", file=sys.stderr)
+                    new_position = 0
+                f.seek(new_position)
+                lines = []
+                while len(lines) < BATCH_SIZE:
+                    line_start = f.tell()
+                    line = f.readline()
+                    if not line:
+                        break
+                    if not line.endswith(b"\n") and path == filepath:
+                        # The writer has not finished this line. Keep its bytes
+                        # pending, including split UTF-8 characters.
+                        f.seek(line_start)
+                        break
+                    message = line.rstrip(b"\n\r").decode("utf-8", errors="replace")
+                    if message:
+                        lines.append(message)
+                new_position = f.tell()
+            if lines or path == filepath:
+                return lines, new_position, new_inode
+            # Exhausted archive: continue to the next file, even if it is empty.
+        return [], new_position, new_inode
     except OSError as e:
         print(f"Warning: Could not read {filepath}: {e}", file=sys.stderr)
-
-    return lines, new_position, new_inode
+        return [], position, inode
 
 
 def format_loki_payload(service_name, lines):
@@ -178,9 +301,7 @@ def push_to_loki(payload):
     headers = {"Content-Type": "application/json"}
 
     try:
-        endpoint = urllib.parse.urlsplit(LOKI_URL)
-        if endpoint.scheme not in {"http", "https"} or not endpoint.hostname:
-            raise ValueError("LOKI_URL must be an absolute HTTP(S) URL")
+        validate_loki_url(LOKI_URL)
         if USE_REQUESTS:
             resp = requests.post(
                 LOKI_URL, data=data, headers=headers, timeout=10, allow_redirects=False
@@ -200,7 +321,11 @@ def push_to_loki(payload):
                     )
         return True
     except Exception as e:
-        print(f"Error pushing to Loki: {e}", file=sys.stderr)
+        status = getattr(getattr(e, "response", None), "status_code", None) or getattr(
+            e, "code", None
+        )
+        detail = f"HTTP {status}" if status is not None else type(e).__name__
+        print(f"Error pushing to Loki ({detail}); retaining the cursor for retry", file=sys.stderr)
         return False
 
 
@@ -210,9 +335,6 @@ def process_logs():
     state_changed = False
 
     for service_name, filepath in LOG_SOURCES.items():
-        if not os.path.exists(filepath):
-            continue
-
         # Get current position and inode from state
         file_state = state.get(service_name, {})
         position = file_state.get("position", 0)
@@ -234,8 +356,8 @@ def process_logs():
                     f"Failed to forward {len(lines)} lines from {service_name}",
                     file=sys.stderr,
                 )
-        elif new_inode != inode:
-            # File rotated but no new content yet
+        elif (new_position, new_inode) != (position, inode):
+            # Empty files and blank lines need acknowledgement as well.
             state[service_name] = {"position": new_position, "inode": new_inode}
             state_changed = True
 
@@ -245,8 +367,10 @@ def process_logs():
 
 def main():
     """Main entry point."""
+    global LOKI_URL
     print("Log forwarder starting...")
-    print(f"Loki URL: {LOKI_URL}")
+    LOKI_URL = wait_for_loki_url()
+    print(f"Loki endpoint configured ({urllib.parse.urlsplit(LOKI_URL).hostname})")
     print(f"State file: {STATE_FILE}")
     print(f"Poll interval: {POLL_INTERVAL}s")
     print(f"Monitoring: {', '.join(LOG_SOURCES.keys())}")

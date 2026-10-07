@@ -57,6 +57,35 @@ def test_runtime_directory_failure_does_not_start_workers(monkeypatch):
     controller.start_auxiliary_readers.assert_not_called()
 
 
+@pytest.mark.parametrize("failure", [None, OSError("runtime directory unavailable"), SystemExit(0)])
+def test_bootstrap_always_retires_metrics_worker(monkeypatch, failure):
+    from inverter_control import prom_metrics
+
+    controller = Mock(dry_run=True)
+    monkeypatch.setattr(main.sys, "argv", ["main.py", "--dry-run"])
+    monkeypatch.setattr(main, "InverterController", Mock(return_value=controller))
+    monkeypatch.setattr(main, "_setup_mqtt_bridge", Mock(return_value=None))
+    monkeypatch.setattr(main, "start_console_server", Mock())
+    started = Mock(return_value=True)
+    stopped = Mock()
+    monkeypatch.setattr(prom_metrics, "start", started)
+    monkeypatch.setattr(prom_metrics, "stop", stopped)
+
+    def run_loop(*_args):
+        started.assert_called_once()
+        stopped.assert_not_called()
+        if failure is not None:
+            raise failure
+
+    monkeypatch.setattr(main, "_run_main_loop", run_loop)
+    if failure is None:
+        main._main_inner()
+    else:
+        with pytest.raises(type(failure)):
+            main._main_inner()
+    stopped.assert_called_once()
+
+
 @pytest.mark.parametrize("age", [-1, 0, 3, 4, 5, 9, 14, 15, 60, None])
 def test_keepalive_freshness_spans_the_heartbeat_cadence(tmp_path, age):
     heartbeat = tmp_path / "heartbeat"
