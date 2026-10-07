@@ -325,7 +325,9 @@ class TestSignalSubscription:
         client._bus = bus
         assert client.subscribe_busitem("svc.a", "/p")
         assert client.subscribe_busitem("svc.a", "/p")
-        assert bus.call_count == 1
+        # Sender resolution also calls the bus asynchronously. Count only the
+        # match rule whose idempotence this test verifies.
+        assert sum(message.member == "AddMatch" for message in bus.messages) == 1
 
     def test_subscribe_failure_not_remembered(self, client):
         client._bus = FakeBus(_error())
