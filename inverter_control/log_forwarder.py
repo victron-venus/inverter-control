@@ -53,10 +53,15 @@ def validate_loki_url(url):
         or not endpoint.hostname
         or endpoint.fragment
         or any(char.isspace() for char in url)
+        or "\\" in url
     ):
         raise ValueError(
-            "Loki endpoint must be an absolute HTTP(S) URL without whitespace or a fragment"
+            "Loki endpoint must be an absolute HTTP(S) URL without whitespace, backslashes or a fragment"
         )
+    # Only literal loopback addresses may use plaintext, without DNS resolution
+    # or alternate address spellings that HTTP clients may interpret differently.
+    if endpoint.scheme == "http" and endpoint.hostname not in {"127.0.0.1", "::1"}:
+        raise ValueError("Remote Loki endpoints require HTTPS")
     # Accessing port validates its syntax and range, even without a network call.
     if endpoint.port == 0:
         raise ValueError("Loki endpoint port must be greater than zero")

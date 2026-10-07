@@ -205,6 +205,7 @@ def test_corrupt_state_does_not_break_forwarding(source, broken):
         "https://example.com:bad/push",
         "https://example.com/push\nvalue",
         "https://example.com/push#fragment",
+        "http://example.com/push",
     ],
 )
 def test_endpoint_file_validation(tmp_path, monkeypatch, url):

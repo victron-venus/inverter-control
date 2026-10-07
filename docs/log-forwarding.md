@@ -33,8 +33,13 @@ rechecks it every 60 seconds. It emits a diagnostic when the problem changes,
 without sending logs or repeatedly restarting. Startup and failure diagnostics
 are unbuffered in `/var/log/log-forwarder/current`.
 
-HTTP and HTTPS URLs are supported. HTTPS keeps normal certificate verification;
-redirects are refused to prevent sending log content to an unconfigured server.
+Remote endpoints require HTTPS with normal certificate verification. Plain HTTP
+is accepted only for the literal loopback addresses `127.0.0.1` and `[::1]`, for
+an on-device receiver or local testing. DNS names (including `localhost`), LAN
+addresses and alternative loopback spellings must use HTTPS. Existing remote
+HTTP configurations must be changed to HTTPS; otherwise the service remains
+idle and reports invalid configuration. Redirects are refused to prevent sending
+log content to an unconfigured server.
 Push failures identify the exception type or HTTP status, without printing URL
 credentials. A ready Loki endpoint should return HTTP 204 for a valid push.
 
