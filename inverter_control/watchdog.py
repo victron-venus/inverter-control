@@ -450,7 +450,6 @@ class HardwareWatchdog:
         self._success_count += 1
         if self._success_count >= self._success_threshold:
             self._recover_from_failsafe_locked()
-        return
 
     def _check_heartbeat_locked(self):
         if self._override_value is not None:
