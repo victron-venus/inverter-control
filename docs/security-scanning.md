@@ -11,9 +11,11 @@ virtual environments and build output, not production modules, release scripts
 or tests. Only pytest assertions receive a test-file exception. Other exceptions
 are specific rule IDs on individual reviewed lines:
 
-- B404/B603: explicit subprocess argument vectors, with no shell interpolation.
+- B404/B603: explicit subprocess argument vectors.
   Privileged D-Bus operations use fixed system executable paths. Release tools
   use reviewed repository operations and validate their GitHub/resource inputs.
+  Local release policy commands intentionally support trusted repository shell
+  scripts; no release arguments or remote event data are interpolated into them.
 - B607: developer tools and isolated installer tests intentionally use the
   caller's toolchain or a fixture PATH; these are not privileged daemon commands.
 - B105/B108: documented placeholder credentials and invalid-path test fixtures.

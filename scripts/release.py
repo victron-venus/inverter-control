@@ -32,7 +32,7 @@ RC = re.compile(
 
 def run(*args: str, capture: bool = False) -> str:
     """Run a checked command from the release repository root."""
-    # Repository-controlled argv; no shell interpolation or external command text.
+    # Only reviewed repository policy commands; never release/event input.
     result = subprocess.run(  # nosec B603
         args,
         cwd=ROOT,

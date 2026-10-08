@@ -1,0 +1,16 @@
+name: Weekly full quality gate
+on:
+  schedule:
+    - cron: '15 8 * * 3'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  quality:
+    uses: ./.github/workflows/quality-gate.yml
+    with:
+      force-full: true
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
