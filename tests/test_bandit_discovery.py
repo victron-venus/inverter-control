@@ -18,6 +18,7 @@ class BanditDiscoveryTests(unittest.TestCase):
     def test_directory_exclusions_preserve_ci_and_source_prefixes(self):
         """Real findings in .github survive Git directory and Git file metadata."""
         repository = Path(__file__).resolve().parents[1]
+        original_path = sys.path.copy()
         sys.path.insert(0, str(repository / "scripts"))
         try:
             spec = importlib.util.spec_from_file_location(
@@ -28,7 +29,7 @@ class BanditDiscoveryTests(unittest.TestCase):
             run_bandit = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(run_bandit)
         finally:
-            sys.path.pop(0)
+            sys.path[:] = original_path
         for git_is_file in (False, True):
             with self.subTest(git_is_file=git_is_file), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)

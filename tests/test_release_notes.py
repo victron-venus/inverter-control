@@ -3,7 +3,7 @@
 import base64
 import importlib.util
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -13,6 +13,31 @@ _SPEC = importlib.util.spec_from_file_location(
 release = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(release)
 SOURCE = "a" * 40
+
+
+class StrictGitHub:
+    """Permit only the expected source read and reject all remote mutation."""
+
+    def __init__(self, response: dict | None = None):
+        self.responses = [] if response is None else [response]
+        self.calls = []
+        self.writes = []
+
+    def api(self, path: str, method: str = "GET", body: dict | None = None):
+        self.calls.append((method, path, body))
+        if method != "GET":
+            self.writes.append((method, path, body))
+            message = f"Unexpected remote write: {method} {path}"
+            raise AssertionError(message)
+        if path != f"contents/CHANGELOG.md?ref={SOURCE}" or not self.responses:
+            message = f"Unexpected remote read: {path}"
+            raise AssertionError(message)
+        return self.responses.pop(0)
+
+    def upload(self, tag: str, path: Path):
+        self.writes.append(("upload", tag, path))
+        message = f"Unexpected remote upload: {tag} {path}"
+        raise AssertionError(message)
 
 
 def contents(text):
@@ -45,15 +70,16 @@ Do not copy older notes either.
 
 
 def render(text=NOTES, tag="v1.2.3-beta.8", response_change=None):
-    github = Mock()
     response = contents(text)
     response.update(response_change or {})
-    github.api.return_value = response
+    github = StrictGitHub(response)
     with patch.object(
         release, "source_policy_snapshot", return_value={"data": {"release_notes": "CHANGELOG.md"}}
     ):
         body = release.release_notes(github, tag, SOURCE, "Original source and validation links.")
-    github.api.assert_called_once_with(f"contents/CHANGELOG.md?ref={SOURCE}")
+    assert github.calls == [("GET", f"contents/CHANGELOG.md?ref={SOURCE}", None)]
+    assert not github.responses
+    assert not github.writes
     return body
 
 
@@ -70,10 +96,11 @@ def test_notes_use_only_exact_base_and_retain_provenance(tag):
 def test_crlf_notes_preserve_source_byte_verification():
     crlf = NOTES.replace("\n", "\r\n")
     assert render(crlf) == render(NOTES)
+    lf_contents = contents(NOTES)
     with pytest.raises(release.ReleaseError, match="size mismatch"):
-        render(crlf, response_change={"size": len(NOTES.encode())})
+        render(crlf, response_change={"size": lf_contents["size"]})
     with pytest.raises(release.ReleaseError, match="blob identity"):
-        render(crlf, response_change={"sha": contents(NOTES)["sha"]})
+        render(crlf, response_change={"sha": lf_contents["sha"]})
 
 
 @pytest.mark.parametrize(
@@ -108,20 +135,22 @@ def test_corrupt_or_wrong_source_is_rejected(changes):
 
 
 def test_notes_policy_is_opt_in_for_other_toolkit_consumers():
-    github = Mock()
+    github = StrictGitHub()
     with patch.object(release, "source_policy_snapshot", return_value={"data": {}}):
         assert release.release_notes(github, "v1.2.3", SOURCE, "provenance") == "provenance"
-    github.api.assert_not_called()
+    assert not github.calls
+    assert not github.writes
 
 
 def test_missing_notes_abort_before_remote_release_mutation(tmp_path):
-    github = Mock()
+    github = StrictGitHub()
     with (
         patch.object(release, "release_notes", side_effect=release.ReleaseError("missing notes")),
         pytest.raises(release.ReleaseError, match="missing notes"),
     ):
         release.publish(github, "v1.2.3", SOURCE, tmp_path, False, "provenance")
-    github.api.assert_not_called()
+    assert not github.calls
+    assert not github.writes
 
 
 def test_source_changelog_route_is_pinned_to_a_commit():

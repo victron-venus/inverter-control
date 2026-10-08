@@ -66,6 +66,7 @@ API_PATHS = {
     "PATCH": (r"releases/[1-9]\d*",),
     "PUT": (r"contents/release-version-state\.json",),
 }
+SHA256_PATTERN = r"[0-9a-f]{64}"
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\Z")
 REPO_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
@@ -526,7 +527,7 @@ def validate_policy_snapshot(snapshot: object, repo: str) -> None:
         isinstance(snapshot.get("git_blob_sha"), str)
         and SHA_RE.fullmatch(snapshot["git_blob_sha"])
         and isinstance(snapshot.get("sha256"), str)
-        and re.fullmatch(r"[0-9a-f]{64}", snapshot["sha256"]),
+        and re.fullmatch(SHA256_PATTERN, snapshot["sha256"]),
         "Invalid source policy snapshot hashes",
     )
     require_release_policy(snapshot.get("data"), repo, qualified=True)
@@ -1345,7 +1346,7 @@ def validate_manifest(
             and re.fullmatch(rf"v{re.escape(base_version)}-rc\.[1-9]\d*", parent["tag"])
             and parent["source_sha"] == manifest["source_sha"]
             and isinstance(parent["manifest_sha256"], str)
-            and re.fullmatch(r"[0-9a-f]{64}", parent["manifest_sha256"]),
+            and re.fullmatch(SHA256_PATTERN, parent["manifest_sha256"]),
             "Invalid final RC provenance",
         )
         require(
@@ -1374,7 +1375,7 @@ def validate_manifest(
         )
         require(
             isinstance(item.get("sha256"), str)
-            and re.fullmatch(r"[0-9a-f]{64}", item["sha256"]),
+            and re.fullmatch(SHA256_PATTERN, item["sha256"]),
             "Invalid asset checksum",
         )
     return manifest
