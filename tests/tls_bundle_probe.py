@@ -51,8 +51,8 @@ def check(armv7: bool = False) -> dict:
         class VerifiedSocket:
             context = ssl.create_default_context()
 
-            def get_verified_chain(self):
-                return [cert.public_bytes(serialization.Encoding.DER)]
+            def get_verified_chain(self, certificate=cert):
+                return [certificate.public_bytes(serialization.Encoding.DER)]
 
         try:
             verify_key_lengths(VerifiedSocket())

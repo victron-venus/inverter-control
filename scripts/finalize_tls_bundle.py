@@ -65,4 +65,5 @@ def finalize(bundle: Path) -> None:
 
 
 if __name__ == "__main__":
-    finalize(Path(sys.argv[1]))
+    # This image-local entrypoint writes only the fixed build artifact directory.
+    finalize(Path("/bundle"))
