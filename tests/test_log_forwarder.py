@@ -27,6 +27,10 @@ class TestLogForwarder:
         # Patch the global constants
         self.state_patcher = patch.object(log_forwarder, "STATE_FILE", self.temp_state_file)
         self.state_patcher.start()
+        self.url_patcher = patch.object(
+            log_forwarder, "LOKI_URL", "https://example.com/loki/api/v1/push"
+        )
+        self.url_patcher.start()
 
         # Create test log file
         with open(self.temp_log_file, "w", encoding="utf-8") as f:
@@ -37,6 +41,7 @@ class TestLogForwarder:
     def teardown_method(self):
         """Clean up test environment."""
         self.state_patcher.stop()
+        self.url_patcher.stop()
         if os.path.exists(self.temp_state_file):
             os.unlink(self.temp_state_file)
         if os.path.exists(self.temp_log_file):
@@ -326,9 +331,28 @@ class TestLogForwarder:
 
 @pytest.mark.parametrize("use_requests", [True, False])
 @pytest.mark.parametrize(
-    "url", ["file:///etc/passwd", "ftp://example.com/logs", "https:///logs", "logs"]
+    "url",
+    [
+        "file:///etc/passwd",
+        "ftp://example.com/logs",
+        "https:///logs",
+        "logs",
+        "http://example.com/push",
+        "http://192.0.2.1:3100/push",
+        "http://localhost:3100/push",
+        "http://127.0.0.2/push",
+        "http://127.1/push",
+        "http://127.0.0.1./push",
+        "http://2130706433/push",
+        "http://0x7f000001/push",
+        "http://0177.0.0.1/push",
+        "http://[0:0:0:0:0:0:0:1]/push",
+        "http://[::ffff:127.0.0.1]/push",
+        "http://127.0.0.1.example.com/push",
+        "http://example.com\\@127.0.0.1/push",
+    ],
 )
-def test_loki_rejects_non_http_endpoints(monkeypatch, use_requests, url):
+def test_loki_rejects_unsafe_endpoints(monkeypatch, use_requests, url):
     monkeypatch.setattr(log_forwarder, "USE_REQUESTS", use_requests)
     monkeypatch.setattr(log_forwarder, "LOKI_URL", url)
     with (
@@ -338,6 +362,18 @@ def test_loki_rejects_non_http_endpoints(monkeypatch, use_requests, url):
         assert log_forwarder.push_to_loki({"streams": []}) is False
         post.assert_not_called()
         opener.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/loki/api/v1/push",
+        "http://127.0.0.1:3100/loki/api/v1/push",
+        "http://[::1]:3100/loki/api/v1/push",
+    ],
+)
+def test_loki_accepts_https_and_literal_loopback(url):
+    log_forwarder.validate_loki_url(url)
 
 
 @pytest.mark.parametrize("use_requests", [True, False])

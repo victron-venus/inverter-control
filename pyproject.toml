@@ -23,6 +23,7 @@ dev = [
 ]
 test = [
     "dbus-fast>=2.21.1",
+    "prometheus-client>=0.26.0",
 ]
 
 [tool.pylint.messages_control]

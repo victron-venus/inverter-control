@@ -854,7 +854,13 @@ bind address and restrict access with a firewall:
 - Console: `INVERTER_CONSOLE_HOST` environment variable.
 - Metrics: `INVERTER_METRICS_HOST` environment variable.
 
-Loki URLs must use HTTP or HTTPS. Redirects are rejected; configure the final push URL.
+Metrics automatically retry the configured bind address after a temporary network
+failure; see [Prometheus setup and recovery](docs/prometheus-alerts.md).
+
+Configure the final HTTP or HTTPS Loki push URL in
+`/data/setupOptions/inverter-control/loki_url`; there is no default destination.
+The setting survives upgrades. Redirects are rejected. See
+[Loki configuration, recovery and retention](docs/log-forwarding.md).
 
 ### Grid measurement validity
 
