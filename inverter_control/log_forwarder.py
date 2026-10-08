@@ -210,6 +210,24 @@ def retained_log_files(filepath):
     return files
 
 
+def _read_complete_lines(f, path, filepath):
+    lines = []
+    while len(lines) < BATCH_SIZE:
+        line_start = f.tell()
+        line = f.readline()
+        if not line:
+            break
+        if not line.endswith(b"\n") and path == filepath:
+            # The writer has not finished this line. Keep its bytes
+            # pending, including split UTF-8 characters.
+            f.seek(line_start)
+            break
+        message = line.rstrip(b"\n\r").decode("utf-8", errors="replace")
+        if message:
+            lines.append(message)
+    return lines
+
+
 def read_new_lines(filepath, position, inode):
     """Drain the saved inode and newer retained files, advancing only whole lines."""
     try:
@@ -237,20 +255,7 @@ def read_new_lines(filepath, position, inode):
                     print(f"Warning: Log truncated: {path}; replaying it", file=sys.stderr)
                     new_position = 0
                 f.seek(new_position)
-                lines = []
-                while len(lines) < BATCH_SIZE:
-                    line_start = f.tell()
-                    line = f.readline()
-                    if not line:
-                        break
-                    if not line.endswith(b"\n") and path == filepath:
-                        # The writer has not finished this line. Keep its bytes
-                        # pending, including split UTF-8 characters.
-                        f.seek(line_start)
-                        break
-                    message = line.rstrip(b"\n\r").decode("utf-8", errors="replace")
-                    if message:
-                        lines.append(message)
+                lines = _read_complete_lines(f, path, filepath)
                 new_position = f.tell()
             if lines or path == filepath:
                 return lines, new_position, new_inode

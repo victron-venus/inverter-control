@@ -53,6 +53,22 @@ except ImportError:
     logger.info("paho-mqtt not available, MQTT bridge disabled")
 
 
+def _handle_precharge_request(bridge, client, msg):
+    if msg.retain or len(msg.payload) > 4096:
+        return
+    callback = bridge._callbacks.get("pre_charge")
+    if callback:
+        outcome = callback(json.loads(msg.payload))
+        request_id = outcome.get("request_id")
+        if request_id:
+            client.publish(
+                f"{bridge.forecast_prefix}/pre_charge_ack/{request_id}",
+                json.dumps(outcome),
+                qos=1,
+                retain=False,
+            )
+
+
 class MQTTBridge:
     """Publishes state to MQTT, receives commands - async via background thread"""
 
@@ -263,19 +279,7 @@ class MQTTBridge:
             topic = msg.topic
 
             if topic == f"{self.forecast_prefix}/pre_charge_request":
-                if msg.retain or len(msg.payload) > 4096:
-                    return
-                callback = self._callbacks.get("pre_charge")
-                if callback:
-                    outcome = callback(json.loads(msg.payload))
-                    request_id = outcome.get("request_id")
-                    if request_id:
-                        client.publish(
-                            f"{self.forecast_prefix}/pre_charge_ack/{request_id}",
-                            json.dumps(outcome),
-                            qos=1,
-                            retain=False,
-                        )
+                _handle_precharge_request(self, client, msg)
                 return
 
             if topic in {"solar/forecast", f"{self.forecast_prefix}/forecast_json"}:

@@ -133,13 +133,18 @@ class SubmeterTrim:
         timestamp: float | None = None,
     ) -> TrimDecision:
         self._reason = reason
+        kind = "hold"
+        if delta:
+            kind = "trim"
+        elif base != previous:
+            kind = "base"
         self._issued = TrimDecision(
             setpoint=base + delta,
             delta=delta,
             measurement_time=timestamp,
             reason=reason,
             _previous=previous,
-            _kind="trim" if delta else "base" if base != previous else "hold",
+            _kind=kind,
             _proposed_at=now,
         )
         if delta:
@@ -189,6 +194,119 @@ class SubmeterTrim:
         self._instance = int(instance)
         return (service, int(instance), int(generation)), timestamp, power
 
+    def _check_proposal_clock(self, base, previous, clock, wall):
+        if clock is None or wall is None or clock < 0 or wall <= 0:
+            self.reset("invalid_clock")
+            return self._decision(base, previous, 0.0, "invalid_clock")
+        if self._last_now is not None and clock < self._last_now:
+            self.reset("clock_reversed")
+            self._last_now = clock
+            return self._decision(base, previous, clock, "clock_reversed")
+        self._last_now = clock
+        return None
+
+    def _check_proposal_mode(self, base, previous, clock, base_setpoint, eligible, reason):
+        if not self.enabled or eligible is not True:
+            message = "disabled" if not self.enabled else reason or "ineligible"
+            self.reset(message)
+            return self._decision(base, previous, clock, message)
+        if not _integer(base_setpoint):
+            self.reset("invalid_base_command")
+            return self._decision(previous, previous, clock, "invalid_base_command")
+        if base != previous:
+            self._clear_window()
+            return self._decision(base, previous, clock, "fast_command")
+        return None
+
+    def _check_proposal_source(self, base, previous, clock, raw, filtered, source_key):
+        if raw is None or filtered is None:
+            self.reset("invalid_primary")
+            return self._decision(base, previous, clock, "invalid_primary")
+        if (
+            not isinstance(source_key, tuple)
+            or len(source_key) < 2
+            or not isinstance(source_key[0], str)
+            or not source_key[0].startswith("com.victronenergy.")
+            or any(not _integer(item) or item < 0 for item in source_key[1:])
+        ):
+            self.reset("invalid_source")
+            return self._decision(base, previous, clock, "invalid_source")
+        return None
+
+    def _update_report_identity(self, timestamp, power):
+        if self._last_measurement is not None and timestamp < self._last_measurement:
+            return "out_of_order_submeter", False
+        is_new = self._last_measurement is None or timestamp > self._last_measurement
+        if not is_new and self._last_power != power:
+            return "changed_submeter_report", False
+        if is_new:
+            self._pending = None
+            self._last_measurement = timestamp
+            self._last_power = power
+        return None, is_new
+
+    def _propose_window(self, base, previous, clock, raw, filtered, timestamp, power, low, high):
+        if abs(raw - filtered) > self.RAW_DEVIATION:
+            self._clear_window()
+            return self._decision(base, previous, clock, "primary_transient")
+        self._primary.append((clock, filtered))
+        self._primary = [
+            point for point in self._primary if clock - point[0] <= self.WINDOW_SECONDS
+        ]
+        report_error, is_new = self._update_report_identity(timestamp, power)
+        if report_error:
+            self._clear_window()
+            return self._decision(base, previous, clock, report_error)
+        if timestamp < self._command_wall + self.MEASUREMENT_DELAY:
+            self._pending = None
+            return self._decision(base, previous, clock, "measurement_predates_settle")
+        if is_new:
+            self._reports.append(_Report(timestamp, power, clock))
+        self._reports = [
+            item for item in self._reports if timestamp - item.timestamp <= self.WINDOW_SECONDS
+        ]
+        decision = self._check_window_stability(base, previous, clock)
+        if decision is not None:
+            return decision
+        if clock - self._command_time < self.SETTLE_SECONDS:
+            return self._decision(base, previous, clock, "settling")
+        if self._pending is not None:
+            # The same source report and command are still fresh and eligible.
+            self._issued = self._pending
+            self._reason = self._pending.reason
+            return self._pending
+        if not is_new:
+            return self._decision(base, previous, clock, "repeated_submeter")
+        if len(self._reports) < self.MIN_REPORTS or (
+            self._reports[-1].timestamp - self._reports[0].timestamp < self.MIN_SPAN
+        ):
+            return self._decision(base, previous, clock, "collecting")
+        if abs(self._average) <= self.DEADZONE:
+            return self._decision(base, previous, clock, "within_deadzone", timestamp=timestamp)
+        return self._bounded_trim_decision(base, previous, clock, timestamp, low, high)
+
+    def _check_window_stability(self, base, previous, clock):
+        if self._reports:
+            powers = [item.power for item in self._reports]
+            primary = [value for t, value in self._primary if t >= self._reports[0].observed_at]
+            if max(powers) - min(powers) > self.SUBMETER_RANGE:
+                self._clear_window()
+                return self._decision(base, previous, clock, "submeter_unstable")
+            if primary and max(primary) - min(primary) > self.PRIMARY_RANGE:
+                self._clear_window()
+                return self._decision(base, previous, clock, "primary_unstable")
+            self._average = sum(powers) / len(powers)
+        return None
+
+    def _bounded_trim_decision(self, base, previous, clock, timestamp, low, high):
+        magnitude = min(self.MAX_STEP, max(1, round(abs(self._average) * self.GAIN)))
+        delta = -magnitude if self._average > 0 else magnitude
+        if abs(self._total_trim + delta) > self.MAX_TOTAL:
+            return self._decision(base, previous, clock, "trim_budget", timestamp=timestamp)
+        if not low < base + delta < high:
+            return self._decision(base, previous, clock, "setpoint_limit", timestamp=timestamp)
+        return self._decision(base, previous, clock, "trim", delta=delta, timestamp=timestamp)
+
     def propose(
         self,
         *,
@@ -217,24 +335,12 @@ class SubmeterTrim:
         base = int(base_setpoint) if _integer(base_setpoint) else previous
         clock = _number(now)
         wall = _number(wall_time)
-        if clock is None or wall is None or clock < 0 or wall <= 0:
-            self.reset("invalid_clock")
-            return self._decision(base, previous, 0.0, "invalid_clock")
-        if self._last_now is not None and clock < self._last_now:
-            self.reset("clock_reversed")
-            self._last_now = clock
-            return self._decision(base, previous, clock, "clock_reversed")
-        self._last_now = clock
-        if not self.enabled or eligible is not True:
-            message = "disabled" if not self.enabled else reason or "ineligible"
-            self.reset(message)
-            return self._decision(base, previous, clock, message)
-        if not _integer(base_setpoint):
-            self.reset("invalid_base_command")
-            return self._decision(previous, previous, clock, "invalid_base_command")
-        if base != previous:
-            self._clear_window()
-            return self._decision(base, previous, clock, "fast_command")
+        decision = self._check_proposal_clock(base, previous, clock, wall)
+        if decision is not None:
+            return decision
+        decision = self._check_proposal_mode(base, previous, clock, base_setpoint, eligible, reason)
+        if decision is not None:
+            return decision
         low, high = _number(min_setpoint), _number(max_setpoint)
         if low is None or high is None or low >= high or not low <= base <= high:
             self.reset("invalid_limits")
@@ -243,18 +349,9 @@ class SubmeterTrim:
             self.reset("limits_changed")
         self._limits = low, high
         raw, filtered = _number(raw_grid), _number(filtered_grid)
-        if raw is None or filtered is None:
-            self.reset("invalid_primary")
-            return self._decision(base, previous, clock, "invalid_primary")
-        if (
-            not isinstance(source_key, tuple)
-            or len(source_key) < 2
-            or not isinstance(source_key[0], str)
-            or not source_key[0].startswith("com.victronenergy.")
-            or any(not _integer(item) or item < 0 for item in source_key[1:])
-        ):
-            self.reset("invalid_source")
-            return self._decision(base, previous, clock, "invalid_source")
+        decision = self._check_proposal_source(base, previous, clock, raw, filtered, source_key)
+        if decision is not None:
+            return decision
         report = self._sample(sample, wall)
         if isinstance(report, str):
             self.reset(report)
@@ -268,64 +365,9 @@ class SubmeterTrim:
             self._command_time = clock
             self._command_wall = wall
             self._needs_warmup = False
-        if abs(raw - filtered) > self.RAW_DEVIATION:
-            self._clear_window()
-            return self._decision(base, previous, clock, "primary_transient")
-        self._primary.append((clock, filtered))
-        self._primary = [
-            point for point in self._primary if clock - point[0] <= self.WINDOW_SECONDS
-        ]
-        if self._last_measurement is not None and timestamp < self._last_measurement:
-            self._clear_window()
-            return self._decision(base, previous, clock, "out_of_order_submeter")
-        is_new = self._last_measurement is None or timestamp > self._last_measurement
-        if not is_new and self._last_power != power:
-            self._clear_window()
-            return self._decision(base, previous, clock, "changed_submeter_report")
-        if is_new:
-            self._pending = None
-            self._last_measurement = timestamp
-            self._last_power = power
-        if timestamp < self._command_wall + self.MEASUREMENT_DELAY:
-            self._pending = None
-            return self._decision(base, previous, clock, "measurement_predates_settle")
-        if is_new:
-            self._reports.append(_Report(timestamp, power, clock))
-        self._reports = [
-            item for item in self._reports if timestamp - item.timestamp <= self.WINDOW_SECONDS
-        ]
-        if self._reports:
-            powers = [item.power for item in self._reports]
-            primary = [value for t, value in self._primary if t >= self._reports[0].observed_at]
-            if max(powers) - min(powers) > self.SUBMETER_RANGE:
-                self._clear_window()
-                return self._decision(base, previous, clock, "submeter_unstable")
-            if primary and max(primary) - min(primary) > self.PRIMARY_RANGE:
-                self._clear_window()
-                return self._decision(base, previous, clock, "primary_unstable")
-            self._average = sum(powers) / len(powers)
-        if clock - self._command_time < self.SETTLE_SECONDS:
-            return self._decision(base, previous, clock, "settling")
-        if self._pending is not None:
-            # The same source report and command are still fresh and eligible.
-            self._issued = self._pending
-            self._reason = self._pending.reason
-            return self._pending
-        if not is_new:
-            return self._decision(base, previous, clock, "repeated_submeter")
-        if len(self._reports) < self.MIN_REPORTS or (
-            self._reports[-1].timestamp - self._reports[0].timestamp < self.MIN_SPAN
-        ):
-            return self._decision(base, previous, clock, "collecting")
-        if abs(self._average) <= self.DEADZONE:
-            return self._decision(base, previous, clock, "within_deadzone", timestamp=timestamp)
-        magnitude = min(self.MAX_STEP, max(1, round(abs(self._average) * self.GAIN)))
-        delta = -magnitude if self._average > 0 else magnitude
-        if abs(self._total_trim + delta) > self.MAX_TOTAL:
-            return self._decision(base, previous, clock, "trim_budget", timestamp=timestamp)
-        if not low < base + delta < high:
-            return self._decision(base, previous, clock, "setpoint_limit", timestamp=timestamp)
-        return self._decision(base, previous, clock, "trim", delta=delta, timestamp=timestamp)
+        return self._propose_window(
+            base, previous, clock, raw, filtered, timestamp, power, low, high
+        )
 
     def commit(self, decision: TrimDecision, now: float, wall_time: float) -> bool:
         """Record only the current decision after its hardware write succeeds."""

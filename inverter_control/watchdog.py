@@ -382,6 +382,35 @@ class HardwareWatchdog:
             self._thread.join(timeout=max(0.0, timeout))
         return self._thread is None or not self._thread.is_alive()
 
+    def _grid_loss_deadline_locked(self, now):
+        grid_deadline = now + GRID_LOSS_REFRESH_INTERVAL
+        if self._grid_loss_forced:
+            if self._grid_loss_refresh_pending:
+                last_write = self._last_grid_loss_attempt
+                interval = GRID_LOSS_RETRY_INTERVAL
+            else:
+                last_write = self._last_grid_loss_write
+                interval = GRID_LOSS_REFRESH_INTERVAL
+            grid_deadline = now if last_write is None else last_write + interval
+        return grid_deadline
+
+    def _next_fallback_deadline_locked(self, deadline):
+        if self._override_value is not None:
+            last_write = self._override_last_write
+            interval = SETPOINT_OVERRIDE_INTERVAL
+            if self._override_refresh_failed:
+                last_write = self._override_last_attempt
+                interval = SETPOINT_OVERRIDE_INTERVAL
+            deadline = min(
+                deadline,
+                time.monotonic() if last_write is None else last_write + interval,
+            )
+        elif self.grid_loss_hold_seconds is not None and not self.dry_run:
+            now = time.monotonic()
+            grid_deadline = self._grid_loss_deadline_locked(now)
+            deadline = min(deadline, grid_deadline)
+        return deadline
+
     def _run(self):
         """Maintain fallback deadlines without accelerating heartbeat checks."""
         next_heartbeat = time.monotonic() + self.check_interval
@@ -391,28 +420,7 @@ class HardwareWatchdog:
                 break
             deadline = next_heartbeat
             with self._lock:
-                if self._override_value is not None:
-                    last_write = self._override_last_write
-                    interval = SETPOINT_OVERRIDE_INTERVAL
-                    if self._override_refresh_failed:
-                        last_write = self._override_last_attempt
-                        interval = SETPOINT_OVERRIDE_INTERVAL
-                    deadline = min(
-                        deadline,
-                        time.monotonic() if last_write is None else last_write + interval,
-                    )
-                elif self.grid_loss_hold_seconds is not None and not self.dry_run:
-                    now = time.monotonic()
-                    grid_deadline = now + GRID_LOSS_REFRESH_INTERVAL
-                    if self._grid_loss_forced:
-                        if self._grid_loss_refresh_pending:
-                            last_write = self._last_grid_loss_attempt
-                            interval = GRID_LOSS_RETRY_INTERVAL
-                        else:
-                            last_write = self._last_grid_loss_write
-                            interval = GRID_LOSS_REFRESH_INTERVAL
-                        grid_deadline = now if last_write is None else last_write + interval
-                    deadline = min(deadline, grid_deadline)
+                deadline = self._next_fallback_deadline_locked(deadline)
             wait_seconds = max(0.0, deadline - time.monotonic())
             self._wake_event.wait(wait_seconds)
             if self._stop_event.is_set() or not self._enabled:
@@ -427,6 +435,23 @@ class HardwareWatchdog:
         with self._lock:
             self._check_heartbeat_locked()
 
+    def _recover_grid_loss_locked(self, now):
+        # A meter-loss command must never be replaced by the generic zero
+        # when normal control has intentionally stopped writing setpoints.
+        self._fail_count = 0
+        if (
+            not self._hardware_forced
+            or self._grid_loss_refresh_pending
+            or self._telemetry_invalid
+            or now - self._last_dbus_update > self.timeout_seconds
+        ):
+            self._success_count = 0
+            return
+        self._success_count += 1
+        if self._success_count >= self._success_threshold:
+            self._recover_from_failsafe_locked()
+        return
+
     def _check_heartbeat_locked(self):
         if self._override_value is not None:
             self._maintain_override_locked(time.monotonic())
@@ -437,20 +462,7 @@ class HardwareWatchdog:
         now = time.monotonic()
         self._check_grid_loss_locked(now)
         if self._grid_loss_forced:
-            # A meter-loss command must never be replaced by the generic zero
-            # when normal control has intentionally stopped writing setpoints.
-            self._fail_count = 0
-            if (
-                not self._hardware_forced
-                or self._grid_loss_refresh_pending
-                or self._telemetry_invalid
-                or now - self._last_dbus_update > self.timeout_seconds
-            ):
-                self._success_count = 0
-                return
-            self._success_count += 1
-            if self._success_count >= self._success_threshold:
-                self._recover_from_failsafe_locked()
+            self._recover_grid_loss_locked(now)
             return
         setpoint_age = now - self._last_setpoint_update
         dbus_age = now - self._last_dbus_update
@@ -551,6 +563,32 @@ class HardwareWatchdog:
         """Return True if watchdog has triggered failsafe"""
         return self._triggered
 
+    def _grid_loss_status_locked(self, now):
+        elapsed = (
+            None if self._grid_invalid_since is None else max(0.0, now - self._grid_invalid_since)
+        )
+        remaining = None
+        if self._override_value is not None:
+            loss_state = "overridden"
+        elif self.grid_loss_hold_seconds is None:
+            loss_state = "disabled"
+        elif self._grid_loss_forced:
+            pending = not self._hardware_forced or self._grid_loss_refresh_pending
+            loss_state = "fallback_pending" if pending else "fallback"
+            if not pending and not self._telemetry_invalid:
+                loss_state = "recovering"
+            remaining = 0.0
+        elif self._telemetry_invalid:
+            loss_state = "holding"
+            remaining = max(
+                0.0,
+                (self.grid_loss_hold_seconds if self._has_valid_setpoint else 0.0)
+                - (elapsed or 0.0),
+            )
+        else:
+            loss_state = "normal"
+        return elapsed, remaining, loss_state
+
     def get_status(self) -> dict:
         """Return watchdog status for UI/debugging"""
         now = time.monotonic()
@@ -558,31 +596,7 @@ class HardwareWatchdog:
             setpoint_age = now - self._last_setpoint_update
             dbus_age = now - self._last_dbus_update
             mqtt_age = now - self._last_mqtt_update
-            elapsed = (
-                None
-                if self._grid_invalid_since is None
-                else max(0.0, now - self._grid_invalid_since)
-            )
-            remaining = None
-            if self._override_value is not None:
-                loss_state = "overridden"
-            elif self.grid_loss_hold_seconds is None:
-                loss_state = "disabled"
-            elif self._grid_loss_forced:
-                pending = not self._hardware_forced or self._grid_loss_refresh_pending
-                loss_state = "fallback_pending" if pending else "fallback"
-                if not pending and not self._telemetry_invalid:
-                    loss_state = "recovering"
-                remaining = 0.0
-            elif self._telemetry_invalid:
-                loss_state = "holding"
-                remaining = max(
-                    0.0,
-                    (self.grid_loss_hold_seconds if self._has_valid_setpoint else 0.0)
-                    - (elapsed or 0.0),
-                )
-            else:
-                loss_state = "normal"
+            elapsed, remaining, loss_state = self._grid_loss_status_locked(now)
             return {
                 "enabled": self._enabled,
                 "triggered": self._triggered,

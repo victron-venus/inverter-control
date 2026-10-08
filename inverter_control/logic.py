@@ -390,19 +390,7 @@ class SetpointCalculator:
             total_flags += flags
         return raw_vanew, total_flags, burst_fired
 
-    def calculate(self, state: SystemState) -> ControlResult:
-        """Execute the control logic pipeline"""
-
-        # Keep the instantaneous grid and the current background EMA distinct.
-        # filtered_gt is only the previous EMA for callers using the legacy
-        # per-cycle filter; a background sample must not be filtered again or
-        # overwritten with the instantaneous reading.
-        ev_exclusion = state.ev_power if state.do_not_supply_charger and state.ev_power > 100 else 0
-        effective_gt = state.gt - ev_exclusion
-        prefiltered_gt = (
-            state.prefiltered_gt - ev_exclusion if state.prefiltered_gt is not None else None
-        )
-
+    def _blend_derived_grid(self, state, ev_exclusion, effective_gt, prefiltered_gt):
         # Grid smoothing with Home total (derived_gt = home_total - pv_total)
         # Blend instantaneous CT with derived grid for stability.
         if state.derived_gt is not None:
@@ -435,19 +423,34 @@ class SetpointCalculator:
                     smoothing_weight * derived_effective_gt
                     + (1 - smoothing_weight) * prefiltered_gt
                 )
+        return effective_gt, prefiltered_gt
+
+    def calculate(self, state: SystemState) -> ControlResult:
+        """Execute the control logic pipeline"""
+
+        # Keep the instantaneous grid and the current background EMA distinct.
+        # filtered_gt is only the previous EMA for callers using the legacy
+        # per-cycle filter; a background sample must not be filtered again or
+        # overwritten with the instantaneous reading.
+        ev_exclusion = state.ev_power if state.do_not_supply_charger and state.ev_power > 100 else 0
+        effective_gt = state.gt - ev_exclusion
+        prefiltered_gt = (
+            state.prefiltered_gt - ev_exclusion if state.prefiltered_gt is not None else None
+        )
+
+        effective_gt, prefiltered_gt = self._blend_derived_grid(
+            state, ev_exclusion, effective_gt, prefiltered_gt
+        )
 
         # Burst detection must compare like-for-like effective grid values,
         # with the same home blend and EV exclusion on both sides.
         old_filtered_gt = prefiltered_gt if prefiltered_gt is not None else state.filtered_gt
-        new_filtered_gt = (
-            prefiltered_gt
-            if prefiltered_gt is not None
-            else (
-                float(effective_gt)
-                if old_filtered_gt is None
-                else (self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt)
-            )
-        )
+        if prefiltered_gt is not None:
+            new_filtered_gt = prefiltered_gt
+        elif old_filtered_gt is None:
+            new_filtered_gt = float(effective_gt)
+        else:
+            new_filtered_gt = self.ema_alpha * effective_gt + (1 - self.ema_alpha) * old_filtered_gt
         state.filtered_gt = new_filtered_gt
 
         # Run strategies

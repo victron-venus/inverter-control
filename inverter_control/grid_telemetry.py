@@ -11,6 +11,11 @@ import threading
 import time
 from typing import Any
 
+METER_CONNECTED_PATH = "/Connected"
+METER_PHASES_PATH = "/NrOfPhases"
+SERVICE_NAME_SUFFIX = "/ServiceName"
+GRID_SERVICE_PREFIX = "com.victronenergy.grid."
+
 GRID_PHASE_COUNT_PATH = "/Ac/Grid/NumberOfPhases"
 GRID_POWER_PATHS = {f"/Ac/Grid/L{phase}/Power": phase for phase in (1, 2)}
 GRID_SOURCE_PATHS = tuple(
@@ -19,7 +24,7 @@ GRID_SOURCE_PATHS = tuple(
     for field in ("Source", "ServiceName", "DeviceInstance")
 )
 GRID_PATHS = (GRID_PHASE_COUNT_PATH, *GRID_POWER_PATHS, *GRID_SOURCE_PATHS)
-GRID_METER_PATHS = ("/Connected", "/NrOfPhases")
+GRID_METER_PATHS = (METER_CONNECTED_PATH, METER_PHASES_PATH)
 
 
 def _number(raw: Any) -> float | None:
@@ -92,7 +97,7 @@ class GridTelemetry:
         if path not in GRID_PATHS:
             return
         with self._lock:
-            normalized = raw if path.endswith("/ServiceName") else _number(raw)
+            normalized = raw if path.endswith(SERVICE_NAME_SUFFIX) else _number(raw)
             if (path not in GRID_POWER_PATHS and normalized != self._fields.get(path)) or (
                 path in GRID_POWER_PATHS and normalized is None
             ):
@@ -100,8 +105,8 @@ class GridTelemetry:
             self._update(path, raw, time.monotonic())
 
     def _update(self, path: str, raw: Any, now: float) -> None:
-        value = raw if path.endswith("/ServiceName") else _number(raw)
-        if path.endswith("/ServiceName") and (not isinstance(value, str) or not value):
+        value = raw if path.endswith(SERVICE_NAME_SUFFIX) else _number(raw)
+        if path.endswith(SERVICE_NAME_SUFFIX) and (not isinstance(value, str) or not value):
             value = None
         self._fields[path] = value
         self._updated[path] = now
@@ -148,7 +153,7 @@ class GridTelemetry:
         """Candidate external meter for metadata reads, before validating power."""
         with self._lock:
             candidates = self._source_candidates()
-            if candidates and candidates[0][0].startswith("com.victronenergy.grid."):
+            if candidates and candidates[0][0].startswith(GRID_SERVICE_PREFIX):
                 return candidates[0][0]
             return None
 
@@ -158,7 +163,7 @@ class GridTelemetry:
             identities = {(name, instance) for name, instance, _ in self._source_candidates()}
             if len(identities) == 1:
                 identity = next(iter(identities))
-                if identity[0].startswith("com.victronenergy.grid."):
+                if identity[0].startswith(GRID_SERVICE_PREFIX):
                     return identity
             return None
 
@@ -174,11 +179,11 @@ class GridTelemetry:
             key = (service, path)
             value = _number(raw)
             if generation is None and (
-                (path == "/Connected" and value != 1)
-                or (path == "/NrOfPhases" and value != self._meter_fields.get(key))
+                (path == METER_CONNECTED_PATH and value != 1)
+                or (path == METER_PHASES_PATH and value != self._meter_fields.get(key))
             ):
                 self._generation += 1
-            if path == "/NrOfPhases":
+            if path == METER_PHASES_PATH:
                 self._declared_phases_required.add(service)
             self._meter_fields[key] = value
             self._meter_updated[key] = time.monotonic()
@@ -198,7 +203,7 @@ class GridTelemetry:
             for path in GRID_METER_PATHS:
                 self._meter_fields[(service, path)] = _number(fields.get(path))
                 self._meter_updated[(service, path)] = now
-            if "/NrOfPhases" in fields:
+            if METER_PHASES_PATH in fields:
                 self._declared_phases_required.add(service)
             self._meter_ready.add(service)
             return True
@@ -231,12 +236,7 @@ class GridTelemetry:
             self._meter_updated.clear()
             self._owner_error = reason
 
-    def _reason(self, now: float) -> tuple[str | None, float | None]:
-        # Each guard preserves a specific operator diagnosis without nested branching.
-        # pylint: disable=too-many-return-statements
-        if self._owner_error:
-            return self._owner_error, None
-        phases = self._fields.get(GRID_PHASE_COUNT_PATH)
+    def _power_paths(self, phases):
         if phases not in (1, 2):
             return f"Unsupported or unavailable grid phase count: {phases}", None
         if self._expected_phases and phases != self._expected_phases:
@@ -249,6 +249,35 @@ class GridTelemetry:
             if self._fields.get(path) is None:
                 return f"Grid L{phase} power unavailable", None
             required_paths.append(path)
+        return None, required_paths
+
+    def _external_meter_status(self, source, phases, now):
+        meter_age = 0.0
+        if source.startswith(GRID_SERVICE_PREFIX):
+            if source not in self._meter_ready:
+                return "External grid meter metadata unavailable", None
+            connected_key = (source, METER_CONNECTED_PATH)
+            if self._meter_fields.get(connected_key) != 1:
+                return "External grid meter is not connected", None
+            meter_age = now - self._meter_updated.get(connected_key, float("-inf"))
+            declared = self._meter_fields.get((source, METER_PHASES_PATH))
+            # Older/other meters may omit NrOfPhases. When supplied it must
+            # agree with supported system power data, including at startup.
+            if (
+                source in self._declared_phases_required or declared is not None
+            ) and declared != phases:
+                return "Grid power does not match the meter phase topology", None
+        return None, meter_age
+
+    def _reason(self, now: float) -> tuple[str | None, float | None]:
+        # Each guard preserves a specific operator diagnosis without nested branching.
+        # pylint: disable=too-many-return-statements
+        if self._owner_error:
+            return self._owner_error, None
+        phases = self._fields.get(GRID_PHASE_COUNT_PATH)
+        phase_error, required_paths = self._power_paths(phases)
+        if phase_error:
+            return phase_error, None
 
         candidates = self._source_candidates()
         if not candidates:
@@ -261,21 +290,9 @@ class GridTelemetry:
             return "Grid measurement source changed; waiting for established source", None
         if self._source_instance is not None and instance != self._source_instance:
             return "Grid device instance changed; waiting for established source", None
-        meter_age = 0.0
-        if source.startswith("com.victronenergy.grid."):
-            if source not in self._meter_ready:
-                return "External grid meter metadata unavailable", None
-            connected_key = (source, "/Connected")
-            if self._meter_fields.get(connected_key) != 1:
-                return "External grid meter is not connected", None
-            meter_age = now - self._meter_updated.get(connected_key, float("-inf"))
-            declared = self._meter_fields.get((source, "/NrOfPhases"))
-            # Older/other meters may omit NrOfPhases. When supplied it must
-            # agree with supported system power data, including at startup.
-            if (
-                source in self._declared_phases_required or declared is not None
-            ) and declared != phases:
-                return "Grid power does not match the meter phase topology", None
+        meter_error, meter_age = self._external_meter_status(source, phases, now)
+        if meter_error:
+            return meter_error, None
         age = max(now - self._updated.get(path, float("-inf")) for path in required_paths)
         age = max(age, meter_age)
         if age > self._max_age:
