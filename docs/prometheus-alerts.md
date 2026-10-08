@@ -21,6 +21,21 @@ service under its supervisor, then check `/metrics` from the Prometheus host and
 confirm `up{job="inverter-control"} == 1`. A successful request to localhost alone
 does not verify remote scraping. Remove the override to restore loopback binding.
 
+The listener starts in a background supervisor. If the configured LAN address is
+not available yet during boot, or the port is temporarily occupied, inverter
+control continues while the supervisor retries after 1, 2, 4, 8, 16, then at most
+30 seconds between attempts. It always uses the configured address; recovery does
+not expose the endpoint on other interfaces. Metrics continue updating while
+binding is pending, and the same gauges are used when the listener recovers.
+If the HTTP serving thread exits, the supervisor releases its socket and starts a
+replacement. Normal service shutdown cancels pending retries and closes the
+listener. Startup and recovery messages include the bind address and port.
+
+`start()` reports whether background metrics service was enabled, not whether an
+HTTP socket is already ready. Verify recovery from the actual Prometheus server,
+especially after a reboot. An invalid port or missing `prometheus_client` disables
+the exporter with a log message and must be fixed in configuration or packaging.
+
 ## Metrics of interest
 
 | Metric | Labels | Meaning |
@@ -40,6 +55,15 @@ does not verify remote scraping. Remove the override to restore loopback binding
 groups:
   - name: inverter-control
     rules:
+      # Verify reachability independently of metrics emitted by the process.
+      - alert: InverterControlAgentUnreachable
+        expr: up{job="inverter-control"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "inverter-control agent unreachable from Prometheus"
+
       # Fast-signal path down >2 min: control degrades to 1s tree polls.
       - alert: InverterControlSignalPathDown
         expr: inverter_control_signals_healthy == 0

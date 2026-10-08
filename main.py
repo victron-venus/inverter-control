@@ -529,12 +529,15 @@ def _main_inner():
 
     start_console_server()
     from inverter_control.prom_metrics import start as start_prom_metrics
+    from inverter_control.prom_metrics import stop as stop_prom_metrics
 
-    start_prom_metrics()
-    print("Starting control loop...")
-    print("-" * 80)
-
-    _run_main_loop(controller, mqtt_bridge)
+    try:
+        start_prom_metrics()
+        print("Starting control loop...")
+        print("-" * 80)
+        _run_main_loop(controller, mqtt_bridge)
+    finally:
+        stop_prom_metrics()
 
 
 def signal_handler(signum, frame):

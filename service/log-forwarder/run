@@ -1,4 +1,6 @@
 #!/bin/sh
 exec 2>&1
-cd /data/inverter-control
-exec python3 inverter_control/log_forwarder.py
+cd /data/inverter-control || exit 1
+# Endpoint configuration is loaded by the process from persistent setupOptions.
+# Unbuffered output makes failed pushes and configuration errors visible at once.
+exec python3 -u inverter_control/log_forwarder.py
