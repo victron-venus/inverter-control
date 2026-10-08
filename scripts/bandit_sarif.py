@@ -10,8 +10,8 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 
-def convert(report: dict, tool_version: str) -> dict:
-    """Preserve every finding; never turn a scanner error into a clean report."""
+def validate_report(report: dict) -> None:
+    """Reject incomplete scans before serializing any SARIF result."""
     if not isinstance(report, dict):
         raise TypeError("Bandit report must be an object")
     if not isinstance(report.get("errors"), list) or report["errors"]:
@@ -24,6 +24,10 @@ def convert(report: dict, tool_version: str) -> dict:
     if isinstance(lines, bool) or not isinstance(lines, (int, float)) or lines <= 0:
         raise ValueError("Bandit scanned no source; refusing an empty security report")
 
+
+def convert(report: dict, tool_version: str) -> dict:
+    """Preserve every finding; never turn a scanner error into a clean report."""
+    validate_report(report)
     rules: dict[str, dict] = {}
     results = []
     for finding in report["results"]:

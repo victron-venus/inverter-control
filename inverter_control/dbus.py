@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 logger = logging.getLogger("inverter-control")
+DBUS_SEND = "/usr/bin/dbus-send"
 
 
 class VUESensorDBusClient:
@@ -59,7 +60,7 @@ class VUESensorDBusClient:
         """Discover acload services using dbus-send CLI tool."""
         try:
             cmd = [
-                "/usr/bin/dbus-send",
+                DBUS_SEND,
                 "--system",
                 "--print-reply",
                 "--dest=org.freedesktop.DBus",
@@ -84,7 +85,7 @@ class VUESensorDBusClient:
         """Get CustomName via dbus-send."""
         try:
             cmd = [
-                "/usr/bin/dbus-send",
+                DBUS_SEND,
                 "--system",
                 "--print-reply",
                 f"--dest={service}",
@@ -130,7 +131,7 @@ class VUESensorDBusClient:
                 return key, None, deadline
             try:
                 cmd = [
-                    "/usr/bin/dbus-send",
+                    DBUS_SEND,
                     "--system",
                     "--print-reply",
                     f"--dest={service}",
