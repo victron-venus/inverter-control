@@ -55,10 +55,18 @@ services and tools supplied by the target image.
 
 Runtime Python dependencies are declared in [pyproject.toml](pyproject.toml),
 [requirements.txt](requirements.txt), and the development [uv.lock](uv.lock).
-The installer checks imports of `requests` and `paho-mqtt` before stopping an
+The installer checks imports of `requests`, `paho-mqtt`, and the `cryptography`
+certificate/key APIs before stopping an
 existing controller. It does not install missing packages. Resolve dependency
 and firmware compatibility before installation. `prometheus-client` is optional
-for metrics. See the development guide for a reproducible desktop environment.
+for metrics. HTTPS also requires CPython to expose the verified peer chain;
+unsupported runtimes fail closed. Existing HTTP paths remain unchanged.
+For ARMv7, use the reviewed, hash-locked [offline dependency bundle](docs/tls-dependencies.md)
+for CPython 3.12 on Venus OS 3.60+ (Scarthgap, glibc 2.39, libffi8).
+Its build compiles CFFI and tests the complete new dependency closure offline;
+an upstream `cryptography` wheel alone is insufficient. Check the actual image
+and successful CI artifact provenance before upgrading.
+See the development guide for a reproducible desktop environment.
 
 ## Configure before installation
 

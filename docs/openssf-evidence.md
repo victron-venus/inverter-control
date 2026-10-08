@@ -173,15 +173,19 @@ Review those exceptions; do not claim that every available warning is enabled.
   uses SHA-256 through Python `hashlib` and delegates HTTPS to requests/urllib3
   and the platform TLS implementation. It does not implement a cipher or TLS
   protocol. See the [security design](security-design.md) for deployment limits.
-- **Met evidence for the supported runtime — `crypto_keylength`,
-  `crypto_working`, `crypto_weaknesses`, `crypto_pfs`:** the audited locked Python
-  environment's urllib3 TLS context used OpenSSL 3.5.7, TLS 1.2 minimum,
-  security level 2, certificate/hostname verification, and TLS 1.3 or ephemeral
-  ECDHE/DHE suites with at least 128-bit encryption. SHA-256 exceeds the required
-  hash size. There is no project override weakening that context. This is not a
-  claim that plaintext MQTT/HTTP is encrypted, nor evidence about an unknown
-  device's OpenSSL configuration. Keep the supported deployment requirements
-  and external TLS terminator's policy consistent with this claim.
+- **Corrected `crypto_keylength` evidence:** the earlier OpenSSL security-level-2
+  inference was insufficient. On CPython 3.12.13/OpenSSL 3.5.7, Home Assistant,
+  Loki Requests and Loki urllib accepted a trusted RSA 2047-bit root. The public
+  criterion was corrected while the fix is reviewed. The source now verifies
+  exact public-key minima on the complete verified chain of the connection
+  before sending application data; see [the security design](security-design.md)
+  and `tests/test_tls_policy.py`. This is a candidate repair, not a statement
+  that the public badge or every device deployment has been revalidated.
+- **Evidence for `crypto_working`, `crypto_weaknesses`, `crypto_pfs`:** the audited
+  locked Python environment uses TLS 1.2 minimum, certificate/hostname
+  verification, and TLS 1.3 or ephemeral ECDHE/DHE suites with at least 128-bit
+  encryption. SHA-256 exceeds the required hash size. Plaintext MQTT/HTTP and
+  independently configured gateways remain outside this client profile.
 - **N/A — `crypto_password_storage`:** the controller has no external-user
   account/password database. Operator-provided upstream credentials are client
   credentials that must be protected on disk; they are not user-password hashes.

@@ -1,5 +1,7 @@
 # Core
 requests>=2.34.2
+# Parse verified peer public keys without implementing ASN.1/cryptography ourselves.
+cryptography>=50.0.2
 # Prevent CVE-2026-45409 when resolving outside uv.lock or reusing system packages.
 idna>=3.15
 

@@ -319,3 +319,33 @@ def test_config_symlink_rejected_without_changing_its_target(tmp_path, kind):
     assert "svc" not in (tmp_path / "commands").read_text()
     assert target.read_text() == "UNRELATED = 19\n"
     assert target.stat().st_mode & 0o777 == 0o644
+
+
+def test_missing_crypto_dependency_precedes_service_stop(tmp_path):
+    import sys
+
+    package, _, env = fake_device(tmp_path)
+    python = tmp_path / "bin/python3"
+    python.write_text(f"""#!{sys.executable}
+import builtins,sys
+original=builtins.__import__
+def guarded(name,*args,**kwargs):
+    if name.startswith("cryptography"):
+        raise ImportError("synthetic missing cryptography")
+    return original(name,*args,**kwargs)
+builtins.__import__=guarded
+exec(compile(sys.stdin.read(),"installer-preflight","exec"))
+""")
+    # Execute the real installer using only the isolated fake-device command PATH.
+    result = subprocess.run(  # nosec B603, B607
+        ["sh", "update.sh", str(package)],
+        cwd=package,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "synthetic missing cryptography" in result.stderr
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"

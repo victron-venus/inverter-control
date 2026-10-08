@@ -218,15 +218,39 @@ work around connection errors. Forward secrecy and permitted TLS algorithms
 depend on the actual client and server configuration, so deployment validation
 must inspect those endpoints rather than infer them from a green source scan.
 
-The supported Python 3.12 development environment was checked with the locked
-dependencies during the October 2026 audit: urllib3's default context used
-OpenSSL 3.5.7, minimum TLS 1.2, security level 2, required certificate verification
-and hostname checks, and cipher suites with at least 128-bit symmetric strength.
-Its TLS 1.2 cipher choices used ECDHE or DHE key exchange. This is evidence for
-that default client environment; repeat the check after runtime changes and on
-target firmware. It does not describe plaintext MQTT/HTTP or an independently
-configured TLS gateway. OpenSSL supplies TLS randomness; the application does
-not implement its own key or nonce generator.
+The supported Python 3.12 environment uses TLS 1.2 or later, certificate and
+hostname verification, and cipher suites with at least 128-bit symmetric
+strength. OpenSSL security level 2 alone does **not** prove an exact RSA 2048-bit
+minimum: a synthetic trusted RSA 2047-bit root was accepted by all three clients
+on CPython 3.12.13/OpenSSL 3.5.7. That earlier assumption has been withdrawn.
+
+Home Assistant and both Loki transports now inspect the **same connection's
+verified chain**, including its trust anchor, before sending HTTP headers or
+bodies. `cryptography` reads the public keys: RSA modulus >= 2048 bits, EC >= 224,
+DSA p >= 2048/q >= 224, and Ed25519/Ed448. Unknown key types, unavailable chain
+APIs, malformed certificates or missing `cryptography` fail closed. The code
+uses CPython 3.12's private verified-chain API, or the public API where available;
+this runtime boundary must be retested after interpreter upgrades.
+
+Standard hostname/chain checks run first. Requests retains its CA environment,
+explicit CA file/directory and client-certificate configuration. Its session-local
+adapter checks both a TLS CONNECT proxy and the tunneled origin; other Requests
+users are unaffected. The stdlib fallback retains its native HTTP CONNECT proxy
+and SSL_CERT_FILE/SSL_CERT_DIR handling. It rejects HTTPS-scheme proxies before
+connecting because stdlib would otherwise send their CONNECT and proxy
+credentials without TLS; a matching `no_proxy` entry still permits a direct
+connection. No system/user trust store is modified.
+The supported Requests proxy schemes for this policy are HTTP and HTTPS CONNECT;
+SOCKS transports are not part of this profile. Loki still rejects redirects;
+Home Assistant retains Requests' redirect handling, including its credential
+stripping rules, and validates every new HTTPS connection.
+
+The loopback suite in `tests/test_tls_policy.py` covers the three actual client
+paths, RSA 2047/1024 chains, strong RSA/EC, hostname and trust failures, proxies,
+mTLS and plaintext compatibility. These synthetic tests do not validate a
+physical device's installed interpreter, CA store, entropy or external gateway.
+Plaintext MQTT/HTTP is not encrypted by this policy. Keep external TLS gateways
+and platform libraries maintained; OpenSSL supplies TLS randomness.
 
 The historical `setup_ssl.sh` is a retired entry point that fails with migration
 guidance. It performs no certificate generation, trust-store modification,

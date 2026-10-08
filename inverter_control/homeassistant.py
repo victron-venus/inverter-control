@@ -26,6 +26,7 @@ from .config import (
     VUE_SENSORS,
 )
 from .dbus import VUESensorDBusClient
+from .requests_tls import VerifiedHTTPAdapter
 
 logger = logging.getLogger("inverter-control")
 
@@ -68,13 +69,16 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
         )
         # Configure connection pool for HA (local network, http or https)
-        adapter = requests.adapters.HTTPAdapter(
+        adapter = VerifiedHTTPAdapter(
             pool_connections=2,
             pool_maxsize=5,
             max_retries=0,  # We handle retries ourselves
         )
         # http:// mount required for local HA instances (no SSL on local network)
-        self._session.mount("http://", adapter)  # NOSONAR python:S5332
+        self._session.mount(
+            "http://",
+            requests.adapters.HTTPAdapter(pool_connections=2, pool_maxsize=5, max_retries=0),
+        )  # NOSONAR python:S5332
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)

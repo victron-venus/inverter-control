@@ -225,7 +225,7 @@ class TestLogForwarder:
         assert payload["streams"][0]["values"] == []
 
     @patch("inverter_control.log_forwarder.USE_REQUESTS", True)
-    @patch("inverter_control.log_forwarder.requests.post")
+    @patch("inverter_control.log_forwarder.requests.Session.post")
     def test_push_to_loki_success_requests(self, mock_post):
         """Test successful push with requests library."""
         mock_resp = MagicMock()
@@ -240,7 +240,7 @@ class TestLogForwarder:
         mock_post.assert_called_once()
 
     @patch("inverter_control.log_forwarder.USE_REQUESTS", True)
-    @patch("inverter_control.log_forwarder.requests.post")
+    @patch("inverter_control.log_forwarder.requests.Session.post")
     def test_push_to_loki_failure_requests(self, mock_post):
         """Test failed push with requests library."""
         import requests
@@ -356,7 +356,7 @@ def test_loki_rejects_unsafe_endpoints(monkeypatch, use_requests, url):
     monkeypatch.setattr(log_forwarder, "USE_REQUESTS", use_requests)
     monkeypatch.setattr(log_forwarder, "LOKI_URL", url)
     with (
-        patch.object(log_forwarder.requests, "post") as post,
+        patch.object(log_forwarder.requests.Session, "post") as post,
         patch.object(log_forwarder.urllib.request, "build_opener") as opener,
     ):
         assert log_forwarder.push_to_loki({"streams": []}) is False

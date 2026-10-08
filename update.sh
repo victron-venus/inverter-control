@@ -64,6 +64,8 @@ import pathlib
 import sys
 import requests
 import paho.mqtt.client
+from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
 root = pathlib.Path(sys.argv[1])
 for source in [root / "main.py", *(root / "inverter_control").glob("*.py")]:
     compile(source.read_bytes(), str(source), "exec")
