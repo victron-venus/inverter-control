@@ -319,3 +319,90 @@ def test_config_symlink_rejected_without_changing_its_target(tmp_path, kind):
     assert "svc" not in (tmp_path / "commands").read_text()
     assert target.read_text() == "UNRELATED = 19\n"
     assert target.stat().st_mode & 0o777 == 0o644
+
+
+def test_missing_crypto_dependency_precedes_service_stop(tmp_path):
+    import sys
+
+    package, _, env = fake_device(tmp_path)
+    python = tmp_path / "bin/python3"
+    python.write_text(f"""#!{sys.executable}
+import builtins,sys
+original=builtins.__import__
+def guarded(name,*args,**kwargs):
+    if name.startswith("cryptography"):
+        raise ImportError("synthetic missing cryptography")
+    return original(name,*args,**kwargs)
+builtins.__import__=guarded
+exec(compile(sys.stdin.read(),"installer-preflight","exec"))
+""")
+    # Execute the real installer using only the isolated fake-device command PATH.
+    result = subprocess.run(  # nosec B603, B607
+        ["sh", "update.sh", str(package)],
+        cwd=package,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "synthetic missing cryptography" in result.stderr
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+def installed_crypto_version_stub(tmp_path, installed):
+    """Run the actual updater preflight in a child with controlled package metadata."""
+    import sys
+
+    python = tmp_path / "bin/python3"
+    python.write_text(f"""#!{sys.executable}
+import importlib.metadata as metadata
+import sys
+release = {installed!r}
+def installed_version(name):
+    if release is None:
+        raise metadata.PackageNotFoundError("synthetic missing metadata")
+    return release
+metadata.version=installed_version
+sys.argv.pop(0)
+exec(compile(sys.stdin.read(),"installer-preflight","exec"))
+""")
+
+
+@pytest.mark.parametrize("installed", ["42.0.5", "50.0.1", "50.0.2rc1", "50.0", "broken", None])
+def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_crypto_version_stub(tmp_path, installed)
+    # Execute the real installer using only the isolated fake-device command PATH.
+    result = subprocess.run(  # nosec B603, B607
+        ["sh", "update.sh", str(package)],
+        cwd=package,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "50.0.2 is required" in result.stderr or "synthetic missing metadata" in result.stderr
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["50.0.2", "50.0.10", "51.0.0"])
+def test_supported_crypto_release_passes_actual_installer_preflight(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_crypto_version_stub(tmp_path, installed)
+    # Execute the real installer using only the isolated fake-device command PATH.
+    result = subprocess.run(  # nosec B603, B607
+        ["sh", "update.sh", str(package)],
+        cwd=package,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "installed version" in result.stdout
+    assert "svc" in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"

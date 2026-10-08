@@ -19,6 +19,7 @@ set -eo pipefail
 
 SSH_HOST="${1:-Cerbo}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/inverter_control/ssh_policy.sh"
 DEPLOY_DIR="/data/.inverter-control-deploy"
 SEPARATOR="=============================================="
 
@@ -101,7 +102,7 @@ COPYFILE_DISABLE=1 tar \
 if [[ -n "${TARIFF_FILE:-}" ]]; then
     tar -rf "$DEPLOY_BUNDLE/source.tar" -C "$DEPLOY_BUNDLE" ./tariff-install.json
 fi
-gzip -c "$DEPLOY_BUNDLE/source.tar" | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
+gzip -c "$DEPLOY_BUNDLE/source.tar" | ssh_with_key_policy "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
         PUSH_LOCAL_CONFIG='$PUSH_LOCAL_CONFIG' sh $DEPLOY_DIR/update.sh; \
         waited=0; while [ \$waited -lt 15 ] && ! [ -f /run/inverter-control/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
@@ -111,7 +112,7 @@ gzip -c "$DEPLOY_BUNDLE/source.tar" | ssh "$SSH_HOST" "set -e; rm -rf $DEPLOY_DI
 echo ">>> Service status:"
 for i in $(seq 1 15); do
     sleep 1
-    STATUS="$(ssh "$SSH_HOST" "svstat /service/inverter-control 2>&1")" \
+    STATUS="$(ssh_with_key_policy "$SSH_HOST" "svstat /service/inverter-control 2>&1")" \
         && printf '%s\n' "$STATUS" && break
     [[ "$i" == "15" ]] && echo "$STATUS" && exit 1
 done

@@ -61,5 +61,31 @@ jobs:
       - name: Check local_config.example.py has no real values
         run: "if grep -E '(token|password|secret|key)\\s*=\\s*[\"\\x27][^\"\\x27]{8,}' local_config.example.py | grep -v 'your_'; then\n  echo \"ERROR: local_config.example.py may contain real values\"\n  exit 1\nfi\necho \"OK: local_config.example.py looks like a template\"\n"
     timeout-minutes: 30
+  tls-armv7:
+    name: ARMv7 offline TLS dependency bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build and verify offline on ARMv7
+        run: |
+          docker buildx build --platform linux/arm/v7 \
+            --file build-support/tls-armv7/Dockerfile \
+            --build-arg SOURCE_REVISION="$GITHUB_SHA" \
+            --output type=local,dest=release-dist/tls-armv7 --progress plain .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tls-dependencies-cp312-armv7
+          path: release-dist/tls-armv7/
+          if-no-files-found: error
 'on':
   workflow_call: {}

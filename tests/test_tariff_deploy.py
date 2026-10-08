@@ -28,7 +28,9 @@ def deployment(tmp_path):
     )
     archive = tmp_path / "received.tar.gz"
     (bin_dir / "ssh").write_text(
-        f'#!/bin/sh\ncase "$2" in\n  svstat*) exit 0 ;;\n  *) cat > "{archive}" ;;\nesac\n'
+        f'#!/bin/sh\nif [ "$1" = -G ]; then echo requiredrsasize 1024; exit; fi\n'
+        'test "$1 $2 $3 $4" = "-S none -o RequiredRSASize=2048" || exit 92\n'
+        f'shift 4\ncase "$2" in\n  svstat*) exit 0 ;;\n  *) cat > "{archive}" ;;\nesac\n'
     )
     (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
     for file in bin_dir.iterdir():

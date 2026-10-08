@@ -12,6 +12,7 @@ dependencies = [
     "requests>=2.34.2",
     "idna>=3.15",
     "paho-mqtt>=2.0.0",
+    "cryptography>=50.0.2",
 ]
 
 [project.optional-dependencies]
