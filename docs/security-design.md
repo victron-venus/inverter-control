@@ -248,7 +248,10 @@ stripping rules, and validates every new HTTPS connection.
 The TLS 1.2 DHE regression additionally checks exact 2047-bit parameters are
 rejected before application data, while 2048-bit parameters complete all three
 client paths. Independent lower-policy handshakes calibrate both fixtures.
-This does not change the selected TLS cipher suites or TLS 1.3 groups.
+The DHE minimum is enforced by the supported OpenSSL build, not the certificate
+key inspector. The regression passed on OpenSSL 3.5.7 and the ARMv7 bundle
+profile with OpenSSL 3.0.20; rerun it after OpenSSL upgrades. This does not change
+the selected TLS cipher suites or TLS 1.3 groups.
 
 The loopback suite in `tests/test_tls_policy.py` covers the three actual client
 paths, RSA 2047/1024 chains, strong RSA/EC, hostname and trust failures, proxies,

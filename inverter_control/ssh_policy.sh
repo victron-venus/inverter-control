@@ -26,6 +26,7 @@ ssh_with_key_policy() {
             printf '%s\n' 'Invalid SSH RequiredRSASize setting' >&2
             return 2
             ;;
+        *) ;;  # Numeric values continue to the bounded comparison below.
     esac
     # Bound the decimal conversion before shell arithmetic; never accept overflow.
     if [ "${#ssh_policy_rsa}" -gt 9 ]; then

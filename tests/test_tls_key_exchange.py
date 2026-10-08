@@ -93,12 +93,28 @@ def test_finite_field_dh_exact_minimum(chains, monkeypatch, bits, path):
     assert observed["application_bytes"].startswith(b"GET /oracle ")
     monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(chain[2]))
     monkeypatch.setenv("SSL_CERT_FILE", str(chain[2]))
+    # Observe and re-raise the real client-side OpenSSL failure. A trust,
+    # hostname, network or server-configuration failure must not pass as DH policy.
+    original_handshake = ssl.SSLSocket.do_handshake
+    client_errors = []
+
+    def observed_handshake(stream, *args, **kwargs):
+        try:
+            return original_handshake(stream, *args, **kwargs)
+        except ssl.SSLError as error:
+            if not stream.server_side:
+                client_errors.append(error.reason)
+            raise
+
+    monkeypatch.setattr(ssl.SSLSocket, "do_handshake", observed_handshake)
     with dhe_peer(chain, bits) as (port, observed):
         accepted = tls_cases.run_client(path, f"https://localhost:{port}", monkeypatch)
     assert accepted is (bits == 2048), (bits, path, observed)
     if bits == 2047:
+        assert client_errors == ["DH_KEY_TOO_SMALL"]
         assert observed["application_bytes"] == b""
     else:
+        assert client_errors == []
         assert observed["cipher"] == "DHE-RSA-AES256-GCM-SHA384"
         assert observed["application_bytes"]
         if path == "ha":
