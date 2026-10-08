@@ -2570,7 +2570,7 @@ class VictronDBus:
                 try:
                     ttg_sec = max(0, int(float(ttg_raw)))
                 except (TypeError, ValueError, OverflowError):
-                    ttg_sec = 0
+                    ttg_sec = None
             voltage = self._optional_float(self._dbus_get(service, "/Dc/0/Voltage"))
             voltage = voltage if voltage is not None and voltage > 0 else None
             soc = self._optional_float(self._dbus_get(service, "/Soc"))
