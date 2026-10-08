@@ -93,11 +93,11 @@ The audit queried the GitHub REST API with repository administrative access:
 - Repository security advisory inventory: **zero advisories returned**.
   GitHub private vulnerability reporting: **enabled**.
 
-`report_responses` and `enhancement_responses` need a maintainer's confirmation
-of any reports received through other channels during the chosen 2–12 month
-window. There are no public issue reports on which to calculate a response rate;
-do not describe this as a measured 100% response rate. These criteria do not
-offer N/A in the Passing questionnaire.
+`report_responses` and `enhancement_responses` are **Met** for this review.
+On 2026-10-08 UTC the primary maintainer also confirmed that no bug reports or
+enhancement requests arrived outside GitHub during the preceding 12 months.
+There were no reports awaiting a response; this is not a measured 100% response
+rate. Reassess actual report handling when reports arrive.
 
 `vulnerability_report_process` and `vulnerability_report_private` have **Met**
 evidence in [SECURITY.md](../SECURITY.md) and the
@@ -193,9 +193,10 @@ Review those exceptions; do not claim that every available warning is enabled.
   proof that an undiscovered vulnerability or credential cannot exist. Recheck
   all reported issues and supported releases before the final declaration.
 
-## Maintainer declarations still required
+## Maintainer declarations
 
-The following cannot be truthfully supplied by an automated code audit:
+These declarations were obtained from the primary maintainer, independently
+of the automated code audit:
 
 The primary project maintainer personally confirmed `know_secure_design` and
 `know_common_errors` on **2026-10-08 UTC**: familiarity with secure design
@@ -204,10 +205,11 @@ common Python/network application vulnerabilities and their prevention. The
 [security design](security-design.md) maps these principles to the project.
 This is a maintainer attestation, not a training certificate or an independent audit.
 
-Still required: confirm whether reports arrived outside GitHub, and check their
-historical response times as described above. Do not expose confidential report details.
+The maintainer also confirmed no vulnerability reports outside GitHub in the
+preceding six months and no other bug reports or enhancement requests outside
+GitHub in the preceding 12 months. Combined with the GitHub inventory above,
+these declarations resolve the report-history questions for this assessment.
 
-Only after those declarations and checks should all applicable required
-criteria be marked Met. The public application can accurately remain in
-progress while an answer is unknown. Badge status and Scorecard branch
-protection are separate assessments.
+The application must still be saved and its actual badge status verified on
+OpenSSF. Completion of this evidence file alone does not award a badge.
+Badge status and Scorecard branch protection are separate assessments.
