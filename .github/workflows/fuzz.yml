@@ -1,0 +1,27 @@
+name: Tariff parser fuzzing
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  fuzz:
+    name: Atheris tariff parser
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12.13'
+      - name: Install hash-pinned fuzzing runtime
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-fuzz.txt
+      - name: Exercise seeds and fuzz bounded JSON imports
+        run: python fuzz/fuzz_tariff.py fuzz/corpus/tariff -max_total_time=60 -max_len=100001 -timeout=5 -rss_limit_mb=1024

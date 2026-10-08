@@ -3,7 +3,9 @@
 import ast
 import json
 import signal
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path
@@ -58,7 +60,8 @@ def _run_child(mode, signum, timeout):
         " record('cleanup-finished')\n"
     )
     started = time.monotonic()
-    with subprocess.Popen(
+    # Isolated test fixture; explicit argv, never shell interpolation.
+    with subprocess.Popen(  # nosec B603
         [sys.executable, "-B", "-c", child],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,

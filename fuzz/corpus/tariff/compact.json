@@ -1,0 +1,1 @@
+{"type": "electricity-tariff-schedule", "version": 1, "name": "Fuzz fixture", "currency": "USD", "timeZone": "UTC", "periods": [{"start": "00:00", "end": "24:00", "rate": 0.25}], "seasons": []}

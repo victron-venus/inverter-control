@@ -85,3 +85,7 @@ release-assets/
 deploy.local/
 electricity-tariff.json
 tariff-install.json
+
+# Local security scan output
+bandit-results.json
+bandit-results.sarif

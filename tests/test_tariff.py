@@ -2,7 +2,9 @@
 
 import io
 import json
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -153,7 +155,8 @@ def test_interactive_entry_and_cancellation_preserve_file(tmp_path, monkeypatch)
 
 
 def test_cli_converts_manual_file_without_prompting():
-    result = subprocess.run(
+    # Isolated test fixture; explicit argv, never shell interpolation.
+    result = subprocess.run(  # nosec B603
         [sys.executable, str(REPO / "inverter_control/tariff.py"), "--stdin", "--normalize"],
         input=json.dumps(schedule()),
         text=True,
@@ -175,7 +178,8 @@ def test_install_uses_only_fixed_setup_path(tmp_path, monkeypatch):
 
 
 def test_cli_rejects_oversized_stdin_without_partial_output():
-    result = subprocess.run(
+    # Isolated test fixture; explicit argv, never shell interpolation.
+    result = subprocess.run(  # nosec B603
         [sys.executable, str(REPO / "inverter_control/tariff.py"), "--stdin", "--normalize"],
         input=" " * 100_001,
         text=True,

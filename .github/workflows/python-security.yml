@@ -29,24 +29,18 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.12'
+          python-version: '3.12.13'
 
       - name: Install security tools
         run: |
           python3 -m pip install --require-hashes --only-binary=:all: -r .github/requirements-bandit.txt
 
-      - name: Run Bandit security linter
+      - name: Scan all Python sources and enforce every Bandit finding
         id: scan
-        run: |
-          # Exit 1 means findings; any other failure must fail the job.
-          bandit -c .github/bandit.yml -r . -f json -o bandit-results.json || test "$?" -eq 1
-          python3 scripts/bandit_sarif.py
-
-      - name: Enforce high-severity Bandit findings
-        run: bandit -c .github/bandit.yml -r . -lll
+        run: python3 scripts/run_bandit.py
 
       - name: Upload Bandit results
-        if: always() && steps.scan.outcome == 'success'
+        if: always() && hashFiles('bandit-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: bandit-results.sarif

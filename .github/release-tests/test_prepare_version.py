@@ -10,7 +10,8 @@
 
 import copy
 import json
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
@@ -69,7 +70,8 @@ class PreparationTest(unittest.TestCase):  # pylint: disable=too-many-instance-a
         self.enterContext(patch.object(preparation, "run", side_effect=self.transport))
 
     def git(self, *args):
-        return subprocess.check_output(
+        # Test harness intentionally uses its fixture-controlled PATH.
+        return subprocess.check_output(  # nosec B603, B607
             ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
         ).strip()
 

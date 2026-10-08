@@ -18,7 +18,8 @@ import copy
 import io
 import json
 import os
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest

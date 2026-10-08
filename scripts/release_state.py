@@ -13,7 +13,8 @@ an existing plan, a release tag, or published package bytes.
 from __future__ import annotations
 
 import base64
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 
 import release_control as rc
 import version_plan
@@ -43,7 +44,8 @@ class StateGitHub(rc.GitHub):
                 "Invalid ledger write",
             )
         return self.response(
-            subprocess.run(
+            # Developer/CI toolchain selected by the invoking operator via PATH.
+            subprocess.run(  # nosec B603, B607
                 [
                     "gh",
                     "api",

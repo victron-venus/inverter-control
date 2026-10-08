@@ -20,7 +20,8 @@ import json
 import os
 import re
 import stat
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import time
@@ -211,7 +212,8 @@ class GitHub:
             and bool(os.environ.get("GH_TOKEN")),
             "Publication token is missing or its permission probe is not enabled",
         )
-        result = subprocess.run(
+        # Developer/CI toolchain selected by the invoking operator via PATH.
+        result = subprocess.run(  # nosec B603, B607
             [
                 "gh",
                 "api",
@@ -305,7 +307,8 @@ class GitHub:
             "PUT": ["--method", "PUT"],
         }[method]
         return self.response(
-            subprocess.run(
+            # Developer/CI toolchain selected by the invoking operator via PATH.
+            subprocess.run(  # nosec B603, B607
                 [
                     "gh",
                     "api",
@@ -369,7 +372,8 @@ class GitHub:
         )
         endpoint = f"{self.base}/{path}"
         try:
-            result = subprocess.run(
+            # Developer/CI toolchain selected by the invoking operator via PATH.
+            result = subprocess.run(  # nosec B603, B607
                 [
                     "gh",
                     "api",
@@ -412,7 +416,8 @@ class GitHub:
             "Upload must come from the private release staging directory",
         )
         self.response(
-            subprocess.run(
+            # Developer/CI toolchain selected by the invoking operator via PATH.
+            subprocess.run(  # nosec B603, B607
                 [
                     "gh",
                     "release",
@@ -540,7 +545,8 @@ def check_ancestry(gh: GitHub, sha: str, default_branch: str) -> None:
 
 def checked_out_sha() -> str:
     """Return the exact local commit used by the publication process."""
-    result = subprocess.run(
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["git", "rev-parse", "HEAD"], text=True, capture_output=True, check=False
     )
     require(result.returncode == 0, "Must run from the checked-out release repository")

@@ -12,7 +12,8 @@ import argparse
 import copy
 import json
 import re
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 
@@ -21,7 +22,8 @@ import version_plan
 
 def run(root, *args, capture=True):
     """Use argument arrays; release versions are data, never shell fragments."""
-    result = subprocess.run(
+    # Repository-controlled argv; no shell interpolation or external command text.
+    result = subprocess.run(  # nosec B603
         args,
         cwd=root,
         text=True,
@@ -169,13 +171,15 @@ def verify_owned_topic(root, topic_sha, main_sha, target):  # pylint: disable=to
                 )
             path = expected / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            raw = subprocess.check_output(
+            # Developer/CI toolchain selected by the invoking operator via PATH.
+            raw = subprocess.check_output(  # nosec B603, B607
                 ["git", "show", f"{ancestor}:{name}"], cwd=root
             )
             path.write_bytes(raw)
         version_plan.sync_versions(expected, editable, plan)
         for name in names:
-            actual = subprocess.check_output(
+            # Developer/CI toolchain selected by the invoking operator via PATH.
+            actual = subprocess.check_output(  # nosec B603, B607
                 ["git", "show", f"{topic_sha}:{name}"], cwd=root
             )
             if actual != (expected / name).read_bytes():

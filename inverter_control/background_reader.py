@@ -86,7 +86,8 @@ class BackgroundReader:
                 # Invalidate failed data before an optional sink can block or fail.
                 try:
                     logger.warning("Auxiliary reader %s failed: %s", self._name, error_type)
-                except Exception:
+                # Optional diagnostics must never interrupt hardware control or recovery.
+                except Exception:  # nosec B110
                     pass  # Diagnostics must not terminate the refresh worker.
             # Keep a slow/erroring service from spinning or queuing catch-up work.
             self._stop.wait(self._interval)

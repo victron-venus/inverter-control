@@ -12,7 +12,6 @@ from collections.abc import Callable
 from typing import Any
 
 import requests
-import urllib3
 
 # Pre-compiled regex for _parse_numeric (called ~10x per 1.5s poll cycle)
 _NUMERIC_RE = re.compile(r"^([+-]?\d+\.?\d*)")
@@ -29,11 +28,6 @@ from .config import (
 from .dbus import VUESensorDBusClient
 
 logger = logging.getLogger("inverter-control")
-
-# Disable insecure request warnings for local HA instance (http:// is intentional)
-# nosec B310
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class HomeAssistantError(Exception):
@@ -140,8 +134,9 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         # Close session only after its polling thread has returned.
         try:
             self._session.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("HA session close failed: %s", type(exc).__name__)
+            return False
         return True
 
     def _get_state(self, entity_id: str) -> str | None:
@@ -181,7 +176,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         try:
             # Try numeric first
             return int(float(value))
-        except Exception:
+        except (ValueError, TypeError, OverflowError):
             pass
         try:
             # Try HH:MM:SS or MM:SS format
@@ -192,8 +187,8 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             if len(parts) == 2:
                 mins, secs = int(parts[0]), int(parts[1])
                 return mins + (1 if secs >= 30 else 0)
-        except Exception:
-            pass
+        except (ValueError, TypeError, OverflowError):
+            return 0
         return 0
 
     def _poll_loop(self):

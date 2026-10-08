@@ -191,7 +191,8 @@ class MQTTBridge:
                     break
                 try:
                     logger.log(level, "%s%s", message, f" ({error_type})" if error_type else "")
-                except Exception:
+                # Optional diagnostics must never interrupt hardware control or recovery.
+                except Exception:  # nosec B110
                     # A broken diagnostic sink must not kill the MQTT worker.
                     pass
         finally:

@@ -3,13 +3,16 @@
 import logging
 import math
 import re
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 logger = logging.getLogger("inverter-control")
+DBUS_SEND = "/usr/bin/dbus-send"
 
 
 class VUESensorDBusClient:
@@ -57,14 +60,15 @@ class VUESensorDBusClient:
         """Discover acload services using dbus-send CLI tool."""
         try:
             cmd = [
-                "dbus-send",
+                DBUS_SEND,
                 "--system",
                 "--print-reply",
                 "--dest=org.freedesktop.DBus",
                 "/org/freedesktop/DBus",
                 "org.freedesktop.DBus.ListNames",
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            # Repository-controlled argv; no shell interpolation or external command text.
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)  # nosec B603
             if result.returncode != 0:
                 return
 
@@ -81,20 +85,21 @@ class VUESensorDBusClient:
         """Get CustomName via dbus-send."""
         try:
             cmd = [
-                "dbus-send",
+                DBUS_SEND,
                 "--system",
                 "--print-reply",
                 f"--dest={service}",
                 "/CustomName",
                 "com.victronenergy.BusItem.GetValue",
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+            # Repository-controlled argv; no shell interpolation or external command text.
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=2)  # nosec B603
             if result.returncode == 0:
                 m = re.search(r'string "([^"]+)"', result.stdout)
                 if m:
                     return m.group(1)
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("VUE name lookup failed: %s", type(exc).__name__)
         return None
 
     def update_all(self, vue_sensors: dict[str, Any]) -> None:
@@ -117,23 +122,24 @@ class VUESensorDBusClient:
                         value = float(raw)
                         if math.isfinite(value) and time.monotonic() < deadline:
                             return key, value, deadline
-                except Exception:
+                except Exception as exc:
                     # Keep CLI availability on endpoint failures/invalid data.
                     # Cancellation (BaseException) is deliberately not swallowed.
-                    pass
+                    logger.debug("Native VUE read failed; using CLI: %s", type(exc).__name__)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return key, None, deadline
             try:
                 cmd = [
-                    "dbus-send",
+                    DBUS_SEND,
                     "--system",
                     "--print-reply",
                     f"--dest={service}",
                     "/Ac/Power",
                     "com.victronenergy.BusItem.GetValue",
                 ]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining)
+                # Repository-controlled argv; no shell interpolation or external command text.
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining)  # nosec B603
                 if res.returncode == 0:
                     m = re.search(
                         r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)", res.stdout

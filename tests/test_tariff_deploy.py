@@ -3,7 +3,9 @@
 import json
 import os
 import shutil
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import tarfile
 from pathlib import Path
 
@@ -38,7 +40,8 @@ def deployment(tmp_path):
 
 def run_deploy(deployment):
     root, _, env = deployment
-    return subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    return subprocess.run(  # nosec B603, B607
         ["bash", str(root / "deploy.sh"), "fake-device"],
         cwd=root.parent,  # Defaults belong to the checkout, not the caller's cwd.
         env=env,

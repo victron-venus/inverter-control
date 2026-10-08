@@ -2,7 +2,9 @@
 
 import os
 import pty
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -15,7 +17,8 @@ def test_automatic_setup_does_not_prompt_and_keeps_private_config(tmp_path, opti
     data, package, script = prepare_setup(tmp_path, option)
     master, slave = pty.openpty()
     try:
-        result = subprocess.run(
+        # Test harness intentionally uses its fixture-controlled PATH.
+        result = subprocess.run(  # nosec B603, B607
             ["bash", str(script)],
             stdin=slave,
             capture_output=True,
@@ -35,7 +38,8 @@ def test_automatic_setup_does_not_prompt_and_keeps_private_config(tmp_path, opti
 
 def test_invalid_option_stops_before_replacing_config_or_starting_update(tmp_path):
     data, package, script = prepare_setup(tmp_path, "enable")
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
     assert result.returncode == 1 and "must contain true or false" in result.stderr
     assert not (data / "updated").exists()
     assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"
@@ -78,7 +82,8 @@ def test_automatic_setup_validates_tariff_without_prompting(tmp_path, cleared):
     path = data / "setupOptions/inverter-control/electricity-tariff.json"
     content = json.dumps(None if cleared else schedule())
     path.write_text(content)
-    result = subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["bash", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5
     )
     assert result.returncode == 0, result.stderr
@@ -95,7 +100,8 @@ def test_invalid_setup_tariff_stops_before_replacing_private_config(tmp_path):
     )
     path = data / "setupOptions/inverter-control/electricity-tariff.json"
     path.write_text("{}")
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
     assert result.returncode == 1
     assert not (data / "updated").exists()
     assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"

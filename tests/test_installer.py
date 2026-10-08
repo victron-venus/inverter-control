@@ -2,7 +2,9 @@
 
 import os
 import re
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -59,7 +61,8 @@ def test_in_place_updates_preserve_source_config_and_supervisors(tmp_path):
     package, services, env = fake_device(tmp_path)
     inode = (package / "service/inverter-control/supervise").stat().st_ino
     for _ in range(2):
-        subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)
+        # Test harness intentionally uses its fixture-controlled PATH.
+        subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)  # nosec B603, B607
         assert (package / "main.py").read_text() == "# existing controller\n"
         assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
         assert (package / "service/inverter-control/supervise").stat().st_ino == inode
@@ -71,7 +74,8 @@ def test_in_place_updates_preserve_source_config_and_supervisors(tmp_path):
 
 def test_dependency_failure_does_not_stop_running_services(tmp_path):
     package, _, env = fake_device(tmp_path, python_status=23)
-    result = subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env)  # nosec B603, B607
     assert result.returncode == 23
     assert "svc" not in (tmp_path / "commands").read_text()
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
@@ -86,7 +90,8 @@ def test_staged_update_refreshes_code_without_replacing_supervisors(tmp_path):
     (stage / "main.py").write_text("# new controller\n")
     (package / "metrics.env").write_text("INVERTER_METRICS_HOST=192.0.2.10\n")
     inode = (package / "service/inverter-control/supervise").stat().st_ino
-    subprocess.run(["sh", str(stage / "update.sh"), str(package)], cwd=stage, env=env, check=True)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", str(stage / "update.sh"), str(package)], cwd=stage, env=env, check=True)  # nosec B603, B607
     assert (package / "main.py").read_text() == "# new controller\n"
     assert (package / "metrics.env").read_text() == "INVERTER_METRICS_HOST=192.0.2.10\n"
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
@@ -95,7 +100,8 @@ def test_staged_update_refreshes_code_without_replacing_supervisors(tmp_path):
 
 def test_failed_startup_is_not_reported_as_installed(tmp_path):
     package, _, env = fake_device(tmp_path, fresh_heartbeat=False)
-    result = subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["sh", "update.sh", str(package)], cwd=package, env=env, capture_output=True, text=True
     )
     assert result.returncode == 1
@@ -123,7 +129,8 @@ def test_invalid_deploy_tariff_rejected_before_service_stop(tmp_path):
     package, _, env = fake_device(tmp_path)
     tariff_python_stub(tmp_path, package)
     (package / "tariff-install.json").write_text("{}")
-    result = subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["sh", "update.sh", str(package)], cwd=package, env=env, capture_output=True, text=True
     )
     assert result.returncode == 1
@@ -140,12 +147,14 @@ def test_explicit_deploy_tariff_persists_and_ordinary_update_preserves_it(tmp_pa
     tariff_python_stub(tmp_path, package)
     incoming = package / "tariff-install.json"
     incoming.write_text(json.dumps(schedule()))
-    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)  # nosec B603, B607
     saved = package.parent / "setupOptions/inverter-control/electricity-tariff.json"
     content = saved.read_text()
     assert json.loads(content)["billingDay"] == 17
     incoming.unlink()
-    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)  # nosec B603, B607
     assert saved.read_text() == content
 
 
@@ -170,7 +179,8 @@ def test_setup_uninstall_removes_both_hook_variants_and_preserves_other_content(
     script = (REPO / "setup").read_text().replace("/data/", f"{data}/")
     script = script.replace("/service/", f"{tmp_path}/service/")
     (package / "setup").write_text(script)
-    result = subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["bash", "setup"], cwd=package, env=env, capture_output=True, text=True, timeout=5
     )
     assert result.returncode == 0, result.stderr

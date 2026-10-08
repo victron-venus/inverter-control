@@ -70,13 +70,15 @@ def test_failed_persistence_and_stale_edits_preserve_current_plan(tmp_path):
 
 
 def test_clear_is_a_valid_persistent_setting_for_later_package_updates(tmp_path):
-    import subprocess
+    # Subprocess calls below use argument vectors with shell=False.
+    import subprocess  # nosec B404
     import sys
 
     service = TariffService(path=tmp_path / "tariff.json")
     service.apply(command(None))
     content = (tmp_path / "tariff.json").read_text()
-    result = subprocess.run(
+    # Isolated test fixture; explicit argv, never shell interpolation.
+    result = subprocess.run(  # nosec B603
         [sys.executable, "inverter_control/tariff.py", "--stdin", "--check"],
         input=content,
         text=True,

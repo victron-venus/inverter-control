@@ -5,7 +5,9 @@ import io
 import json
 import os
 import stat
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import textwrap
 import time
@@ -166,7 +168,8 @@ def test_process_exit_leaves_unavailable_reservation(tmp_path, crash_at, callbac
         inbox.handle(payload, lambda: False, lambda: (target / "called").touch())
         raise AssertionError("injected exit was not reached")
     """)
-    result = subprocess.run(
+    # Isolated test fixture; explicit argv, never shell interpolation.
+    result = subprocess.run(  # nosec B603
         [sys.executable, "-c", child, str(tmp_path), crash_at],
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
