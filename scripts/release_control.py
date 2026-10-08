@@ -1262,6 +1262,34 @@ def candidate(args) -> dict:
     }
 
 
+def _validate_manifest_assets(manifest):
+    assets = manifest.get("assets")
+    require(isinstance(assets, list) and assets, "Manifest contains no assets")
+    names = set()
+    for item in assets:
+        require(isinstance(item, dict), "Invalid manifest asset")
+        name = item.get("name")
+        require(
+            isinstance(name, str)
+            and NAME_RE.fullmatch(name)
+            and name.casefold() != MANIFEST.casefold(),
+            "Unsafe manifest asset name",
+        )
+        require(name.casefold() not in names, "Duplicate manifest asset name")
+        names.add(name.casefold())
+        require(
+            # Reject JSON booleans, which isinstance(value, int) would accept.
+            type(item.get("size")) is int  # pylint: disable=unidiomatic-typecheck
+            and item["size"] >= 0,
+            "Invalid manifest asset size",
+        )
+        require(
+            isinstance(item.get("sha256"), str)
+            and re.fullmatch(SHA256_PATTERN, item["sha256"]),
+            "Invalid asset checksum",
+        )
+
+
 # pylint: disable-next=too-many-locals
 def validate_manifest(
     raw: bytes, repo: str, rc_tag: str, allow_final: bool = False
@@ -1353,31 +1381,7 @@ def validate_manifest(
             positive(parent["run_id"], "parent RC run ID") != manifest["run_id"],
             "Final build must use a new run",
         )
-    assets = manifest.get("assets")
-    require(isinstance(assets, list) and assets, "Manifest contains no assets")
-    names = set()
-    for item in assets:
-        require(isinstance(item, dict), "Invalid manifest asset")
-        name = item.get("name")
-        require(
-            isinstance(name, str)
-            and NAME_RE.fullmatch(name)
-            and name.casefold() != MANIFEST.casefold(),
-            "Unsafe manifest asset name",
-        )
-        require(name.casefold() not in names, "Duplicate manifest asset name")
-        names.add(name.casefold())
-        require(
-            # Reject JSON booleans, which isinstance(value, int) would accept.
-            type(item.get("size")) is int  # pylint: disable=unidiomatic-typecheck
-            and item["size"] >= 0,
-            "Invalid manifest asset size",
-        )
-        require(
-            isinstance(item.get("sha256"), str)
-            and re.fullmatch(SHA256_PATTERN, item["sha256"]),
-            "Invalid asset checksum",
-        )
+    _validate_manifest_assets(manifest)
     return manifest
 
 
