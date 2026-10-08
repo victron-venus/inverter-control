@@ -1093,6 +1093,15 @@ def _release_lines(text: str):
             yield visible, True, True
 
 
+def _release_heading_title(content: str) -> str:
+    """Remove an optional whitespace-separated ATX closing hash sequence."""
+    title = content.strip(" \t\r\n")
+    before_hashes = title.rstrip("#")
+    if not before_hashes or before_hashes.endswith((" ", "\t")):
+        return before_hashes.rstrip(" \t")
+    return title
+
+
 def _release_headings(text: str) -> list[tuple[int, str, int, int]]:
     """Locate release headings outside comments and fenced code examples."""
     headings = []
@@ -1103,7 +1112,7 @@ def _release_headings(text: str) -> list[tuple[int, str, int, int]]:
         level = len(heading) - len(heading.lstrip("#"))
         if heading_allowed and 1 <= level <= 6 and heading[level : level + 1] in ("", " ", "\t", "\r", "\n"):
             headings.append(
-                (level, heading[level:].strip(" \t\r\n"), offset, offset + len(line))
+                (level, _release_heading_title(heading[level:]), offset, offset + len(line))
             )
         offset += len(line)
     return headings
