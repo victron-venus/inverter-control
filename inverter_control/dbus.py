@@ -102,6 +102,59 @@ class VUESensorDBusClient:
             logger.debug("VUE name lookup failed: %s", type(exc).__name__)
         return None
 
+    def _native_power(self, service: str, remaining: float, deadline: float) -> float | None:
+        try:
+            raw = self._native_get(service, "/Ac/Power", timeout=min(0.25, remaining))
+            if isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
+                value = float(raw)
+                if math.isfinite(value) and time.monotonic() < deadline:
+                    return value
+        except Exception as exc:
+            # Keep CLI availability on endpoint failures/invalid data.
+            # Cancellation (BaseException) is deliberately not swallowed.
+            logger.debug("Native VUE read failed; using CLI: %s", type(exc).__name__)
+        return None
+
+    @staticmethod
+    def _cli_power(key: str, service: str, remaining: float, deadline: float) -> float | None:
+        try:
+            cmd = [
+                DBUS_SEND,
+                "--system",
+                "--print-reply",
+                f"--dest={service}",
+                "/Ac/Power",
+                "com.victronenergy.BusItem.GetValue",
+            ]
+            # Repository-controlled argv; no shell interpolation or external command text.
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining)  # nosec B603
+            if res.returncode == 0:
+                m = re.search(
+                    r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)", res.stdout
+                )
+                if m:
+                    value = float(m.group(1))
+                    if math.isfinite(value) and time.monotonic() < deadline:
+                        return value
+        except Exception as e:
+            logger.warning(f"Failed to update VUE sensor {key} via dbus-send: {e}")
+        return None
+
+    def _query_power(self, key: str, service: str) -> tuple[str, float | None, float]:
+        """Share one deadline across the native read and its CLI fallback."""
+        deadline = time.monotonic() + 2.0
+        if self._native_get is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return key, None, deadline
+            value = self._native_power(service, remaining, deadline)
+            if value is not None:
+                return key, value, deadline
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return key, None, deadline
+        return key, self._cli_power(key, service, remaining, deadline), deadline
+
     def update_all(self, vue_sensors: dict[str, Any]) -> None:
         """Update vue_sensors dictionary in-place from D-Bus."""
         if not self._available:
@@ -110,51 +163,9 @@ class VUESensorDBusClient:
         if not self._vue_services:
             return
 
-        def _query_power(key: str, service: str) -> tuple[str, float | None, float]:
-            deadline = time.monotonic() + 2.0
-            if self._native_get is not None:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return key, None, deadline
-                try:
-                    raw = self._native_get(service, "/Ac/Power", timeout=min(0.25, remaining))
-                    if isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
-                        value = float(raw)
-                        if math.isfinite(value) and time.monotonic() < deadline:
-                            return key, value, deadline
-                except Exception as exc:
-                    # Keep CLI availability on endpoint failures/invalid data.
-                    # Cancellation (BaseException) is deliberately not swallowed.
-                    logger.debug("Native VUE read failed; using CLI: %s", type(exc).__name__)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return key, None, deadline
-            try:
-                cmd = [
-                    DBUS_SEND,
-                    "--system",
-                    "--print-reply",
-                    f"--dest={service}",
-                    "/Ac/Power",
-                    "com.victronenergy.BusItem.GetValue",
-                ]
-                # Repository-controlled argv; no shell interpolation or external command text.
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining)  # nosec B603
-                if res.returncode == 0:
-                    m = re.search(
-                        r"(?:double|int32|variant\s+(?:double|int32))\s+([-\d\.]+)", res.stdout
-                    )
-                    if m:
-                        value = float(m.group(1))
-                        if math.isfinite(value) and time.monotonic() < deadline:
-                            return key, value, deadline
-            except Exception as e:
-                logger.warning(f"Failed to update VUE sensor {key} via dbus-send: {e}")
-            return key, None, deadline
-
         with ThreadPoolExecutor(max_workers=len(self._vue_services)) as pool:
             futures = [
-                pool.submit(_query_power, key, svc) for key, svc in self._vue_services.items()
+                pool.submit(self._query_power, key, svc) for key, svc in self._vue_services.items()
             ]
             for future in as_completed(futures):
                 key, value, deadline = future.result()
