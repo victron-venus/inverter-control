@@ -102,10 +102,12 @@ offer N/A in the Passing questionnaire.
 `vulnerability_report_process` and `vulnerability_report_private` have **Met**
 evidence in [SECURITY.md](../SECURITY.md) and the
 [private report form](https://github.com/victron-venus/inverter-control/security/advisories/new).
-`vulnerability_report_response` can be **N/A** if a maintainer confirms no
-vulnerability reports arrived through any channel in the preceding six months.
-Otherwise check the actual acknowledgement timestamps against the 14-day limit.
-A newly written response policy does not prove historical response times.
+`vulnerability_report_response` is **N/A** for this review: on 2026-10-08 UTC
+the primary maintainer confirmed that no vulnerability reports arrived outside
+GitHub during the preceding six months, alongside the empty GitHub inventory.
+There were no reports requiring a response in that interval. Future reports
+must be checked against actual acknowledgement timestamps and the 14-day limit;
+a newly written policy alone does not prove historical response times.
 
 ## Tests, warnings, and analysis
 
@@ -195,15 +197,15 @@ Review those exceptions; do not claim that every available warning is enabled.
 
 The following cannot be truthfully supplied by an automated code audit:
 
-1. **`know_secure_design` and `know_common_errors`:** at least one actual primary
-   developer must confirm their knowledge. The [security design](security-design.md)
-   maps the relevant principles and errors to this project, but publishing that
-   document does not establish that a person understands it. Record the
-   maintainer and date in the badge application's justification once confirmed.
-   The [OpenSSF secure development course](https://openssf.org/training/courses/)
-   is available for preparation; a paid certificate is not required.
-2. Confirm whether reports arrived outside GitHub, and check their historical
-   response times as described above. Do not expose confidential report details.
+The primary project maintainer personally confirmed `know_secure_design` and
+`know_common_errors` on **2026-10-08 UTC**: familiarity with secure design
+principles, including least privilege, safe defaults and access control, and
+common Python/network application vulnerabilities and their prevention. The
+[security design](security-design.md) maps these principles to the project.
+This is a maintainer attestation, not a training certificate or an independent audit.
+
+Still required: confirm whether reports arrived outside GitHub, and check their
+historical response times as described above. Do not expose confidential report details.
 
 Only after those declarations and checks should all applicable required
 criteria be marked Met. The public application can accurately remain in

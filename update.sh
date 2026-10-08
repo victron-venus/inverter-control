@@ -30,23 +30,26 @@ STALE_TOP_LEVEL="config.py console_server.py console_ui.py homeassistant.py keep
 
 sep() { echo "=== inverter-control update: $*"; }
 
-protect_private_config() {
+protect_private_config() (
+    config_path=$1
     # Do not follow a link and change permissions on an unrelated target.
-    if [ -L "$1" ] || { [ -e "$1" ] && [ ! -f "$1" ]; }; then
-        echo "Private configuration must be a regular file, not a link: $1" >&2
+    if [ -L "$config_path" ] || { [ -e "$config_path" ] && [ ! -f "$config_path" ]; }; then
+        echo "Private configuration must be a regular file, not a link: $config_path" >&2
         return 1
     fi
-    if [ -f "$1" ]; then
-        chmod 600 "$1" || return $?
+    if [ -f "$config_path" ]; then
+        chmod 600 "$config_path" || return $?
     fi
-}
+)
 
-copy_private_config() {
-    protect_private_config "$2" || return $?
+copy_private_config() (
+    config_source=$1
+    config_destination=$2
+    protect_private_config "$config_destination" || return $?
     # Restrict newly created files before their first byte is copied.
-    (umask 077; cp "$1" "$2") || return $?
-    protect_private_config "$2" || return $?
-}
+    (umask 077; cp "$config_source" "$config_destination") || return $?
+    protect_private_config "$config_destination" || return $?
+)
 
 # The service launchers use the standard persistent package path.
 if [ "$INSTALL_DIR" != /data/inverter-control ]; then
