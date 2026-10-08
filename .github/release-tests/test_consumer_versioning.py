@@ -188,6 +188,9 @@ class ConsumerVersioningTests(unittest.TestCase):
         path.write_text(json.dumps(evidence), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "every declared version source"):
             stage_release_assets.stage(self.root, "native", ["dist/*.tar.gz"])
+        self.assertFalse(
+            (self.root / "release-assets/native/release-inputs-native.json").exists()
+        )
 
     def test_staging_rejects_source_changes_after_overlay(self):
         self.freeze()
@@ -195,6 +198,26 @@ class ConsumerVersioningTests(unittest.TestCase):
         self.archive()
         with self.assertRaises(ValueError):
             stage_release_assets.stage(self.root, "native", ["dist/*.tar.gz"])
+
+    def test_staging_rejects_ambiguous_or_unsafe_payloads_before_output(self):
+        self.freeze()
+        self.archive()
+        other = self.root / "other"
+        other.mkdir()
+        (other / "APP.TAR.GZ").write_bytes(b"different payload with colliding name")
+        linked = self.root / "linked-dist"
+        linked.symlink_to(self.root / "dist", target_is_directory=True)
+        for patterns, message in (
+            (["../outside.tar.gz"], "inside the checkout"),
+            (["missing/*.tar.gz"], "matched no files"),
+            (["dist"], "regular file"),
+            (["dist/*.tar.gz", "other/*"], "Duplicate release payload basename"),
+            (["linked-dist/*.tar.gz"], "symlink"),
+        ):
+            with self.subTest(patterns=patterns):
+                with self.assertRaisesRegex(ValueError, message):
+                    stage_release_assets.stage(self.root, "native", patterns)
+                self.assertFalse((self.root / "release-assets").exists())
 
     def test_stable_final_build_requires_explicit_policy_and_frozen_plan(self):
         with self.assertRaisesRegex(ValueError, "promote verified RC"):
