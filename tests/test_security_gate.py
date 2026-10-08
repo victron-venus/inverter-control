@@ -66,3 +66,15 @@ def test_parser_error_removes_previous_success(gate, monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="incomplete"):
         gate.main()
     assert not (tmp_path / "bandit-results.sarif").exists()
+
+
+def test_failed_scanner_cannot_publish_a_clean_report(gate, monkeypatch, tmp_path):
+    def scan(*args, **kwargs):
+        report = {"errors": [], "results": [], "metrics": {"_totals": {"loc": 2}}}
+        (tmp_path / "bandit-results.json").write_text(json.dumps(report))
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(gate.subprocess, "run", scan)
+    with pytest.raises(RuntimeError, match="contradicts"):
+        gate.main()
+    assert not (tmp_path / "bandit-results.sarif").exists()

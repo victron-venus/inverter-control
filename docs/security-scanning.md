@@ -26,6 +26,11 @@ Do not add blanket rule skips or exclude tests to clear alerts. New exceptions
 need a local explanation and review. Keep vendored release-tool annotations when
 refreshing the toolkit and rerun the gate afterwards.
 
+Both `pyproject.toml` and `requirements.txt` require `idna>=3.15` to exclude
+CVE-2026-45409. Updating `uv.lock` alone does not protect installations that
+resolve `requirements.txt` or reuse an older system dependency. Requests' minimum
+version is also consistent across both installation paths.
+
 `fuzz/fuzz_tariff.py` uses Atheris to exercise the bounded tariff JSON import path.
 It checks rejection of malformed input, stable normalization and strict JSON
 round trips. CI replays the committed valid/invalid seeds and fuzzes for 60 seconds

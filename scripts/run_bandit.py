@@ -41,6 +41,8 @@ def main() -> int:
     report = json.loads(report_path.read_text())
     # Conversion validates errors, metrics and every finding before publication.
     sarif = convert(report, version("bandit"))
+    if result.returncode != int(bool(report["results"])):
+        raise RuntimeError("Bandit exit status contradicts its reported findings")
     sarif_path.write_text(json.dumps(sarif, indent=2) + "\n")
     for finding in report["results"]:
         print(
