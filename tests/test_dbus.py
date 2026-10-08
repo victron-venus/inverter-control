@@ -3,7 +3,9 @@ Unit tests for VUESensorDBusClient
 """
 
 import os
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import unittest
 from unittest.mock import MagicMock, patch

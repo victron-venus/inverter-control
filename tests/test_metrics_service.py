@@ -1,7 +1,9 @@
 """The service must export persistent site overrides without widening defaults."""
 
 import os
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -22,7 +24,8 @@ def test_metrics_service_environment(tmp_path, override):
     fake_python.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if not k.startswith("INVERTER_METRICS_")}
     env["PATH"] = str(tmp_path) + os.pathsep + env["PATH"]
-    result = subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["sh", str(tmp_path / "run")], env=env, check=True, capture_output=True, text=True
     )
     assert result.stdout.strip() == f"{override or '127.0.0.1'}:9102"

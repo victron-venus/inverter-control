@@ -8,7 +8,9 @@ import json
 import os
 import re
 import shutil
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tomllib
@@ -31,7 +33,8 @@ def read_version(root: Path, policy: dict[str, Any]) -> str:
 
 def snapshot(root: Path, destination: Path) -> list[str]:
     """Copy tracked, present regular files; ignore untracked operator configuration."""
-    names = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode().split("\0")
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    names = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode().split("\0")  # nosec B603, B607
     names += [
         name
         for name in (".release-plan.json", ".release-inputs.json")
@@ -73,7 +76,8 @@ def archive(snapshot_root: Path, names: list[str], output: Path, project: str) -
 def build_python_distribution(root: Path, source: Path, output: Path) -> None:
     """Build and validate Python distributions inside the tracked snapshot."""
     # Build backend writes remain in this snapshot, including egg-info.
-    subprocess.run(
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    subprocess.run(  # nosec B603, B607
         [
             "uv",
             "build",
@@ -93,7 +97,8 @@ def build_python_distribution(root: Path, source: Path, output: Path) -> None:
     )
     if len(distributions) != 2:
         raise ValueError("Expected one wheel and one Python source distribution")
-    subprocess.run(
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    subprocess.run(  # nosec B603, B607
         [
             "uvx",
             "--from",
@@ -111,7 +116,8 @@ def build_containers(
     source: Path, output: Path, config: dict[str, Any], policy: dict[str, Any]
 ) -> None:
     """Build declared OCI assets through a local Docker endpoint."""
-    host = subprocess.check_output(
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    host = subprocess.check_output(  # nosec B603, B607
         ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
         text=True,
     ).strip()
@@ -127,7 +133,8 @@ def build_containers(
         dockerfile = (source / image["dockerfile"]).resolve()
         context.relative_to(source)
         dockerfile.relative_to(source)
-        subprocess.run(
+        # Developer/CI toolchain selected by the invoking operator via PATH.
+        subprocess.run(  # nosec B603, B607
             [
                 "docker",
                 "buildx",
@@ -159,7 +166,8 @@ def build_candidate(
     if channel not in {"nightly", "beta", "rc"}:
         raise ValueError("Stable releases must promote an existing RC without rebuilding")
     if "versioning" in policy:
-        subprocess.run(
+        # Repository-controlled argv; no shell interpolation or external command text.
+        subprocess.run(  # nosec B603
             [
                 sys.executable,
                 str(Path(__file__).with_name("release_version_adapter.py")),

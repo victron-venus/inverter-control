@@ -91,7 +91,8 @@ class HardwareWatchdog:
     def _record_diagnostic(self, event, **context) -> None:
         try:
             self._diagnostics.record(event, **context)
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # Diagnostics must never replace a hardware result or block recovery.
             pass
 

@@ -45,10 +45,14 @@ def _accept_clients():
             # raises immediately and is swallowed. This runs on the accept
             # thread (never the control main thread).
             try:
-                for line in _console_buffer:
+                for line in tuple(_console_buffer):
                     client.sendall((line + "\n").encode("utf-8"))
-            except Exception:
-                pass
+            except OSError:
+                # sendall can have written only part of a line. Drop this client
+                # instead of continuing with a corrupt stream or retaining it.
+                with _clients_lock:
+                    _clients.discard(client)
+                _close_client(client)
 
         except TimeoutError:
             continue
@@ -56,6 +60,14 @@ def _accept_clients():
             if _running:
                 logger.debug(f"Accept error: {e}")
             break
+
+
+def _close_client(client: socket.socket) -> None:
+    """Best-effort socket cleanup after disconnect or shutdown."""
+    try:
+        client.close()
+    except OSError as exc:
+        logger.debug("Console socket close failed: %s", type(exc).__name__)
 
 
 def _send_loop():
@@ -98,10 +110,7 @@ def _send_to_clients(line: str) -> None:
 
         for client in dead_clients:
             _clients.discard(client)
-            try:
-                client.close()
-            except Exception:
-                pass
+            _close_client(client)
 
 
 def broadcast_line(line: str):
@@ -146,10 +155,7 @@ def request_stop_server():
     global _server_socket, _running
     _running = False
     if _server_socket:
-        try:
-            _server_socket.close()
-        except Exception:
-            pass
+        _close_client(_server_socket)
         _server_socket = None
 
 
@@ -163,10 +169,7 @@ def stop_server(timeout: float = 2.0) -> bool:
         return False
     try:
         for client in _clients.copy():
-            try:
-                client.close()
-            except Exception:
-                pass
+            _close_client(client)
         _clients.clear()
     finally:
         _clients_lock.release()

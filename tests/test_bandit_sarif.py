@@ -62,7 +62,8 @@ def test_rejects_scan_errors_even_with_findings():
         converter.convert(report, "1.9.4")
 
 
-@pytest.mark.parametrize("path", ["/tmp/example.py", "../example.py", "src/../example.py"])
+# Malicious absolute-path fixture verifies rejection; no file is created.
+@pytest.mark.parametrize("path", ["/tmp/example.py", "../example.py", "src/../example.py"])  # nosec B108
 def test_rejects_paths_outside_repository(path):
     report = complete_report()
     report["results"][0]["filename"] = path
@@ -74,6 +75,14 @@ def test_accepts_complete_clean_scan():
     report = complete_report()
     report["results"] = []
     assert converter.convert(report, "1.9.4")["runs"][0]["results"] == []
+
+
+@pytest.mark.parametrize("lines", [None, 0, -1, True, "12"])
+def test_rejects_empty_or_invalid_scan_coverage(lines):
+    report = complete_report()
+    report["metrics"]["_totals"]["loc"] = lines
+    with pytest.raises(ValueError, match="scanned no source"):
+        converter.convert(report, "1.9.4")
 
 
 def test_failed_rerun_removes_stale_report(monkeypatch, tmp_path):

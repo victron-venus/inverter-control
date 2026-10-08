@@ -15,7 +15,8 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -68,7 +69,8 @@ def stage(root: Path, target: str, patterns: list[str]) -> Path:
     for path in files.values():
         shutil.copy2(path, output / path.name)
     policy = json.loads((root / ".release-policy.json").read_text(encoding="utf-8"))
-    source_sha = subprocess.check_output(
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    source_sha = subprocess.check_output(  # nosec B603, B607
         ["git", "rev-parse", "HEAD"], cwd=root, text=True
     ).strip()
     identity = version_plan.validate_plan(
@@ -99,7 +101,8 @@ def stage(root: Path, target: str, patterns: list[str]) -> Path:
                 )
                 inspected["path"] = path.name
                 metadata.append(inspected)
-    subprocess.run(
+    # Repository-controlled argv; no shell interpolation or external command text.
+    subprocess.run(  # nosec B603
         [
             sys.executable,
             str(root / "scripts/version_receipt.py"),

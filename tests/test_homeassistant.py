@@ -13,6 +13,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from inverter_control import homeassistant
 
 
+def test_failed_session_close_is_not_reported_as_success():
+    client = object.__new__(homeassistant.HomeAssistantClient)
+    client._thread = None
+    client.request_stop = MagicMock()
+    client._session = MagicMock()
+    client._session.close.side_effect = OSError("close failed")
+    assert client.stop() is False
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "x:y:z", {}, []])
+def test_invalid_duration_is_rejected(value):
+    client = object.__new__(homeassistant.HomeAssistantClient)
+    assert client._parse_duration(value) == 0
+
+
 class TestHomeAssistantClient:
     """Test HomeAssistantClient class"""
 

@@ -11,7 +11,8 @@ local_config.py is NOT tracked by git.
 # =============================================================================
 
 HA_URL = "http://YOUR_HA_IP:8123"  # nosec B310 — local HA instance
-HA_TOKEN = "your_long_lived_access_token_here"
+# Documented placeholder; not an authentication credential.
+HA_TOKEN = "your_long_lived_access_token_here"  # nosec B105
 
 # =============================================================================
 # VICTRON

@@ -4,6 +4,8 @@ concurrency:
   group: quality-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 'on':
+  schedule:
+    - cron: '15 8 * * 3'
   pull_request: {}
   merge_group: {}
   workflow_call:

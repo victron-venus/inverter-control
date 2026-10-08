@@ -3,7 +3,9 @@
 import json
 import re
 import shutil
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import tarfile
 from pathlib import Path
 from unittest.mock import patch
@@ -49,11 +51,14 @@ def test_release_archive_contains_complete_installer_payload(tmp_path):
             shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         elif source.is_file():
             shutil.copy2(source, target)
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    subprocess.run(["git", "add", "--", "."], cwd=tmp_path, check=True)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # nosec B603, B607
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["git", "add", "--", "."], cwd=tmp_path, check=True)  # nosec B603, B607
     (tmp_path / "local_config.py").write_text("OPERATOR_SETTING = 'local fixture'\n")
     version = (tmp_path / "version").read_text().strip().removeprefix("v")
-    subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(  # nosec B603, B607
         ["bash", "scripts/package-release.sh", version, "rc"],
         cwd=tmp_path,
         check=True,

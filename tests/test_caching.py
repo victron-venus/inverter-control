@@ -105,7 +105,7 @@ def test_pv_inverter_power_caching():
         m = MagicMock()
         m.returncode = 0
         if args[0] == [
-            "dbus-send",
+            "/usr/bin/dbus-send",
             "--system",
             "--print-reply=literal",
             f"--dest={service1}",
@@ -114,7 +114,7 @@ def test_pv_inverter_power_caching():
         ]:
             m.stdout = "variant       double 1200.0\n"
         elif args[0] == [
-            "dbus-send",
+            "/usr/bin/dbus-send",
             "--system",
             "--print-reply=literal",
             f"--dest={service2}",

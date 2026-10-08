@@ -2,7 +2,9 @@
 
 import builtins
 import os
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -95,7 +97,8 @@ def test_keepalive_freshness_spans_the_heartbeat_cadence(tmp_path, age):
     script = tmp_path / "keepalive-check.sh"
     source = (REPO / "keepalive.sh").read_text().split("# ----------------", 1)[0]
     script.write_text(source + '\ndate() { echo 1000; }\nHEARTBEAT_FILE="$1"\nis_main_running\n')
-    result = subprocess.run(
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
         ["sh", str(script), str(heartbeat)], capture_output=True, text=True, timeout=5
     )
     expected = age is not None and 0 <= age < 3 * main.HEARTBEAT_INTERVAL
@@ -131,7 +134,8 @@ def watchdog(tmp_path):
             env = {
                 key: value for key, value in os.environ.items() if not key.startswith("WATCHDOG_")
             }
-            result = subprocess.run(
+            # Test harness intentionally uses its fixture-controlled PATH.
+            result = subprocess.run(  # nosec B603, B607
                 ["sh", str(script)],
                 env={
                     **env,

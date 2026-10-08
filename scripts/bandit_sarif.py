@@ -20,6 +20,9 @@ def convert(report: dict, tool_version: str) -> dict:
         raise TypeError("Bandit report is missing its results list")
     if not isinstance(report.get("metrics", {}).get("_totals"), dict):
         raise TypeError("Bandit report is missing scan metrics")
+    lines = report["metrics"]["_totals"].get("loc")
+    if isinstance(lines, bool) or not isinstance(lines, (int, float)) or lines <= 0:
+        raise ValueError("Bandit scanned no source; refusing an empty security report")
 
     rules: dict[str, dict] = {}
     results = []

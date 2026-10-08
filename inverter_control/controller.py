@@ -1391,7 +1391,8 @@ class InverterController:
             try:
                 if self.get_control_flag("no_feed"):
                     time.sleep(NO_FEED_SLEEP_INTERVAL)
-            except Exception:
+            # Optional failure-path delay must never prevent the next safety cycle.
+            except Exception:  # nosec B110
                 pass  # Best effort - an optional delay must not stop the control loop
             return True
         except KeyboardInterrupt:

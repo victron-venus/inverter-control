@@ -41,6 +41,18 @@ class TestConsoleServer:
         assert len(console_server._console_buffer) == 0
         assert console_server._sender_queue.empty()
 
+    def test_buffer_replay_failure_closes_client(self):
+        client = MagicMock()
+        client.sendall.side_effect = BlockingIOError("slow client")
+        server = MagicMock()
+        server.accept.side_effect = [(client, ("127.0.0.1", 1234)), OSError("stopped")]
+        console_server._server_socket = server
+        console_server._running = True
+        console_server._console_buffer.append("buffered line")
+        console_server._accept_clients()
+        assert client not in console_server._clients
+        client.close.assert_called_once()
+
     @pytest.mark.parametrize("host", [None, "192.0.2.10"])
     @patch("inverter_control.console_server.socket.socket")
     @patch("inverter_control.console_server.threading.Thread")

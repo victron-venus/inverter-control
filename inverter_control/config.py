@@ -6,7 +6,9 @@ All configurable parameters in one place
 
 import functools
 import os
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 from pathlib import Path
 
 from inverter_control.control_flags import get_control_toggle_config
@@ -27,7 +29,8 @@ except ImportError:
     # Fallback for development or if local_config.py doesn't exist
     print("WARNING: local_config.py not found! Copy local_config.example.py to local_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
-    HA_TOKEN = "your_token_here"
+    # Documented placeholder; not an authentication credential.
+    HA_TOKEN = "your_token_here"  # nosec B105
     HA_SENSORS = {}
     VUE_SENSORS = {}
     HA_DUMP_LOADS = []
@@ -228,7 +231,8 @@ def _detect_portal_id() -> str:
       4. Placeholder stub, so non-Venus systems (tests, local dev) still work
     """
     try:
-        portal_id = subprocess.check_output(["/sbin/get-unique-id"], text=True, timeout=5).strip()
+        # Repository-controlled argv; no shell interpolation or external command text.
+        portal_id = subprocess.check_output(["/sbin/get-unique-id"], text=True, timeout=5).strip()  # nosec B603
         if portal_id:
             return portal_id
     except (OSError, subprocess.SubprocessError):

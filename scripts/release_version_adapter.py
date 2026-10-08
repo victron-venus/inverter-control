@@ -12,7 +12,8 @@ import argparse
 import json
 import os
 import re
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 from pathlib import Path
 
 import version_plan
@@ -55,7 +56,8 @@ def checked_version(root: Path, base: str, channel: str) -> str:
         return base
     if plan_path.is_symlink() or not plan_path.is_file():
         raise ValueError("Release plan must be a regular file")
-    source_sha = subprocess.check_output(
+    # Developer/CI toolchain selected by the invoking operator via PATH.
+    source_sha = subprocess.check_output(  # nosec B603, B607
         ["git", "rev-parse", "HEAD"], cwd=root, text=True
     ).strip()
     plan = version_plan.validate_plan(

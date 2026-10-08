@@ -2,7 +2,9 @@
 
 import json
 import os
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -291,7 +293,8 @@ def test_service_loads_persistent_endpoint_and_recovers_invalid_config(
     env["PATH"] = f"{Path(sys.executable).parent}:{env['PATH']}"
     output = tmp_path / "service-output"
     with output.open("w") as logs:
-        process = subprocess.Popen(["sh", str(launcher)], stdout=logs, stderr=logs, env=env)
+        # Test harness intentionally uses its fixture-controlled PATH.
+        process = subprocess.Popen(["sh", str(launcher)], stdout=logs, stderr=logs, env=env)  # nosec B603, B607
         try:
             if not configure_at_start:
                 wait_until(lambda: "not configured" in output.read_text(), process, output)
@@ -330,7 +333,8 @@ def test_staged_upgrade_preserves_device_loki_configuration(tmp_path):
     original = config.stat()
     stage = tmp_path / "release"
     shutil.copytree(package, stage)
-    subprocess.run(["sh", str(stage / "update.sh"), str(package)], cwd=stage, env=env, check=True)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", str(stage / "update.sh"), str(package)], cwd=stage, env=env, check=True)  # nosec B603, B607
     assert config.read_text() == "https://example.com/loki/api/v1/push\n"
     assert config.stat().st_ino == original.st_ino
     assert config.stat().st_mode == original.st_mode

@@ -245,7 +245,8 @@ class _SendObservation:
     def started(self):
         try:
             self.timing["send_started_at"] = time.monotonic()
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # Missing optional timing must never prevent the original send.
             pass
 
@@ -259,7 +260,8 @@ class _SendObservation:
                 self._done(future)
             else:
                 future.add_done_callback(self._done)
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # Return the original Future even if diagnostic setup fails.
             pass
 
@@ -271,7 +273,8 @@ class _SendObservation:
             self.timing["send_future_cancelled"] = future.cancelled()
             # Do not call result()/exception(): observation must neither
             # consume an error nor mistake Future completion for an ACK.
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # A diagnostic callback must not raise into the transport loop.
             pass
 
@@ -364,7 +367,8 @@ class _SendTimingBusMixin:
             sink = self._send_provenance_sink
             if sink is not None:
                 sink(refs)
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # Diagnostics cannot replace the original transport result/error.
             pass
 
@@ -452,7 +456,8 @@ class NativeDbusClient:
             return
         try:
             self._write_diagnostics.record(event, **context)
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # A failing diagnostic buffer cannot alter a write or its fallback.
             pass
 
@@ -617,7 +622,8 @@ class NativeDbusClient:
         for refs in provenance:
             try:
                 samples.append(_serialize_send_provenance(refs))
-            except Exception:
+            # Optional diagnostics must never interrupt hardware control or recovery.
+            except Exception:  # nosec B110
                 # A failed background diagnostic must not disrupt the sink.
                 pass
         return samples
@@ -630,7 +636,8 @@ class NativeDbusClient:
             if self._observe_write_send:
                 try:
                     stop_send_observer = bus.observe_send(message, timing)
-                except Exception:
+                # Optional diagnostics must never interrupt hardware control or recovery.
+                except Exception:  # nosec B110
                     # An unavailable observer must not prevent the actual call.
                     pass
 
@@ -648,7 +655,8 @@ class NativeDbusClient:
             try:
                 bus.add_message_handler(observe_reply)
                 observer = observe_reply
-            except Exception:  # Diagnostics must not prevent a confirmed write.
+            # Optional diagnostics must never interrupt hardware control or recovery.
+            except Exception:  # Diagnostics must not prevent a confirmed write.  # nosec B110
                 pass
             timing["call_started_at"] = time.monotonic()
         try:
@@ -659,13 +667,15 @@ class NativeDbusClient:
             if stop_send_observer is not None:
                 try:
                     stop_send_observer()
-                except Exception:
+                # Optional diagnostics must never interrupt hardware control or recovery.
+                except Exception:  # nosec B110
                     # Preserve the call's result/error if optional cleanup fails.
                     pass
             if observer is not None:
                 try:
                     bus.remove_message_handler(observer)
-                except Exception:
+                # Optional diagnostics must never interrupt hardware control or recovery.
+                except Exception:  # nosec B110
                     pass
             # dbus-fast 2.21.1 leaves cancelled calls in this public Cython dict
             # until a reply/disconnect. A silent endpoint must not leak one
@@ -844,7 +854,8 @@ class NativeDbusClient:
         if isinstance(bus, _SendTimingBusMixin):
             try:
                 bus.stop_observing_sends()
-            except Exception:
+            # Optional diagnostics must never interrupt hardware control or recovery.
+            except Exception:  # nosec B110
                 # Optional diagnostics cannot change connection teardown.
                 pass
 

@@ -9,7 +9,9 @@ import logging
 import math
 import os
 import re
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import threading
 import time
 from collections import deque
@@ -492,7 +494,8 @@ class VictronDBus:
     def _record_write_diagnostic(self, event, **context) -> None:
         try:
             self.write_diagnostics.record(event, **context)
-        except Exception:
+        # Optional diagnostics must never interrupt hardware control or recovery.
+        except Exception:  # nosec B110
             # Optional evidence cannot replace transport results or exceptions.
             pass
 
@@ -723,8 +726,9 @@ class VictronDBus:
     def _run_discovery_command(self):
         """Run `dbus -y`; returns the completed process or None on failure."""
         try:
-            return subprocess.run(
-                ["dbus", "-y"],
+            # Repository-controlled argv; no shell interpolation or external command text.
+            return subprocess.run(  # nosec B603
+                ["/usr/bin/dbus", "-y"],
                 capture_output=True,
                 text=True,
                 timeout=self.DISCOVERY_TIMEOUT,
@@ -1843,8 +1847,13 @@ class VictronDBus:
         """Run subprocess with strict timeout and error handling"""
         self.subprocess_calls += 1
         try:
+            # Only the system D-Bus clients are allowed in the privileged daemon.
+            # Never resolve them through an inherited or operator-modified PATH.
+            executables = {"dbus": "/usr/bin/dbus", "dbus-send": "/usr/bin/dbus-send"}
+            cmd = [executables[cmd[0]], *cmd[1:]]
             # Use start_new_session to be able to kill the whole process group
-            result = subprocess.run(
+            # Repository-controlled argv; no shell interpolation or external command text.
+            result = subprocess.run(  # nosec B603
                 cmd,
                 capture_output=True,
                 text=True,

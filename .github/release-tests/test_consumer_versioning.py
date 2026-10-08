@@ -15,7 +15,8 @@ import io
 import json
 import os
 import shutil
-import subprocess
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
@@ -100,7 +101,8 @@ class ConsumerVersioningTests(unittest.TestCase):
         self.source = self.command("git", "rev-parse", "HEAD").strip()
 
     def command(self, *args):
-        return subprocess.check_output(
+        # Isolated test fixture; explicit argv, never shell interpolation.
+        return subprocess.check_output(  # nosec B603
             args, cwd=self.root, text=True, stderr=subprocess.STDOUT
         )
 

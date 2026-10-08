@@ -3,7 +3,9 @@ Unit tests for Victron D-Bus Interface
 """
 
 import os
-import subprocess
+
+# Subprocess calls below use argument vectors with shell=False.
+import subprocess  # nosec B404
 import sys
 import time
 from unittest.mock import MagicMock, patch
@@ -13,6 +15,19 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inverter_control import victron
+
+
+def test_cli_ignores_untrusted_path(monkeypatch):
+    monkeypatch.setenv("PATH", "/untrusted")
+    client = object.__new__(victron.VictronDBus)
+    client.subprocess_calls = 0
+    result = MagicMock(returncode=0, stdout="42")
+    with patch.object(victron.subprocess, "run", return_value=result) as run:
+        assert client._safe_subprocess(["dbus-send", "--system"]) == "42"
+        assert run.call_args.args[0] == ["/usr/bin/dbus-send", "--system"]
+        assert not run.call_args.kwargs.get("shell", False)
+        assert client._safe_subprocess(["sh", "-c", "anything"]) is None
+        assert run.call_count == 1
 
 
 class TestVictronDBus:
@@ -150,7 +165,7 @@ class TestVictronDBus:
         def fake_run(cmd, **kwargs):
             result = MagicMock()
             result.returncode = 0
-            if cmd[0] == "dbus":
+            if cmd[0] == "/usr/bin/dbus":
                 # bus-name listing: one shunt battery + vebus + system
                 result.stdout = (
                     "com.victronenergy.battery.ttyUSB4\n"
