@@ -2,20 +2,31 @@
 
 This is the evidence index for the project's **Passing** self-assessment against
 the [OpenSSF criteria](https://www.bestpractices.dev/en/criteria/0?details=true&rationale=true).
-It is not an assertion that a badge has been awarded. The badge application must
-reflect the current released software and actual maintainer practices. A
-successful scanner run does not establish every criterion.
+The project achieved the **Passing badge on 2026-10-08 at 02:37 UTC**. The
+[public assessment](https://www.bestpractices.dev/en/projects/15293/passing)
+records 100% completion: 63 criteria marked Met and four marked N/A with
+justifications. This is a voluntary self-assessment, not an independent security
+certification. It must continue to reflect the released software and actual
+maintainer practices; a successful scanner run does not establish every criterion.
 
 The public [application is project 15293](https://www.bestpractices.dev/en/projects/15293).
 [.bestpractices.json](../.bestpractices.json) supplies proposed answers in the
-official repository automation format. Its `?` answers intentionally leave
-unverified items unanswered; automation ignores these placeholders rather than
-certifying or clearing them. Review the resulting form before saving it.
+official repository automation format. All 67 proposed statuses matched the
+published assessment when the badge was awarded. Review new evidence and the
+resulting form before saving future updates; do not mark unverified criteria Met.
 
 Evidence was reviewed on **2026-10-08 UTC**. The baseline release is
 [v1.23.5-beta.9](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.5-beta.9),
 source `c651e9f3e7114f050fbfa641b16c8c885032186e`, with a successful
 [release validation run](https://github.com/victron-venus/inverter-control/actions/runs/37710820520).
+The documentation and security improvements were subsequently merged in
+[PR #303](https://github.com/victron-venus/inverter-control/pull/303) and published
+in [v1.23.5-beta.10](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.5-beta.10),
+source `17143487b07bcbdd8f77f0878ed9b88373e2dd8d`, before the assessment was submitted.
+The final [quality gate](https://github.com/victron-venus/inverter-control/actions/runs/37714862769)
+passed 1,809 tests with 94.27% statement coverage, and the
+[release workflow](https://github.com/victron-venus/inverter-control/actions/runs/37715259908)
+succeeded. These checks do not constitute physical-device acceptance.
 This index should be updated when the application, release process, or security
 boundaries change. Do not publish private report contents or credentials as
 evidence.
@@ -210,6 +221,6 @@ preceding six months and no other bug reports or enhancement requests outside
 GitHub in the preceding 12 months. Combined with the GitHub inventory above,
 these declarations resolve the report-history questions for this assessment.
 
-The application must still be saved and its actual badge status verified on
-OpenSSF. Completion of this evidence file alone does not award a badge.
+The assessment was saved and submitted, and its Passing status was verified on
+OpenSSF and through the public project API on **2026-10-08 UTC**.
 Badge status and Scorecard branch protection are separate assessments.
