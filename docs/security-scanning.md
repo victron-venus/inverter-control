@@ -47,3 +47,37 @@ self-assessment. Code changes do not by themselves earn that certification.
 Scorecard's maximum branch-protection score additionally expects two independent
 approvals and no administrator bypass. Preserve an achievable review process;
 do not manufacture approvals or hide those organizational findings.
+
+Trivy's standalone workflow publishes every severity to the Security tab on
+pushes to `main` and weekly. It retains the original `trivy-fs.yml:trivy-scan`
+configuration identity so the dashboard does not become stale. The release
+security workflow independently blocks HIGH/CRITICAL vulnerabilities, secrets
+and misconfiguration before a release.
+
+## GitHub Code Quality review (2026-10-07)
+
+Standard findings are separate from code-scanning alerts. Empty fallback
+handlers now explain the fallback or handle the failure explicitly; imports,
+unused state and test assertions are cleaned up. Async test waits have deadlines
+so missed cancellation or refresh signals fail rather than hang CI.
+
+The eleven AI findings shown during this review were snapshots from July 18–19,
+not an analysis of the current branch. GitHub reported that the organization's
+AI usage limit blocked further scans until October 31. Their individual outcomes:
+
+- `config.py`: inverter state 0 already reads `Off`.
+- `homeassistant.py`: hardcoded recliner/garage entities have been removed.
+- `victron.py`: singleton creation/reset now share a lock; time-to-go formatting
+  uses explicit hours, remaining seconds and minutes. The subprocess warning is
+  a false positive: `subprocess.run(timeout=...)` kills and waits for the direct
+  D-Bus client before raising `TimeoutExpired`; it is not a bare `Popen` call.
+- Former `main.py` controller findings: duplicate `start_time` was removed,
+  MPPT powers now use one collected list, SIGALRM cycle handling was replaced,
+  dry-run defaults already use `args.dry_run or None`, and one-shot execution
+  already performs shared shutdown in `finally`, including MQTT cleanup.
+- `setup`: the obsolete `site_config.example.py` copy no longer exists. Setup
+  delegates to `update.sh` and checks its exit status.
+
+Do not enable paid AI overages or claim a fresh AI scan to clear these historical
+snapshots. Reconcile them against source, and retain the ordinary CodeQL,
+Code Quality, Sonar, Bandit, Trivy and test checks.

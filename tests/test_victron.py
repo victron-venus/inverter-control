@@ -842,6 +842,29 @@ class TestGetVictron:
     def teardown_method(self):
         victron.reset_victron_for_testing()
 
+    def test_concurrent_callers_create_one_client(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        from time import sleep
+
+        ready = Barrier(8, timeout=2)
+
+        def construct(**_kwargs):
+            # Hardware discovery releases the GIL; simultaneous callers must
+            # not each start their own discovery/polling client.
+            sleep(0.02)
+            return MagicMock()
+
+        def get_client():
+            ready.wait()
+            return victron.get_victron(test_mode=True)
+
+        with patch.object(victron, "VictronDBus", side_effect=construct) as constructor:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                clients = list(pool.map(lambda _: get_client(), range(8)))
+            constructor.assert_called_once_with(test_mode=True)
+            assert all(client is clients[0] for client in clients)
+
     @patch("inverter_control.victron.subprocess.run")
     def test_get_victron_singleton(self, mock_run):
         """Test get_victron returns same instance"""

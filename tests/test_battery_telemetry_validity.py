@@ -242,6 +242,19 @@ def test_legacy_source_without_metadata_remains_supported(device, monkeypatch):
     assert device._battery_source_status(BATTERY_CHAIN_1)["available"]
 
 
+@pytest.mark.parametrize("raw", [None, "bad", "nan", "inf"])
+def test_invalid_time_to_go_remains_unknown(device, monkeypatch, raw):
+    monkeypatch.setattr(device, "_dbus_get", lambda *_: "1")
+    monkeypatch.setattr(
+        device, "_dbus_get_native_only", lambda _, path: raw if path == "/TimeToGo" else None
+    )
+    device._reconcile_all_batteries()
+    for battery in device.get_all_batteries():
+        assert battery["available"]
+        assert battery["time_to_go_sec"] is None
+        assert battery["time_to_go"] == ""
+
+
 def test_virtual_readiness_without_timestamp_and_real_zero_soc(device, monkeypatch):
     monkeypatch.setattr(
         device,

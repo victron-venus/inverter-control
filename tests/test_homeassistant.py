@@ -72,7 +72,8 @@ class TestHomeAssistantClient:
         """Test initialization with disabled HA token"""
         with patch("inverter_control.homeassistant.HA_TOKEN", "your_token_here"):
             client = homeassistant.HomeAssistantClient()
-            # Should still be able to create client but ENABLE_HA will be False
+            assert client._connected is False
+            assert client.stop() is True
 
     def test_parse_numeric(self):
         """Test numeric parsing"""
@@ -216,10 +217,6 @@ class TestHomeAssistantClient:
 
     def test_parse_boolean_sensors(self):
         """Test boolean sensor parsing is now a no-op"""
-        data = {
-            "bool1": "on",
-            "binary1": "off",
-        }
         # No-op: must not raise, must not populate any cached state.
         self.client._parse_boolean_sensors()
         assert self.client.get_boolean() is False
@@ -250,10 +247,8 @@ class TestHomeAssistantClient:
 
         mock_fetch.side_effect = requests.exceptions.ConnectionError()
 
-        try:
+        with pytest.raises(requests.exceptions.ConnectionError):
             self.client._poll_all()
-        except requests.exceptions.ConnectionError:
-            pass
         # _poll_all doesn't set _connected=False - that happens in _poll_loop
         assert self.client._consecutive_failures == 0
 

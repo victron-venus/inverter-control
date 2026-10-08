@@ -135,7 +135,7 @@ def test_pending_send_observer_is_removed_without_cancelling_transport_future(fi
             error = ConnectionError if finish == "disconnect" else TimeoutError
             bus._writer.reply(error=error("transport ended"))
         with pytest.raises(error):
-            await task
+            await asyncio.wait_for(task, timeout=1.0)
         assert not future.done(), "diagnostic cleanup must not cancel the queued send"
         assert not future._callbacks
         assert not bus._send_observations
@@ -174,7 +174,7 @@ def test_future_error_or_cancellation_is_neither_consumed_nor_an_ack(cancelled):
             assert future.exception() is failure  # Test cleanup consumes it now.
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
+            await asyncio.wait_for(task, timeout=1.0)
         assert not bus._send_observations
 
     asyncio.run(run())

@@ -1294,7 +1294,7 @@ class TransportTests(unittest.TestCase):
                 patch.dict(os.environ, {"GH_TOKEN": "private-token-fixture"}),  # nosec B105
                 patch.object(
                     gh, "upload", side_effect=accepted_upload_then_failed_response
-                ),
+                ) as upload,
                 patch.object(
                     rc.subprocess,
                     "run",
@@ -1314,6 +1314,7 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(len(gh.assets[release_id]), 1)
             self.assertEqual(sum(write[0] == "upload" for write in gh.writes), 1)
             self.assertFalse(any(write[1] == "PATCH" for write in gh.writes))
+            upload.assert_called_once_with(tag, asset)
             command.assert_called_once()
             self.assertNotIn("--clobber", command.call_args.args[0])
             self.assertNotIn(temp, str(error.exception))

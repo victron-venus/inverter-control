@@ -106,7 +106,7 @@ def test_replaced_connection_cannot_publish_late_sender_mapping():
             assert client._sender_service == {":1.99": SERVICE}
         finally:
             old_bus.release.set()
-            await old_task
+            await asyncio.wait_for(old_task, timeout=1.0)
         assert client._sender_service == {":1.99": SERVICE}
 
     asyncio.run(scenario())
@@ -120,7 +120,7 @@ def test_owner_changed_signal_wins_over_older_daemon_reply():
         await bus.started.wait()
         client._handle_name_owner_changed(SimpleNamespace(body=[SERVICE, ":1.1", ":1.2"]))
         bus.release.set()
-        await task
+        await asyncio.wait_for(task, timeout=1.0)
         assert client._sender_service == {":1.2": SERVICE}
 
     asyncio.run(scenario())

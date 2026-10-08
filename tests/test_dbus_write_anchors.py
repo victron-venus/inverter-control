@@ -105,7 +105,7 @@ def test_cancelled_observer_is_removed_without_changing_other_handlers():
         await asyncio.wait_for(bus.observed.wait(), 1)
         pending.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await pending
+            await asyncio.wait_for(pending, timeout=1.0)
         assert bus.handlers == [other]
         assert set(bus._method_return_handlers) == {99}
         assert timing["call_finished_at"] >= timing["reply_observed_at"]

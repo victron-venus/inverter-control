@@ -309,8 +309,6 @@ class TestMQTTBridge:
         mock_client.publish.assert_called_once()
         call_args = mock_client.publish.call_args
         assert call_args[0][0] == "test/state"
-        import json
-
         assert json.loads(call_args[0][1]) == state
         assert call_args[1]["qos"] == 0
         assert call_args[1]["retain"] is True

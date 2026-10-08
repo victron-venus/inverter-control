@@ -70,7 +70,7 @@ def test_held_log_sink_cannot_block_main_callback_or_pending_stop(bridge, isolat
         def invoke():
             try:
                 call()
-            except BaseException as error:
+            except Exception as error:
                 errors.append(error)
             finally:
                 if done is not None:
@@ -163,7 +163,7 @@ def test_enqueue_errors_keep_only_type_without_calling_exception_str(
                 results.append(bridge.publish_state({"valid": True}))
             else:
                 results.append(bridge.publish_console("fixture"))
-        except BaseException as error:
+        except Exception as error:
             errors.append(error)
         finally:
             done.set()

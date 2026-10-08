@@ -27,7 +27,7 @@ class ReadBus:
             future = asyncio.get_running_loop().create_future()
             self._method_return_handlers[message.serial] = future
             try:
-                await future
+                await asyncio.wait_for(future, timeout=1.0)
             finally:
                 self.cancelled.set()
         value = (
