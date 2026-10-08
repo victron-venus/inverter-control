@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.23.5] - Candidate series, started 2026-10-06
 
 ### Fixed
+- Require at least RSA 2048 for operator SSH deployment/restart, preserving
+  stronger configured minima and using fresh authenticated connections.
 - Enforce exact certificate-key minima on Home Assistant and both Loki HTTPS
   transports before sending headers or logs, including RSA 2048 bits throughout
   the verified chain. OpenSSL security level 2 alone accepted a 2047-bit root.

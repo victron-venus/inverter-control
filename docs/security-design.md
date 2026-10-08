@@ -245,6 +245,11 @@ SOCKS transports are not part of this profile. Loki still rejects redirects;
 Home Assistant retains Requests' redirect handling, including its credential
 stripping rules, and validates every new HTTPS connection.
 
+The TLS 1.2 DHE regression additionally checks exact 2047-bit parameters are
+rejected before application data, while 2048-bit parameters complete all three
+client paths. Independent lower-policy handshakes calibrate both fixtures.
+This does not change the selected TLS cipher suites or TLS 1.3 groups.
+
 The loopback suite in `tests/test_tls_policy.py` covers the three actual client
 paths, RSA 2047/1024 chains, strong RSA/EC, hostname and trust failures, proxies,
 mTLS and plaintext compatibility. These synthetic tests do not validate a
@@ -263,6 +268,21 @@ publisher if the archive and checksum both come from a compromised source.
 Review the tag, release notes, and expected repository before running its
 installer with device privileges. SSH deployment must verify the destination
 host key. Do not disable that check or blindly replace a changed key.
+The `deploy.sh` and `restart.sh` operator helpers require **OpenSSH 9.1 or newer**
+(or a compatible client exposing `RequiredRSASize` in `ssh -G`). They read the
+effective destination configuration and require the larger of its RSA minimum
+and 2048 bits. Missing, malformed or oversized numeric settings fail before
+opening the SSH connection. Stronger configured minima remain intact.
+Each administrative invocation uses a fresh connection (`-S none`); reusing a
+multiplexed connection authenticated under an older policy would bypass the
+new check. Host aliases, user/port, proxy routing and known-host verification
+otherwise retain the normal SSH configuration. Older SSH clients must be
+updated on the operator machine; this is not a new daemon runtime requirement.
+This minimum applies to the destination connection. An operator-supplied
+`ProxyJump` or `ProxyCommand` creates an independent transport; configure its
+own RSA minimum to at least 2048 bits. These helpers do not enforce the key
+policy of that separate bastion connection.
+See [OpenSSH's RequiredRSASize documentation](https://man.openbsd.org/ssh_config#RequiredRSASize).
 
 Git exclusions prevent ordinary accidental adds of local configuration and
 keys; they do not stop `git add -f`, pasted tokens, or secrets in history. Review
