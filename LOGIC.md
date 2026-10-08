@@ -2,167 +2,194 @@
 
 ## Overview
 
-This document describes the control logic used to calculate the power setpoint sent to the Victron inverter system. The goal is to minimize grid import/export while respecting various operating modes.
+This document summarizes the automatic setpoint calculator in
+[`inverter_control/logic.py`](inverter_control/logic.py) and its integration in
+[`controller.py`](inverter_control/controller.py). It targets low grid
+import/export for the supported single-phase L1 and split-phase L1/L2 layouts.
+It is not a guarantee of zero grid flow or a replacement for inverter/BMS and
+installation protection. Three-phase control is not supported.
 
 ## Setpoint Convention
 
-For Victron in **External Control** mode:
-- **Positive setpoint** = Consume power from grid (charge battery)
-- **Negative setpoint** = Output power to house (discharge battery)
+For Victron **External Control** mode, the daemon writes
+`/Hub4/L1/AcPowerSetpoint`:
 
-Example:
-- `setpoint = -1000` → Inverter outputs 1000W to house
-- `setpoint = +500` → Inverter consumes 500W from grid to charge battery
+- A positive value requests import at the controlled AC input.
+- A negative value requests export at that input.
+
+For example, `-1000` requests 1000 W export and `+500` requests 500 W import.
+These are requested setpoints, not measurements or guarantees of battery power.
+House loads, solar production, inverter limits, and other phases determine the
+actual flows. Confirm the ESS mode and observed measurements on the installation.
 
 ## Control Loop
 
-The main control loop runs every ~0.33 seconds and performs these steps:
+The configured loop interval is 0.33 seconds. Execution and I/O can take longer;
+this is not a hard real-time deadline.
 
-### Step 1: Gather Input Data
+### Step 1: Gather and validate input data
 
 | Variable | Source | Description |
 |----------|--------|-------------|
-| `g1`, `g2` | D-Bus | Grid power per phase (W) |
-| `gt` | D-Bus | Total grid power (W), positive = importing |
-| `t1`, `t2`, `tt` | D-Bus | Consumption per phase and total (W) |
-| `inv_power` | D-Bus | Current inverter AC output (W) |
-| `mppt_total` | D-Bus | Solar from MPPT controllers (W) |
-| `pv_inverter_total` | D-Bus | Solar from PV inverters (W) |
-| `ev_power` | D-Bus (dbus-evcharger / dbus-ev) | EV charger consumption (W) |
+| `g1`, `g2`, `gt` | D-Bus grid snapshot | Phase and total power; positive total means import |
+| `t1`, `t2`, `tt` | D-Bus | Phase and total consumption |
+| `inv_power` | VE.Bus `/Devices/0/Ac/Inverter/P` | Cached inverter power used by the base calculation |
+| `mppt_total` | D-Bus MPPT services | Sum of reported MPPT power |
+| `pv_inverter_total` | D-Bus PV-inverter services | Sum of reported PV-inverter power |
+| `ev_power` | D-Bus wallbox adapter | EV charging power from the auxiliary reader |
 
-### Step 2: Get Control Switches
+Normal calculation requires a valid selected grid snapshot. A measured zero is
+valid; missing, stale, non-finite, or wrong-source grid values are not replaced
+with zero. The controller rechecks source/sample identity and validity before
+writing. See [grid telemetry safety](docs/grid-telemetry-safety.md) for source
+pinning, optional backup selection, expiry, and recovery behavior.
 
-All inverter control switches are in-process flags (`InverterController.get_control_flag`).
-On start they are all False — not restored from Settings or Home Assistant.
-After start they change only via MQTT (`inverter/cmd/toggle` from Inverter Desktop
-or HA as another MQTT client). Settings `/Settings/InverterControl/<Flag>` (0/1)
-are registered (default 0) and written when a flag changes so Venus UI stays in
-sync. Published on `inverter/state` as status (`booleans`).
+Auxiliary inputs have their own limitations. An unavailable wallbox value is
+represented as zero for the calculator, so EV exclusion cannot be relied upon
+without a working measurement. HA/Vue caches do not provide a universal
+per-sensor freshness guarantee; a cached value alone is not evidence of health.
 
-Button definitions are published alongside the flags as `ui_config.header_toggles`.
-Their canonical keys and labels live in `inverter_control/control_flags.py`.
-The `minimize_charging` flag is independent of HA, but its dump-load actuator
-currently uses HA sensors and switch services. See the
+### Step 2: Get control switches
+
+Inverter switches are in-process flags. They start **off on each daemon
+restart** and are not restored from Settings or Home Assistant. MQTT commands
+change flags; Settings are a display mirror. `inverter/state` publishes flags
+as `booleans` and button definitions as `ui_config.header_toggles`. The canonical
+keys and labels live in `inverter_control/control_flags.py`.
+
+The calculator uses `only_charging`, `do_not_supply_charger`,
+`set_limit_to_ev_charger`, `no_feed`, `house_support`, and `charge_battery`.
+`minimize_charging` separately controls configured HA dump loads; toggling it
+does not itself establish that HA or its measurements are available. See the
 [MQTT control contract](docs/mqtt-control-flags.md).
 
-| Switch | Purpose |
-|--------|---------|
-| `only_charging` | Don't discharge battery, use only solar |
-| `do_not_supply_charger` | Don't power EV from battery |
-| `no_feed` | Match PV inverter output to prevent grid export |
-| `house_support` | PV inverter total minus 300W for partial self-consumption |
-| `charge_battery` | Force battery charging |
+### Step 3: Calculate effective grid and filtering
 
-### Step 3: Calculate Effective Grid
+With `do_not_supply_charger` enabled and measured EV power greater than 100 W:
 
-When `do_not_supply_charger` is enabled:
-```
+```text
 effective_gt = gt - ev_power
 ```
 
-This makes the algorithm "blind" to EV consumption, preventing it from discharging battery to power the EV.
+Otherwise the EV subtraction is zero. This excludes the measured EV component
+from the grid-error target; it does not identify the physical source of energy
+at the charger.
 
-### Step 4: Base Calculation
+The default background grid filter uses a time-based EMA with a 2-second time
+constant. The calculator consumes that filtered snapshot without filtering it
+a second time. If the background filter is disabled, the legacy per-cycle EMA
+uses `EMA_ALPHA` (default 0.3).
 
-Target: Grid power ≈ 0 (grid-zero)
+Optional home-load smoothing is **disabled by default**. When enabled and an
+eligible home-total value is present, `home_total - mppt_total -
+pv_inverter_total` is filtered and blended with the grid reading (default home
+weight 0.7), with the same EV exclusion applied. This estimate depends on sensor
+coverage, battery flows, and source timing; validate it for the site. It is not
+used while the backup grid source is selected.
 
-```
-vanew = inv_power - effective_gt
-```
+### Step 4: Base calculation
 
-Logic:
-- If importing 500W from grid → increase output by 500W
-- If exporting 200W to grid → decrease output by 200W
+Outside the deadband, the normal strategy's simplified equation is:
 
-Stability zone: If `-30 < effective_gt < 50`, keep previous setpoint to prevent oscillation.
-
-### Step 5: Apply Operating Modes
-
-Modes are applied in priority order (lowest to highest):
-
-#### 1. ONLY_CHARGING (Lowest Priority)
-**Goal:** Don't discharge battery - output only what MPPT produces
-
-```
-output = mppt_total - SOLAR_OUTPUT_OFFSET
-vanew = -max(0, output)
+```text
+raw_setpoint = inv_power - filtered_effective_gt * damping
 ```
 
-Flag: `[OC:XXX-60]`
+Default damping is 0.7 for import and 1.0 for export. Inside the strict deadband
+`-50 < filtered_effective_gt < 30`, the strategy starts from the previous
+accepted setpoint. At exactly zero it clears creep and holds. Otherwise it
+accumulates a bounded creep correction (`CREEP_RATE=0.5`, `CREEP_MAX=100` by
+default; export accumulation is twice as fast). Set `CREEP_RATE=0` to disable
+that accumulation.
 
-#### 2. DO_NOT_SUPPLY_CHARGER
-**Goal:** Don't let battery power the EV charger
+Burst correction reacts to a sufficiently large difference between the
+instantaneous and filtered effective grid values. A derivative term can apply
+near zero; it is suppressed during a filtered deadband hold. These corrections
+run before the higher-priority operating modes below.
 
-```
-max_output = max(0, mppt_total - SOLAR_OUTPUT_OFFSET)
-if vanew < -max_output:
-    vanew = -max_output
-```
+### Step 5: Apply operating modes
 
-Flag: `[NoEV]`
+Strategies run in this order, from lower to higher priority. Later strategies
+may replace the earlier result; the resulting value still passes through
+convergence and automatic limits. Multiple flags do not create simultaneous
+physical guarantees.
 
-#### 3. NO_FEED
-**Goal:** Match PV inverter output to prevent grid export
+1. **Only charging** limits export to an estimate of available MPPT output:
+   `min_setpoint = -max(0, int(mppt_total * 0.94) - 60)` with default efficiency
+   and offset. If the current result is more negative, it is raised to that
+   floor; the strategy does not otherwise force the result to the floor.
+2. **Do not supply charger** applies that same MPPT-based export floor when the
+   flag is enabled and measured EV power is greater than 100 W.
+3. **Limit to EV charger** (`set_limit_to_ev_charger`) replaces the result with
+   `-max(0, int(mppt_total * 0.94) - 500)` when either garage or EV power exceeds
+   1000 W. Garage power comes from the Vue cache and may be stale.
+4. **No feed** sets the raw result to `int(pv_inverter_total)`.
+5. **House support** sets it to `int(pv_inverter_total - 300)`.
+6. **Charge battery** sets it to `2200`. A valid queued pre-charge request can
+   select this strategy for a cycle, subject to its expiry and tariff-window
+   checks; an explicit manual charge flag is a separate operator choice.
 
-```
-vanew = pv_inverter_total
-```
+The names express policy intent. For example, `no_feed` is a setpoint rule
+based on measured PV, not a certified anti-export system.
 
-Positive setpoint consumes from grid what PV inverters export.
+### Step 6: Apply convergence and automatic limits
 
-Flag: `[NF]`
+The calculator normally applies 90% of the difference between its raw result
+and the previous accepted setpoint (integer truncation). A burst uses 100%.
+Then it clamps the result to `POWER_LIMIT_MIN` / `POWER_LIMIT_MAX`, limits the
+per-cycle change to `SETPOINT_DELTA_LIMIT`, and clamps again. The final clamp
+allows a newly tightened absolute bound to override the slew limit.
 
-#### 4. HOUSE_SUPPORT
-**Goal:** Partial self-consumption with PV inverters
+Defaults are `POWER_LIMIT_MIN=-2300 W`, `POWER_LIMIT_MAX=2250 W`, and
+`SETPOINT_DELTA_LIMIT=2000 W`. The controller rechecks the current absolute bounds
+under the hardware-write lock before an automatic write. Its accepted baseline
+changes only after the write is acknowledged.
 
-```
-vanew = pv_inverter_total - 300
-```
+Optional [submeter trim](docs/submeter-trim.md) can add a small correction after
+automatic control settles; it is disabled by default and has additional
+source, timing, mode, and bound checks.
 
-Flag: `[HS]`
+**Explicit persistent setpoint override is a separate operator interface.** It
+has priority over automatic regulation, works independently of DRY mode, and
+accepts an int32 value rather than the automatic power range. It must only be
+available to a trusted operator who understands the equipment limits. Stopping
+an override resumes the applicable automatic/outage policy; it does not
+unconditionally send zero. DRY suppresses ordinary automatic inverter setpoint
+writes; it does not disable every ESS/HA actuator or prevent an authorized MQTT
+client from changing DRY. See the [dry-run boundary](docs/security-design.md#dry-run-is-not-a-hardware-isolation-boundary).
 
-#### 5. CHARGE_BATTERY (Highest Priority)
-**Goal:** Force maximum battery charging
+## Configuration and diagnostics
 
-```
-vanew = 2200
-```
+The actual defaults and permitted configuration values are in
+[`config.py`](inverter_control/config.py). The formulas above use those defaults;
+site overrides may change them.
 
-Flag: `[CHG]`
+Console markers include `[~...]` for deadband/creep, `[EV:...]` for exclusion,
+`[OC:...]` or `[OC~]` for only-charging, `[NoEV:...]`, `[LimEV:...]`, `[NF]`,
+`[HS]`, `[CHG]`, `[B:...]` for burst, `[D:...]` for derivative correction,
+`[!Δ...]` for slew limiting, and `[TRIM:...]` for optional trim. A marker reports
+calculator behavior, not proof of the resulting physical power flow.
 
-### Step 6: Apply Safety Limits
+## Error handling and watchdogs
 
-```
-vanew = max(POWER_LIMIT_MIN, min(POWER_LIMIT_MAX, vanew))
-```
+HA failures trigger bounded requests and a circuit breaker. Cached values can
+remain visible and usable by optional logic; the cache has no general
+per-entity age cutoff. Keep optional home-load blending disabled unless its
+inputs and outage behavior have been validated for the site.
 
-Default limits:
-- `POWER_LIMIT_MIN = -2300` (max output)
-- `POWER_LIMIT_MAX = +2250` (max charging)
+D-Bus reconnection, service discovery, and explicit grid-validity checks govern
+normal-control recovery. They cannot establish the truth of measurements
+published by a compromised local service.
 
-## Configuration Parameters
+The in-process `HardwareWatchdog` monitors accepted-setpoint and valid-telemetry
+liveness. A generic stalled-control fallback requests 0 W. With an explicit
+`GRID_LOSS_HOLD_SECONDS` setting, detected meter loss holds the last accepted
+command briefly, then maintains **-10 W** at the controlled AC input and retries
+failed writes. The full [outage policy](docs/grid-telemetry-safety.md) describes
+recovery and the default legacy timing. A write already sent to the device
+cannot be recalled by a later validity check.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `SOLAR_OUTPUT_OFFSET` | 60W | Reduce output by this amount to avoid grid export |
-| `LOOP_INTERVAL` | 0.33s | Control loop interval |
-| `POWER_LIMIT_MIN` | -2300W | Maximum output (discharge) |
-| `POWER_LIMIT_MAX` | +2250W | Maximum charging |
-
-## Console Output Flags
-
-| Flag | Meaning |
-|------|---------|
-| `[~]` | Grid near zero, keeping stable |
-| `[EV:XXX]` | EV power subtracted from grid calculation |
-| `[OC:XXX-60]` | Only charging mode, MPPT minus offset |
-| `[NoEV]` | EV exclusion limit applied |
-| `[NF]` | No feed mode active |
-| `[HS]` | House support mode active |
-| `[CHG]` | Charge battery mode active |
-
-## Error Handling
-
-- Home Assistant disconnection: Uses last known values (cached)
-- D-Bus errors: Automatic service rescan after consecutive failures
-- Watchdog: Restarts service if web server becomes unresponsive
+The separate [`service/watchdog/run`](service/watchdog/run) observes process
+heartbeat files and requests service restarts with backoff. It does not monitor
+an HTTP dashboard, and a fresh process heartbeat alone does not prove successful
+hardware control. Neither watchdog replaces electrical or BMS protection.

@@ -1,287 +1,52 @@
-# System Architecture
+# System architecture
 
-## Data Flow Diagram
-
-```mermaid
-flowchart TB
-    subgraph Solar["☀️ Solar Sources"]
-        MPPT["MPPT Charger\n(Victron)"]
-        PVI["PV Inverters\n(AC-coupled)"]
-    end
-
-    subgraph Battery["🔋 Battery System"]
-        JBD["JBD BMS\n(4S LiFePO4)"]
-        INV["MultiPlus-II\n(Inverter/Rectifier)"]
-    end
-
-    subgraph Measurement["📊 Measurements"]
-        SHELLY["Shelly Pro 3EM\n(Grid Meter)"]
-        VUE["Emporia Vue\n(Circuit Monitor)"]
-    end
-
-    subgraph ESP["📡 ESP32 Bridge"]
-        ESP32["ESPHome\n(JBD BLE Proxy)"]
-        MQTT_BR["MQTT Broker\n(Venus OS)"]
-    end
-
-    subgraph Control["⚙️ Control Loop"]
-        HA["Home Assistant\n(Sensors, Logic)"]
-        INV_CTRL["inverter-control\n(PID Loop)"]
-    end
-
-    subgraph Dbus["D-Bus"]
-        SYS["System D-Bus"]
-        VBUS["Ve.Bus D-Bus"]
-    end
-
-    subgraph Remote["🖥️ Remote Access"]
-        DASH["inverter-dashboard\n(Web UI)"]
-        MQTT_REM["Remote MQTT\n(User Broker)"]
-    end
-
-    %% Solar to Battery
-    MPPT -->|"DC Power"| INV
-    PVI -->|"Grid AC"| SYS
-
-    %% Battery connections
-    JBD -->|"BLE"| ESP32
-    ESP32 -->|"MQTT:battery/*"| MQTT_BR
-    MQTT_BR -->|"D-Bus"| SYS
-
-    %% Grid measurement
-    SHELLY -->|"MQTT"| HA
-    HA -->|"HTTP"| SYS
-    SHELLY -->|"D-Bus"| SYS
-
-    %% Control flow
-    SYS -->|"Grid Power"| HA
-    HA -->|"Grid/Consumption"| INV_CTRL
-    INV_CTRL -->|"ESS Mode / Setpoint"| VBUS
-    INV -->|"AC Power"| SYS
-    VBUS <-->|"Inverter State"| INV
-
-    %% Circuit monitoring
-    VUE -->|"Cloud/HTTP"| HA
-    HA -->|"Load Data"| INV_CTRL
-
-    %% Remote access
-    MQTT_BR -->|"inverter/state"| MQTT_REM
-    MQTT_REM -->|"WebSocket"| DASH
-    DASH -->|"MQTT cmd"| MQTT_REM
-    MQTT_REM -->|"inverter/cmd"| INV_CTRL
-
-    %% Legend
-    style JBD fill:#ff6b6b,color:#fff
-    style INV_CTRL fill:#4ecdc4,color:#fff
-    style SYS fill:#95e1d3,color:#000
-```
-
-## Service Dependencies
+Inverter Control is a supervised Venus OS daemon. It does not host a web
+dashboard. Remote dashboards consume MQTT; Home Assistant is an optional
+integration rather than the owner of the seven inverter control flags.
 
 ```mermaid
-graph LR
-    subgraph VenusOS["Venus OS Services"]
-        ICM["inverter-control"]
-        DMB["dbus-mqtt-battery"]
-        DTP["dbus-tasmota-pv"]
-        MQTT["MQTT Broker"]
-        PW["PackageManager"]
-    end
-
-    subgraph External["External Services"]
-        HA["Home Assistant"]
-        DASH["inverter-dashboard"]
-    end
-
-    DMB -->|"DVCC Limits"| SYS
-    DTP -->|"PV Power"| SYS
-    SYS -->|"ESS Control"| ICM
-    ICM -->|"MQTT"| MQTT
-    MQTT -->|"Subscribe"| DASH
-    HA -->|"Sensors"| ICM
+flowchart LR
+  peers[Venus OS D-Bus measurement services] --> reads[Background reads and discovery]
+  reads --> controller[Controller and control policy]
+  controller --> writer[Independent native write connection]
+  writer --> inverter[VE.Bus setpoint and settings]
+  controller <--> broker[Local MQTT broker]
+  broker <--> clients[Authorized dashboards and integrations]
+  forecast[Forecast producer] --> broker
+  forecast --> webhook[Loopback webhook]
+  webhook --> controller
+  controller <--> ha[Optional Home Assistant]
+  controller --> diagnostics[Console, metrics, bounded logs]
+  watchdog[Watchdog and fallback policy] --> writer
 ```
 
-## Example Network Topology
+`main.py` owns startup, CLI and MQTT command registration. The Python modules
+live under `inverter_control/`; private `local_config.py` lives at the package
+root. `controller.py` owns integration/state coordination; `logic.py` calculates
+setpoints. `victron.py` and `dbus.py` provide local device I/O. The native reader
+and writer use separate connections; a CLI fallback validates write replies.
+See [native write isolation](../../docs/native-write-isolation.md).
 
-This example uses Tasmota smart plugs and `dbus-tasmota-pv` as the PV telemetry
-publisher. Other publishers exposing `com.victronenergy.pvinverter.*` D-Bus
-services can supply the same controller inputs.
+The process receives untrusted protocol data through a trusted deployment
+boundary. The local system bus, private Python configuration and command-topic
+publishers can influence hardware. See [security design](../../docs/security-design.md)
+for assets, limits and required access control, and
+[interfaces](../../docs/interfaces.md) for input/output contracts.
 
-```mermaid
-graph TB
-    subgraph Local["🏠 LAN 192.168.x.x"]
-        CERBO["Cerbo GX\n192.168.160.150"]
-        MQTT_C["MQTT :1883"]
-        SHELLY["Shelly Pro 3EM"]
-        TAS1["Tasmota :120"]
-        TAS2["Tasmota :121"]
-        ESP["ESP32"]
-    end
+A fresh transport connection is not proof of a fresh measurement. Source identity,
+phase topology, timestamps and recovery gates determine whether grid control is
+available. [Grid telemetry safety](../../docs/grid-telemetry-safety.md) documents
+fallback behavior. Auxiliary display readers have independent timing and do not
+replace primary control measurements.
 
-    subgraph Remote["☁️ Remote"]
-        HA["Home Assistant\n(Self-hosted)"]
-        DASH["Dashboard\n(Any HTTP host)"]
-        GH["GitHub\n(Auto-update)"]
-    end
+The installer preserves configuration and service directory inodes, installs
+persistent daemontools launchers under `/data/inverter-control/service`, and
+recreates volatile `/service` links after reboot. Separate watchdog and deployment
+keepalive processes have distinct roles. Read the
+[operations guide](../../docs/venus-os-operations.md) before stopping or upgrading
+a device. Automated tests exercise these paths with mocks; site acceptance must
+measure actual power behavior and failure recovery.
 
-    CERBO --> MQTT_C
-    MQTT_C --> DASH
-    SHELLY -->|"MQTT"| MQTT_C
-    TAS1 --> MQTT_C
-    TAS2 --> MQTT_C
-    ESP -->|"MQTT:battery"| MQTT_C
-    HA -->|"HTTP :8123"| CERBO
-    GH -->|"Download"| CERBO
-```
-
-## Control Loop Timing
-
-```mermaid
-sequenceDiagram
-    participant G as Grid Meter<br/>(Shelly)
-    participant HA as Home Assistant
-    participant IC as inverter-control
-    participant VBUS as Ve.Bus
-    participant INV as MultiPlus
-
-    G->>HA: MQTT: grid_power = 150W
-    HA->>IC: HTTP: sensors
-    IC->>IC: Calculate setpoint
-    Note over IC: EMA smoothing<br/>Burst correction<br/>D-term braking
-    IC->>VBUS: Setpoint = 127W
-    VBUS->>INV: Adjust power
-    INV-->>VBUS: Grid → 0W
-    VBUS-->>G: Meter reads 0W
-```
-
-## Runbook: Troubleshooting
-
-### ⚠️ Battery Disconnected
-
-**Symptoms:**
-- Dashboard shows stale battery data
-- DVCC limits not updating
-- `/System/StaleData = 1` in D-Bus
-
-**Actions:**
-```bash
-# Check ESP32 connection
-ssh cerbo
-tail -f /var/log/dbus-mqtt-battery/current | tai64nlocal
-
-# Check MQTT subscription
-mosquitto_sub -v -t "battery/#" | head -20
-
-# Restart service
-svc -t /service/dbus-mqtt-battery
-
-# Check backup
-cp -a /data/dbus-mqtt-battery.rollback /data/dbus-mqtt-battery
-svc -t /service/dbus-mqtt-battery
-```
-
-### ⚠️ Grid Failure
-
-**Symptoms:**
-- ESS mode shows "Passthru"
-- No grid export/import control
-- Console shows `[PT]` flag
-
-**Actions:**
-```bash
-# Verify grid meter
-dbus -y com.victronenergy.grid.meter0
-
-# Check ESS mode
-svxadmin display
-
-# Manual restart
-svc -t /service/inverter-control
-
-# Check D-Bus connectivity
-python3 -c "
-import dbus
-bus = dbus.SystemBus()
-obj = bus.get_object('com.victronenergy.system', '/System')
-print(obj.process_names())
-"
-```
-
-### ⚠️ MQTT Broker Crash
-
-**Symptoms:**
-- Dashboard shows "connecting..."
-- Services report MQTT errors
-- inverter/state topic not updating
-
-**Actions:**
-```bash
-# Restart MQTT
-svc -t /service/mqtt-broker
-
-# Verify connection
-mosquitto_sub -v -t "\$SYS/#" -C 1
-
-# Check service logs
-tail -50 /var/log/inverter-control/current | tai64nlocal
-```
-
-### ⚠️ Watchdog Triggered Restart
-
-**Symptoms:**
-- Service was restarted by watchdog
-- `/tmp/inverter-control.heartbeat` timestamp old
-- Alert: "ROLLBACK: service failed health check"
-
-**Actions:**
-```bash
-# Check heartbeat
-cat /tmp/inverter-control.heartbeat
-date -r /tmp/inverter-control.heartbeat
-
-# View service status
-svstat /service/inverter-control
-
-# Check for repeated restarts
-ls -la /tmp/.watchdog_restarts/
-
-# Disable watchdog for testing
-svc -d /service/watchdog
-
-# Re-enable after fix
-svc -u /service/watchdog
-```
-
-### ⚠️ Dashboard Not Loading
-
-**Symptoms:**
-- Web UI shows blank or timeout
-- WebSocket error in browser console
-
-**Actions:**
-```bash
-# Check Docker container
-ssh nas
-docker ps | grep inverter-dashboard
-docker logs inverter-dashboard
-
-# Check MQTT connection
-docker exec inverter-dashboard sh -c 'nc -zv MQTT_HOST 1883'
-
-# Restart container
-docker restart inverter-dashboard
-
-# Check TLS certs
-ls -la /volume1/docker/inverter-dashboard/config/
-```
-
----
-
-## Emergency Contacts
-
-| Issue | First Action | Escalation |
-|-------|-------------|------------|
-| Battery BMS alarm | Check ESP32 BLE connection | Replace BMS |
-| Grid meter failure | Use backup Shelly | Install VM-3P75CT |
-| Inverter fault | Check VE.Bus status | Call Victron support |
-| Data loss | Restore from backup | Check InfluxDB |
+The older [architecture decisions](adr-001-grid-zero-architecture.md) preserve
+historical site context. This document and the linked current contracts describe
+the supported code; the historical hardware examples are not requirements.

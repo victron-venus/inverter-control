@@ -1,3 +1,7 @@
+> Historical architecture decisions and site examples. For the current daemon,
+> interfaces and trust boundaries, see [System architecture](system-architecture.md).
+> These decisions do not certify current deployment settings or hardware support.
+
 # ADR-001: Grid-Zero Control Architecture
 
 **Status:** Accepted

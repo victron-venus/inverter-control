@@ -31,6 +31,9 @@ def test_automatic_setup_does_not_prompt_and_keeps_private_config(tmp_path, opti
     assert result.returncode == 0, result.stderr
     assert "Enter true/false" not in result.stdout
     assert (package / "local_config.py").read_text() == "SITE_PRIVATE = 42\n"
+    assert (package / "local_config.py").stat().st_mode & 0o777 == 0o600
+    private_source = data / "setupOptions/inverter-control/local_config.py"
+    assert private_source.stat().st_mode & 0o777 == 0o600
     assert (data / "updated").exists()
     option_path = data / "setupOptions/inverter-control/use_grid_submeter_as_backup"
     assert option_path.read_text() == option if option is not None else not option_path.exists()
@@ -106,3 +109,52 @@ def test_invalid_setup_tariff_stops_before_replacing_private_config(tmp_path):
     assert not (data / "updated").exists()
     assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"
     assert path.read_text() == "{}"
+
+
+def test_setup_copy_creates_private_file_when_live_config_is_absent(tmp_path):
+    data, package, script = prepare_setup(tmp_path, None)
+    config = package / "local_config.py"
+    config.unlink()
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
+    assert result.returncode == 0, result.stderr
+    assert config.read_text() == "SITE_PRIVATE = 42\n"
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert (data / "updated").exists()
+
+
+def test_setup_permission_failure_does_not_copy_or_start_update(tmp_path):
+    data, package, script = prepare_setup(tmp_path, None)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    chmod = bin_dir / "chmod"
+    chmod.write_text("#!/bin/sh\nexit 43\n")
+    chmod.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)  # nosec B603, B607
+    assert result.returncode == 43
+    assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"
+    assert not (data / "updated").exists()
+
+
+@pytest.mark.parametrize("kind", ["source", "destination"])
+def test_setup_rejects_private_config_symlinks(tmp_path, kind):
+    data, package, script = prepare_setup(tmp_path, None)
+    target = tmp_path / "unrelated.py"
+    target.write_text("UNRELATED = 19\n")
+    target.chmod(0o644)
+    config = (
+        data / "setupOptions/inverter-control/local_config.py"
+        if kind == "source"
+        else package / "local_config.py"
+    )
+    config.unlink()
+    config.symlink_to(target)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
+    assert result.returncode == 1
+    assert "regular file" in result.stderr
+    assert target.read_text() == "UNRELATED = 19\n"
+    assert target.stat().st_mode & 0o777 == 0o644
+    assert not (data / "updated").exists()

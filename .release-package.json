@@ -28,7 +28,15 @@
     "uv.lock",
     "mqtt.yaml",
     "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "RELEASING.md",
+    "docs",
     "LICENSE",
-    ".python-version"
+    ".python-version",
+    "LOGIC.md",
+    ".github/docs",
+    ".bestpractices.json"
   ]
 }

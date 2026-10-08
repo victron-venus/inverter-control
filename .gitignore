@@ -39,6 +39,8 @@ config.local.py
 # Site config (contains API keys, tokens, IPs)
 site_config.py
 local_config.py
+# Legacy root configuration can contain live credentials before migration.
+/secrets.py
 metrics.env
 HA_SENSORS.md
 
