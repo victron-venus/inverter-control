@@ -1,6 +1,7 @@
 """Exercise real Bandit discovery with this repository's command and policy."""
 
 import importlib.util
+import itertools
 import json
 
 # Fixed scanner argv against isolated fixtures, with no shell or external input.
@@ -15,8 +16,7 @@ from pathlib import Path
 class BanditDiscoveryTests(unittest.TestCase):
     """The gate must cover CI helpers in both clones and Git worktrees."""
 
-    def test_directory_exclusions_preserve_ci_and_source_prefixes(self):
-        """Real findings in .github survive Git directory and Git file metadata."""
+    def _load_gate(self):
         repository = Path(__file__).resolve().parents[1]
         original_path = sys.path.copy()
         sys.path.insert(0, str(repository / "scripts"))
@@ -30,6 +30,11 @@ class BanditDiscoveryTests(unittest.TestCase):
             spec.loader.exec_module(run_bandit)
         finally:
             sys.path[:] = original_path
+        return repository, run_bandit
+
+    def test_directory_exclusions_preserve_ci_and_source_prefixes(self):
+        """Real findings in .github survive Git directory and Git file metadata."""
+        repository, run_bandit = self._load_gate()
         for git_is_file in (False, True):
             with self.subTest(git_is_file=git_is_file), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -70,6 +75,47 @@ class BanditDiscoveryTests(unittest.TestCase):
                 }
                 self.assertEqual(set(report["metrics"]) - {"_totals"}, expected)
                 self.assertEqual({item["filename"] for item in report["results"]}, expected)
+                self.assertEqual(report["errors"], [])
+
+    def test_repository_ini_cannot_suppress_findings(self):
+        """Root, nested and duplicate INI files cannot replace reviewed settings."""
+        repository, run_bandit = self._load_gate()
+        locations_to_test = ((".bandit",), ("nested/.bandit",), (".bandit", "nested/.bandit"))
+        settings_to_test = (
+            "skips = B307\n",
+            "tests = B101\n",
+            "exclude = probe.py\n",
+            "level = 4\nconfidence = 4\n",
+        )
+        for locations, settings in itertools.product(locations_to_test, settings_to_test):
+            with (
+                self.subTest(locations=locations, settings=settings),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                (root / ".github").mkdir()
+                (root / ".github" / "bandit.yml").write_bytes(
+                    (repository / ".github" / "bandit.yml").read_bytes()
+                )
+                (root / "probe.py").write_text("eval(input())\n", encoding="utf-8")
+                for location in locations:
+                    ini = root / location
+                    ini.parent.mkdir(parents=True, exist_ok=True)
+                    ini.write_text("[bandit]\n" + settings, encoding="utf-8")
+                report_path = root / "report.json"
+                # Fixed production argv against isolated files, without a shell.
+                result = subprocess.run(  # nosec B603
+                    run_bandit.bandit_command(report_path),
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 1, result.stderr)
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                self.assertEqual({item["test_id"] for item in report["results"]}, {"B307"})
+                self.assertEqual({item["filename"] for item in report["results"]}, {"./probe.py"})
                 self.assertEqual(report["errors"], [])
 
 

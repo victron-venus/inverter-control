@@ -1,6 +1,7 @@
 """One complete, fail-closed Bandit gate for local, pull-request and scheduled CI."""
 
 import json
+import os
 
 # Fixed interpreter/module argv; shell is never enabled.
 import subprocess  # nosec B404
@@ -19,6 +20,10 @@ def bandit_command(report_path: Path) -> list[str]:
         sys.executable,
         "-m",
         "bandit",
+        # Ignore repository-discovered INI files; YAML is the reviewed policy.
+        # Bandit warns about this empty INI; stderr stays visible intentionally.
+        "--ini",
+        os.devnull,
         "-c",
         ".github/bandit.yml",
         # Override CLI defaults: .git is a file in worktrees, not a directory.
