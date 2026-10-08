@@ -42,6 +42,10 @@ class BanditDiscoveryTests(unittest.TestCase):
                     ".github/release-tests/probe.py",
                     "build_helpers.py",
                     "dist_helpers.py",
+                    ".tox_helpers.py",
+                    ".eggs_helpers.py",
+                    ".tox/ignored.py",
+                    ".eggs/ignored.py",
                     "build/ignored.py",
                     "dist/ignored.py",
                 ]:
@@ -72,6 +76,8 @@ class BanditDiscoveryTests(unittest.TestCase):
                     "./.github/release-tests/probe.py",
                     "./build_helpers.py",
                     "./dist_helpers.py",
+                    "./.tox_helpers.py",
+                    "./.eggs_helpers.py",
                 }
                 self.assertEqual(set(report["metrics"]) - {"_totals"}, expected)
                 self.assertEqual({item["filename"] for item in report["results"]}, expected)
