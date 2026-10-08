@@ -256,6 +256,7 @@ def proxy(
                     raw.settimeout(5)
                     if chain:
                         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                        context.minimum_version = ssl.TLSVersion.TLSv1_2
                         context.set_ciphers("DEFAULT:@SECLEVEL=0")
                         context.load_cert_chain(chain[0], chain[1])
                         incoming: socket.socket = context.wrap_socket(raw, server_side=True)
