@@ -76,9 +76,9 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         )
         # http:// mount required for local HA instances (no SSL on local network)
         self._session.mount(
-            "http://",
+            "http://",  # NOSONAR python:S5332 - existing local-HA transport contract
             requests.adapters.HTTPAdapter(pool_connections=2, pool_maxsize=5, max_retries=0),
-        )  # NOSONAR python:S5332
+        )
         self._session.mount("https://", adapter)
 
         # Cached values (persist until HA reconnects)

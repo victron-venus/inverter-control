@@ -6,9 +6,12 @@ WORKDIR /build
 COPY build-support/tls-armv7/requirements-*.txt ./
 RUN python -m venv /tools && \
     /tools/bin/pip install --require-hashes --only-binary=:all: -r requirements-build.txt && \
-    /tools/bin/pip download --require-hashes --no-deps --only-binary=:all: -r requirements-wheels.txt -d /bundle/wheels && \
-    /tools/bin/pip download --require-hashes --no-deps --no-binary=:all: --no-build-isolation -r requirements-source.txt -d /sources
-RUN --network=none /tools/bin/pip wheel --no-index --no-deps --no-build-isolation /sources/cffi-2.1.1.tar.gz -w /bundle/wheels
+    /tools/bin/pip download --require-hashes --no-deps --only-binary=:all: \
+      -r requirements-wheels.txt -d /bundle/wheels && \
+    /tools/bin/pip download --require-hashes --no-deps --no-binary=:all: \
+      --no-build-isolation -r requirements-source.txt -d /sources
+RUN --network=none /tools/bin/pip wheel --no-index --no-deps --no-build-isolation \
+    /sources/cffi-2.1.1.tar.gz -w /bundle/wheels
 COPY scripts/finalize_tls_bundle.py ./
 RUN --network=none python finalize_tls_bundle.py /bundle && \
     cp requirements-*.txt /bundle/ && \
@@ -23,7 +26,8 @@ COPY scripts/check_tls_bundle.py /check/check_tls_bundle.py
 RUN --network=none mkdir /verify && chown -R 65532:65532 /verify /bundle
 USER 65532:65532
 RUN --network=none python -m venv /verify && \
-    /verify/bin/pip install --no-index --require-hashes --only-binary=:all: --find-links=/bundle/wheels -r /bundle/requirements.txt && \
+    /verify/bin/pip install --no-index --require-hashes --only-binary=:all: \
+      --find-links=/bundle/wheels -r /bundle/requirements.txt && \
     /verify/bin/pip check && \
     /verify/bin/python /check/check_tls_bundle.py --armv7 > /bundle/verification.json
 
