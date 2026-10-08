@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.5] - 2026-10-06
+## [1.23.5] - Candidate series, started 2026-10-06
 
 ### Fixed
 - Publish unknown battery voltage, current, power and SoC as null when the
@@ -20,14 +20,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a newer signal or source-owner change. Read values and availability coherently.
 - Preserve observed freshness/completeness requirements when a later native
   metadata read fails, instead of treating the source as a legacy battery.
+- Recover the metrics listener after delayed network availability and preserve
+  queued Loki log delivery during temporary connection failures.
+- Keep console replay and Home Assistant cleanup failures from silently hiding
+  connection problems. Serialize creation and reset of the D-Bus singleton.
+- Bound asynchronous regression-test waits and restore scheduled Trivy reports.
+
+### Upgrade
+- Existing site configuration remains in `local_config.py`; preserve this file
+  when updating. Unavailable battery values are now JSON null rather than zero,
+  so dashboard and automation consumers must distinguish missing data from a
+  measured zero. Use `--dry-run` for the first observation on a test installation.
+- The supported project interpreter is Python 3.12. Install dependencies from the
+  current manifests/lockfile; updating source without its dependencies does not
+  apply the dependency security fix below.
+- Candidate releases require target-device acceptance before production use.
+  Automated tests and mock integration do not establish physical safety.
+
+### Security
+- Raise the minimum `idna` version to 3.15 in both runtime dependency manifests,
+  excluding CVE-2026-45409 / GHSA-65pc-fj4g-8rjx. The lockfile resolves 3.18.
+  This is a dependency vulnerability, not an assigned vulnerability in the
+  Inverter Control application itself.
+- Use fixed D-Bus executable paths in the daemon to prevent command substitution
+  through an unexpected PATH. Validate complete Bandit results at every severity
+  and exercise bounded tariff imports with an Atheris fuzz target.
+- Publish human-readable release changes, upgrade guidance, and security notes
+  from the changelog at the exact package source commit. Missing notes block
+  publication for releases opting into this requirement.
+- Install private site configuration and tariff files with owner-only
+  permissions and reject unsafe symlink destinations before copying them.
+  Retire the legacy TLS helper instead of offering its obsolete key-generation
+  defaults.
+
+### Documentation
+- Refresh contributor, development, security, and interface guidance for the
+  OpenSSF Best Practices self-assessment. The documentation is evidence for the
+  assessment, not a claim of certification or independent hardware review.
 
 ### Validation
 - Cover delayed and disconnected sources, null readings, stale local reads,
   frozen upstream timestamps and recovery, valid zero SoC, and console output.
-- Full Python 3.12 suite: 1667 tests and 15 subtests passed, 92.24% coverage.
+- Original battery-telemetry change, before later candidate fixes: the Python
+  3.12 suite passed 1667 tests and 15 subtests with 92.24% coverage. This is the
+  historical validation scope, not the result for the latest source.
 - Review follow-up: deterministic disconnect/reconnect and interleaving regressions
   cover native reads, CLI reads, synchronous fallback, and reconnect seeding.
   This follow-up is included in the release; it has not been installed on Cerbo.
+
+## [1.23.4] - 2026-10-03
+
+### Added
+- Optional backup grid-submeter selection and bounded submeter trim during
+  settled grid holds; site-specific configuration controls their use.
+- Editable electricity tariffs with persistent SetupHelper configuration and
+  deployment support, plus daily energy tracking from the physical grid meter.
+- Explicit ESS profile/power commands, a daemon-owned setpoint override, and
+  additional D-Bus write/stage timing diagnostics for soak-test analysis.
+
+### Fixed
+- Keep auxiliary reads, display updates, MQTT diagnostics, and logging out of
+  timing-sensitive control and hardware-write paths.
+- Serialize native writes with their CLI fallback, apply active power limits
+  to automatic writes, and preserve grid-source transition reasons on recovery.
+- Reject stale D-Bus owners, replayed MQTT commands, expired precharge requests,
+  and malformed precharge journals instead of treating them as accepted work.
+- Use bounded coordinated shutdown for workers and one-shot runs. Preserve
+  service availability through watchdog backoff and validate startup liveness.
+- Preserve unknown grid-energy values and device-local metrics configuration.
+
+### Upgrade
+- Use Python 3.12 and preserve the site's private `local_config.py` and tariff
+  file. Review the new optional backup-meter, trim, and override settings before
+  enabling them; a branch-circuit meter is not a substitute for a whole-grid meter.
+- Consumers of grid energy must handle unavailable values separately from zero.
+  Recheck MQTT command/acknowledgment behavior against the interface documentation.
+- Observe a target installation in dry-run before any controlled live test.
+  Stable promotion copied verified RC package bytes; it did not itself perform
+  physical hardware testing.
+
+### Security
+- Bound webhook request handling and queued precharge expiry; reject malformed
+  persisted requests and replayed commands. These changes reduce invalid or
+  stale input reaching control decisions.
+- This retrospective summary identifies no assigned application CVE from the
+  reviewed changes. That statement is not a claim that the release has no
+  vulnerabilities or that its historical dependencies remain current.
+
+### Release process
+- Freeze candidate versions before building, validate artifact receipts, and
+  retain full CI when a stable version closes a candidate cycle.
+- These notes were reconstructed from the merged changes for the 2026-10-03
+  release; no new testing or package rebuild is implied by their publication.
 
 ## [1.23.3] - 2026-09-12
 

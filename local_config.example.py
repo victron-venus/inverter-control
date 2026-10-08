@@ -10,7 +10,9 @@ local_config.py is NOT tracked by git.
 # HOME ASSISTANT CONNECTION
 # =============================================================================
 
-HA_URL = "http://YOUR_HA_IP:8123"  # nosec B310 — local HA instance
+# Use a CA-validated HTTPS endpoint for remote HA. Keep certificate verification enabled.
+# Plain HTTP is suitable only for a trusted loopback endpoint (for example an SSH tunnel).
+HA_URL = "https://YOUR_HA_HOST:8123"
 # Documented placeholder; not an authentication credential.
 HA_TOKEN = "your_long_lived_access_token_here"  # nosec B105
 

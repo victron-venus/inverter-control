@@ -17,17 +17,36 @@ set -eu
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${1:-/data/inverter-control}"
+SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
 
 # Device-local files that must never be overwritten by an update.
 
 # Runtime items shipped at the repo root and installed at INSTALL_DIR root.
-RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh keepalive.sh local_config.example.py"
+RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh setup_ssl.sh keepalive.sh local_config.example.py"
 
 # Historical flat-file leftovers from older layouts that are now dead code
 # (all of these live in the inverter_control/ package since 1.17).
 STALE_TOP_LEVEL="config.py console_server.py console_ui.py homeassistant.py keepalive.py logic.py log-forwarder.py mqtt_bridge.py server.py ui_config.py victron.py"
 
 sep() { echo "=== inverter-control update: $*"; }
+
+protect_private_config() {
+    # Do not follow a link and change permissions on an unrelated target.
+    if [ -L "$1" ] || { [ -e "$1" ] && [ ! -f "$1" ]; }; then
+        echo "Private configuration must be a regular file, not a link: $1" >&2
+        return 1
+    fi
+    if [ -f "$1" ]; then
+        chmod 600 "$1" || return $?
+    fi
+}
+
+copy_private_config() {
+    protect_private_config "$2" || return $?
+    # Restrict newly created files before their first byte is copied.
+    (umask 077; cp "$1" "$2") || return $?
+    protect_private_config "$2" || return $?
+}
 
 # The service launchers use the standard persistent package path.
 if [ "$INSTALL_DIR" != /data/inverter-control ]; then
@@ -54,6 +73,16 @@ done
 # Ordinary releases carry no tariff-install.json and preserve the operator file.
 if [ -f "$SRC_DIR/tariff-install.json" ]; then
     python3 "$SRC_DIR/inverter_control/tariff.py" --stdin --check < "$SRC_DIR/tariff-install.json"
+fi
+
+# Repair old broad permissions before stopping services or copying any secrets.
+# A permission failure must not become a successful installation.
+for private_config in "$INSTALL_DIR/local_config.py" "$INSTALL_DIR/secrets.py" \
+    "$SETUP_OPTIONS_DIR/local_config.py"; do
+    protect_private_config "$private_config"
+done
+if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ]; then
+    protect_private_config "$SRC_DIR/local_config.py"
 fi
 
 # Record freshness before any downtime; an old heartbeat cannot prove recovery.
@@ -120,7 +149,7 @@ done
 # 4. Preserve device-local configuration; bootstrap it only on first install.
 # Local configuration/certificates are absent from RUNTIME_ITEMS and never removed.
 if [ ! -f "$INSTALL_DIR/local_config.py" ]; then
-    cp "$SRC_DIR/local_config.example.py" "$INSTALL_DIR/local_config.py"
+    copy_private_config "$SRC_DIR/local_config.example.py" "$INSTALL_DIR/local_config.py"
     sep "created local_config.py from example; configure it before enabling control"
 fi
 for f in $STALE_TOP_LEVEL; do
@@ -130,12 +159,11 @@ done
 # 5b. Optional: push the developer's local_config.py instead of keeping the
 #     device copy (used by deploy.sh, where the dev machine is authoritative).
 if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; then
-    SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
     mkdir -p "$SETUP_OPTIONS_DIR"
     if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
-        cp -p "$SRC_DIR/local_config.py" "$INSTALL_DIR/local_config.py"
+        copy_private_config "$SRC_DIR/local_config.py" "$INSTALL_DIR/local_config.py"
     fi
-    cp -p "$SRC_DIR/local_config.py" "$SETUP_OPTIONS_DIR/local_config.py"
+    copy_private_config "$SRC_DIR/local_config.py" "$SETUP_OPTIONS_DIR/local_config.py"
     sep "pushed local_config.py (PUSH_LOCAL_CONFIG=1)"
 fi
 

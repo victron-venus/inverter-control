@@ -1,27 +1,19 @@
-## Description
-Brief description of the changes.
+## Problem and change
 
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
+Describe the trigger, previous behavior, and resulting behavior. Link the issue if applicable.
 
-## Testing
-- [ ] Tested on Venus OS hardware
-- [ ] Tested with DRY_RUN=True
-- [ ] Web interface tested
-- [ ] Linter passes (`ruff check .`)
+## Validation
 
-## Checklist
-- [ ] Code follows project style
-- [ ] Self-review completed
-- [ ] Comments added for complex logic
-- [ ] Documentation updated if needed
-- [ ] No sensitive data in commits
+List the exact commands and results. Distinguish automated unit/mock tests from device checks.
+For hardware checks, identify the source/release, device, firmware, settings and observed results.
+If hardware was not tested, say so.
 
-## Related Issues
-Fixes #(issue number)
+## Review checklist
 
-## Screenshots
-If applicable, add screenshots.
+- [ ] Tests cover new behavior or the regression; explain any not-applicable case.
+- [ ] Lint, formatting and applicable CI/security checks pass.
+- [ ] Public interfaces, configuration and upgrade/recovery notes are updated when affected.
+- [ ] Security boundaries and failure/recovery behavior were considered.
+- [ ] The diff contains no credentials, private configuration or unsanitized device logs.
+
+For a suspected vulnerability, use the private reporting process in SECURITY.md before posting details publicly.

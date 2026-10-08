@@ -1,44 +1,36 @@
 # Inverter Control
 
 [![CI](https://github.com/victron-venus/inverter-control/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/inverter-control/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15293/badge)](https://www.bestpractices.dev/projects/15293)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/releases)
-[![Downloads](https://img.shields.io/github/downloads/victron-venus/inverter-control/total)](https://github.com/victron-venus/inverter-control/releases)
-[![Python 3.12.x](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![Venus OS](https://img.shields.io/badge/Venus%20OS-3.x-blue)](https://github.com/victronenergy/venus)
-[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/victron-venus/inverter-control)
-[![GitHub watchers](https://img.shields.io/github/watchers/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/watchers)
-[![GitHub contributors](https://img.shields.io/github/contributors/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/graphs/contributors)
-[![GitHub issues](https://img.shields.io/github/issues/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/issues)
-[![GitHub closed issues](https://img.shields.io/github/issues-closed/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/issues?q=is%3Aissue+is%3Aclosed)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/pulls)
-[![GitHub last commit](https://img.shields.io/github/last-commit/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control/commits/main)
-[![Code size](https://img.shields.io/github/languages/code-size/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control)
-[![Repo size](https://img.shields.io/github/repo-size/victron-venus/inverter-control)](https://github.com/victron-venus/inverter-control)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/victron-venus/inverter-control/graphs/commit-activity)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/victron-venus/inverter-control/pulls)
-[![Made with Python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
-[![Victron Community](https://img.shields.io/badge/Victron-Community-blue)](https://community.victronenergy.com/)
 
+Inverter Control is a Python daemon for Victron Venus OS that adjusts an inverter's
+AC input setpoint to regulate net grid import/export. It supports split-phase
+compensation, solar forecasting, configurable operating modes, and optional
+Home Assistant dump-load control. It reads measurements and writes commands
+through the local D-Bus; MQTT connects it to independent dashboards and clients.
 
----
+This is a community project for installations that need custom control beyond
+standard ESS behavior. Commission it against your meter topology, inverter,
+battery limits and failure cases before unattended operation. A successful
+software test does not certify electrical safety or suitability for a site.
 
-⭐ **If this project helps you, please star it!** Stars help others discover it and motivate continued development.
+## Documentation and support
 
----
+- Start here: installation and configuration below; [operations and recovery](docs/venus-os-operations.md).
+- Integration: [external interfaces](docs/interfaces.md), [MQTT flags](docs/mqtt-control-flags.md), [ESS modes](docs/ess-mode-selection.md), [solar delivery](docs/solar-delivery.md), [electricity tariffs](docs/electricity-tariffs.md).
+- Control: [algorithm](LOGIC.md), [grid validity and fallback](docs/grid-telemetry-safety.md), [submeter trim](docs/submeter-trim.md), [auxiliary readers](docs/auxiliary-readers.md).
+- Implementation: [architecture](.github/docs/system-architecture.md), [native write isolation](docs/native-write-isolation.md), [timing diagnostics](docs/dbus-write-timing.md), [metrics](docs/prometheus-alerts.md), [logging](docs/log-forwarding.md).
+- Contribute: [contribution policy](CONTRIBUTING.md) and [development/test guide](docs/development.md).
+- Security: [private reporting and support policy](SECURITY.md), [security design](docs/security-design.md), [scanner policy](docs/security-scanning.md), [OpenSSF evidence](docs/openssf-evidence.md).
 
-Grid-zero feed-in controller for Victron systems with split-phase compensation.
-
----
-
-## Python runtime
-
-Native Venus OS packages target **Python 3.12.x**. The audited Cerbo on Venus OS
-v3.75 reports Python **3.12.13**; the [official Venus OS v3.79 manifest](https://updates.victronenergy.com/feeds/venus/release/sdk/venus-scarthgap-x86_64-arm-cortexa8hf-neon-toolchain-v3.79.target.manifest)
-also ships 3.12.13. Local development and CI use `.python-version` / Python
-3.12.13. Package metadata accepts 3.12 patch updates and rejects other minor
-versions until they have been validated. Use the firmware's system interpreter
-and its matching D-Bus/GI libraries on the device; do not replace the OS Python.
+Use [GitHub Issues](https://github.com/victron-venus/inverter-control/issues) for
+bugs, feature requests and usage questions, and pull requests for proposed
+changes. English reports are welcome. Include the release, Venus OS version,
+expected/actual behavior and sanitized diagnostics. Report vulnerabilities
+[privately](https://github.com/victron-venus/inverter-control/security/advisories/new).
+Never attach tokens or a complete private configuration to an issue.
 
 <!-- ci-release-process:start -->
 ## Release process
@@ -46,833 +38,162 @@ and its matching D-Bus/GI libraries on the device; do not replace the OS Python.
 See the [release strategy](RELEASING.md) for validation, nightly, beta, RC and stable promotion rules, and the [operator runbook](docs/release-workflow.md) for local commands.
 <!-- ci-release-process:end -->
 
----
+Download tagged archives, checksums and change notes from
+[Releases](https://github.com/victron-venus/inverter-control/releases).
+`main` is the integration branch; beta/nightly/RC releases are previews.
+Select a release deliberately and review its compatibility notes. Stable promotion
+requires acceptance of the exact RC artifacts; it is not implied by passing CI.
+[CHANGELOG.md](CHANGELOG.md) records release changes.
 
-## Completed Features
+## Runtime requirements
 
-- ✅ **Release packaging**: Candidate artifacts and checksums; see the [release strategy](RELEASING.md).
-- ✅ **Hardware Watchdog Failsafe**: A stalled control loop falls back to 0 W. With `GRID_LOSS_HOLD_SECONDS` configured, meter loss holds the last accepted command for that duration, then maintains −10 W on the inverter's AC input, refreshed every 2 seconds. This keeps ESS active during the outage so solar charging can continue. Normal grid regulation resumes after the correct meter passes recovery checks; stale measurements and the old command are not replayed.
-- ✅ **Background D-Bus Polling** (v1.19.0): 5 Hz polling thread eliminates ~9 subprocess calls per control cycle; control loop latency 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
-- ✅ **Async MQTT Publish** (v1.19.0): Non-blocking publish via background queue; control loop no longer stalls on broker latency
-- ✅ **Aggressive Grid Smoothing with Home Load** (v1.19.1): Optional blend of home load minus PV with measured grid; requires validation of battery flows and source timing
+Device packages target **Python 3.12.x**. Development/CI pin Python 3.12.13 in
+[.python-version](.python-version); package metadata accepts 3.12 patch updates.
+Use the Venus OS interpreter and matching system D-Bus libraries rather than
+replacing firmware Python. The native D-Bus path and CLI fallback depend on the
+services and tools supplied by the target image.
 
----
+Runtime Python dependencies are declared in [pyproject.toml](pyproject.toml),
+[requirements.txt](requirements.txt), and the development [uv.lock](uv.lock).
+The installer checks imports of `requests` and `paho-mqtt` before stopping an
+existing controller. It does not install missing packages. Resolve dependency
+and firmware compatibility before installation. `prometheus-client` is optional
+for metrics. See the development guide for a reproducible desktop environment.
 
-> **Disclaimer**: Most grid-zero goals can be achieved using Victron's built-in **ESS Optimized (without BatteryLife)** mode. This project exists for specific edge cases requiring custom logic (split-phase compensation, EV charger exclusion, multiple solar sources, etc.). This code was developed for a particular setup and is unlikely to work as a drop-in solution — treat it as a learning resource or starting point for your own implementation.
+## Configure before installation
 
-## Documentation
+The private configuration lives at the repository/package root as
+`local_config.py`, alongside `main.py`. Start from
+[local_config.example.py](local_config.example.py). Preserve any existing file:
 
-- [System Architecture](.github/docs/system-architecture.md) - Data flow diagrams, runbook
-- [ADR](.github/docs/adr-001-grid-zero-architecture.md) - Architecture Decision Records
-
-### Where this project came from
-
-This repository did not start as a polished Python package. Roughly **three years ago** it began as the smallest thing that could work: a **single shell pipeline** glued together with `mosquitto_sub`, a few arithmetic hacks, and a helper script. No repository structure, no D-Bus abstraction, no Home Assistant — just “read a number from MQTT, clamp it, hand it to the inverter.”
-
-The original one-liner looked conceptually like this (host, topic, and credentials are redacted; `***` stands in for a password or token):
-
-```bash
-# Proof-of-concept from ~2023 — do not run as-is; values and paths were local.
-mosquitto_sub -L "mqtt://mqtt:***@10.10.10.10/home/power_main" | while read -r line; do
-  # va = “current” setpoint, s = “main” sensor, b = computed next setpoint
-  b=$(( va - s/3 + 2 ))
-  [ "$b" -gt 2000 ]  && b=2000
-  [ "$b" -le -2000 ] && b=-2000
-  [ "$b" -le 0 ]     && b=0
-  [ "$s" -eq 0 ]     && b="${va}"
-  echo -n "$(date) => current:${va} main:${s} new:${b} "
-  va="${b}"
-  ~/inverter.py "${va}"
-done
+```sh
+umask 077
+test -e local_config.py || cp local_config.example.py local_config.py
+chmod 600 local_config.py
 ```
 
-What it was trying to do, in plain language:
+Edit the copy locally. Use a validated HTTPS URL for a remote Home Assistant
+instance, its token, and your actual sensor/switch IDs. Home Assistant is
+optional; the placeholder/empty token disables its integration. EV, water and
+PV data can come from independent D-Bus publishers. Set their device instances
+only as needed for your deployment.
 
-- **Subscribe** to a Home Assistant (or broker) topic that published something like “main” grid or power telemetry (`power_main`).
-- **Derive** a new inverter setpoint `b` from the difference between a remembered value `va` and the live reading `s` (the `s/3+2` term was a crude proportional tweak).
-- **Clamp** the result into a safe band (±2000 W in this sketch) and avoid sending meaningless negatives in some cases.
-- **Delegate** the actual Victron write to a tiny `~/inverter.py` helper — the predecessor of today’s D-Bus layer.
+Only names explicitly imported from `local_config.py` are overrides. The
+example documents supported site settings. Algorithm constants, default power
+limits and feature defaults live in
+[inverter_control/config.py](inverter_control/config.py); placing an arbitrary
+name in `local_config.py` does not override those constants. Runtime command
+changes such as limits and control flags are documented in the interface guide.
+They are not a substitute for review of persistent settings.
 
-For the curious, the same idea in **one dense line** (again: redacted broker URL; line breaks only for readability — the spirit was “pipe MQTT into a tiny state machine, then `inverter.py`”):
+For PackageManager, provision the private file at
+`/data/setupOptions/inverter-control/local_config.py` **before** choosing Install.
+`setup` copies it into `/data/inverter-control/local_config.py`. Both locations
+contain secrets and must be writable only by the administrator; installation
+restricts private configuration files to mode `0600`.
+Direct `update.sh` preserves the installed configuration. A PackageManager
+installation replaces it with the persistent setupOptions copy when that copy
+exists; make lasting edits there as well. An explicit development
+deployment with `PUSH_LOCAL_CONFIG=1` replaces it; inspect deployment options
+before use. Python configuration is executable trusted code, not an upload format.
 
-```bash
-mosquitto_sub -L "mqtt://mqtt:***@10.10.10.10/home/power_main" \
-| while read -r _; do
-    b=$((va-s/3+2)); [ $b -gt 2000 ]&&b=2000; [ $b -le -2000 ]&&b=-2000
-    [ $b -le 0 ]&&b=0; [ $s -eq 0 ]&&b="${va}"
-    echo -n "$(date) => current:$va main:$s new:$b "; va="${b}"; ~/inverter.py ${va}
-  done
+The time-of-use defaults in the template bootstrap settings under
+`/Settings/InverterControl` on Venus OS; existing GUI settings take precedence.
+The expensive window blocks automatic forecast pre-charge. Manual
+`charge_battery` is an explicit override. Review
+[solar delivery](docs/solar-delivery.md) before connecting a producer.
+
+For backup metering, configure a signed **whole-grid** source, not a branch-load
+meter. `USE_GRID_SUBMETER_AS_BACKUP` defaults to false; the persistent
+`use_grid_submeter_as_backup` SetupHelper option overrides it when present.
+See [grid validity](docs/grid-telemetry-safety.md) for source identity, freshness,
+recovery and hold behavior. Optional [submeter trim](docs/submeter-trim.md) is
+separately disabled by default.
+
+## Install or update on Venus OS
+
+Installation restarts the controller and can resume live hardware commands.
+Arrange a commissioning/maintenance window, preserve the private configuration,
+and keep a known compatible release for recovery. The installer does not make
+an automatic rollback archive. Review journal compatibility in the release notes
+before downgrading; do not delete pre-charge records to bypass deduplication.
+
+### Verified release archive
+
+1. On a workstation, download the intended release's `inverter-control-<version>.tar.gz`
+   and `SHA256SUMS` from the same GitHub release over HTTPS. Verify the downloaded
+   archive against its entry in `SHA256SUMS` (`sha256sum -c SHA256SUMS` on Linux,
+   or `shasum -a 256 -c SHA256SUMS` on macOS). A checksum is integrity evidence,
+   not an independent signature; retain the trusted HTTPS source.
+2. Copy the verified archive to the intended device over SSH after checking its
+   host key. Extract it in a **new staging directory**, outside the live
+   `/data/inverter-control`. The archive contains an `inverter-control/` directory.
+3. Ensure `/data/inverter-control/local_config.py` has the site's configuration
+   before first launch. For SetupHelper, use the persistent location described
+   above and the package's `setup install auto`. Without SetupHelper, run
+   `sh <staging-directory>/inverter-control/update.sh` with the device's administrator
+   account; this uses the existing live configuration.
+4. Check supervisor state, a fresh heartbeat, logs and actual device behavior.
+   A failed startup returns an error. Diagnose it and reinstall a compatible
+   known release; a heartbeat alone does not prove correct power regulation.
+
+### SetupHelper / PackageManager
+
+Install and operate [SetupHelper](https://github.com/kwindrem/SetupHelper)
+according to its own documentation. The package name is `inverter-control`,
+GitHub organization `victron-venus`. The shipped `gitHubInfo` points to `main`:
+PackageManager's branch-download path installs integration code, not an accepted
+stable archive. Choose it only for an intentionally managed development site;
+use a verified release for a controlled rollout.
+
+The `setup` entry point delegates to `update.sh`. It keeps service files under
+`/data/inverter-control/service/`, creates `/service` links and a persistent
+`/data/rc.local` hook, then waits for a fresh controller heartbeat. An interactive
+`setup` can prompt for options; `setup install auto` is noninteractive.
+`setup uninstall` removes service activation while retaining private data.
+
+Developers can use `deploy.sh <SSH-host-alias>` for an explicitly authorized test
+device. This copies working-tree code and restarts services; it is not a release
+acceptance test. Read the script and the development guide before deploying.
+
+## Operation and diagnostics
+
+```sh
+svstat /service/inverter-control /service/log-forwarder /service/watchdog
+tail -n 80 /var/log/inverter-control/current
+cat /run/inverter-control/inverter-control.heartbeat
 ```
 
-That pipeline was enough to prove the idea on a bench or a single meter. It was also fragile: no persistence across reboots, no split-phase awareness, no EV or laundry logic, and no story for MPPT + PV inverters + multiple battery chains. Everything you see now — structured config, `victron.py`, MQTT bridge, optional dashboard, monitoring hooks — grew out of replacing that one-liner piece by piece while keeping the same core goal: **keep the grid where we want it without sacrificing the weird parts of a real house.**
-
-If you are browsing this repo for inspiration, that history is intentional: **start simple, measure, then automate.** The current code is the same instinct with years of production bruises folded in.
-
-## Overview
-
-This Python application controls a Victron inverter to maintain zero grid feed-in/consumption while supporting various operating modes. It's designed for split-phase (120/240V) systems where L2 loads need to be compensated by L1 export.
-
-```mermaid
-flowchart TD
-    Solar1["Solar Panels\n(Standard)"] -->|"DC"| MPPT1["Victron MPPT\nControllers"]
-    MPPT1 <-->|"DC"| Battery["Battery 48V"]
-    MPPT1 -.->|"D-Bus\nTelemetry"| Script["This Script\non Cerbo GX"]
-    MPPT1 <-->|"DC"| Inverter["Victron\nInverter"]
-
-    Solar2["Solar Panels\n(AC-coupled)"] -->|"DC"| PVI["PV Inverter"]
-    PVI -->|"AC"| Grid["AC Grid"]
-
-    Battery <-->|"DC"| Inverter
-    Inverter <-->|"AC L1"| Grid
-    Grid -->|"AC L1"| Loads1["Loads L1"]
-    Grid -->|"AC L2"| Loads2["Loads L2\n(no inverter)"]
-
-    PVI -.->|"D-Bus\n(pvinverter.* publisher)"| Script
-    HA["Home Assistant"] -.->|"HTTP\npolling"| Script
-
-    Script -->|"D-Bus\nSetpoint"| Inverter
-    Script -->|"MQTT"| Dashboard["Remote\nDashboard"]
-```
-
-PV inputs are discovered through `com.victronenergy.pvinverter.*` D-Bus
-services. A publisher such as `dbus-tasmota-pv` can provide this telemetry;
-the controller does not require Tasmota hardware.
-
-
-## Features
-
-- **Grid-Zero Control**: Maintains net zero power at the utility meter
-- **Split-Phase Compensation**: Exports on L1 to offset L2 consumption
-- **Multiple Operating Modes**:
-  - Normal: Automatic grid-zero targeting
-  - Only Charging: Use solar only, don't discharge battery
-  - No Feed: Only use PV inverters, no battery
-  - House Support: PV inverter total minus 300W
-  - Charge Battery: Force battery charging
-  - Do Not Supply Charger: EV charges from grid only
-- **Minimize Charging**: Auto-control dump loads to consume excess solar
-- **Explicit ESS Mode Selection**: [Six absolute power/profile choices](docs/ess-mode-selection.md) with observed-state feedback; the legacy toggle remains compatible
-- **MQTT Inverter Controls**: Daemon-owned flags and button definitions for Desktop and optional HA MQTT switches; no HA dependency for flag state or commands
-- **Optional Home Assistant Integration**: Sensor data and dump-load switch control (`minimize_charging` actuators still require HA)
-- **Fast Control Loop**: 3 updates per second via D-Bus
-- **Background D-Bus Polling** (v1.19.0+): 5 Hz thread caches D-Bus data; hot-path methods read instantly (< 1 ms) — eliminates subprocess overhead on Cerbo GX
-- **Async MQTT Publish** (v1.19.0+): Non-blocking publish queue; control loop never stalls on broker
-- **Home Load Grid Smoothing** (v1.19.1+): Blends derived grid (Home total load − PV production) from HA/Vue with instantaneous CT meter at configurable weight (default 0.7) for stable setpoints despite CT jitter
-
-See [MQTT control flags and optional Home Assistant switches](docs/mqtt-control-flags.md)
-for state ownership, button metadata, command payloads, and HA integration.
-
-## Architecture
-
-```
-inverter-control/              # Git repo root
-├── main.py                    # Entry point — control loop, CLI, MQTT setup
-├── inverter_control/          # Python package
-│   ├── __init__.py
-│   ├── config.py              # Non-sensitive parameters (tuning, limits, flags)
-│   ├── control_flags.py       # Canonical inverter flag keys and dashboard button labels
-│   ├── local_config.py        # Sensitive config — NOT in git (see local_config.example.py)
-│   ├── logic.py               # SetpointCalculator, strategies, EMA, burst, D-term
-│   ├── victron.py             # D-Bus I/O — background 5 Hz polling thread, cached reads (< 1 ms)
-│   ├── homeassistant.py       # HA API polling with circuit breaker
-│   ├── mqtt_bridge.py         # MQTT subscribe/publish (async queue, non-blocking)
-│   ├── console_ui.py          # Terminal dashboard renderer
-│   ├── console_server.py      # TCP server (port 9999) for remote console
-│   ├── keepalive.py           # Setpoint keepalive during restart
-│   ├── controller.py          # Control loop, flag ownership, state and UI configuration publication
-│   └── log-forwarder.py       # Forwards daemontools logs to syslog
-├── setup                      # SetupHelper-compatible installer (run by PackageManager)
-├── gitHubInfo                 # GitHub user:branch for PackageManager auto-download
-├── version                    # Current version (read by PackageManager)
-├── deploy.sh                  # SSH deploy to Cerbo/Pi (dev workflow)
-├── update.sh                  # Deploy/update via deploy.sh (stream + run on device)
-├── local_config.example.py    # Template for local_config.py
-├── tests/
-│   └── test_logic.py          # Unit tests for control logic
-├── service/
-│   ├── inverter-control/      # daemontools service runner
-│   ├── log-forwarder/         # Log forwarder service
-│   └── watchdog/              # External process watchdog
-├── LOGIC.md                   # Control logic documentation (EN)
-├── LOGIC_RUS.md               # Control logic documentation (RU)
-└── release.sh                 # Wrapper for scripts/release.py (see operator runbook)
-```
-
-## Configuration
-
-1. Copy `local_config.example.py` to `local_config.py`
-2. Edit `local_config.py` with your actual values:
-
-```python
-# Home Assistant connection
-HA_URL = "http://YOUR_HA_IP:8123"
-HA_TOKEN = "your_long_lived_access_token"
-
-# Victron Portal ID (VRM) is auto-detected at runtime
-# (/sbin/get-unique-id, fallback: eth0 MAC) — nothing to configure
-
-# Time-of-use expensive grid window (local hours; -1/-1 disables).
-# Solar-forecast pre-charge is suppressed inside [START, END).
-# Manual charge_battery (MQTT/desktop) is an explicit exception to this window.
-# On Cerbo these are also created as GUI-editable Settings entries under
-# /Settings/InverterControl — edit them from the Venus Settings menu (no SSH
-# needed); those values take precedence over local_config.
-TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
-TOU_EXPENSIVE_END_HOUR = 24  # midnight
-
-# Optional HA sensors, VUE sensors and dump-load switches.
-# Inverter flags are daemon-owned; no HA input_boolean mappings are needed.
-# See local_config.example.py for full template
-```
-
-3. Edit `config.py` for non-sensitive parameters:
-
-```python
-# Power limits (protect outlet from overheating)
-POWER_LIMIT_MAX = 2250  # Max feed-in (W)
-POWER_LIMIT_MIN = -2300  # Max export (W)
-
-# Control loop timing
-LOOP_INTERVAL = 0.33  # 3 times per second
-```
-
-## Optional Features
-
-Features can be enabled/disabled in `config.py`. HA-backed features
-auto-disable if `HA_TOKEN` is not configured; EV and water are
-D-Bus based and stay enabled:
-
-```python
-ENABLE_EV = True  # EV charging monitoring (car SoC, charger power) — D-Bus, no HA
-ENABLE_WATER = True  # Water level, pump and valve control — D-Bus (dbus-pump), no HA
-ENABLE_HA_LOADS = True  # Home Assistant loads monitoring (Vue sensors)
-ENABLE_HA = True  # Home Assistant integration entirely
-```
-
-When disabled:
-- Console output omits the corresponding sections
-- No HA API calls are made for disabled features
-
-This allows running the inverter control standalone without Home Assistant.
-
-## Installation
-
-### Option 1: SetupHelper / PackageManager (Recommended)
-
-The easiest way to install is via [SetupHelper](https://github.com/kwindrem/SetupHelper) PackageManager. The `setup` script in this repo is PackageManager-compatible and handles service creation, file placement, and restarts.
-
-1. **Install SetupHelper** (if not already installed):
-   ```bash
-   wget -qO - https://github.com/kwindrem/SetupHelper/archive/latest.tar.gz | tar -xzf - -C /data
-   mv /data/SetupHelper-latest /data/SetupHelper
-   /data/SetupHelper/setup
-   ```
-
-2. **Add package via GUI**:
-   - Settings → PackageManager → Inactive packages → **new**
-   - Package name: `inverter-control`
-   - GitHub user: `victron-venus`
-   - Branch: `main`
-   - Proceed → Download → Install
-
-3. **Configure secrets** (from your local machine):
-   ```bash
-   cp local_config.example.py local_config.py
-   # Edit local_config.py with your TOU hours, HA token, sensor names, etc.
-   scp local_config.py root@cerbo:/data/setupOptions/inverter-control/
-   ```
-   Config in `/data/setupOptions/` survives package reinstalls; a copy directly in `/data/inverter-control/` also works (kept on update once installed).
-
-   To allow a configured signed whole-grid AC submeter to take over when the
-   primary grid meter is unavailable, set `USE_GRID_SUBMETER_AS_BACKUP = True`
-   and `GRID_BACKUP_SERVICE` in that private config. The default is `False`.
-   SetupHelper also accepts a persistent `use_grid_submeter_as_backup` file in
-   the same directory containing `true` or `false`; when present it overrides
-   the Python flag. Manual interactive setup offers this option; automatic
-   installs preserve it without prompting. Restart/reinstall applies changes.
-   A selected submeter remains visible in the desktop when fallback is disabled.
-   Optional [slow submeter zero trim](docs/submeter-trim.md) can use that same
-   source to correct a settled residual while the primary meter remains active.
-   It is disabled by default and requires explicit site configuration.
-   Its source timestamp must be no older than `GRID_BACKUP_MAX_AGE_SECONDS`
-   (default 30). Once primary telemetry recovers continuously for
-   `GRID_BACKUP_RECOVERY_SECONDS` (default 5), control returns to the primary.
-   The native D-Bus transport preserves source timestamp precision. If a CLI
-   fallback rounds that timestamp more coarsely than one second, the backup
-   stays unavailable because its freshness cannot be established.
-
-   **Optional electricity tariff:** run the manual tariff wizard during interactive
-   setup, or provision `/data/setupOptions/inverter-control/electricity-tariff.json`.
-   Seasonal prices, time zone and billing start day are shared with updated dashboards.
-   See [electricity tariff setup and deployment](docs/electricity-tariffs.md).
-
-4. **Done!** PackageManager will auto-download updates from `main` and reinstall on Venus OS updates.
-
-#### How PackageManager Works
-
-PackageManager discovers packages by scanning `/data/` for directories containing both a `version` file and a `setup` script. The `setup` script (sourced from this repo) is executed with the `INSTALL` action by SetupHelper, which:
-
-- Creates `/data/inverter-control/` and copies `main.py` + `inverter_control/` package
-- Installs `local_config.py` from `/data/setupOptions/inverter-control/`; if absent but the install dir already has one, keeps it; otherwise installs `local_config.example.py` as a starting point
-- Installs the daemontools services (`inverter-control`, `log-forwarder`, `watchdog`): persistent run/log dirs under `/data/inverter-control/service/`, symlinked into tmpfs `/service`, plus an idempotent `/data/rc.local` block that recreates the symlinks after reboot
-- Restarts the service
-
-The `gitHubInfo` file tells PackageManager where to download from:
-```
-victron-venus:main
-```
-This means: download `https://github.com/victron-venus/inverter-control/archive/main.tar.gz`
-
-### Option 2: Deploy Script (Development)
-
-For development or testing, use `deploy.sh`:
-
-```bash
-./deploy.sh Cerbo    # 'Cerbo' is SSH host alias in ~/.ssh/config
-TARIFF_FILE=/path/to/electricity-tariff.json ./deploy.sh Cerbo  # optional explicit tariff
-```
-
-This copies `main.py`, the `inverter_control/` package, `setup`, and `gitHubInfo` to the device, then restarts the service.
-
-### Option 3: Manual Install (from the Cerbo)
-
-Download and install straight on the device — `setup install auto` is fully self-sufficient (copies files, creates the daemontools services, adds the rc.local boot-persistence block):
-
-```bash
-ssh root@cerbo
-cd /data && wget -qO- https://github.com/victron-venus/inverter-control/archive/main.tar.gz | tar -xzf - && mv inverter-control-main inverter-control
-/data/inverter-control/setup install auto
-```
-
-Notes:
-- Run interactively over SSH? Plain `/data/inverter-control/setup` prompts for the action instead of needing `install auto`.
-- Config goes to `/data/setupOptions/inverter-control/local_config.py` (see step 3 above); without one, `local_config.example.py` is installed as a starting point.
-- An existing installation is backed up to `/data/inverter-control.rollback` before reinstalling.
-- Uninstall: `/data/inverter-control/setup uninstall`.
-
-## Usage
-
-### Service Management
-
-```bash
-# Check status
-svstat /service/inverter-control
-
-# Restart
-svc -t /service/inverter-control
-
-# Stop / Start
-svc -d /service/inverter-control
-svc -u /service/inverter-control
-
-# View logs
-tail -f /var/log/inverter-control/current | tai64nlocal
-```
-
-
-### One-shot Mode
-
-```bash
-# Set specific setpoint and exit
-python3 main.py 1500
-
-# Dry run (don't send commands)
-python3 main.py --dry-run
-```
-
-## Operating Modes
-
-### Normal Mode
-- Targets zero grid power
-- Automatically adjusts based on consumption and solar
-
-### Only Charging (`[OC]`)
-- During daytime low electricity rates
-- Don't discharge battery
-- Use MPPT solar only, minus offset
-
-### No Feed (`[NF]`)
-- Only use PV inverters
-- Don't discharge main battery
-- Setpoint = PV inverter power
-
-### House Support (`[HS]`)
-- PV inverter total minus 300W
-- Supports house loads partially
-
-### Charge Battery (`[CHG]`)
-- Force setpoint to 2200W
-- Maximum battery charging
-
-### Do Not Supply Charger (`[NoEV]`)
-- EV charges from grid only
-- Battery doesn't supply EV charger
-- Grid calculation excludes EV consumption
-
-### Minimize Charging (`[MC]`)
-- Automatically turns on/off dump loads
-- Uses excess solar instead of grid export
-
-## Console Output Format
-
-```
-HH:MM:SS[flags]>setpoint(prev) g:total(L1+L2)net  tt(L1+L2) tt:home [State]battW,soc%,b1%,b2% solar loads water car
-```
-
-Example:
-```
-14:23:45[OC:850-60]>-790(0) g:45(23+22)50  567(300+267) tt:580 [External control]-150W,85%,82%,83% 890(120+130+640) 45f 150l 42cm 78%
-```
-
-Flags:
-- `[~]` - Grid near zero, keeping stable
-- `[EV:XXX]` - EV power excluded from grid calculation
-- `[OC:XXX-60]` - Only charging mode (MPPT minus offset)
-- `[NF]` - No feed mode
-- `[HS]` - House support mode
-- `[NoEV]` - EV charger exclusion limit applied
-- `[CHG]` - Charge battery mode
-- `[MC+/-]` - Minimize charging load changes
-- `[B:+320]` - Burst correction applied (sudden spike response)
-- `[D:+33]` - D-term braking (prevents overshoot when approaching zero fast)
-- `[!ΔNNN]` - Software fuse triggered (delta exceeded limit)
-
-## Grid Metering Options
-
-For accurate grid-zero control, you need real-time power measurement at the grid entry point. Here are the options:
-
-### Recommended: Shelly with CT Clamp
-
-Any Shelly device with external CT (current transformer) clamp input works well:
-- **Shelly Pro 3EM** - 3-phase, Ethernet + WiFi, local MQTT
-- **Shelly EM** - Single phase, WiFi, local MQTT
-- Low latency (~100ms), fully local, no cloud dependency
-
-### Emporia Vue
-
-Vue energy monitors can work but have significant limitations:
-
-| Version | Pros | Cons |
-|---------|------|------|
-| **Vue 2** | Affordable, easy setup | Cloud-only by default (us-east-2 = high latency), 2.4GHz WiFi only |
-| **Vue 3** | Has Ethernet port | ESPHome reflash may not work with Ethernet, falls back to WiFi |
-
-**Vue with ESPHome**: You can reflash Vue 2/3 with ESPHome for local MQTT, eliminating cloud latency. However:
-- Vue 2: No Ethernet, 2.4GHz WiFi can introduce jitter
-- Vue 3: Ethernet support in ESPHome is experimental, may not work
-
-### Victron Energy Meters
-
-Official Victron solutions like **VM-3P75CT** (3-phase CT meter):
-- **Pros**: Native D-Bus integration, no additional software needed
-- **Cons**:
-  - Expensive (~$300+)
-  - Requires Ethernet cable to electrical panel (often in garage)
-  - Reports instantaneous values which can make control loop less stable than averaged readings
-
-### dbus-esphome-grid-sensor
-
-ESP32-based CT sensor with D-Bus service that registers as a standard `com.victronenergy.grid` device in Venus OS.
-- **Pros**:
-  - ~$25 DIY cost
-  - Native D-Bus integration (no additional software needed)
-  - Open source, calibratable with known load
-  - ESPHome firmware (OTA updates, WiFi fallback, MQTT discovery)
-  - Docker deployment available for Venus OS
-- **Cons**:
-  - ±2-5% accuracy (suitable for grid-zero control)
-  - Requires ESP32 + CT sensor hardware assembly
-  - Single phase only (L1) - for split-phase you need two sensors or a 2CT version
-
-### Practical Recommendation
-
-For most setups, **Shelly with CT clamp** offers the best balance:
-1. Local MQTT with sub-100ms latency
-2. Ethernet option (Pro models) for reliability
-3. Affordable (~$50-80)
-4. Easy integration with this controller
-
-If already using Vue with cloud, it still works but expect:
-- 500-2000ms latency from us-east-2 cloud
-- Occasional missed readings
-- Less responsive grid-zero tracking
-
-## Control policy ownership
-
-Home Assistant owns the time-of-use schedule, battery reserve policy, and
-Quattro on/off transitions, including the morning start threshold for surplus
-from external AC PV inverters. `inverter-control` regulates power within the
-selected operating mode and configured limits.
-
-## Grid Smoothing with Home Load (v1.19.1+)
-
-When `ENABLE_GRID_SMOOTHING_WITH_HOME = True` (in `config.py`), the controller blends a home-minus-PV estimate with measured grid power. This is an experimental estimate, not a billing-meter equivalent.
-
-### How it works
-
-```
-pv_total = MPPT DC power + PV inverter AC power
-derived_gt = home_total (from Vue via HA cloud) - pv_total
-# derived_gt: positive = import, negative = export
-
-effective_gt = GRID_SMOOTHING_HOME_WEIGHT * derived_gt
-             + (1 - GRID_SMOOTHING_HOME_WEIGHT) * instantaneous_gt
-```
-
-With `GRID_FILTER_TAU > 0`, the background `GridFilter` supplies the current
-smoothed CT value explicitly; the calculator uses it without overwriting it
-with raw grid or applying a second EMA. When the background sample is not yet
-available, the legacy per-cycle `EMA_ALPHA` path is used. The optional derived
-signal uses `GRID_SMOOTHING_DERIVED_TAU`, or `GRID_SMOOTHING_DERIVED_ALPHA` when
-that time constant is zero. EV exclusion and home weighting are applied to both
-the raw and smoothed paths before burst detection.
-
-Burst and derivative corrections belong to the normal grid-zero strategy.
-Higher-priority operating modes constrain or replace its result afterward.
-At exact zero error, the creep stage clears its accumulator and holds the previous setpoint.
-For a controlled tuning comparison, set `CREEP_RATE = 0.0` in device-local
-`local_config.py` and restart the controller. This disables cumulative deadband
-creep while retaining normal correction outside the deadband. `CREEP_RATE` and
-`CREEP_MAX` accept finite values from 0 through 100; their defaults remain 0.5
-and 100.0. Compare raw-meter import/export energy and command movement across
-similar operating conditions before keeping a tuning change.
-The existing convergence and per-cycle delta limits still apply to mode
-transitions; a newly tightened solar limit is not an instantaneous hardware clamp.
-
-### Energy-balance and tuning limits
-
-`home_total - (MPPT DC + AC PV)` omits battery charging/discharging and mixes
-DC and AC power. During battery charging, much of MPPT power never reaches the
-house AC circuit. This estimate can therefore disagree substantially with the
-actual grid even when every sensor is accurate. Do not increase its weight
-merely to make a graph smoother. It is disabled by default; use measured grid
-as the control reference until a time-aligned physical balance is validated.
-
-A quiet Vue/HA signal does not establish billing accuracy. Separate import and
-export energy must be estimated from the signed **measured** grid total before
-time averaging, and compared with actual meter registers. A filtered mean near
-zero can coexist with positive import and export energy. Verify the utility
-meter's phase-netting method before assuming L1/L2 energy compensation.
-
-`INVERTER_EFFICIENCY` only estimates available AC solar power in solar-limited
-modes. It does not scale the normal AC grid-zero feedback calculation. A fit
-between AC setpoint and delayed AC measurements is not a DC-to-AC efficiency
-measurement. The offline smoothing sweep in `inverter-monitoring` does not
-model the closed loop and cannot certify gains or energy savings.
-
-See [Victron ESS external control](https://www.victronenergy.com/live/ess:ess_mode_2_and_3)
-and [VM-3P75CT registration methods](https://www.victronenergy.com/media/pg/Energy_Meter_VM-3P75CT_Manual/en/configuration---monitoring.html).
-
-### Requirements
-
-- `ENABLE_HA_LOADS = True` in `config.py`
-- `HA_SENSORS` in `site_config.py` must include Vue total house consumption sensor
-- `VUE_SENSORS` in `site_config.py` must map to correct HA entities
-
-## Troubleshooting
-
-### Service not starting
-
-```bash
-# Check service status
-svstat /service/inverter-control
-
-# View recent logs
-tail -50 /var/log/inverter-control.log
-
-# Check for import errors (common after refactor)
-cd /data/inverter-control && python3 -c "from inverter_control.config import LOOP_INTERVAL; print('OK')"
-```
-
-### ImportError after package refactor (v1.18.1+)
-
-After moving modules into `inverter_control/` subdirectory, the service crashes with `ImportError` if the package is not deployed. Symptoms: service starts, shows banner, immediately exits.
-
-**Cause**: `deploy.sh` or PackageManager did not copy the `inverter_control/` directory.
-
-**Fix**:
-```bash
-# Check if package exists
-ls /data/inverter-control/inverter_control/
-
-# If missing, redeploy
-./deploy.sh Cerbo
-
-# Or manually
-scp -r inverter_control/ root@cerbo:/data/inverter-control/
-ssh root@cerbo "svc -t /service/inverter-control"
-```
-
-### PackageManager not discovering the package
-
-PackageManager's `AddStoredPackages()` requires both a `version` file AND a `setup` script in `/data/inverter-control/`.
-
-**Check**:
-```bash
-ls -la /data/inverter-control/version /data/inverter-control/setup
-cat /data/inverter-control/gitHubInfo   # should show: victron-venus:main
-```
-
-**Common issues**:
-- `setup` file missing → PackageManager skips the directory silently
-- `gitHubInfo` points to `latest` tag (which may be ancient) → should be `main`
-- `DO_NOT_AUTO_ADD` flag in `/data/setupOptions/inverter-control/` → manual removal marker
-
-**Fix**:
-```bash
-# Copy setup and gitHubInfo
-scp setup gitHubInfo root@cerbo:/data/inverter-control/
-ssh root@cerbo "chmod +x /data/inverter-control/setup"
-
-# Restart PackageManager to re-scan
-svc -t /service/PackageManager
-```
-
-**Verify**:
-```bash
-tail -20 /var/log/PackageManager/current | grep inverter
-# Should show: adding inverter-control / checking inverter-control
-```
-
-### Dashboard shows stale data (not updating)
-
-**Symptom**: Console dashboard shows data on startup but never refreshes.
-
-**Cause**: Service is not running, or D-Bus polling loop crashed.
-
-```bash
-svstat /service/inverter-control        # Check if up
-tail -20 /var/log/inverter-control.log  # Check for errors
-```
-
-### Home Assistant circuit breaker
-
-After 5 consecutive HA poll failures, the circuit breaker opens for 60 seconds. This is normal — HA restarts, network blips, etc.
-
-```bash
-grep "circuit breaker" /var/log/inverter-control.log
-```
-
-If persistent: check `HA_URL` and `HA_TOKEN` in `site_config.py`.
-
-### D-Bus errors
-
-```bash
-# Check VE.Bus service
-dbus -y | grep vebus
-
-# Check system data
-dbus -y com.victronenergy.system / GetValue
-```
-
-### MQTT connection
-
-```bash
-# Check MQTT broker is running
-mosquitto_sub -t '$SYS/broker/uptime' -C 1
-
-# Check inverter-control MQTT logs
-grep MQTT /var/log/inverter-control.log | tail -10
-```
-
-### Secrets import conflict (known issue)
-
-Python 3.6+ has a built-in `secrets` module. Our `site_config.py` relies on local import priority (current directory wins). If the working directory is wrong, Python imports the stdlib `secrets` instead, and all HA/EV features silently disable.
-
-**Symptoms**: HA features disabled, `ENABLE_HA = False` in logs.
-
-**Workaround**: Ensure the service `cd`s to `/data/inverter-control/` before running (the `run` script handles this).
-
-**Long-term fix**: Config was renamed to `local_config.py` (v2.x+).
-
-### TCP Console Server (Port 9999)
-
-Control cycles stream their formatted console line to TCP clients without emitting
-GNU screen title escapes to stdout. This keeps daemontools/multilog and Loki logs
-free of title-control noise while preserving the live console's formatted output.
-
-The TCP console server binds to `127.0.0.1:9999` by default and provides **read-only** access to live inverter data via a simple telnet-style interface.
-
-**Security Options** (choose one):
-
-#### Option 1: Firewall (Recommended)
-
-Block external access — only allow from trusted subnets:
-
-```bash
-# On Cerbo GX / Venus OS
-iptables -A INPUT -p tcp --dport 9999 -s 192.168.1.0/24 -j ACCEPT
-iptables -A INPUT -p tcp --dport 9999 -j DROP
-```
-
-Or via VenOS rc.local for persistence:
-
-```bash
-# Add to /data/rc.local
-iptables -I INPUT -p tcp --dport 9999 -s 192.168.1.0/24 -j ACCEPT
-iptables -A INPUT -p tcp --dport 9999 -j DROP
-```
-
-#### Option 2: SSH Tunnel (For Remote Access)
-
-Instead of exposing port 9999, use SSH port forwarding:
-
-```bash
-# From your local machine
-ssh -L 9999:localhost:9999 root@cerbo
-# Then connect your client to localhost:9999
-```
-
-#### Option 3: Disable If Unused
-
-```python
-# In local_config.py
-ENABLE_CONSOLE_SERVER = False  # Disable TCP console entirely
-```
-
-**Note**: The console server is read-only — it cannot send commands to the controller. No authentication is required by design (minimizing attack surface). If you need remote access, use SSH tunnel.
-
-## Dependencies
-
-- Python 3.x (included in Venus OS)
-- requests (for HA API)
-- D-Bus (for Victron communication)
-
-## Related Projects
-
-- [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) — Go web dashboard for telemetry and controller commands.
-- [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) — Python web dashboard for Docker and NAS deployments.
-- [inverter-desktop](https://github.com/victron-venus/inverter-desktop) — native Tauri client.
-- [dbus-mqtt-battery](https://github.com/victron-venus/dbus-mqtt-battery) — MQTT battery measurements and BMS permissions exposed on D-Bus.
-- [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) — Tasmota PV measurements exposed on D-Bus.
-- [dbus-ev](https://github.com/victron-venus/dbus-ev) — maintained vehicle and optional Mercedes charger telemetry; migration from the standalone charger requires a single service owner.
-- [dbus-pump](https://github.com/victron-venus/dbus-pump) — water tank, pump and valve services with their own command and automation path.
-- [inverter-climate](https://github.com/victron-venus/inverter-climate) — separate thermostat coordinator using local energy data and Home Assistant; observation and control are enabled independently.
-- [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) — Telegraf, InfluxDB and Grafana for historical telemetry.
-
-Browse the [public project catalog](https://victron-venus.github.io/.github/projects.html)
-for other Venus OS packages and companion tools. Each project documents its own
-installation, compatibility and release requirements.
-
-
-## Development Workflow
-
-### Auto-Commit Script
-
-Use `commit.sh` for automated commit and PR creation:
-
-```bash
-# Create commit message in commit.txt
-echo "Add new feature X" > commit.txt
-echo "" >> commit.txt
-echo "Detailed description of changes" >> commit.txt
-
-# Run commit script
-./commit.sh
-```
-
-The script will:
-- Create feature branch if on main
-- Commit changes
-- Push branch
-- Create PR with auto-merge label
-- Enable auto-merge after CI checks pass
-
-### Auto-Merge
-
-For maintainers, PRs created with `auto-merge` label automatically merge after:
-- All GitHub Actions checks pass
-- Status checks: CI, Python Security Scan
-
-Configure branch protection rules in GitHub settings to require these checks.
-
-## Release History
-
-### v1.19.1 (2026-08-15) — Aggressive Grid Smoothing with Home Load
-
-- **New**: `ENABLE_GRID_SMOOTHING_WITH_HOME`, `GRID_SMOOTHING_HOME_WEIGHT`, `GRID_SMOOTHING_DERIVED_ALPHA` config options
-- **Logic**: Blends derived grid (Vue home_total − PV production) with instantaneous CT meter at 0.7 weight
-- **Stability**: Derived grid EMA-smoothed at 0.1 alpha; eliminates CT jitter while keeping responsiveness
-- **Result**: Most economical setpoints historically; stable grid-zero tracking despite noisy CT meters
-
-### v1.19.0 (2026-08-15) — Background D-Bus Polling + Async MQTT
-
-- **Performance**: Background 5 Hz thread caches full D-Bus service trees; hot-path reads < 1 ms
-- **Latency**: Control loop 200–300 ms → 10–20 ms on Cerbo GX (RPi 3)
-- **MQTT**: Non-blocking publish queue; control loop never stalls on broker latency
-- **Quality**: Cognitive complexity < 15; empty `except` → logging; regex backtracking fixed; `GET_VALUE_METHOD` constant
-
-### v1.18.x — Stabilization & CI Migration
-
-- Migrated CI to shared `venus-os-ci-toolkit` workflows (pinned SHAs)
-- Auto-approve workflow for Dependabot PRs
-- Hardware watchdog failsafe (30 s heartbeat)
-- PackageManager-compatible installer
-
-## Author
-
-Created by [@4alvit](https://github.com/4alvit)
+Use the native `svc`/`svstat` supervisor tools, not `systemctl`. Do not read
+`supervise/ok` with `cat`: it is a FIFO. A controller restart belongs to the
+site's maintenance procedure because a separate watchdog/keepalive also owns
+fallback behavior. See [operations](docs/venus-os-operations.md).
+
+For an isolated, prepared test installation, `python3 main.py --dry-run` suppresses
+automatic grid-regulation writes but still starts integrations and network activity.
+It is not a hardware lockout: explicit sustained overrides, legacy ESS commands
+and Home Assistant actuators can still operate; an authorized MQTT command can
+switch back to live mode. Isolate command publishers and HA actuators for an
+observation-only test. See the exact [dry-run scope](docs/interfaces.md#process-and-configuration).
+Do not run
+a second controller alongside the supervised service. Without `--dry-run`, the
+configured default is **live**. The optional positional integer runs one cycle
+with a manual setpoint; it is not a harmless connectivity test.
+
+Diagnostic services default to loopback: TCP console `9999`, webhook `8081`,
+and the supplied service's optional Prometheus endpoint `9102`. The daemon does
+not serve an HTTP dashboard on port 8080. Use an SSH tunnel or authenticated
+gateway for remote access; these local listeners have no built-in authentication.
+The obsolete `setup_ssl.sh` no longer changes certificates or system trust.
+
+If a service fails, check its log and interpreter/dependencies first. If a
+client's state stops updating, inspect MQTT connectivity and timestamps rather
+than treating a retained message as a current measurement. A missing or stale
+measurement is not zero. [Interfaces](docs/interfaces.md) describes acknowledgements,
+state freshness and diagnostics; [security design](docs/security-design.md)
+describes broker permissions and remote access requirements.
 
 ## License
 
-MIT License
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature-name`)
-3. Commit your changes
-4. Push to the branch (`git push origin feature-name`)
-5. Create a Pull Request
-
-## Support
-
-For issues specific to:
-- **D-Bus errors**: Verify VE.Bus service and Venus OS version
-- **Home Assistant**: Test token and sensor availability
-- **Grid metering**: Check Shelly/Vue connection and MQTT latency
-- **Operating modes**: Review mode-specific logic implementation
-- **This project**: Open an issue in this repository
-
-**Note:** This is a community project and is not affiliated with Victron Energy.
-
-
-### Security scan and network defaults
-
-Python Security uploads all Bandit findings and fails on medium/high severity findings.
-Low severity findings remain visible in code scanning, including pytest assertions.
-The only medium-severity test exceptions are HTTP calls to fixed loopback test servers.
-Dependency auditing checks both `pyproject.toml` and `requirements.txt` using pip-audit;
-audit failures and known vulnerabilities fail the job.
-
-The unauthenticated webhook, console and optional metrics listeners default to loopback.
-After upgrading, remote integrations must use an SSH tunnel or an authenticated reverse
-proxy. If direct access from a trusted network is required, explicitly configure the
-bind address and restrict access with a firewall:
-
-- Webhook: `WEBHOOK_SERVER_HOST` in `local_config.py`.
-- Console: `INVERTER_CONSOLE_HOST` environment variable.
-- Metrics: `INVERTER_METRICS_HOST` environment variable.
-
-Metrics automatically retry the configured bind address after a temporary network
-failure; see [Prometheus setup and recovery](docs/prometheus-alerts.md).
-
-Configure the final HTTP or HTTPS Loki push URL in
-`/data/setupOptions/inverter-control/loki_url`; there is no default destination.
-The setting survives upgrades. Redirects are rejected. See
-[Loki configuration, recovery and retention](docs/log-forwarding.md).
-
-### Grid measurement validity
-
-See [Grid telemetry validity and recovery](docs/grid-telemetry-safety.md) for source and phase validation, cold-start expectations, watchdog timing and diagnostics. Sites that require an external meter should configure its expected service and phase layout before rollout.
-
-## Auxiliary reader timing candidate
-
-See [scheduling behavior and hardware acceptance boundaries](docs/auxiliary-readers.md)
-for asynchronous EV/water reads and the metric sample counts.
-
-### Battery telemetry validity
-
-Missing, disconnected, invalid, or expired battery measurements are published as JSON `null`, including the voltage-derived SoC. Real 0 A, 0 W, and 0% remain numeric. The console displays an em dash for unknown values. `battery_data` identifies the SmartShunt source and local read age; its `sample_age_seconds` stays null because a D-Bus read cannot prove a new physical measurement. Battery detail records carry availability and upstream sample age when the battery driver supplies monotonic measurement timestamps. A frozen driver cannot renew that age by answering another read.
-
-Battery telemetry does not select inverter power mode. Grid-control behavior and hardware/BMS protections are unchanged; missing battery power also pauses optional dump-load decisions.
+Released under the [MIT license](LICENSE). Contributions use the same license;
+see [CONTRIBUTING.md](CONTRIBUTING.md).

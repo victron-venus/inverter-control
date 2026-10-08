@@ -3,6 +3,6 @@ contact_links:
   - name: Victron Community
     url: https://community.victronenergy.com/
     about: Ask questions on the Victron Community forum
-  - name: Discussions
-    url: https://github.com/victron-venus/inverter-control/discussions
-    about: Ask questions and share ideas
+  - name: Project questions and ideas
+    url: https://github.com/victron-venus/inverter-control/issues
+    about: Search existing reports or open a question or feature request

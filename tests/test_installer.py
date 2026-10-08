@@ -7,6 +7,8 @@ import re
 import subprocess  # nosec B404
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -20,6 +22,7 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
     (package / "local_config.py").write_text("USER_SETTING = 42\n")
     (package / "main.py").write_text("# existing controller\n")
     (package / "keepalive.sh").write_text("#!/bin/sh\nexit 0\n")
+    (package / "setup_ssl.sh").write_text((REPO / "setup_ssl.sh").read_text())
     (package / "local_config.example.py").write_text("USER_SETTING = 0\n")
     (package / "inverter_control").mkdir()
     (package / "inverter_control/__init__.py").write_text("")
@@ -65,6 +68,7 @@ def test_in_place_updates_preserve_source_config_and_supervisors(tmp_path):
         subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)  # nosec B603, B607
         assert (package / "main.py").read_text() == "# existing controller\n"
         assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+        assert (package / "local_config.py").stat().st_mode & 0o777 == 0o600
         assert (package / "service/inverter-control/supervise").stat().st_ino == inode
         assert (services / "inverter-control").resolve() == package / "service/inverter-control"
     hook = (package.parent / "rc.local").read_text()
@@ -88,11 +92,15 @@ def test_staged_update_refreshes_code_without_replacing_supervisors(tmp_path):
     stage = tmp_path / "release"
     shutil.copytree(package, stage)
     (stage / "main.py").write_text("# new controller\n")
+    (package / "setup_ssl.sh").write_text(
+        "# obsolete certificate and remote configuration helper\n"
+    )
     (package / "metrics.env").write_text("INVERTER_METRICS_HOST=192.0.2.10\n")
     inode = (package / "service/inverter-control/supervise").stat().st_ino
     # Test harness intentionally uses its fixture-controlled PATH.
     subprocess.run(["sh", str(stage / "update.sh"), str(package)], cwd=stage, env=env, check=True)  # nosec B603, B607
     assert (package / "main.py").read_text() == "# new controller\n"
+    assert (package / "setup_ssl.sh").read_text() == (REPO / "setup_ssl.sh").read_text()
     assert (package / "metrics.env").read_text() == "INVERTER_METRICS_HOST=192.0.2.10\n"
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
     assert (package / "service/inverter-control/supervise").stat().st_ino == inode
@@ -188,3 +196,126 @@ def test_setup_uninstall_removes_both_hook_variants_and_preserves_other_content(
     assert rc.stat().st_mode & 0o777 == 0o750
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
     assert not list(data.glob(".inverter-control-uninstall.*"))
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_bootstrap_and_legacy_config_are_private(tmp_path, legacy):
+    package, _, env = fake_device(tmp_path)
+    config = package / "local_config.py"
+    config.unlink()
+    if legacy:
+        old_config = package / "secrets.py"
+        old_config.write_text("LEGACY_SETTING = 73\n")
+        old_config.chmod(0o644)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)  # nosec B603, B607
+    expected = "LEGACY_SETTING = 73\n" if legacy else "USER_SETTING = 0\n"
+    assert config.read_text() == expected
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert not (package / "secrets.py").exists()
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_push_config_restricts_source_live_and_persistent_copies(tmp_path, staged):
+    import shutil
+
+    package, _, env = fake_device(tmp_path)
+    stage = tmp_path / "release" if staged else package
+    if staged:
+        shutil.copytree(package, stage)
+    source = stage / "local_config.py"
+    source.write_text("PUSHED_SETTING = 17\n")
+    source.chmod(0o644)
+    persistent = package.parent / "setupOptions/inverter-control/local_config.py"
+    persistent.parent.mkdir(parents=True)
+    persistent.write_text("OLD_SETTING = 0\n")
+    persistent.chmod(0o644)
+    env["PUSH_LOCAL_CONFIG"] = "1"
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", str(stage / "update.sh"), str(package)], env=env, check=True)  # nosec B603, B607
+    for config in (source, package / "local_config.py", persistent):
+        assert config.read_text() == "PUSHED_SETTING = 17\n"
+        assert config.stat().st_mode & 0o777 == 0o600
+
+
+def test_preserved_persistent_config_also_gets_private_permissions(tmp_path):
+    package, _, env = fake_device(tmp_path)
+    persistent = package.parent / "setupOptions/inverter-control/local_config.py"
+    persistent.parent.mkdir(parents=True)
+    persistent.write_text("PERSISTENT_SETTING = 18\n")
+    persistent.chmod(0o644)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env, check=True)  # nosec B603, B607
+    assert persistent.read_text() == "PERSISTENT_SETTING = 18\n"
+    assert persistent.stat().st_mode & 0o777 == 0o600
+
+
+def test_config_permission_failure_aborts_before_stopping_services(tmp_path):
+    package, _, env = fake_device(tmp_path)
+    chmod = tmp_path / "bin/chmod"
+    chmod.write_text("#!/bin/sh\nexit 43\n")
+    chmod.chmod(0o755)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(["sh", "update.sh", str(package)], cwd=package, env=env)  # nosec B603, B607
+    assert result.returncode == 43
+    assert "svc" not in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+def test_new_config_permission_failure_keeps_services_down_and_reports_failure(tmp_path):
+    import shlex
+    import shutil
+
+    package, _, env = fake_device(tmp_path)
+    config = package / "local_config.py"
+    config.unlink()
+    real_chmod = shutil.which("chmod")
+    assert real_chmod is not None
+    chmod = tmp_path / "bin/chmod"
+    chmod.write_text(
+        f'#!/bin/sh\ncase "$1" in 600) exit 43 ;; esac\nexec {shlex.quote(real_chmod)} "$@"\n'
+    )
+    chmod.chmod(0o755)
+    (tmp_path / "bin/svc").write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{tmp_path}/service-actions"\n'
+    )
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
+        ["sh", "update.sh", str(package)], cwd=package, env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 43
+    assert "installed version" not in result.stdout
+    assert config.read_text() == "USER_SETTING = 0\n"
+    # The creation mask protects the copy even when the final chmod fails.
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert not any(
+        action.startswith("-u ")
+        for action in (tmp_path / "service-actions").read_text().splitlines()
+    )
+
+
+@pytest.mark.parametrize("kind", ["live", "persistent", "legacy"])
+def test_config_symlink_rejected_without_changing_its_target(tmp_path, kind):
+    package, _, env = fake_device(tmp_path)
+    target = tmp_path / "unrelated.py"
+    target.write_text("UNRELATED = 19\n")
+    target.chmod(0o644)
+    if kind == "persistent":
+        config = package.parent / "setupOptions/inverter-control/local_config.py"
+        config.parent.mkdir(parents=True)
+    elif kind == "legacy":
+        (package / "local_config.py").unlink()
+        config = package / "secrets.py"
+    else:
+        config = package / "local_config.py"
+        config.unlink()
+    config.symlink_to(target)
+    # Test harness intentionally uses its fixture-controlled PATH.
+    result = subprocess.run(  # nosec B603, B607
+        ["sh", "update.sh", str(package)], cwd=package, env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 1
+    assert "regular file" in result.stderr
+    assert "svc" not in (tmp_path / "commands").read_text()
+    assert target.read_text() == "UNRELATED = 19\n"
+    assert target.stat().st_mode & 0o777 == 0o644
