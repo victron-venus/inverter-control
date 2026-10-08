@@ -61,11 +61,16 @@ fi
 # compile() avoids generating __pycache__ in a package manager's source tree.
 python3 - "$SRC_DIR" <<'CHECK'
 import pathlib
+import re
 import sys
+from importlib.metadata import version
 import requests
 import paho.mqtt.client
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+release = re.fullmatch(r"(\d{1,6})\.(\d{1,6})\.(\d{1,6})", version("cryptography"), re.ASCII)
+if release is None or tuple(map(int, release.groups())) < (50, 0, 2):
+    raise RuntimeError("cryptography stable version >= 50.0.2 is required before updating")
 root = pathlib.Path(sys.argv[1])
 for source in [root / "main.py", *(root / "inverter_control").glob("*.py")]:
     compile(source.read_bytes(), str(source), "exec")

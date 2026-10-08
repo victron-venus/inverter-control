@@ -18,7 +18,9 @@ def _tls_context():
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.minimum_version = max(context.minimum_version, ssl.TLSVersion.TLSv1_2)
     if context.security_level < 2:
-        context.set_ciphers("DEFAULT:@SECLEVEL=2")
+        # Raising the floor must not widen an existing cipher allowlist.
+        ciphers = [item["name"] for item in context.get_ciphers() if item["protocol"] != "TLSv1.3"]
+        context.set_ciphers(":".join(ciphers) + ":@SECLEVEL=2")
     return context
 
 

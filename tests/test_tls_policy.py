@@ -599,3 +599,29 @@ def test_certificate_parser_failure_has_static_tls_error(chains):
             ) as raised:
                 verify_key_lengths(sock)
         assert "synthetic" not in str(raised.value)
+
+
+@pytest.mark.parametrize("level", [0, 2, 3])
+def test_proxy_context_security_floor_preserves_cipher_allowlist(level, monkeypatch):
+    from inverter_control import requests_tls
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.set_ciphers(f"ECDHE-RSA-AES128-GCM-SHA256:@SECLEVEL={level}")
+    context.minimum_version = ssl.TLSVersion.TLSv1_3
+    before = context.get_ciphers()
+    monkeypatch.setattr(
+        requests_tls,
+        "ssl",
+        SimpleNamespace(
+            SSLContext=lambda protocol: context,
+            PROTOCOL_TLS_CLIENT=ssl.PROTOCOL_TLS_CLIENT,
+            TLSVersion=ssl.TLSVersion,
+        ),
+    )
+    result = requests_tls._tls_context()
+    assert result is context
+    assert result.security_level == max(level, 2)
+    assert result.minimum_version == ssl.TLSVersion.TLSv1_3
+    assert result.verify_mode == ssl.CERT_REQUIRED
+    assert result.check_hostname
+    assert result.get_ciphers() == before

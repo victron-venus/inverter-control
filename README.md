@@ -56,7 +56,7 @@ services and tools supplied by the target image.
 Runtime Python dependencies are declared in [pyproject.toml](pyproject.toml),
 [requirements.txt](requirements.txt), and the development [uv.lock](uv.lock).
 The installer checks imports of `requests`, `paho-mqtt`, and the `cryptography`
-certificate/key APIs before stopping an
+certificate/key APIs and stable version >= 50.0.2 before stopping an
 existing controller. It does not install missing packages. Resolve dependency
 and firmware compatibility before installation. `prometheus-client` is optional
 for metrics. HTTPS also requires CPython to expose the verified peer chain;
