@@ -157,6 +157,13 @@ class ConsumerVersioningTests(unittest.TestCase):
         )
         self.assertFalse((self.root / ".release-plan.json").exists())
 
+    def test_base_rejects_non_ascii_digits_and_noncanonical_versions(self):
+        for version in ("1٢.2.3", "1.2٢.3", "1.2.3٢", "１.2.3", "01.2.3", "1.2.3\n"):
+            with self.subTest(version=version):
+                with self.assertRaisesRegex(ValueError, "numeric base"):
+                    release_version_adapter.checked_version(self.root, version, "beta")
+        self.assertFalse((self.root / ".release-plan.json").exists())
+
     def test_staging_requires_plan_before_creating_output(self):
         self.archive()
         with self.assertRaisesRegex(ValueError, "frozen release plan"):
