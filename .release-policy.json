@@ -61,7 +61,7 @@
         "ecosystem": "pep440"
       }
     ],
-    "toolkit_revision": "4895f852f87ca1f27e2bc75e24c5c792e4f95aa6"
+    "toolkit_revision": "d8089003f43637ee420fa4cbcccdf11f5d21e469"
   },
   "single_entry_ci": true,
   "release_notes": "CHANGELOG.md"
