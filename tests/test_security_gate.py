@@ -17,6 +17,7 @@ def gate(monkeypatch, tmp_path):
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "__file__", str(tmp_path / "scripts" / "run_bandit.py"))
     monkeypatch.setattr(module, "version", lambda _: "1.9.4")
+    monkeypatch.setattr(module, "verify_discovery", lambda _: None)
     return module
 
 
