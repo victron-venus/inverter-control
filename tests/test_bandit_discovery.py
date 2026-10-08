@@ -20,7 +20,13 @@ class BanditDiscoveryTests(unittest.TestCase):
         repository = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(repository / "scripts"))
         try:
-            import run_bandit
+            spec = importlib.util.spec_from_file_location(
+                "discovery_gate", repository / "scripts" / "run_bandit.py"
+            )
+            if spec is None or spec.loader is None:
+                raise RuntimeError("Cannot load scanner command")
+            run_bandit = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(run_bandit)
         finally:
             sys.path.pop(0)
         for git_is_file in (False, True):

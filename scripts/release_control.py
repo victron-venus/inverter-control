@@ -20,6 +20,7 @@ import json
 import os
 import re
 import stat
+
 # Subprocess calls below use argument vectors with shell=False.
 import subprocess  # nosec B404
 import sys
@@ -1055,7 +1056,9 @@ def release_notes(gh: GitHub, tag: str, sha: str, provenance: str) -> str:
             section.split("\n", 1)[0],
         )
     ]
-    require(len(matches) == 1 and matches[0], "Release needs one nonempty changelog section")
+    require(
+        len(matches) == 1 and matches[0], "Release needs one nonempty changelog section"
+    )
     notes = matches[0]
     for heading in ("Upgrade", "Security"):
         section = re.search(
@@ -1063,7 +1066,10 @@ def release_notes(gh: GitHub, tag: str, sha: str, provenance: str) -> str:
             notes,
             re.MULTILINE | re.DOTALL,
         )
-        require(section and section.group(1).strip(), f"Release notes need {heading} guidance")
+        require(
+            section and section.group(1).strip(),
+            f"Release notes need {heading} guidance",
+        )
     body = f"## Changes in {base_version}\n\n{notes}\n\n## Build provenance\n\n{provenance}"
     require(len(body.encode("utf-8")) <= 125_000, "Release notes are too large")
     return body
@@ -1075,6 +1081,18 @@ def publish(
     """Keep draft creation, exact-byte upload checks and publication in one transaction."""
     reject_restricted_assets(path.name for path in directory.iterdir())
     body = release_notes(gh, tag, sha, body)
+    return _publish_prepared(gh, tag, sha, directory, prerelease, body)
+
+
+def _publish_prepared(
+    gh: GitHub, tag: str, sha: str, directory: Path, prerelease: bool, body: str
+) -> dict:
+    """Internal transaction after callers validate immutable source-bound notes.
+
+    Callers that maintain publication state prepare notes before their first
+    persistent write. Keep mutable tag/workflow authorization checks here too.
+    """
+    reject_restricted_assets(path.name for path in directory.iterdir())
     ensure_absent(gh, tag)
     check_workflow_publication(gh, sha)
     gh.api("git/refs", "POST", {"ref": f"refs/tags/{tag}", "sha": sha})
@@ -1217,17 +1235,23 @@ def candidate(args) -> dict:
         superseded = superseded_candidate(gh, info, run, args.channel)
         if superseded:
             return superseded
+        body = release_notes(
+            gh,
+            tag,
+            args.sha,
+            f"{args.channel} candidate from `{args.sha}`.\n\n"
+            f"Validation: https://github.com/{gh.repo}/actions/runs/{run_id}\n\n"
+            f"See `{MANIFEST}` for checksums and immutable Actions evidence provenance.",
+        )
         EVIDENCE.parent.mkdir(parents=True, exist_ok=True)
         EVIDENCE.write_bytes(content)
-        release = publish(
+        release = _publish_prepared(
             gh,
             tag,
             args.sha,
             stage,
             True,
-            f"{args.channel} candidate from `{args.sha}`.\n\n"
-            f"Validation: https://github.com/{gh.repo}/actions/runs/{run_id}\n\n"
-            f"See `{MANIFEST}` for checksums and immutable Actions evidence provenance.",
+            body,
         )
     return {
         "status": "published",
@@ -1600,23 +1624,29 @@ def promote(args) -> dict:
         )
         require_reviewers(gh)
         check_workflow_publication(gh, manifest["source_sha"])
+        body = release_notes(
+            gh,
+            tag,
+            manifest["source_sha"],
+            f"Promoted unchanged from [{args.rc}]({candidate_release['html_url']}).\n\n"
+            f"Source: `{manifest['source_sha']}`\n\n"
+            f"Validation: https://github.com/{gh.repo}/actions/runs/{manifest['run_id']}\n\n"
+            f"Promotion: https://github.com/{gh.repo}/actions/runs/{current_id}\n\n"
+            f"Assets and `{MANIFEST}` are byte-for-byte copies of the verified release candidate.",
+        )
         if manifest.get("version_plan"):
             verify_promotion_order(gh, manifest["version_plan"])
             # pylint: disable-next=import-outside-toplevel
             from release_state import begin_publication
 
             begin_publication(gh, manifest["version_plan"], current_id, promotion=True)
-        release = publish(
+        release = _publish_prepared(
             gh,
             tag,
             manifest["source_sha"],
             stage,
             False,
-            f"Promoted unchanged from [{args.rc}]({candidate_release['html_url']}).\n\n"
-            f"Source: `{manifest['source_sha']}`\n\n"
-            f"Validation: https://github.com/{gh.repo}/actions/runs/{manifest['run_id']}\n\n"
-            f"Promotion: https://github.com/{gh.repo}/actions/runs/{current_id}\n\n"
-            f"Assets and `{MANIFEST}` are byte-for-byte copies of the verified release candidate.",
+            body,
         )
     return {"tag": tag, "release_url": release["html_url"]}
 

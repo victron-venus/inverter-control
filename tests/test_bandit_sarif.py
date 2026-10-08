@@ -10,6 +10,8 @@ import pytest
 spec = importlib.util.spec_from_file_location(
     "bandit_sarif", Path(__file__).parents[1] / "scripts" / "bandit_sarif.py"
 )
+if spec is None or spec.loader is None:
+    raise RuntimeError("Cannot load SARIF converter")
 converter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(converter)
 

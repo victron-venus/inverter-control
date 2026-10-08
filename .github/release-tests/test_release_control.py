@@ -14,6 +14,7 @@ import importlib.util
 import io
 import json
 import os
+
 # Subprocess calls below use argument vectors with shell=False.
 import subprocess  # nosec B404
 import tempfile
@@ -690,6 +691,36 @@ class ReleaseControlTests(unittest.TestCase):
                 self.assertEqual(released["make_latest"], "false")
                 self.assertTrue(result["tag"].startswith(f"v2.0.0-{channel}."))
 
+    def test_invalid_candidate_notes_preserve_existing_evidence(self):
+        """Notes are a precondition for persistent evidence as well as GitHub writes."""
+        self.gh.runs[99]["status"] = "in_progress"
+        self.event.write_text(json.dumps({"inputs": {"channel": "beta"}}))
+        assets = self.directory / "notes-assets"
+        assets.mkdir()
+        (assets / "candidate.zip").write_bytes(b"candidate-build")
+        evidence = self.directory / "existing-evidence"
+        evidence.write_bytes(b"previous successful release")
+        args = argparse.Namespace(
+            repo=REPO,
+            channel="beta",
+            version="2.0.0",
+            sha=SHA,
+            run_id="99",
+            run_attempt="1",
+            sequence=None,
+            assets=str(assets),
+        )
+        with (
+            patch.object(rc, "EVIDENCE", evidence),
+            patch.object(
+                rc, "release_notes", side_effect=rc.ReleaseError("missing notes")
+            ),
+            self.assertRaisesRegex(rc.ReleaseError, "missing notes"),
+        ):
+            rc.candidate(args)
+        self.assertEqual(evidence.read_bytes(), b"previous successful release")
+        self.assertEqual(self.gh.writes, [])
+
     def test_legacy_automatic_candidate_never_writes_evidence_when_superseded(self):
         """Both publication entry points apply the same early and final guard."""
         assets = self.directory / "automatic"
@@ -956,7 +987,8 @@ class PublicationPermissionTests(unittest.TestCase):
         with (
             patch.dict(
                 # Deliberate test credential, never used for authentication.
-                os.environ, {"GH_TOKEN": "", "RELEASE_REQUIRE_WORKFLOW_SCOPE": "true"}  # nosec B105
+                os.environ,
+                {"GH_TOKEN": "", "RELEASE_REQUIRE_WORKFLOW_SCOPE": "true"},  # nosec B105
             ),
             patch.object(rc.subprocess, "run") as command,
             self.assertRaises(rc.ReleaseError),

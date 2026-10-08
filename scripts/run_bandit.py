@@ -8,7 +8,9 @@ import sys
 from importlib.metadata import version
 from pathlib import Path
 
-from bandit_sarif import convert
+# Direct script execution and module execution use the same package imports.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.bandit_sarif import convert  # noqa: E402
 
 
 def bandit_command(report_path: Path) -> list[str]:
