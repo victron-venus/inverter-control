@@ -67,6 +67,15 @@ def test_notes_use_only_exact_base_and_retain_provenance(tag):
     assert "## Build provenance" in body
 
 
+def test_crlf_notes_preserve_source_byte_verification():
+    crlf = NOTES.replace("\n", "\r\n")
+    assert render(crlf) == render(NOTES)
+    with pytest.raises(release.ReleaseError, match="size mismatch"):
+        render(crlf, response_change={"size": len(NOTES.encode())})
+    with pytest.raises(release.ReleaseError, match="blob identity"):
+        render(crlf, response_change={"sha": contents(NOTES)["sha"]})
+
+
 @pytest.mark.parametrize(
     "text",
     [
