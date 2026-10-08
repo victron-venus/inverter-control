@@ -551,32 +551,13 @@ class InverterController:
         # Grid smoothing with Home total (Vue via D-Bus)
         # derived_gt = home_total - pv_total (negative = export, positive = import)
         # Blend with instantaneous CT meter for stable control
-        home_total = 0.0
-        derived_gt = None
-        if ENABLE_GRID_SMOOTHING_WITH_HOME and not sys_data.get("_grid_backup"):
-            home_total = self.ha.get_vue_sensor("total", 0)
-            if home_total > 0:
-                pv_total = mppt_total + pv_inverter_total
-                derived_gt = home_total - pv_total
-                # Feed the raw value to the background filter; the state gets
-                # one coherent smoothed snapshot (None until first tick).
-                if self.derived_grid_filter is not None:
-                    self._raw_derived_gt = derived_gt
-                    derived_gt = self.derived_grid_filter.value()
+        home_total, derived_gt = self._grid_smoothing_inputs(
+            sys_data, mppt_total, pv_inverter_total
+        )
 
         # Handle pre-charge request from solar forecast webhook
         charge_battery = self.get_control_flag("charge_battery")
-        with self._watchdog._lock:
-            pre_charge_requested = self._pre_charge_requested
-            self._pre_charge_requested = False  # One-shot
-        if pre_charge_requested:
-            if time.time() >= self._pre_charge_expires_at:
-                logger.info("Pre-charge suppressed: queued request expired")
-            elif self._in_expensive_window():
-                logger.info("Pre-charge suppressed: expensive grid window active")
-            else:
-                charge_battery = True
-                logger.info("Pre-charge triggered by solar forecast")
+        charge_battery = self._consume_precharge_request(charge_battery)
 
         # HA-heavy SystemState snapshot
         state = SystemState(
@@ -612,6 +593,43 @@ class InverterController:
         # lives in the GridFilter thread when it is running.
         self.filtered_gt = result.filtered_gt
 
+        return self._apply_submeter_trim(sys_data, charge_battery, result)
+
+    def _grid_smoothing_inputs(self, sys_data, mppt_total, pv_inverter_total):
+        """Read the optional house total and its coherent derived-grid snapshot."""
+        home_total = 0.0
+        derived_gt = None
+        if ENABLE_GRID_SMOOTHING_WITH_HOME and not sys_data.get("_grid_backup"):
+            home_total = self.ha.get_vue_sensor("total", 0)
+            if home_total > 0:
+                pv_total = mppt_total + pv_inverter_total
+                derived_gt = home_total - pv_total
+                # Feed the raw value to the background filter; the state gets
+                # one coherent smoothed snapshot (None until first tick).
+                if self.derived_grid_filter is not None:
+                    self._raw_derived_gt = derived_gt
+                    derived_gt = self.derived_grid_filter.value()
+
+        return home_total, derived_gt
+
+    def _consume_precharge_request(self, charge_battery: bool) -> bool:
+        """Consume one queued pre-charge request under the watchdog lock."""
+        with self._watchdog._lock:
+            pre_charge_requested = self._pre_charge_requested
+            self._pre_charge_requested = False  # One-shot
+        if pre_charge_requested:
+            if time.time() >= self._pre_charge_expires_at:
+                logger.info("Pre-charge suppressed: queued request expired")
+            elif self._in_expensive_window():
+                logger.info("Pre-charge suppressed: expensive grid window active")
+            else:
+                charge_battery = True
+                logger.info("Pre-charge triggered by solar forecast")
+
+        return charge_battery
+
+    def _apply_submeter_trim(self, sys_data, charge_battery, result) -> tuple[int, str]:
+        """Apply the optional trim only after the fast calculator has chosen to hold."""
         if not self.submeter_trim.enabled:
             return result.setpoint, result.flags
         if self._trim_history_mode_generation != self._trim_mode_generation:
@@ -660,6 +678,81 @@ class InverterController:
         if decision.delta:
             flags += f"[TRIM:{decision.delta:+d}] "
         return decision.setpoint, flags
+
+    def _notify_ess_restored(self, now: float, get_mqtt_bridge) -> None:
+        """Publish a single recovery notification for an active ESS warning."""
+        if self._ess_notification_active:
+            bridge = get_mqtt_bridge()
+            if bridge:
+                bridge.publish_notification(
+                    notification_id="ess-not-external",
+                    level="info",
+                    title="ESS External control restored",
+                    body="Grid setpoint writes are honored again.",
+                )
+            logger.info(
+                "ESS back in External control after %.0f min",
+                (now - (self._ess_not_external_since or now)) / 60.0,
+            )
+
+    def _reset_grid_measurements(self) -> None:
+        """Clear both measurement histories in their established order."""
+        self.filtered_gt = None
+        self._raw_derived_gt = None
+        self.calculator.reset_measurement_history()
+        for grid_filter in (self.grid_filter, self.derived_grid_filter):
+            if grid_filter is not None:
+                grid_filter.reset()
+
+    def _write_cycle_setpoint(
+        self, setpoint, generation, sys_data, flags, current_grid, cycle_started
+    ):
+        """Revalidate and write while preserving the watchdog lock and accepted baseline."""
+
+        def accept_control_setpoint():
+            # Commit the applied baseline while the hardware-write lock
+            # is held, before another thread can accept a manual override.
+            if self._trim_decision is not None:
+                self.submeter_trim.commit(
+                    self._trim_decision, now=time.monotonic(), wall_time=time.time()
+                )
+            self.previous_setpoint = setpoint
+            self._last_backup_measurement = (
+                sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
+            )
+
+        with self._watchdog._lock:
+            if not self._trim_write_ready(current_grid):
+                self._reset_submeter_trim("changed_before_write")
+                self.metrics.record_cycle(cycle_started, self.loop_interval)
+                return None
+            # Limits can change after calculation. Share their setter's
+            # lock so no automatic write escapes the currently active range.
+            bounded_setpoint = max(self.power_limit_min, min(self.power_limit_max, setpoint))
+            if bounded_setpoint != setpoint:
+                self._reset_submeter_trim("power_limits_changed")
+                setpoint = bounded_setpoint
+            if self.dry_run:
+                flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
+                write_ok = self._watchdog.write_control_setpoint(
+                    setpoint, generation, dry_run=True, on_accept=accept_control_setpoint
+                )
+            else:
+                write_started = time.perf_counter()
+                write_ok = self._watchdog.write_control_setpoint(
+                    setpoint, generation, on_accept=accept_control_setpoint
+                )
+                self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
+        return setpoint, flags, write_ok
+
+    def _delay_no_feed(self) -> None:
+        """Apply the optional no-feed delay without interrupting the next safety cycle."""
+        try:
+            if self.get_control_flag("no_feed"):
+                time.sleep(NO_FEED_SLEEP_INTERVAL)
+        # Optional failure-path delay must never prevent the next safety cycle.
+        except Exception:  # nosec B110
+            pass  # Best effort - an optional delay must not stop the control loop
 
     @staticmethod
     def _trim_source_key(sys_data: dict[str, Any]) -> tuple:
@@ -1033,19 +1126,7 @@ class InverterController:
             return
 
         if ess.get("is_external"):
-            if self._ess_notification_active:
-                bridge = get_mqtt_bridge()
-                if bridge:
-                    bridge.publish_notification(
-                        notification_id="ess-not-external",
-                        level="info",
-                        title="ESS External control restored",
-                        body="Grid setpoint writes are honored again.",
-                    )
-                logger.info(
-                    "ESS back in External control after %.0f min",
-                    (now - (self._ess_not_external_since or now)) / 60.0,
-                )
+            self._notify_ess_restored(now, get_mqtt_bridge)
             self._clear_ess_warning()
             return
 
@@ -1153,12 +1234,7 @@ class InverterController:
                     "Grid telemetry unavailable; control paused: %s",
                     sys_data.get("_grid_invalid_reason", "validity not provided"),
                 )
-                self.filtered_gt = None
-                self._raw_derived_gt = None
-                self.calculator.reset_measurement_history()
-                for grid_filter in (self.grid_filter, self.derived_grid_filter):
-                    if grid_filter is not None:
-                        grid_filter.reset()
+                self._reset_grid_measurements()
             self._grid_inputs_invalid = True
             self.state["grid_control_valid"] = False
             self.state["grid_control_reason"] = sys_data.get("_grid_invalid_reason")
@@ -1170,12 +1246,7 @@ class InverterController:
             self._reset_submeter_trim("source_changed")
             self._control_grid_selection = selection
             self._last_backup_measurement = None
-            self.filtered_gt = None
-            self._raw_derived_gt = None
-            self.calculator.reset_measurement_history()
-            for grid_filter in (self.grid_filter, self.derived_grid_filter):
-                if grid_filter is not None:
-                    grid_filter.reset()
+            self._reset_grid_measurements()
             logger.info("Grid control source changed to %s", sys_data.get("_grid_source"))
             return False  # Recalculate on the next cycle, including before-write switches.
         if self._watchdog.is_triggered():
@@ -1225,6 +1296,60 @@ class InverterController:
             self.current_setpoint = fallback
             self.state["setpoint"] = fallback
 
+    def _record_cycle_stage(self, name: str, stage_started: float) -> float:
+        """Record one completed stage and start the next timing interval."""
+        now = time.perf_counter()
+        elapsed_ms = (now - stage_started) * 1000.0
+        self.metrics.record_stage(name, elapsed_ms)
+        # Surface an unexpectedly slow stage via metrics/logging. We do NOT
+        # abort the cycle on a signal: each native/CLI D-Bus call is already
+        # time-boxed by its own timeout, so a slow stage is a symptom to
+        # debug, not a hang to force-interrupt (the old SIGALRM approach
+        # corrupted cross-thread futures on the reconnect path, 2026-08-27).
+        if elapsed_ms > STAGE_SLOW_MS:
+            self._watchdog._record_diagnostic(
+                "control_stage_slow", stage=name, seconds=elapsed_ms / 1000.0
+            )
+        # Keep diagnostic overhead out of the next stage, but in the full cycle.
+        return time.perf_counter()
+
+    def _render_cycle_telemetry(self, sys_data, setpoint, previous_for_display, flags, _stage):
+        """Render the accepted cycle and refresh the throttled UI snapshot."""
+        # Inject cached data for console UI
+        sys_data["battery_socs"] = self._cached_battery_socs
+        sys_data["mppt_data"] = self._cached_mppt_data
+        sys_data["pv_inverter_powers"] = self._cached_pv_powers
+
+        filtered_display = self.filtered_gt if self.filtered_gt is not None else sys_data["gt"]
+        line = self.console.format_line(
+            sys_data, setpoint, previous_for_display, flags, filtered_display
+        )
+        self.last_console_line = line
+        broadcast_line(line)
+        _stage("console_render")
+
+        # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL,
+        # not every cycle. It feeds the web UI / MQTT (fresh enough at 2 Hz);
+        # the control decision already ran in calculate_setpoint above.
+        if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
+            self.update_state(sys_data, setpoint)
+            self._last_update_state_time = time.monotonic()
+        _stage("update_state")
+
+    def _skip_changed_grid(self, current_grid, sys_data, cycle_started) -> bool:
+        """Reject a changed or unavailable sample before taking the write lock."""
+        if current_grid.get("_grid_selection_generation") != sys_data.get(
+            "_grid_selection_generation"
+        ) or current_grid.get("_grid_measurement_time") != sys_data.get("_grid_measurement_time"):
+            # Recalculate rather than writing across a source/sample edge.
+            self._reset_submeter_trim("source_changed_before_write")
+            self.metrics.record_cycle(cycle_started, self.loop_interval)
+            return True
+        if not self._grid_ready_for_control(current_grid):
+            self.metrics.record_cycle(cycle_started, self.loop_interval)
+            return True
+        return False
+
     def run_cycle(self) -> bool:
         cycle_started = time.monotonic()
         stage_started = time.perf_counter()
@@ -1232,20 +1357,7 @@ class InverterController:
         def _stage(name: str) -> None:
             """Record duration of the stage that just ended."""
             nonlocal stage_started
-            now = time.perf_counter()
-            elapsed_ms = (now - stage_started) * 1000.0
-            self.metrics.record_stage(name, elapsed_ms)
-            # Surface an unexpectedly slow stage via metrics/logging. We do NOT
-            # abort the cycle on a signal: each native/CLI D-Bus call is already
-            # time-boxed by its own timeout, so a slow stage is a symptom to
-            # debug, not a hang to force-interrupt (the old SIGALRM approach
-            # corrupted cross-thread futures on the reconnect path, 2026-08-27).
-            if elapsed_ms > STAGE_SLOW_MS:
-                self._watchdog._record_diagnostic(
-                    "control_stage_slow", stage=name, seconds=elapsed_ms / 1000.0
-                )
-            # Keep diagnostic overhead out of the next stage, but in the full cycle.
-            stage_started = time.perf_counter()
+            stage_started = self._record_cycle_stage(name, stage_started)
 
         try:
             self.last_console_line = None
@@ -1254,12 +1366,7 @@ class InverterController:
             generation = self._watchdog.control_generation()
             if generation != self._control_history_generation:
                 self._reset_submeter_trim("control_generation")
-                self.filtered_gt = None
-                self._raw_derived_gt = None
-                self.calculator.reset_measurement_history()
-                for grid_filter in (self.grid_filter, self.derived_grid_filter):
-                    if grid_filter is not None:
-                        grid_filter.reset()
+                self._reset_grid_measurements()
                 self._control_history_generation = generation
             sys_data = self.victron.get_system_data()
             if self.get_setpoint_override()["value"] is not None:
@@ -1300,56 +1407,16 @@ class InverterController:
             _stage("minimize_charging")
 
             current_grid = self.victron.get_grid_status()
-            if current_grid.get("_grid_selection_generation") != sys_data.get(
-                "_grid_selection_generation"
-            ) or current_grid.get("_grid_measurement_time") != sys_data.get(
-                "_grid_measurement_time"
-            ):
-                # Recalculate rather than writing across a source/sample edge.
-                self._reset_submeter_trim("source_changed_before_write")
-                self.metrics.record_cycle(cycle_started, self.loop_interval)
-                return True
-            if not self._grid_ready_for_control(current_grid):
-                self.metrics.record_cycle(cycle_started, self.loop_interval)
+            if self._skip_changed_grid(current_grid, sys_data, cycle_started):
                 return True
             previous_for_display = self.previous_setpoint
 
-            def accept_control_setpoint():
-                # Commit the applied baseline while the hardware-write lock
-                # is held, before another thread can accept a manual override.
-                if self._trim_decision is not None:
-                    self.submeter_trim.commit(
-                        self._trim_decision, now=time.monotonic(), wall_time=time.time()
-                    )
-                self.previous_setpoint = setpoint
-                self._last_backup_measurement = (
-                    sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
-                )
-
-            with self._watchdog._lock:
-                if not self._trim_write_ready(current_grid):
-                    self._reset_submeter_trim("changed_before_write")
-                    self.metrics.record_cycle(cycle_started, self.loop_interval)
-                    return True
-                # Limits can change after calculation. Share their setter's
-                # lock so no automatic write escapes the currently active range.
-                bounded_setpoint = max(self.power_limit_min, min(self.power_limit_max, setpoint))
-                if bounded_setpoint != setpoint:
-                    self._reset_submeter_trim("power_limits_changed")
-                    setpoint = bounded_setpoint
-                if self.dry_run:
-                    flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
-                    write_ok = self._watchdog.write_control_setpoint(
-                        setpoint, generation, dry_run=True, on_accept=accept_control_setpoint
-                    )
-                else:
-                    write_started = time.perf_counter()
-                    write_ok = self._watchdog.write_control_setpoint(
-                        setpoint, generation, on_accept=accept_control_setpoint
-                    )
-                    self.metrics.record_write(
-                        (time.perf_counter() - write_started) * 1000.0, write_ok
-                    )
+            write_result = self._write_cycle_setpoint(
+                setpoint, generation, sys_data, flags, current_grid, cycle_started
+            )
+            if write_result is None:
+                return True
+            setpoint, flags, write_ok = write_result
             if not write_ok:
                 self._reset_submeter_trim("write_rejected")
             if generation != self._watchdog.control_generation():
@@ -1366,34 +1433,10 @@ class InverterController:
             # daemontools/multilog they pollute Loki as raw k63/k40/… noise.
             _stage("setpoint_write")
 
-            # Inject cached data for console UI
-            sys_data["battery_socs"] = self._cached_battery_socs
-            sys_data["mppt_data"] = self._cached_mppt_data
-            sys_data["pv_inverter_powers"] = self._cached_pv_powers
-
-            filtered_display = self.filtered_gt if self.filtered_gt is not None else sys_data["gt"]
-            line = self.console.format_line(
-                sys_data, setpoint, previous_for_display, flags, filtered_display
-            )
-            self.last_console_line = line
-            broadcast_line(line)
-            _stage("console_render")
-
-            # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL,
-            # not every cycle. It feeds the web UI / MQTT (fresh enough at 2 Hz);
-            # the control decision already ran in calculate_setpoint above.
-            if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
-                self.update_state(sys_data, setpoint)
-                self._last_update_state_time = time.monotonic()
-            _stage("update_state")
+            self._render_cycle_telemetry(sys_data, setpoint, previous_for_display, flags, _stage)
 
             self.metrics.record_cycle(cycle_started, self.loop_interval)
-            try:
-                if self.get_control_flag("no_feed"):
-                    time.sleep(NO_FEED_SLEEP_INTERVAL)
-            # Optional failure-path delay must never prevent the next safety cycle.
-            except Exception:  # nosec B110
-                pass  # Best effort - an optional delay must not stop the control loop
+            self._delay_no_feed()
             return True
         except KeyboardInterrupt:
             return False
