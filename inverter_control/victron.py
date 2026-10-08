@@ -1851,7 +1851,8 @@ class VictronDBus:
             # Never resolve them through an inherited or operator-modified PATH.
             executables = {"dbus": "/usr/bin/dbus", "dbus-send": "/usr/bin/dbus-send"}
             cmd = [executables[cmd[0]], *cmd[1:]]
-            # Use start_new_session to be able to kill the whole process group
+            # Isolate the client from daemon signals. subprocess.run kills and
+            # reaps the D-Bus client itself before raising TimeoutExpired.
             # Repository-controlled argv; no shell interpolation or external command text.
             result = subprocess.run(  # nosec B603
                 cmd,
@@ -2161,6 +2162,7 @@ class VictronDBus:
             try:
                 self._cached_inverter_state = self._parse_inverter_state_code(val)
             except (ValueError, TypeError):
+                # Keep the last known state when a transient sample is malformed.
                 pass
         self._last_inverter_state_time = time.time()
         return self._cached_inverter_state
@@ -2327,7 +2329,7 @@ class VictronDBus:
             try:
                 vebus_mode = int(raw) if raw is not None else None
             except (ValueError, TypeError):
-                pass
+                vebus_mode = None
         result = {
             "selected": selected_mode(hub4_mode, bl_state, vebus_mode),
             "vebus_mode": vebus_mode,
@@ -2519,9 +2521,9 @@ class VictronDBus:
         max_reasonable = 86400 * 14
         if state not in ("Charging", "Discharging") or not 0 < ttg_sec < max_reasonable:
             return ""
-        h, m = divmod(ttg_sec, 3600)
-        m = m // 60
-        return f"{h}h {m:02d}m" if h > 0 else f"{m}m"
+        hours, remaining_seconds = divmod(ttg_sec, 3600)
+        minutes = remaining_seconds // 60
+        return f"{hours}h {minutes:02d}m" if hours > 0 else f"{minutes}m"
 
     def get_all_batteries(self) -> list:
         """Get detailed data for all battery chains - pure background-cache read.
@@ -2567,8 +2569,8 @@ class VictronDBus:
             if ttg_raw is not None:
                 try:
                     ttg_sec = max(0, int(float(ttg_raw)))
-                except (TypeError, ValueError):
-                    pass
+                except (TypeError, ValueError, OverflowError):
+                    ttg_sec = 0
             voltage = self._optional_float(self._dbus_get(service, "/Dc/0/Voltage"))
             voltage = voltage if voltage is not None and voltage > 0 else None
             soc = self._optional_float(self._dbus_get(service, "/Soc"))
@@ -2611,7 +2613,8 @@ class VictronDBus:
                 if v > 0:
                     voltages.append((v, offset + len(voltages)))
             except (ValueError, TypeError):
-                pass
+                # Ignore nonnumeric cells while retaining valid cells in this chain.
+                continue
 
         if discovered_count > 0:
             self._chain_cell_counts[service] = discovered_count
@@ -2630,7 +2633,8 @@ class VictronDBus:
                 if -50 <= t <= 100:
                     temps.append(t)
             except (ValueError, TypeError):
-                pass
+                # Ignore unavailable sensors while retaining valid temperatures.
+                continue
         return temps
 
     def _read_chain_soc(self, service: str) -> float | None:
@@ -2907,21 +2911,24 @@ class VictronDBus:
 
 # Singleton instance
 _victron: VictronDBus | None = None
+_victron_lock = threading.Lock()
 
 
 def get_victron(test_mode: bool = False) -> VictronDBus:
     """Get or create Victron D-Bus interface"""
     global _victron  # pylint: disable=global-statement
-    if _victron is None:
-        _victron = VictronDBus(test_mode=test_mode)
-    return _victron
+    with _victron_lock:
+        if _victron is None:
+            _victron = VictronDBus(test_mode=test_mode)
+        return _victron
 
 
 def reset_victron_for_testing() -> None:
     """Reset singleton for testing purposes"""
     global _victron  # pylint: disable=global-statement
-    if _victron is not None:
-        _victron._poll_stop_event.set()
-        if _victron._poll_thread:
-            _victron._poll_thread.join(timeout=1.0)
-    _victron = None
+    with _victron_lock:
+        if _victron is not None:
+            _victron._poll_stop_event.set()
+            if _victron._poll_thread:
+                _victron._poll_thread.join(timeout=1.0)
+        _victron = None

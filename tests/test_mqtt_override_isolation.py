@@ -68,7 +68,7 @@ def test_slow_override_send_does_not_block_control_and_latest_stop_stays_last(
         def invoke():
             try:
                 call()
-            except BaseException as error:
+            except Exception as error:
                 errors.append(error)
             finally:
                 if done is not None:
@@ -150,7 +150,7 @@ def test_reconnect_does_not_clear_newer_pending_stop_when_queue_is_full(monkeypa
     def reconnect():
         try:
             bridge._on_connect(client, None, None, 0)
-        except BaseException as error:
+        except Exception as error:
             errors.append(error)
 
     def stop():

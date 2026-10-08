@@ -148,8 +148,8 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             )
             if response.status_code == 200:
                 return response.json().get("state")
-        except (requests.exceptions.RequestException, ValueError):
-            pass
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            logger.debug("HA state request failed: %s", type(exc).__name__)
         return None
 
     def _parse_numeric(self, value: str, default: Any = 0) -> Any:

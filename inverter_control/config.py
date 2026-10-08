@@ -5,6 +5,7 @@ All configurable parameters in one place
 """
 
 import functools
+import logging
 import os
 
 # Subprocess calls below use argument vectors with shell=False.
@@ -13,6 +14,8 @@ from pathlib import Path
 
 from inverter_control.control_flags import get_control_toggle_config
 from inverter_control.tariff import DEFAULT_FILE, load_tariff
+
+logger = logging.getLogger("inverter-control")
 
 # =============================================================================
 # LOCAL CONFIG (imported from local_config.py - not tracked by git)
@@ -27,7 +30,7 @@ try:
     )
 except ImportError:
     # Fallback for development or if local_config.py doesn't exist
-    print("WARNING: local_config.py not found! Copy local_config.example.py to local_config.py")
+    logger.warning("local_config.py not found! Copy local_config.example.py to local_config.py")
     HA_URL = "http://localhost:8123"  # nosec B310 — local dev fallback
     # Documented placeholder; not an authentication credential.
     HA_TOKEN = "your_token_here"  # nosec B105
@@ -98,7 +101,7 @@ if HA_TOKEN in ("", "your_token_here", None):
     ENABLE_HA = False
     ENABLE_ACLOADS = False
     # EV and WATER are D-Bus based and do NOT require Home Assistant
-    print("INFO: Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
+    logger.info("Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
 
 # =============================================================================
 # MQTT BRIDGE (for remote web dashboard)
@@ -236,6 +239,7 @@ def _detect_portal_id() -> str:
         if portal_id:
             return portal_id
     except (OSError, subprocess.SubprocessError):
+        # Development hosts lack Venus OS identity tooling; try their network ID.
         pass
     try:
         with open("/sys/class/net/eth0/address", encoding="utf-8") as f:
@@ -243,6 +247,7 @@ def _detect_portal_id() -> str:
             if portal_id:
                 return portal_id
     except OSError:
+        # Hosts without eth0 can supply the identity through PORTAL_ID below.
         pass
     portal_id = os.environ.get("PORTAL_ID")
     if portal_id:

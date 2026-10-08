@@ -5,7 +5,7 @@ import time
 import traceback
 from typing import Any
 
-import inverter_control.config as _config
+from inverter_control import config as _config
 from inverter_control.background_reader import BackgroundReader
 from inverter_control.config import (
     DRY_RUN,
@@ -956,7 +956,8 @@ class InverterController:
         ess_mode = display["ess_mode"]
         daily_stats = display["daily_stats"]
 
-        mppt_total = sum(m["w"] for m in self._cached_mppt_data.values())
+        mppt_individual = [m["w"] for m in self._cached_mppt_data.values()]
+        mppt_total = sum(mppt_individual)
         pv_total = sum(self._cached_pv_powers)
 
         # Full state for web UI
@@ -972,7 +973,7 @@ class InverterController:
             "pv_inverter_total": pv_total,
             "solar_total": mppt_total + pv_total,
             "mppt_data": self._cached_mppt_data,
-            "mppt_individual": [m["w"] for m in self._cached_mppt_data.values()],
+            "mppt_individual": mppt_individual,
             "pv_inverter_individual": self._cached_pv_powers,
             "inverter_state": self._cached_inv_state,
             "battery_socs": self._cached_battery_socs,
@@ -1311,7 +1312,6 @@ class InverterController:
             if not self._grid_ready_for_control(current_grid):
                 self.metrics.record_cycle(cycle_started, self.loop_interval)
                 return True
-            write_ok = self.dry_run
             previous_for_display = self.previous_setpoint
 
             def accept_control_setpoint():
