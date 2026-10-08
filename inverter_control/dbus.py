@@ -102,9 +102,12 @@ class VUESensorDBusClient:
             logger.debug("VUE name lookup failed: %s", type(exc).__name__)
         return None
 
-    def _native_power(self, service: str, remaining: float, deadline: float) -> float | None:
+    @staticmethod
+    def _native_power(
+        native_get: Callable[..., str | None], service: str, remaining: float, deadline: float
+    ) -> float | None:
         try:
-            raw = self._native_get(service, "/Ac/Power", timeout=min(0.25, remaining))
+            raw = native_get(service, "/Ac/Power", timeout=min(0.25, remaining))
             if isinstance(raw, (str, int, float)) and not isinstance(raw, bool):
                 value = float(raw)
                 if math.isfinite(value) and time.monotonic() < deadline:
@@ -147,7 +150,7 @@ class VUESensorDBusClient:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return key, None, deadline
-            value = self._native_power(service, remaining, deadline)
+            value = self._native_power(self._native_get, service, remaining, deadline)
             if value is not None:
                 return key, value, deadline
         remaining = deadline - time.monotonic()
