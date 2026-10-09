@@ -145,7 +145,9 @@ class ConsoleUI:
             wstate = self.water.read()
             level = wstate["water_level"]
             valve = wstate.get("water_valve")
-            valve_text = "unknown" if valve is None else "open" if valve else "closed"
+            valve_text = "unknown"
+            if valve is not None:
+                valve_text = "open" if valve else "closed"
             if level is None:
                 parts.append(f"{C.YELLOW}--%{C.RESET}")
             else:
