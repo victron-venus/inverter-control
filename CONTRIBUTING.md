@@ -3,7 +3,8 @@
 Inverter Control manages a Victron installation through Venus OS D-Bus, MQTT,
 and optional Home Assistant integrations. Contributions to code, tests,
 documentation, and reproducible bug reports are welcome. Public contributions
-and discussions can be in English.
+and discussions can be in English. See [governance and responsibilities](GOVERNANCE.md)
+for decision-making and [the roadmap](ROADMAP.md) for planned scope.
 
 ## Report a bug, request a feature, or ask a question
 
@@ -46,7 +47,7 @@ uv sync --locked --all-extras
 External contributors should fork the repository and clone their fork instead.
 Run commands from the repository root. The default tests use test doubles for
 the device integrations; they do not require a private `local_config.py` or a
-connected inverter. See the [development guide](docs/development.md) for focused
+connected inverter. See the [development guide](docs/development.md) and [quality process](docs/quality-process.md) for focused
 tests, security checks, packaging, and device acceptance.
 
 ## Submit a pull request
@@ -82,7 +83,8 @@ legacy `commit.sh` helper is not required to contribute.
 
 ## Standards for acceptable changes
 
-- Follow existing module conventions and the Ruff configuration in
+- Follow [PEP 8](https://peps.python.org/pep-0008/) for Python style, as implemented
+  by the project's Ruff formatter and lint configuration in
   [pyproject.toml](pyproject.toml): Python 3.12 syntax and a 100-character line
   length. Use `uv run --locked ruff format .` to format changed Python code and
   review the resulting diff.
@@ -101,6 +103,26 @@ legacy `commit.sh` helper is not required to contribute.
   them. Use explicit placeholders and isolated fixtures.
 - Treat reviewers and other contributors respectfully. Explain technical
   disagreements with evidence and reproducible examples.
+
+## Documentation and accessibility
+
+Documentation changes are part of the change they describe. Check current command
+names, defaults, platform requirements, interface fields, and links. State when
+an example is historical or applies only to a particular release. Correct known
+inconsistencies in the same PR, or track a specific follow-up issue if a complete
+correction needs additional work. Do not describe a proposed or untested feature
+as released or verified.
+
+Use descriptive headings and link text, text alternatives for meaningful images,
+and written explanations beside diagrams. Avoid relying on color alone for an
+operator decision. Terminal commands and text protocols must remain usable by
+keyboard. See [accessibility and localization](docs/accessibility.md) for the
+current scope and limitations.
+
+When an external achievement is publicly awarded, the release maintainer must
+link it from the README within 48 hours. Use a live status badge where available
+and link the underlying evidence; remove or correct stale claims when status
+changes. Never publish a Silver or Gold claim before it is awarded.
 
 ## Review, release, and license
 

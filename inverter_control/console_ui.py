@@ -144,11 +144,14 @@ class ConsoleUI:
         if ENABLE_WATER and self.water is not None:
             wstate = self.water.read()
             level = wstate["water_level"]
+            valve = wstate.get("water_valve")
+            valve_text = "unknown" if valve is None else "open" if valve else "closed"
             if level is None:
                 parts.append(f"{C.YELLOW}--%{C.RESET}")
             else:
-                color = C.RED if wstate["water_valve"] else C.YELLOW
+                color = C.RED if valve else C.YELLOW
                 parts.append(f"{color}{int(level)}%{C.RESET}")
+            parts.append(f"valve={valve_text}")
 
         # Car (D-Bus evcharger reader; not HA)
         if ENABLE_EV and self.evcharger is not None:
@@ -160,7 +163,7 @@ class ConsoleUI:
         elif ENABLE_EV:
             parts.append(f"{C.YELLOW}--%{C.RESET}")
 
-        return "".join(parts)
+        return " ".join(parts)
 
 
 def fmt_appliance_time(t):

@@ -165,6 +165,18 @@ class TestConsoleUI:
                 assert "66%" in extra  # water level
                 assert "80%" in extra  # car SoC
 
+    @pytest.mark.parametrize("valve,label", [(True, "open"), (False, "closed"), (None, "unknown")])
+    @pytest.mark.parametrize("level", [66.0, None])
+    def test_water_valve_state_is_textual_even_without_color(self, valve, label, level):
+        self.mock_water.read.return_value = {"water_level": level, "water_valve": valve}
+        with (
+            patch("inverter_control.console_ui.ENABLE_WATER", True),
+            patch("inverter_control.console_ui.C", RED="", YELLOW="", RESET=""),
+        ):
+            extra = self.ui._fmt_extra_info()
+        assert f"valve={label}" in extra
+        assert "\033[" not in extra
+
     def test_fmt_appliance_time(self):
         """Test appliance time formatting (kept for parity; no longer rendered)."""
         assert console_ui.fmt_appliance_time("01:30:00") == "1:30"

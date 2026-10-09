@@ -1,0 +1,92 @@
+"""Retrospective regressions for documented August 2026 control-loop failures."""
+
+import errno
+import threading
+from unittest.mock import Mock
+
+import pytest
+
+import main
+from inverter_control.victron import VictronDBus
+
+
+@pytest.mark.parametrize(
+    "error", [BrokenPipeError(errno.EPIPE, "closed"), BlockingIOError(errno.EAGAIN, "full")]
+)
+def test_log_pipe_backpressure_does_not_abort_the_control_caller(error):
+    """A failed diagnostic write must not interrupt the next controller action."""
+    underlying = Mock()
+    underlying.write.side_effect = [error, 4]
+    stream = main._BrokenPipeSafeStream(underlying)
+    assert stream.write("status") == len("status")
+    # Suppression is specific to this failed write; a recovered pipe is reused.
+    assert stream.write("next") == 4
+    assert underlying.write.call_count == 2
+
+
+def test_log_pipe_does_not_hide_unrelated_io_errors():
+    underlying = Mock()
+    underlying.write.side_effect = OSError(errno.ENOSPC, "disk full")
+    with pytest.raises(OSError) as caught:
+        main._BrokenPipeSafeStream(underlying).write("status")
+    assert caught.value.errno == errno.ENOSPC
+
+
+def test_overlapping_discovery_skips_instead_of_queuing_another_process():
+    """Startup/signal/poll races must not pile up expensive discovery subprocesses."""
+    device = object.__new__(VictronDBus)
+    device._discovery_lock = threading.Lock()
+    device._native = None
+    device._apply_discovery = Mock()
+    device._log_discovery_failure = Mock()
+    entered, release, second_done = threading.Event(), threading.Event(), threading.Event()
+
+    def command():
+        entered.set()
+        if not release.wait(2):
+            raise TimeoutError("fixture discovery release")
+        return Mock(stdout="com.victronenergy.fixture")
+
+    device._run_discovery_command = Mock(side_effect=command)
+    first = threading.Thread(target=device._discover_services)
+
+    def second_call():
+        try:
+            device._discover_services()
+        finally:
+            second_done.set()
+
+    second = threading.Thread(target=second_call)
+    first.start()
+    try:
+        assert entered.wait(1)
+        second.start()
+        assert second_done.wait(0.3), "discovery queued behind an in-flight subprocess"
+        assert device._run_discovery_command.call_count == 1
+        device._apply_discovery.assert_not_called()
+    finally:
+        release.set()
+        first.join(2)
+        if second.ident is not None:
+            second.join(2)
+    assert not first.is_alive() and not second.is_alive()
+    device._apply_discovery.assert_called_once_with("com.victronenergy.fixture")
+    device._log_discovery_failure.assert_not_called()
+    # The lock is released after completion, so discovery remains usable.
+    device._discover_services()
+    assert device._run_discovery_command.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "reply,expected",
+    [("variant uint32 3", (3, "Bulk")), ("variant int32 0\n", (0, "Off")), ("9", (9, "Inverting"))],
+)
+def test_inverter_state_accepts_actual_dbus_literal_replies(reply, expected):
+    """Parsing the full literal with int() used to fail every state poll."""
+    assert VictronDBus._parse_inverter_state_code(reply) == expected
+
+
+@pytest.mark.parametrize("reply", ["", "variant uint32 invalid"])
+def test_inverter_state_rejects_unparseable_replies(reply):
+    with pytest.raises(ValueError):
+        VictronDBus._parse_inverter_state_code(reply)

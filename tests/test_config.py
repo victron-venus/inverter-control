@@ -146,8 +146,33 @@ class TestGridBackupLocalConfig:
 class TestColors:
     """Test ANSI Colors class"""
 
-    def test_color_constants(self):
-        """Test color codes are valid ANSI sequences"""
+    @pytest.mark.parametrize("value", ["1", "true", "0"])
+    def test_no_color_removes_every_terminal_style(self, monkeypatch, value):
+        monkeypatch.setenv("NO_COLOR", value)
+        colors = TestCreepLocalConfig.load_config(monkeypatch).Colors
+        assert all(
+            getattr(colors, name) == ""
+            for name in (
+                "RED",
+                "GREEN",
+                "YELLOW",
+                "BLUE",
+                "MAGENTA",
+                "CYAN",
+                "WHITE",
+                "RESET",
+                "BOLD",
+            )
+        )
+
+    def test_empty_no_color_preserves_styles(self, monkeypatch):
+        monkeypatch.setenv("NO_COLOR", "")
+        assert TestCreepLocalConfig.load_config(monkeypatch).Colors.RED == "\033[31m"
+
+    def test_color_constants(self, monkeypatch):
+        """Test color codes are valid ANSI sequences when colors are enabled."""
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        config = TestCreepLocalConfig.load_config(monkeypatch)
         assert config.Colors.RED.startswith("\033[31m")
         assert config.Colors.GREEN.startswith("\033[32m")
         assert config.Colors.YELLOW.startswith("\033[33m")

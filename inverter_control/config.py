@@ -466,17 +466,19 @@ INVERTER_STATES = {
 
 
 class Colors:
-    """ANSI color codes for terminal output"""
+    """ANSI terminal styles; a nonempty NO_COLOR requests plain text."""
 
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
+    _enabled = not os.environ.get("NO_COLOR")
+
+    RED = "\033[31m" if _enabled else ""
+    GREEN = "\033[32m" if _enabled else ""
+    YELLOW = "\033[33m" if _enabled else ""
+    BLUE = "\033[34m" if _enabled else ""
+    MAGENTA = "\033[35m" if _enabled else ""
+    CYAN = "\033[36m" if _enabled else ""
+    WHITE = "\033[37m" if _enabled else ""
+    RESET = "\033[0m" if _enabled else ""
+    BOLD = "\033[1m" if _enabled else ""
 
 
 # =============================================================================
