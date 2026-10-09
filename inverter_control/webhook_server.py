@@ -11,6 +11,8 @@ import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .forecast_input import validate_forecast
+
 logger = logging.getLogger("inverter-control")
 
 # Match the existing MQTT pre-charge request bound; forecast summaries are small JSON objects.
@@ -128,13 +130,18 @@ class WebhookHandler(BaseHTTPRequestHandler):
             if payload is None:
                 return
 
-            today_kwh = payload.get("today_kwh")
-            tomorrow_kwh = payload.get("tomorrow_kwh")
-
-            if not isinstance(today_kwh, int | float) or not isinstance(tomorrow_kwh, int | float):
+            if any(
+                type(payload.get(key)) not in (int, float) for key in ("today_kwh", "tomorrow_kwh")
+            ):
                 self._send_response(400, {"error": "Missing numeric today_kwh/tomorrow_kwh"})
                 return
-
+            try:
+                payload = validate_forecast(payload, require_both=True)
+            except (TypeError, ValueError):
+                self._send_response(400, {"error": "Invalid forecast summary"})
+                return
+            today_kwh = payload["today_kwh"]
+            tomorrow_kwh = payload["tomorrow_kwh"]
             logger.info(
                 f"Forecast webhook received: today={today_kwh:.1f}kWh "
                 f"tomorrow={tomorrow_kwh:.1f}kWh date={payload.get('date')}"

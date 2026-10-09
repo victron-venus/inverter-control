@@ -13,8 +13,11 @@ local_config.py is NOT tracked by git.
 # Use a CA-validated HTTPS endpoint for remote HA. Keep certificate verification enabled.
 # Plain HTTP is suitable only for a trusted loopback endpoint (for example an SSH tunnel).
 HA_URL = "https://YOUR_HA_HOST:8123"
-# Documented placeholder; not an authentication credential.
-HA_TOKEN = "your_long_lived_access_token_here"  # nosec B105
+# Recommended: an absolute path to a separate owner-only token file, loaded at startup.
+# Provision the file first, then uncomment this setting. See docs/credentials.md.
+# HA_TOKEN_FILE = "/data/setupOptions/inverter-control/credentials/ha.token"
+# Legacy inline tokens remain supported. Empty means HA is disabled until configured.
+HA_TOKEN = ""  # nosec B105 - empty opt-in configuration, not a credential
 
 # =============================================================================
 # VICTRON

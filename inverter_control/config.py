@@ -13,9 +13,21 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 from inverter_control.control_flags import get_control_toggle_config
+from inverter_control.credentials import read_bearer_token
 from inverter_control.tariff import DEFAULT_FILE, load_tariff
 
 logger = logging.getLogger("inverter-control")
+
+
+def _import_local_config(name: str, default=""):
+    """Import a variable from local_config with a fallback default."""
+    try:
+        import local_config
+
+        return getattr(local_config, name, default)
+    except (ImportError, AttributeError):
+        return default
+
 
 # =============================================================================
 # LOCAL CONFIG (imported from local_config.py - not tracked by git)
@@ -24,10 +36,11 @@ try:
     from local_config import (  # pylint: disable=unused-import
         HA_DUMP_LOADS,
         HA_SENSORS,
-        HA_TOKEN,
         HA_URL,
         VUE_SENSORS,
     )
+
+    HA_TOKEN = _import_local_config("HA_TOKEN", "")
 except ImportError:
     # Fallback for development or if local_config.py doesn't exist
     logger.warning("local_config.py not found! Copy local_config.example.py to local_config.py")
@@ -39,14 +52,13 @@ except ImportError:
     HA_DUMP_LOADS = []
 
 
-def _import_local_config(name: str, default=""):
-    """Import a variable from local_config with a fallback default."""
-    try:
-        import local_config
-
-        return getattr(local_config, name, default)
-    except (ImportError, AttributeError):
-        return default
+# A selected file is authoritative. Failure must not silently reuse an old
+# inline token. Read once at startup; rotation uses atomic replacement/restart.
+HA_TOKEN_FILE = _import_local_config("HA_TOKEN_FILE", "")
+if not isinstance(HA_TOKEN_FILE, str):
+    raise TypeError("HA_TOKEN_FILE must be a string")
+if HA_TOKEN_FILE:
+    HA_TOKEN = read_bearer_token(HA_TOKEN_FILE)
 
 
 def _setup_boolean(name: str, default: bool):
@@ -97,11 +109,11 @@ ENABLE_ACLOADS = True  # AC load monitoring via D-Bus acload services
 ENABLE_HA = True  # Home Assistant integration (net_usage sensor, dump load control)
 
 # Auto-disable all HA features if no valid token configured
-if HA_TOKEN in ("", "your_token_here", None):
+if HA_TOKEN in ("", "your_token_here", "your_long_lived_access_token_here", None):
     ENABLE_HA = False
     ENABLE_ACLOADS = False
     # EV and WATER are D-Bus based and do NOT require Home Assistant
-    logger.info("Home Assistant disabled (no valid HA_TOKEN in local_config.py)")
+    logger.info("Home Assistant disabled (no configured bearer token)")
 
 # =============================================================================
 # MQTT BRIDGE (for remote web dashboard)

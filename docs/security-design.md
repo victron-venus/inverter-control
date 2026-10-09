@@ -38,7 +38,8 @@ trusted infrastructure. Input plausibility and age checks detect some broken
 data; they cannot authenticate a malicious local D-Bus service.
 
 `local_config.py` is imported Python, and `metrics.env` is sourced by the service
-shell. Both are administrator-controlled code, not safe formats for untrusted
+shell. Home Assistant tokens can instead be read from a separate private file
+with `HA_TOKEN_FILE`; see [credential storage and rotation](credentials.md). Both are administrator-controlled code, not safe formats for untrusted
 user submissions. Protect their containing directories as well as the files.
 The JSON tariff interface is the appropriate bounded data format for tariff
 updates; do not turn network input into Python configuration.
@@ -193,9 +194,11 @@ Reviewers should specifically look for shell injection, executable configuration
 from untrusted sources, path traversal, missing authorization, stale/replayed
 commands, non-finite numeric values, resource exhaustion, concurrency errors,
 and credential disclosure. In Python, malicious input can still exhaust memory
-or CPU even without a native buffer overflow. Not every MQTT payload path has
-an application-level size limit; the broker must enforce appropriate message
-and connection limits. Dependencies and native OS components remain part of the
+or CPU even without a native buffer overflow. MQTT inputs are limited to 4096 bytes before decoding, except the independently
+validated tariff document (100000 bytes). The MQTT library has already received
+the packet at that point; the broker must also enforce message and connection
+limits. Forecast summaries use shared finite-number and metadata validation
+before state replacement; see the [solar input contract](solar-delivery.md). Dependencies and native OS components remain part of the
 attack surface.
 
 Examples of implemented mitigations include fixed executable paths with
@@ -305,3 +308,7 @@ is design and process evidence. The `know_secure_design` and
 actually understands these subjects. Creating this document or having an agent
 review code does not attest to any person's knowledge. Likewise, response-time
 and vulnerability-remediation claims must be checked against real records.
+
+The [security assurance case](security-assurance.md) maps the requirements and
+trust boundaries above to implementation, regression evidence, and residual
+risks. It also records the justified exception to encrypted local networking.

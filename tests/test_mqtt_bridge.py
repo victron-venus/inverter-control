@@ -438,6 +438,45 @@ def test_command_requires_its_exact_namespace(mocked_bridge, topic):
     callback.assert_not_called()
 
 
+@pytest.mark.parametrize("payload", [b"[]", b"null", b"true", b"23", b'"string"'])
+def test_non_object_json_cannot_trigger_payload_ignoring_commands(mocked_bridge, payload):
+    bridge, client = mocked_bridge
+    for command in ("dry_run", "ess_mode"):
+        callback = MagicMock()
+        bridge.register_callback(command, callback)
+        message = SimpleNamespace(topic=f"test/cmd/{command}", payload=payload, retain=False)
+        bridge._on_message(client, None, message)
+        callback.assert_not_called()
+
+
+@pytest.mark.parametrize("topic", ["test/cmd/toggle", "test/alert/ack", "solar/forecast"])
+def test_mqtt_limit_counts_bytes_before_decoding(mocked_bridge, topic):
+    bridge, client = mocked_bridge
+    # Fits in 4096 Unicode characters, exceeds 4096 encoded bytes.
+    payload = json.dumps({"site_id": "é" * 2100}, ensure_ascii=False).encode("utf-8")
+    message = SimpleNamespace(topic=topic, payload=payload, retain=False)
+    with (
+        patch.object(bridge, "_parse_payload") as parse,
+        patch.object(bridge, "_handle_forecast") as forecast,
+        patch.object(bridge, "_handle_acknowledgment") as acknowledgment,
+    ):
+        bridge._on_message(client, None, message)
+        parse.assert_not_called()
+        forecast.assert_not_called()
+        acknowledgment.assert_not_called()
+
+
+@pytest.mark.parametrize("payload", [b'{"today_kwh":NaN}', b'{"today_kwh":true}', b"[]", b"\xff"])
+def test_invalid_forecast_never_reaches_callback(mocked_bridge, payload):
+    bridge, client = mocked_bridge
+    callback = MagicMock()
+    bridge.register_callback("forecast", callback)
+    bridge._on_message(
+        client, None, SimpleNamespace(topic="solar/forecast", payload=payload, retain=True)
+    )
+    callback.assert_not_called()
+
+
 def test_rejected_connack_does_not_publish_or_subscribe(mocked_bridge):
     from paho.mqtt.packettypes import PacketTypes
     from paho.mqtt.reasoncodes import ReasonCode

@@ -15,9 +15,14 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from .alert_state import get_alert_storage
+from .forecast_input import validate_forecast
 from .tariff import MAX_BYTES as MAX_TARIFF_BYTES
 
 logger = logging.getLogger("inverter-control")
+
+# Commands, acknowledgements, and daily summaries are small JSON/text messages.
+# The independently validated tariff document retains its larger contract.
+MAX_MESSAGE_BYTES = 4096
 
 
 class SafeEncoder(json.JSONEncoder):
@@ -277,6 +282,14 @@ class MQTTBridge:
             return
         try:
             topic = msg.topic
+            limit = (
+                MAX_TARIFF_BYTES
+                if topic == f"{self.prefix}/cmd/electricity_tariff"
+                else MAX_MESSAGE_BYTES
+            )
+            if len(msg.payload) > limit:
+                logger.warning("Ignoring oversized MQTT input")
+                return
 
             if topic == f"{self.forecast_prefix}/pre_charge_request":
                 _handle_precharge_request(self, client, msg)
@@ -301,17 +314,17 @@ class MQTTBridge:
             if msg.retain:
                 logger.warning("Ignoring retained %s command", cmd)
                 return
-            if cmd == "electricity_tariff" and len(msg.payload) > MAX_TARIFF_BYTES:
-                logger.warning("Ignoring oversized electricity tariff command")
-                return
             payload = self._parse_payload(msg.payload)
+            if not isinstance(payload, dict):
+                logger.warning("Ignoring MQTT command without an object payload")
+                return
             if cmd in self._callbacks:
                 self._callbacks[cmd](payload)
             else:
                 logger.debug(f"Unknown command: {cmd}")
 
         except Exception as e:
-            logger.exception(f"MQTT message error: {e}")
+            logger.warning("MQTT message rejected: %s", type(e).__name__)
 
     @staticmethod
     def _parse_payload(raw: bytes | bytearray | None) -> dict:
@@ -325,12 +338,12 @@ class MQTTBridge:
 
     def _handle_forecast(self, payload: bytes | bytearray | None) -> None:
         """Dispatch a solar/forecast payload to the registered callback."""
-        if not payload:
+        if not payload or len(payload) > MAX_MESSAGE_BYTES:
             return
         try:
-            data = json.loads(payload.decode())
-        except json.JSONDecodeError:
-            logger.warning(f"Invalid JSON in forecast message: {payload.decode()}")
+            data = validate_forecast(json.loads(payload.decode()))
+        except (TypeError, ValueError, UnicodeError):
+            logger.warning("Invalid forecast summary rejected")
             return
         callback = self._callbacks.get("forecast")
         if callback:

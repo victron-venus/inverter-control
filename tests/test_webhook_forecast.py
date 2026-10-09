@@ -4,6 +4,8 @@ import json
 import urllib.error
 import urllib.request
 
+import pytest
+
 from inverter_control.webhook_server import WebhookServer
 
 
@@ -80,5 +82,17 @@ def test_forecast_webhook_callback_failure_returns_500():
     try:
         status, _body = _post(_port(server), {"today_kwh": 1, "tomorrow_kwh": 2})
         assert status == 500
+    finally:
+        server.stop()
+
+
+@pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf")])
+def test_forecast_invalid_energy_never_reaches_callback(value):
+    recorder = _Recorder()
+    server = _start_server(recorder)
+    try:
+        status, _body = _post(_port(server), {"today_kwh": value, "tomorrow_kwh": 2})
+        assert status == 400
+        assert recorder.payloads == []
     finally:
         server.stop()

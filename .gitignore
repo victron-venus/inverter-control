@@ -41,6 +41,9 @@ site_config.py
 local_config.py
 # Legacy root configuration can contain live credentials before migration.
 /secrets.py
+# Operator-managed authentication files must not enter source or releases.
+*.token
+credentials/
 metrics.env
 HA_SENSORS.md
 
