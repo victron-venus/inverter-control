@@ -1,20 +1,28 @@
 # Regression history audit
 
-This is a dated source-history snapshot for the six-month UTC interval from
-2026-04-09 through 2026-10-08, ending at
-`120e3b5ae977975aeb9d080b4216d62f793934fa`. It is not a permanent claim about the
-current branch. Before a badge submission, extend it through the final merged
-source and confirm that the mapped tests, including the retrospective additions,
-are present in that source.
+This audit separates the six-month baseline from subsequent reviewed fixes.
+The baseline covers the UTC interval from 2026-04-09 through 2026-10-08 at
+`120e3b5ae977975aeb9d080b4216d62f793934fa`. The
+[integration extension](evidence/regression-extension-2026-10-09.json) records
+PR305 and Silver changes through its exact `source_end` revision. These are
+dated results. Before a badge assertion, confirm that this source and its mapped
+tests have merged and that the final required checks passed.
 
-The [machine-readable inventory](evidence/regression-audit-2026-10-09.json)
-screens all 475 first-parent commits in that interval. It contains 283 separately
-identified repair candidates in 166 work items. A source/test review maps 149
-candidates to a regression that exercises the described failure condition;
-134 receive no test credit. The observed conservative ratio is 52.65%. Uncertain
-legacy repair candidates remain in the denominator without credit. Independent
-sample review and the final merged-source extension are required before using
-this snapshot for an OpenSSF assertion.
+The [baseline inventory](evidence/regression-audit-2026-10-09.json) screens all
+475 first-parent commits. It contains 282 separately identified repair
+candidates in 166 work items: 148 have a regression that exercises the described
+failure condition and 134 receive no test credit (52.48%). Two independent
+reviewers sampled ten mappings each. Their corrections remove tests of already
+correct behavior and a performance optimization from the count, separate two
+MQTT defects, and strengthen two tests that did not prove the claimed behavior.
+
+The extension adds 15 preexisting defects fixed by PR305, six runtime defects
+fixed by the Silver changes, and the correction to a coverage measurement that
+included test source. The latter receives no regression-test credit. Together,
+these inventories contain **304 repair candidates, 169 with reviewed
+regressions (55.59%)**. Uncertain legacy repair candidates remain in the
+denominator without credit. This is an evidence-based estimate over the recorded
+source interval, not a permanent claim about future commits.
 
 ## Counting method
 
@@ -33,10 +41,14 @@ several failure conditions, but each condition requires its own evidence; the
 number of test cases is not the number of fixed defects. Statement coverage is
 reported separately and cannot substitute for this review.
 
-The selected mapped tests passed as 381 pytest cases and eight subtests, followed
-by two additional release cases and two subtests. The new retrospective group
-passed as 23 cases. These are software and mock-boundary results; they do not
-establish physical equipment acceptance.
+The original selected mappings passed as 381 pytest cases and eight subtests,
+followed by two additional release cases and two subtests. The retrospective
+group passed as 23 cases. After independent review, 73 logic/watchdog cases and
+15 subtests passed, including the strengthened checks. The extension and changed
+mappings passed as 84 cases and 127 subtests; the two real Bandit discovery tests
+passed separately with Bandit installed, rather than being credited when skipped.
+These are software and mock-boundary results; they do not establish physical
+equipment acceptance.
 
 ## Retrospective checks
 
@@ -61,3 +73,23 @@ When repeating the inventory, retain the original source SHA and UTC interval,
 record any changed classification and its reason, and attach the final CI result.
 Keep prospective policy in [quality-process.md](quality-process.md) separate from
 observed historical evidence.
+
+## Extension and independent checks
+
+The [PR305 comparisons](evidence/regression-pr305-proof-2026-10-09.json) run
+13 current regression cases against the original target module from `120e3b5`.
+All reproduce a failure on that module and pass on the reviewed implementation.
+They cover release-note parsing, quoted TOML keys, retryable staging and workflow
+validation. Other imported dependencies and local fixtures retain their current
+implementations, so these are isolated module comparisons.
+
+The [mutation checks](evidence/regression-strengthened-proof-2026-10-09.json)
+show that dropping the calculated derivative correction or restoring a setpoint
+only after External mode now fails the relevant assertion. The unmodified tests
+pass. In this report, `passed: false` describes the deliberately faulty mutant
+being detected, not a failure of the reviewed implementation.
+
+New signing, DESTDIR, native build and credential-file features are excluded
+from the historical defect count, as are corrections made while developing
+those new features. Refactoring, style edits and documentation corrections also
+do not create additional fixed bugs in the inventory.

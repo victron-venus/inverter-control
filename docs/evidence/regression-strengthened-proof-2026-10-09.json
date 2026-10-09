@@ -1,0 +1,49 @@
+{
+  "ed6c9808:5": {
+    "passed": false,
+    "failures": [
+      [
+        "test_d_term_brakes_when_approaching_zero_fast (_security_review_logic.TestLogic.test_d_term_brakes_when_approaching_zero_fast)",
+        "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_logic.py\", line 544, in test_d_term_brakes_when_approaching_zero_fast\n    self.assertEqual(result2.setpoint, result_without_brake.setpoint + 30)\nAssertionError: 77 != 107\n"
+      ]
+    ],
+    "errors": [],
+    "observations": [
+      {
+        "input": -56,
+        "correct_output": -56,
+        "mutant_output": -56,
+        "flag": ""
+      },
+      {
+        "input": 30,
+        "correct_output": 63,
+        "mutant_output": 30,
+        "flag": "[D:+33] "
+      },
+      {
+        "input": -56,
+        "correct_output": -56,
+        "mutant_output": -56,
+        "flag": ""
+      },
+      {
+        "input": 30,
+        "correct_output": 30,
+        "mutant_output": 30,
+        "flag": "[D:+0] "
+      }
+    ]
+  },
+  "0134211a:2": {
+    "passed": false,
+    "failures": [
+      [
+        "test_recovery_restores_setpoint_from_nonexternal_mode (_security_review_watchdog.TestHardwareWatchdog.test_recovery_restores_setpoint_from_nonexternal_mode)",
+        "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_watchdog.py\", line 126, in test_recovery_restores_setpoint_from_nonexternal_mode\n    victron.set_grid_setpoint.assert_called_once_with(1234)\n  File \"<python-stdlib>/unittest/mock.py\", line 960, in assert_called_once_with\n    raise AssertionError(msg)\nAssertionError: Expected 'set_grid_setpoint' to be called once. Called 0 times.\n"
+      ]
+    ],
+    "errors": []
+  },
+  "note": "No repository edits. Mutated methods temporarily in-process while running the exact mapped unittest methods from governance-quality. Previously passing mutants should now fail against strengthened assertions."
+}

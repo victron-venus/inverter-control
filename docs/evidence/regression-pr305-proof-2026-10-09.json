@@ -1,0 +1,335 @@
+{
+  "source_before": "120e3b5ae977975aeb9d080b4216d62f793934fa",
+  "source_after": "88587117ee544f7deb524ef47387e4037fcb2450",
+  "method": "Exact test methods with the target imported module replaced in process by original committed source. Filesystem, HTTP and release fixtures remain bounded local mocks from the regression tests. This does not execute an entire historical checkout.",
+  "cases": [
+    {
+      "test": "test_crlf_notes_preserve_source_byte_verification",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [],
+        "errors": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 100, in test_crlf_notes_preserve_source_byte_verification\n    assert render(crlf) == render(NOTES)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1066, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release notes need Upgrade guidance\n"
+        ],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_fenced_guidance_cannot_satisfy_real_sections",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 565, in test_fenced_guidance_cannot_satisfy_real_sections\n    self.assertRaisesRegex(release.ReleaseError, \"Upgrade guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_comment_only_guidance_is_rejected",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 453, in test_comment_only_guidance_is_rejected\n    self.assertRaisesRegex(release.ReleaseError, \"guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_empty_markdown_containers_are_not_release_guidance",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 239, in test_empty_markdown_containers_are_not_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, section + \" guidance\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_higher_level_appendix_cannot_supply_version_guidance",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 399, in test_higher_level_appendix_cannot_supply_version_guidance\n    with self.subTest(indent=indent), self.assertRaises(release.ReleaseError):\n                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 399, in test_higher_level_appendix_cannot_supply_version_guidance\n    with self.subTest(indent=indent), self.assertRaises(release.ReleaseError):\n                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 399, in test_higher_level_appendix_cannot_supply_version_guidance\n    with self.subTest(indent=indent), self.assertRaises(release.ReleaseError):\n                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 399, in test_higher_level_appendix_cannot_supply_version_guidance\n    with self.subTest(indent=indent), self.assertRaises(release.ReleaseError):\n                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_setext_appendices_cannot_supply_release_guidance",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 346, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "old_release_control.ReleaseError: Release needs one nonempty changelog section\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 352, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"ATX\" does not match \"Release needs one nonempty changelog section\"\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 346, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "old_release_control.ReleaseError: Release needs one nonempty changelog section\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 352, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"ATX\" does not match \"Release needs one nonempty changelog section\"\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 346, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "old_release_control.ReleaseError: Release needs one nonempty changelog section\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 352, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"ATX\" does not match \"Release needs one nonempty changelog section\"\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 346, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "old_release_control.ReleaseError: Release needs one nonempty changelog section\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 352, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"ATX\" does not match \"Release needs one nonempty changelog section\"\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 346, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "old_release_control.ReleaseError: Release needs one nonempty changelog section\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 352, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"ATX\" does not match \"Release needs one nonempty changelog section\"\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 346, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ReleaseError not raised\n",
+          "old_release_control.ReleaseError: Release needs one nonempty changelog section\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 352, in test_setext_appendices_cannot_supply_release_guidance\n    self.assertRaisesRegex(release.ReleaseError, \"ATX\"),\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: \"ATX\" does not match \"Release needs one nonempty changelog section\"\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_closing_hashes_select_version_and_required_guidance",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [],
+        "errors": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 178, in test_closing_hashes_select_version_and_required_guidance\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 178, in test_closing_hashes_select_version_and_required_guidance\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 178, in test_closing_hashes_select_version_and_required_guidance\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 178, in test_closing_hashes_select_version_and_required_guidance\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 178, in test_closing_hashes_select_version_and_required_guidance\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 178, in test_closing_hashes_select_version_and_required_guidance\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n"
+        ],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_indented_version_and_guidance_headings_are_supported",
+      "test_path": "tests/test_release_notes.py",
+      "before": {
+        "passed": false,
+        "failures": [],
+        "errors": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 325, in test_indented_version_and_guidance_headings_are_supported\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 325, in test_indented_version_and_guidance_headings_are_supported\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 325, in test_indented_version_and_guidance_headings_are_supported\n    body = render(text)\n           ^^^^^^^^^^^^\n  File \"<reviewed-source>/tests/test_release_notes.py\", line 81, in render\n    body = release.release_notes(github, tag, SOURCE, \"Original source and validation links.\")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/release_control.py\", line 1058, in release_notes\n  File \"120e3b5:scripts/release_control.py\", line 90, in require\nold_release_control.ReleaseError: Release needs one nonempty changelog section\n"
+        ],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes",
+      "test_path": ".github/release-tests/test_version_plan.py",
+      "before": {
+        "passed": false,
+        "failures": [],
+        "errors": [
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 403, in parse_key_part\n    return parse_one_line_basic_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 409, in parse_one_line_basic_str\n    return parse_basic_str(src, pos, multiline=False)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 565, in parse_basic_str\n    raise suffixed_err(src, pos, \"Unterminated string\") from None\ntomllib.TOMLDecodeError: Unterminated string (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 427, in test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 713, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: release.\"a\n",
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 427, in test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 739, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 78, in require\nold_version_plan.VersionError: TOML selector must identify exactly one explicit scalar assignment\n",
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 401, in parse_key_part\n    return parse_literal_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 515, in parse_literal_str\n    pos = skip_until(\n          ^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 254, in skip_until\n    raise suffixed_err(src, new_pos, f\"Expected {expect!r}\") from None\ntomllib.TOMLDecodeError: Expected \"'\" (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 427, in test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 713, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: release.'literal\n",
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 403, in parse_key_part\n    return parse_one_line_basic_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 409, in parse_one_line_basic_str\n    return parse_basic_str(src, pos, multiline=False)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 565, in parse_basic_str\n    raise suffixed_err(src, pos, \"Unterminated string\") from None\ntomllib.TOMLDecodeError: Unterminated string (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 427, in test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 713, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: release.\"escaped\\\"\n",
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 403, in parse_key_part\n    return parse_one_line_basic_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 409, in parse_one_line_basic_str\n    return parse_basic_str(src, pos, multiline=False)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 565, in parse_basic_str\n    raise suffixed_err(src, pos, \"Unterminated string\") from None\ntomllib.TOMLDecodeError: Unterminated string (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 427, in test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 713, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: release.\"backslash\\\\\n",
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 401, in parse_key_part\n    return parse_literal_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 515, in parse_literal_str\n    pos = skip_until(\n          ^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 254, in skip_until\n    raise suffixed_err(src, new_pos, f\"Expected {expect!r}\") from None\ntomllib.TOMLDecodeError: Expected \"'\" (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 427, in test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 713, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: release.'literal\\\n"
+        ],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_toml_table_delimiters_inside_quoted_keys_are_literal",
+      "test_path": ".github/release-tests/test_version_plan.py",
+      "before": {
+        "passed": false,
+        "failures": [],
+        "errors": [
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 403, in parse_key_part\n    return parse_one_line_basic_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 409, in parse_one_line_basic_str\n    return parse_basic_str(src, pos, multiline=False)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 565, in parse_basic_str\n    raise suffixed_err(src, pos, \"Unterminated string\") from None\ntomllib.TOMLDecodeError: Unterminated string (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 400, in test_toml_table_delimiters_inside_quoted_keys_are_literal\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 706, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: tool.\"bracket\n",
+          "Traceback (most recent call last):\n  File \"120e3b5:scripts/version_plan.py\", line 611, in _toml_key\n  File \"<python-stdlib>/tomllib/_parser.py\", line 102, in loads\n    pos = key_value_rule(src, pos, out, header, parse_float)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 326, in key_value_rule\n    pos, key, value = parse_key_value_pair(src, pos, parse_float)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 360, in parse_key_value_pair\n    pos, key = parse_key(src, pos)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 386, in parse_key\n    pos, key_part = parse_key_part(src, pos)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 401, in parse_key_part\n    return parse_literal_str(src, pos)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 515, in parse_literal_str\n    pos = skip_until(\n          ^^^^^^^^^^^\n  File \"<python-stdlib>/tomllib/_parser.py\", line 254, in skip_until\n    raise suffixed_err(src, new_pos, f\"Expected {expect!r}\") from None\ntomllib.TOMLDecodeError: Expected \"'\" (at end of document)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 400, in test_toml_table_delimiters_inside_quoted_keys_are_literal\n    self.sync([{\n  File \"<reviewed-source>/.github/release-tests/test_version_plan.py\", line 222, in sync\n    return config, plan, version.sync_versions(self.root, config, plan)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"120e3b5:scripts/version_plan.py\", line 926, in sync_versions\n  File \"120e3b5:scripts/version_plan.py\", line 894, in _edit\n  File \"120e3b5:scripts/version_plan.py\", line 706, in _toml_edit\n  File \"120e3b5:scripts/version_plan.py\", line 619, in _toml_key\nold_version_plan.VersionError: Unsupported TOML key: tool.'bracket\n"
+        ],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_invalid_archive_does_not_leave_staging_and_can_be_retried",
+      "test_path": ".github/release-tests/test_consumer_versioning.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/.github/release-tests/test_consumer_versioning.py\", line 218, in test_invalid_archive_does_not_leave_staging_and_can_be_retried\n    self.assertFalse((self.root / \"release-assets\").exists())\nAssertionError: True is not false\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_mutable_step_action_is_rejected_without_manifest",
+      "test_path": ".github/workflow-tests/test_action_pins.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/.github/workflow-tests/test_action_pins.py\", line 44, in test_mutable_step_action_is_rejected_without_manifest\n    with self.assertRaisesRegex(ValueError, \"immutable SHA\"):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    },
+    {
+      "test": "test_generator_marker_is_required_without_manifest",
+      "test_path": ".github/workflow-tests/test_action_pins.py",
+      "before": {
+        "passed": false,
+        "failures": [
+          "Traceback (most recent call last):\n  File \"<reviewed-source>/.github/workflow-tests/test_action_pins.py\", line 62, in test_generator_marker_is_required_without_manifest\n    with self.assertRaisesRegex(ValueError, \"missing generator marker\"):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ValueError not raised\n"
+        ],
+        "errors": [],
+        "skipped": []
+      },
+      "after": {
+        "passed": true,
+        "failures": [],
+        "errors": [],
+        "skipped": []
+      }
+    }
+  ]
+}
