@@ -109,3 +109,16 @@ def test_linked_payload_directory_cannot_leak_outside_files(tmp_path):
     with pytest.raises(ValueError, match="symlink"):
         installer.stage(source, str(tmp_path / "stage"))
     assert not (tmp_path / "stage").exists()
+
+
+def test_make_destination_is_literal_data_not_shell_code(tmp_path):
+    marker = tmp_path / "must-not-be-created"
+    root = tmp_path / f'stage `touch {marker}` $(touch {marker}) "quoted"'
+    for action in ("install", "uninstall"):
+        subprocess.run(  # nosec B603, B607
+            ["make", action, "DESTDIR=" + str(root)], cwd=REPO, check=True
+        )
+        assert not marker.exists()
+        if action == "install":
+            assert (root / "data/inverter-control/main.py").is_file()
+    assert not (root / "data/inverter-control/main.py").exists()
