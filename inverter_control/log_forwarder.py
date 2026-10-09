@@ -22,9 +22,19 @@ import urllib.request
 try:
     import requests
 
+    if __package__:
+        from .requests_tls import VerifiedHTTPAdapter
+    else:
+        from requests_tls import VerifiedHTTPAdapter
+
     USE_REQUESTS = True
 except ImportError:
     USE_REQUESTS = False
+
+if __package__:
+    from .tls_policy import VerifiedHTTPSHandler, VerifiedProxyHandler
+else:
+    from tls_policy import VerifiedHTTPSHandler, VerifiedProxyHandler
 
 # Configuration
 LOKI_URL = os.environ.get("LOKI_URL", "")
@@ -313,17 +323,21 @@ def push_to_loki(payload):
     try:
         validate_loki_url(LOKI_URL)
         if USE_REQUESTS:
-            resp = requests.post(
-                LOKI_URL, data=data, headers=headers, timeout=10, allow_redirects=False
-            )
-            if 300 <= resp.status_code < 400:
-                raise ValueError("Loki redirects are not allowed")
-            resp.raise_for_status()
+            with requests.Session() as session:
+                session.mount("https://", VerifiedHTTPAdapter())
+                resp = session.post(
+                    LOKI_URL, data=data, headers=headers, timeout=10, allow_redirects=False
+                )
+                if 300 <= resp.status_code < 400:
+                    raise ValueError("Loki redirects are not allowed")
+                resp.raise_for_status()
         else:
             req = urllib.request.Request(  # pylint: disable=used-before-assignment
                 LOKI_URL, data=data, headers=headers, method="POST"
             )
-            opener = urllib.request.build_opener(_RejectRedirects())
+            opener = urllib.request.build_opener(
+                _RejectRedirects(), VerifiedHTTPSHandler(), VerifiedProxyHandler()
+            )
             with opener.open(req, timeout=10) as resp:
                 if resp.status >= 400:
                     raise urllib.error.HTTPError(

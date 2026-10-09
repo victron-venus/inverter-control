@@ -218,15 +218,47 @@ work around connection errors. Forward secrecy and permitted TLS algorithms
 depend on the actual client and server configuration, so deployment validation
 must inspect those endpoints rather than infer them from a green source scan.
 
-The supported Python 3.12 development environment was checked with the locked
-dependencies during the October 2026 audit: urllib3's default context used
-OpenSSL 3.5.7, minimum TLS 1.2, security level 2, required certificate verification
-and hostname checks, and cipher suites with at least 128-bit symmetric strength.
-Its TLS 1.2 cipher choices used ECDHE or DHE key exchange. This is evidence for
-that default client environment; repeat the check after runtime changes and on
-target firmware. It does not describe plaintext MQTT/HTTP or an independently
-configured TLS gateway. OpenSSL supplies TLS randomness; the application does
-not implement its own key or nonce generator.
+The supported Python 3.12 environment uses TLS 1.2 or later, certificate and
+hostname verification, and cipher suites with at least 128-bit symmetric
+strength. OpenSSL security level 2 alone does **not** prove an exact RSA 2048-bit
+minimum: a synthetic trusted RSA 2047-bit root was accepted by all three clients
+on CPython 3.12.13/OpenSSL 3.5.7. That earlier assumption has been withdrawn.
+
+Home Assistant and both Loki transports now inspect the **same connection's
+verified chain**, including its trust anchor, before sending HTTP headers or
+bodies. `cryptography` reads the public keys: RSA modulus >= 2048 bits, EC >= 224,
+DSA p >= 2048/q >= 224, and Ed25519/Ed448. Unknown key types, unavailable chain
+APIs, malformed certificates or missing `cryptography` fail closed. The code
+uses CPython 3.12's private verified-chain API, or the public API where available;
+this runtime boundary must be retested after interpreter upgrades.
+
+Standard hostname/chain checks run first. Requests retains its CA environment,
+explicit CA file/directory and client-certificate configuration. Its session-local
+adapter checks both a TLS CONNECT proxy and the tunneled origin; other Requests
+users are unaffected. The stdlib fallback retains its native HTTP CONNECT proxy
+and SSL_CERT_FILE/SSL_CERT_DIR handling. It rejects HTTPS-scheme proxies before
+connecting because stdlib would otherwise send their CONNECT and proxy
+credentials without TLS; a matching `no_proxy` entry still permits a direct
+connection. No system/user trust store is modified.
+The supported Requests proxy schemes for this policy are HTTP and HTTPS CONNECT;
+SOCKS transports are not part of this profile. Loki still rejects redirects;
+Home Assistant retains Requests' redirect handling, including its credential
+stripping rules, and validates every new HTTPS connection.
+
+The TLS 1.2 DHE regression additionally checks exact 2047-bit parameters are
+rejected before application data, while 2048-bit parameters complete all three
+client paths. Independent lower-policy handshakes calibrate both fixtures.
+The DHE minimum is enforced by the supported OpenSSL build, not the certificate
+key inspector. The regression passed on OpenSSL 3.5.7 and the ARMv7 bundle
+profile with OpenSSL 3.0.20; rerun it after OpenSSL upgrades. This does not change
+the selected TLS cipher suites or TLS 1.3 groups.
+
+The loopback suite in `tests/test_tls_policy.py` covers the three actual client
+paths, RSA 2047/1024 chains, strong RSA/EC, hostname and trust failures, proxies,
+mTLS and plaintext compatibility. These synthetic tests do not validate a
+physical device's installed interpreter, CA store, entropy or external gateway.
+Plaintext MQTT/HTTP is not encrypted by this policy. Keep external TLS gateways
+and platform libraries maintained; OpenSSL supplies TLS randomness.
 
 The historical `setup_ssl.sh` is a retired entry point that fails with migration
 guidance. It performs no certificate generation, trust-store modification,
@@ -239,6 +271,21 @@ publisher if the archive and checksum both come from a compromised source.
 Review the tag, release notes, and expected repository before running its
 installer with device privileges. SSH deployment must verify the destination
 host key. Do not disable that check or blindly replace a changed key.
+The `deploy.sh` and `restart.sh` operator helpers require **OpenSSH 9.1 or newer**
+(or a compatible client exposing `RequiredRSASize` in `ssh -G`). They read the
+effective destination configuration and require the larger of its RSA minimum
+and 2048 bits. Missing, malformed or oversized numeric settings fail before
+opening the SSH connection. Stronger configured minima remain intact.
+Each administrative invocation uses a fresh connection (`-S none`); reusing a
+multiplexed connection authenticated under an older policy would bypass the
+new check. Host aliases, user/port, proxy routing and known-host verification
+otherwise retain the normal SSH configuration. Older SSH clients must be
+updated on the operator machine; this is not a new daemon runtime requirement.
+This minimum applies to the destination connection. An operator-supplied
+`ProxyJump` or `ProxyCommand` creates an independent transport; configure its
+own RSA minimum to at least 2048 bits. These helpers do not enforce the key
+policy of that separate bastion connection.
+See [OpenSSH's RequiredRSASize documentation](https://man.openbsd.org/ssh_config#RequiredRSASize).
 
 Git exclusions prevent ordinary accidental adds of local configuration and
 keys; they do not stop `git add -f`, pasted tokens, or secrets in history. Review

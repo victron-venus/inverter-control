@@ -1,0 +1,2 @@
+# No upstream ARMv7 wheel is published for this pinned CFFI version.
+cffi==2.1.1 --hash=sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be

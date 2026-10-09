@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.23.5] - Candidate series, started 2026-10-06
 
 ### Fixed
+- Require at least RSA 2048 for operator SSH deployment/restart, preserving
+  stronger configured minima and using fresh authenticated connections.
+- Enforce exact certificate-key minima on Home Assistant and both Loki HTTPS
+  transports before sending headers or logs, including RSA 2048 bits throughout
+  the verified chain. OpenSSL security level 2 alone accepted a 2047-bit root.
 - Publish unknown battery voltage, current, power and SoC as null when the
   source is absent, disconnected, incomplete or stale, and display an em dash
   in the console. Preserve real zero measurements.
@@ -27,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bound asynchronous regression-test waits and restore scheduled Trivy reports.
 
 ### Upgrade
+- Install the new `cryptography` dependency and verify its native wheel/runtime
+  compatibility before updating; the installer checks it before stopping the
+  controller. HTTPS fails closed without a verified-chain API or supported key.
+  Existing plaintext HTTP/MQTT behavior is unchanged. See
+  [the security design](docs/security-design.md) for CA/proxy and platform limits.
 - Existing site configuration remains in `local_config.py`; preserve this file
   when updating. Unavailable battery values are now JSON null rather than zero,
   so dashboard and automation consumers must distinguish missing data from a
