@@ -320,15 +320,20 @@ independently sampled mappings; disputed cases were removed, split or given
 stronger assertions. This satisfies the numerical `regression_tests_added50`
 threshold only for the recorded source interval and merged mapped tests.
 
-**Pending — `test_statement_coverage80`.** The integrated run at `8858711`
-passed 2,182 tests with two skips and one documented FFDH warning, and Ruff
-checking/formatting passed. Its 85.97% result excluded tests but a subsequent
-inventory found 19 tracked Python files missing from coverage discovery. The
-corrected run enables namespace discovery and includes runtime, release and
-workflow suites under one measurement. Confirm its complete production-file
-inventory and percentage before asserting the 80% criterion; the 81% configured
-gate must not be lowered. Earlier 94–96% figures included test source and are
-retained above only as historical records.
+**Met evidence — `test_statement_coverage80`.** The [complete-source report](evidence/coverage-2026-10-09.json)
+records **10,642 of 11,928 statements covered (89.2186%)** across all 67 tracked
+executable Python files, including build/release scripts. The runtime, release
+and workflow run passed 2,476 cases; 55 additional native/change-scope cases
+were added to the same measured data. Two optional cases were skipped. Ruff
+checking/formatting passed and the 81% coverage gate passed.
+
+Namespace discovery includes scripts that were never imported; identical run
+and report exclusions remove test source, the example configuration and external
+virtual environments. The first namespace-aware report exposed a virtualenv
+scope error; the same test data were successfully reported after correcting that
+boundary. Per-file hashes and commands in the report make the final scope
+reviewable. Earlier percentages containing test code or missing scripts are not
+used for the Silver claim. This is statement coverage, not hardware acceptance.
 
 The testing and review policies support `test_policy_mandated`,
 `tests_documented_added`, `coding_standards` and `coding_standards_enforced`.
