@@ -111,6 +111,23 @@ class TestHardwareWatchdog(unittest.TestCase):
         victron.set_grid_setpoint.assert_any_call(1234)
         watchdog.stop()
 
+    def test_recovery_restores_setpoint_from_nonexternal_mode(self):
+        """Recovery must not be conditional on the previous ESS mode."""
+        watchdog, victron = self.make_watchdog()
+        victron.get_ess_mode.return_value = {"is_external": False}
+        victron.set_grid_setpoint.return_value = True
+
+        watchdog._apply_failsafe()
+        self.assertTrue(watchdog._hardware_forced)
+        self.assertEqual(victron.set_grid_setpoint.call_args_list[0].args, (0,))
+        victron.set_grid_setpoint.reset_mock()
+        watchdog._recover_from_failsafe()
+
+        victron.set_grid_setpoint.assert_called_once_with(1234)
+        self.assertFalse(watchdog._hardware_forced)
+        self.assertEqual(watchdog._pre_forced_setpoint, 0)
+        victron.set_ess_mode.assert_not_called()
+
     def test_dry_run_never_triggers(self):
         """Dry-run writes no setpoints, so liveness cannot be judged - no failsafe."""
         watchdog, victron = self.make_watchdog(timeout=0.1, dry_run=True)

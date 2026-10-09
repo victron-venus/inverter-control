@@ -1,6 +1,7 @@
 """Main controller for grid-zero feed-in management."""
 
 import logging
+import math
 import time
 import traceback
 from typing import Any
@@ -62,6 +63,7 @@ from inverter_control.console_ui import ConsoleUI
 from inverter_control.control_flags import CONTROL_FLAG_KEYS
 from inverter_control.dvcc import create_dvcc_from_config
 from inverter_control.evcharger import EvChargerReader
+from inverter_control.forecast_input import validate_forecast
 from inverter_control.grid_filter import GridFilter
 from inverter_control.homeassistant import get_ha
 from inverter_control.logic import SetpointCalculator, SystemState
@@ -356,6 +358,8 @@ class InverterController:
         self._webhook_server.start()
 
     def set_loop_interval(self, interval: float) -> float:
+        if type(interval) not in (int, float) or not math.isfinite(interval):
+            raise ValueError("Loop interval must be a finite number")
         self.loop_interval = max(0.1, min(5.0, interval))
         logger.info(f"Loop interval changed to {self.loop_interval}s")
         return self.loop_interval
@@ -471,24 +475,22 @@ class InverterController:
         solar outlook next to actual production figures.
         """
         try:
-            self._solar_forecast = {
-                k: payload[k]
-                for k in ("date", "today_kwh", "tomorrow_kwh", "generated_at", "site_id")
-                if k in payload
-            }
+            self._solar_forecast = validate_forecast(payload)
             logger.info(
                 f"Forecast stored: today={self._solar_forecast.get('today_kwh')}kWh "
                 f"tomorrow={self._solar_forecast.get('tomorrow_kwh')}kWh"
             )
             return True
-        except Exception:
-            logger.exception("Error handling forecast webhook")
+        except (TypeError, ValueError):
+            logger.warning("Invalid forecast summary rejected")
             return False
 
     def get_state(self) -> dict[str, Any]:
         return {**self.state, "ui_config": {**self.ui_config, **self.tariff.snapshot()}}
 
     def set_manual_setpoint(self, value: int) -> bool:
+        if type(value) is not int:
+            raise TypeError("Setpoint must be an integer")
         with self._watchdog._lock:
             self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
             self._trim_mode_generation += 1

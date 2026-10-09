@@ -67,8 +67,6 @@ line-length = 100
 
 [tool.ruff.lint]
 ignore = [
-    "E722",  # Do not use bare except
-    "F841",  # Local variable assigned but never used
     "BLE001",  # Do not catch blind exception (hardware control needs broad exception handling)
     "S110",    # try-except-pass (deliberate in watchdog/failsafe paths)
     "EXE001",  # Shebang in non-executable (module files not scripts)
@@ -90,6 +88,22 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "--cov=inverter_control --cov-report=term-missing --cov-fail-under=81"
 
+[tool.coverage.run]
+source = ["."]
+# Test execution is evidence about production code, not production coverage itself.
+omit = [
+    "tests/*", ".github/release-tests/*", ".github/workflow-tests/*",
+    ".venv/*", ".venv-ci/*", "local_config.example.py",
+]
+
+[tool.coverage.report]
+# Include unimported scripts that are outside Python packages.
+include_namespace_packages = true
+# Apply the same boundary to combined or appended data from earlier runs.
+omit = [
+    "tests/*", ".github/release-tests/*", ".github/workflow-tests/*",
+    ".venv/*", ".venv-ci/*", "local_config.example.py",
+]
 
 [tool.bandit.assert_used]
 # Pytest assertions are executable test checks, not production security guards.

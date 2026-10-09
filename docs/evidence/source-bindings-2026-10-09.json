@@ -1,0 +1,92 @@
+{
+  "reviewed_public_source": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "reviewed_public_source_url": "https://github.com/victron-venus/inverter-control/commit/73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "method": "Compare complete Git trees using git diff --name-only ORIGINAL PUBLIC. Every pair is identical outside docs/openssf-evidence.md. All public revisions are ancestors of the reviewed public source. Preserve original local proof inputs instead of falsely claiming those experiments were rerun on different commits.",
+  "reason": "Rebasing the reviewed changes onto merged PR305 changed local commit identities. GitHub does not resolve the original 1594a72 snapshot; use these reachable public equivalents.",
+  "bindings": [
+    {
+      "original_local_revision": "88587117ee544f7deb524ef47387e4037fcb2450",
+      "public_revision": "a2085d303564272d0fa864b77edb920aabb9a6a4",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/a2085d303564272d0fa864b77edb920aabb9a6a4",
+      "subject": "Verify derivative output and nonexternal watchdog recovery",
+      "all_tree_differences": [
+        "docs/openssf-evidence.md"
+      ],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "1594a724c7f46120569891f5afdb356463c27427",
+      "public_revision": "c16141db3ab1f52767cbdcb38bc278b9999f2314",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/c16141db3ab1f52767cbdcb38bc278b9999f2314",
+      "subject": "test(release): cover native rejection and CI change scope",
+      "all_tree_differences": [],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "8ba6d083c7f27819e3c198e520edbd004a4b5a99",
+      "public_revision": "356a42490f7c71dcbfde26df685d815abc6ee0e7",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/356a42490f7c71dcbfde26df685d815abc6ee0e7",
+      "subject": "Merge main after TLS policy verification",
+      "all_tree_differences": [
+        "docs/openssf-evidence.md"
+      ],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "c35e47e855370a82970f65e17d992d9069c937bf",
+      "public_revision": "beff40728838d71efcf9905c41d3381e62a8c407",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/beff40728838d71efcf9905c41d3381e62a8c407",
+      "subject": "fix(security): reject unsafe control values and Home Assistant paths",
+      "all_tree_differences": [
+        "docs/openssf-evidence.md"
+      ],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "7958d795636266d086fd5703a011a3e8d88a83f1",
+      "public_revision": "5cc658a47d6a0a8260492dec29bc0e4ffa567876",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/5cc658a47d6a0a8260492dec29bc0e4ffa567876",
+      "subject": "Measure production coverage and align transport fixtures",
+      "all_tree_differences": [
+        "docs/openssf-evidence.md"
+      ],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "74cc52495643ad43f92b1a41c9094accc9ed0a1b",
+      "public_revision": "6daebb5d4d65c167c59e543bdc404014aca889c2",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/6daebb5d4d65c167c59e543bdc404014aca889c2",
+      "subject": "Measure all Python source with runtime and release contract suites",
+      "all_tree_differences": [],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "8e97693af82c33568e7acc32e5f14b5597dee3ce",
+      "public_revision": "c24bfb6a2d7f6e0177938e3eb8fd21a790b058b6",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/c24bfb6a2d7f6e0177938e3eb8fd21a790b058b6",
+      "subject": "fix(release): retain local safeguards during regeneration",
+      "all_tree_differences": [
+        "docs/openssf-evidence.md"
+      ],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
+      "public_revision": "7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
+      "subject": "Place the non-Dockerfile exclusion under Trivy scan configuration",
+      "all_tree_differences": [],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    },
+    {
+      "original_local_revision": "a3fb39b7bb0b393ffc37ac10fe368f10055f0248",
+      "public_revision": "b3ca3966110ad87aec3acff557cfcb05e211d9d4",
+      "public_url": "https://github.com/victron-venus/inverter-control/commit/b3ca3966110ad87aec3acff557cfcb05e211d9d4",
+      "subject": "Complete independently reviewed regression audit through Silver changes",
+      "all_tree_differences": [
+        "docs/openssf-evidence.md"
+      ],
+      "equivalence": "All source, tests, configuration and other files are byte-identical; only the listed evidence-document change, if any, differs."
+    }
+  ]
+}

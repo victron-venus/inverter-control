@@ -9,6 +9,7 @@ import atexit
 import errno
 import gc
 import logging
+import math
 import os
 import signal
 import sys
@@ -152,7 +153,7 @@ def _control_flag_key(entity: str) -> str | None:
     """Accept input_boolean.<key> or a bare control-flag key."""
     from inverter_control.control_flags import CONTROL_FLAG_KEYS
 
-    if not entity:
+    if not isinstance(entity, str) or not entity:
         return None
     key = entity.removeprefix("input_boolean.")
     if key in CONTROL_FLAG_KEYS:
@@ -182,11 +183,16 @@ def _handle_toggle(controller, payload: dict) -> None:
 
 def _mqtt_safe_loop_interval(controller, p):
     try:
-        val = float(p.get("interval", 0.33))
-    except (ValueError, TypeError) as e:
+        value = p.get("interval", 0.33)
+        if type(value) is bool:
+            raise ValueError("Loop interval must be a finite number")
+        val = float(value)
+        if not math.isfinite(val):
+            raise ValueError("Loop interval must be a finite number")
+        controller.set_loop_interval(val)
+    except (ValueError, TypeError, OverflowError) as e:
         logger.warning("MQTT loop_interval rejected: %s", e)
         return
-    controller.set_loop_interval(val)
 
 
 def _mqtt_select_ess_mode(controller, bridge, payload):
@@ -243,11 +249,14 @@ def _mqtt_setpoint_override(controller, payload):
 
 def _mqtt_safe_setpoint(controller, p):
     try:
-        val = int(p.get("value", 0))
-    except (ValueError, TypeError) as e:
+        value = p.get("value", 0)
+        if type(value) is bool or (type(value) is float and not value.is_integer()):
+            raise ValueError("Setpoint must be an integer")
+        val = int(value)
+        controller.set_manual_setpoint(val)
+    except (ValueError, TypeError, OverflowError) as e:
         logger.warning("MQTT setpoint rejected: %s", e)
         return
-    controller.set_manual_setpoint(val)
 
 
 def _mqtt_electricity_tariff(controller, bridge, payload):

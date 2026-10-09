@@ -4,7 +4,10 @@ Inverter Control can change physical inverter and auxiliary-device operation.
 Report security defects privately, including issues that can cause unauthorized
 control, unsafe command replay, credential exposure, or loss of availability.
 The [security design](docs/security-design.md) describes the trust boundaries,
-deployment requirements, and limitations of the current implementation.
+deployment requirements, and limitations of the current implementation. The
+[security assurance map](docs/security-assurance.md) connects requirements to
+implementation and tests; [credential handling](docs/credentials.md) explains
+provisioning, rotation, and recovery.
 
 ## Supported versions
 
@@ -72,7 +75,9 @@ mitigation.
 For a confirmed issue, maintainers add a regression test where feasible, run the
 relevant analysis and release checks, and coordinate publication of the fix and
 advisory with the reporter. A public advisory describes affected and fixed
-versions, impact, mitigations, and credits when the reporter agrees. Release
+versions, impact, mitigations, and credit for every reporter unless that reporter
+requests anonymity. Confirm the preferred public name or anonymous treatment
+during coordination; do not publish a reporter's private identity or contact details. Release
 notes identify publicly known runtime vulnerabilities fixed by the release,
 including CVE/GHSA identifiers when assigned, and explain required operator
 action. Credential exposure requires revocation/rotation; deleting a file or a
@@ -96,6 +101,11 @@ commit alone does not invalidate a secret.
   trusted by the device. HTTP is supported for local deployments but transmits
   its bearer token without encryption. Use a dedicated account with only the
   access needed for the configured entities. Do not disable certificate checks.
+- Store the Home Assistant bearer token separately using `HA_TOKEN_FILE`, following
+  [credential handling](docs/credentials.md). Keep the token file private and
+  rotate it without rebuilding the software; restart the daemon to load the
+  replacement. Inline `HA_TOKEN` remains a legacy compatibility path and must
+  receive the same protection.
 - Store private configuration in `local_config.py`, normally under
   `/data/setupOptions/inverter-control/`, with a protected deployed copy under
   `/data/inverter-control/`. Both the file and its parent directories must be

@@ -1,0 +1,88 @@
+{
+  "defect": "Explicitly selected plan or policy FIFO blocks the read-only release verification CLI waiting for a writer; the same unbounded input read also accepts arbitrarily large regular control files.",
+  "source_before": "8b22794ef86f44fc4bc974a09a728a252fc13a98",
+  "source_before_url": "https://github.com/victron-venus/inverter-control/commit/8b22794ef86f44fc4bc974a09a728a252fc13a98",
+  "original_local_source_after": "3aa9e43e9cae3bbe1429acbb7635fee5aa3752c0",
+  "public_source_after": "eea722dad929545084e78738fbf8ecab5ccf6b54",
+  "public_source_after_url": "https://github.com/victron-venus/inverter-control/commit/eea722dad929545084e78738fbf8ecab5ccf6b54",
+  "equivalent_current_source": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "script_path": "scripts/release_signatures.py",
+  "script_before_sha256": "f7bb8ee5c61e8ba8a60c7d2e1807ed3bbfde38a90c7bf1e54251ac9a205ab4dc",
+  "script_after_sha256": "ed62ef05e143cab3dfad28f9e2628ab9fa86386f15a96b7e9971db2e45f7f699",
+  "tests_path": "tests/test_release_signatures.py",
+  "tests_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a",
+  "method": "Execute the actual Python CLI in subprocesses against private temporary assets. Reuse assets and build_documents fixtures, including real version_plan.create_plan/sync_versions and a real receipt. os.mkfifo creates an explicit control path with no writer. Bound each before/after process to one second. Both revisions receive the same valid external-file positive control and the same FIFO as --plan or --policy. The original source was loaded from 8b22794; the original after experiment used local 3aa9e43, whose script and test bytes match public eea722d and the reviewed source.",
+  "command_shape": "<python> <revision-specific release_signatures.py> verify-build <private assets> --plan <private plan or FIFO> --policy <private policy or FIFO>",
+  "scope": "A local CLI robustness defect, not an HTTP path traversal. Explicit trusted files outside the checkout and symlink aliases to regular files remain accepted. This does not test elevated privileges, a running service, or production release publication.",
+  "original_evidence": {
+    "file": "security-sonar308-cli-proof.json",
+    "sha256": "47c1ec8d0f883883e72cbfe3703c6e162e340c1d9e48a30f8105b7bc09fabeb2",
+    "reproducer": "security-sonar308-cli-proof.py",
+    "reproducer_sha256": "492c73f9478854244c78c54c95fb63574bb5981ad4ee2d724b5b508342580c8b"
+  },
+  "results": [
+    {
+      "source": "before8b22794",
+      "input": "explicit-valid-external-files",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 0.042,
+      "stderr_last_line": ""
+    },
+    {
+      "source": "before8b22794",
+      "input": "--plan",
+      "timed_out": true,
+      "seconds": 1.005
+    },
+    {
+      "source": "before8b22794",
+      "input": "--policy",
+      "timed_out": true,
+      "seconds": 1.007
+    },
+    {
+      "source": "after",
+      "input": "explicit-valid-external-files",
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 0.045,
+      "stderr_last_line": ""
+    },
+    {
+      "source": "after",
+      "input": "--plan",
+      "exit_code": 1,
+      "timed_out": false,
+      "seconds": 0.041,
+      "stderr_last_line": "ValueError: Release control document must be a regular file"
+    },
+    {
+      "source": "after",
+      "input": "--policy",
+      "exit_code": 1,
+      "timed_out": false,
+      "seconds": 0.042,
+      "stderr_last_line": "ValueError: Release control document must be a regular file"
+    }
+  ],
+  "automated_regression_tests": [
+    "tests/test_release_signatures.py::test_build_cli_rejects_fifo_without_waiting_for_writer[--plan]",
+    "tests/test_release_signatures.py::test_build_cli_rejects_fifo_without_waiting_for_writer[--policy]"
+  ],
+  "additional_tests": [
+    "tests/test_release_signatures.py::test_control_document_size_limit_counts_bytes_and_keeps_exact_boundary",
+    "tests/test_release_signatures.py::test_control_document_rejects_directory"
+  ],
+  "current_targeted_validation": {
+    "source": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+    "result": "47 passed",
+    "suites": [
+      "tests/test_release_signatures.py",
+      "tests/test_runtime_regressions.py"
+    ],
+    "junit_sha256": "d95cad07635f5a00a941934762fb0123bd942b7590be61495753406855343b67"
+  },
+  "counting": "The plan/policy FIFO and size/type checks concern one control-input issue in a newly introduced feature. No historical defect or regression credit is assigned; discovery after an intermediate review does not create an exception to the new-feature exclusion.",
+  "classification": "Validation of a new Silver feature; excluded from both the historical defect denominator and regression numerator."
+}

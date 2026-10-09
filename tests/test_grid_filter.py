@@ -175,7 +175,7 @@ class TestControllerWiring:
             patch(f"{_MOD}.get_victron") as mock_get_victron,
             patch(f"{_MOD}.get_ha"),
             patch(f"{_MOD}.ConsoleUI"),
-            patch(f"{_MOD}.SetpointCalculator") as mock_calc_cls,
+            patch(f"{_MOD}.SetpointCalculator"),
             patch("inverter_control.config.get_ui_config", return_value={}),
             patch(f"{_MOD}.DRY_RUN", False),
             patch(f"{_MOD}.DVCC_ENABLED", False),

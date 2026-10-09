@@ -1,0 +1,9 @@
+misconfigurations:
+  - id: AVD-DS-0026
+    paths:
+      - build-support/tls-armv7/Dockerfile
+    statement: >-
+      This Dockerfile builds and verifies offline dependency artifacts. Its scratch
+      export target is consumed by BuildKit --output type=local, not run as a
+      service, and has no process or health endpoint to probe. Revisit this exception
+      if a runnable image is introduced. All other Dockerfile checks remain enabled.

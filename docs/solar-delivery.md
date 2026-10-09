@@ -58,3 +58,30 @@ The [Venus broker plugin](https://github.com/victronenergy/dbus-flashmq/blob/mas
 reserves `N/<portal>` for its own notifications and denies external publishers.
 A MQTT 3.1.1 PUBACK alone does not prove subscriber delivery on that namespace.
 Upgrade both producer and controller before using the new topic pair.
+
+## Forecast input validation and size bounds
+
+Daily forecast summaries are display-only. MQTT accepts a JSON object containing
+`today_kwh`, `tomorrow_kwh`, or both, matching the producer when only one day is
+available. Each present energy value must be a finite nonnegative JSON number;
+booleans, strings, negative values, NaN and infinity are rejected. HTTP
+`/api/v1/forecast` retains its existing requirement for both energy fields.
+
+Optional metadata is validated if present: `date` is a valid `YYYY-MM-DD` date,
+`generated_at` is an ISO datetime containing `T` with at most 64 characters,
+and `site_id` is nonempty printable text with at most 256 characters. Unknown
+extension fields are ignored and not stored. A rejected summary preserves the
+last accepted forecast. These fields do not authorize a pre-charge operation.
+
+Inbound MQTT messages are limited to 4096 **encoded bytes**, covering commands,
+forecast summaries, acknowledgements, and pre-charge requests. The existing
+`electricity_tariff` command retains its separate 100000-byte limit. This is
+far larger than the current fixed-field daily summary or control command;
+clients must remove bulk or unrelated data from those messages. Configure a
+broker packet limit as well: the client-side bound applies after packet receipt.
+
+Migration: valid existing partial MQTT summaries continue to work. Previously
+accepted malformed numbers/metadata and oversized non-tariff payloads are now
+rejected. JSON arrays, null, and scalar JSON values cannot trigger command
+callbacks; legacy plain text remains a bounded `value` field. Retained command
+rejection and pre-charge identity/expiry rules are unchanged.

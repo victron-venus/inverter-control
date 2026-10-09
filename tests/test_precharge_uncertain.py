@@ -46,6 +46,7 @@ def test_enqueue_failure_is_sticky_across_http_mqtt_and_restart(tmp_path):
 
     inbox = PrechargeInbox(path)
     bridge = SimpleNamespace(
+        prefix="inverter",
         forecast_prefix="synthetic/site",
         _callbacks={"pre_charge": callback},
         _disconnect_requested=False,

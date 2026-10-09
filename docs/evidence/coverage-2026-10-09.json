@@ -1,0 +1,474 @@
+{
+  "source_revision": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "measured_checkout_revision": "851b2fafed0ded5baa3bdcfb1c4fbe73158d8d7c",
+  "source_tree_sha": "502cefa7bd13795059b6e5d5af317bcd206e44b5",
+  "date_utc": "2026-10-09",
+  "source_binding": "The successful job checked out refs/pull/308/merge. The GitHub API reports exactly the same complete tree for that merge commit and the PR head; local Git confirms the PR tree identity. Per-file SHA-256 values below are calculated from that committed PR source.",
+  "scope": "All 67 tracked executable Python files, including unimported build/release scripts and the fuzz harness. Excludes test sources, local_config.example.py, and external virtual environments.",
+  "measurement": "coverage.py 7.15.4 via pytest-cov 7.1.0 on CPython 3.12.13 / Linux; namespace discovery enabled; run/report scope identical",
+  "tests": {
+    "total_passed": 2550,
+    "skipped": 2,
+    "warnings": 1,
+    "duration_seconds": 125.86,
+    "warning_scope": "The documented CryptographyDeprecationWarning in tests/test_tls_key_exchange.py:18 for the exact FFDH boundary fixture."
+  },
+  "commands": [
+    "bash scripts/ci.sh",
+    "uv run --no-build --locked pytest tests .github/release-tests .github/workflow-tests --cov=. --cov-report=xml"
+  ],
+  "covered_statements": 10679,
+  "total_statements": 11957,
+  "coverage_percent": 89.31170025926235,
+  "minimum_percent": 81,
+  "github": {
+    "run_id": 37865438945,
+    "run_attempt": 1,
+    "job_id": 113611408753,
+    "job_url": "https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408753",
+    "job_conclusion": "success",
+    "job_started_at": "2026-10-09T00:35:53Z",
+    "job_completed_at": "2026-10-09T00:38:25Z",
+    "artifact_id": 11587922802,
+    "artifact_name": "python-coverage",
+    "artifact_api_digest": "sha256:5bfd55a42a365c282daee2f102473f0760cba9046c0467f6da899e9984458249",
+    "artifact_size_bytes": 29426,
+    "artifact_created_at": "2026-10-09T00:38:22Z"
+  },
+  "report": {
+    "filename": "coverage.xml",
+    "sha256": "5df15f66d081038a19660141f24a124534f49573bd974b926309ad7815d7d3f0",
+    "coverage_version": "7.15.4",
+    "timestamp_milliseconds": 1791506300444,
+    "job_log_sha256": "8d5bd62f54501cec0f0360814352646ee6a6e40900490dd65446358c435059c9"
+  },
+  "configuration": {
+    "pyproject_sha256": "61522da08661323b96985c581ea6ec3262ffeb3364522127f5e9c6bf97222faa",
+    "ci_script_sha256": "c12bf39c53aa8b864afe3a7783acae46afc5b2dbafd8f54a0efe6f32149ba1ff",
+    "source": [
+      "."
+    ],
+    "include_namespace_packages": true,
+    "run_and_report_omit": [
+      "tests/*",
+      ".github/release-tests/*",
+      ".github/workflow-tests/*",
+      ".venv/*",
+      ".venv-ci/*",
+      "local_config.example.py"
+    ]
+  },
+  "validation_note": "One successful hosted invocation ran all three test directories and passed the 81% threshold. Independent parsing found exactly 67 expected source files, no duplicate file/line entries, no test or virtualenv files, and totals identical to the XML root and job log. Counts were not manually edited or inferred from the older local report.",
+  "superseded_local_measurement": {
+    "source_revision": "bd693943a38068e87b42f5195ff5b5943f02162d",
+    "covered_statements": 10642,
+    "total_statements": 11928,
+    "coverage_percent": 89.2186452045607,
+    "total_passed": 2531,
+    "note": "Historical local result before later source edits; replaced for the current claim by the single hosted run above."
+  },
+  "files": [
+    {
+      "path": "__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "statements": 0,
+      "covered": 0
+    },
+    {
+      "path": "fuzz/fuzz_tariff.py",
+      "sha256": "724aa5769f972d841ed61e52c53fa68365affdae08c2be8ac703a6669a677c51",
+      "statements": 24,
+      "covered": 0
+    },
+    {
+      "path": "install.py",
+      "sha256": "bc4879086e862373dffaa74b588f3410e09dd928e7d1ab0b27a7f14bad30f6a5",
+      "statements": 89,
+      "covered": 65
+    },
+    {
+      "path": "inverter_control/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "statements": 0,
+      "covered": 0
+    },
+    {
+      "path": "inverter_control/alert_state.py",
+      "sha256": "1660e67494a42c6152a8565f2b8ec9f8f4a91591a1d8dcf0070f579025ee2522",
+      "statements": 76,
+      "covered": 68
+    },
+    {
+      "path": "inverter_control/background_reader.py",
+      "sha256": "c0787706cfbe61404475b6f6728aa06c19bb15b7c523ff16b695e1d915a5a4cf",
+      "statements": 59,
+      "covered": 59
+    },
+    {
+      "path": "inverter_control/config.py",
+      "sha256": "51e8379f2c27d5f162c9f8b8f3004632cadc3b6dfd313670053a66daf3cd12e2",
+      "statements": 223,
+      "covered": 215
+    },
+    {
+      "path": "inverter_control/console_server.py",
+      "sha256": "d2a2337e5f0fe2737c259adb8c0545ccac1c18d16792c6b106e3d9adb0228425",
+      "statements": 125,
+      "covered": 118
+    },
+    {
+      "path": "inverter_control/console_ui.py",
+      "sha256": "67a034d64331c80ce0ffad7b33d3e889084082067f812eb0a7a321a63d1f30d0",
+      "statements": 103,
+      "covered": 99
+    },
+    {
+      "path": "inverter_control/control_flags.py",
+      "sha256": "95f9624342c66f611fd19aca0577443dc80677b37369d1e9b3c0aa4f790b52e6",
+      "statements": 8,
+      "covered": 8
+    },
+    {
+      "path": "inverter_control/controller.py",
+      "sha256": "c1df2dca76ef51ecb44247326dd37ccd190358f5782f7c7d50881721bab98f0f",
+      "statements": 759,
+      "covered": 667
+    },
+    {
+      "path": "inverter_control/credentials.py",
+      "sha256": "93f9e00138e141df8d2235084a0eacdba15b4ff70ae9a9b27430783c8f1d667d",
+      "statements": 27,
+      "covered": 27
+    },
+    {
+      "path": "inverter_control/dbus.py",
+      "sha256": "64e5f4db3bf19dac7f93e9218e606b5ab90f240bdf3cccfcc097c711bca98c3c",
+      "statements": 103,
+      "covered": 101
+    },
+    {
+      "path": "inverter_control/dbus_native.py",
+      "sha256": "0d56cc82bceba884fc67034f517f7e27070045f9e9db1f0101434de91e9d3dc7",
+      "statements": 770,
+      "covered": 717
+    },
+    {
+      "path": "inverter_control/dvcc.py",
+      "sha256": "0f6288f17a757e2cee64d2a9a207437d79ca5737ec77b50ab27c766d7fe929e7",
+      "statements": 201,
+      "covered": 162
+    },
+    {
+      "path": "inverter_control/ess_modes.py",
+      "sha256": "bb6e349ba4fe21fe00459fba6834663b640a0b587209695ddb9bafb937968831",
+      "statements": 54,
+      "covered": 53
+    },
+    {
+      "path": "inverter_control/evcharger.py",
+      "sha256": "9d1eba8705638c897fe9d4459e0ef365e50616c7ff8a09cda49870276e83b3b5",
+      "statements": 104,
+      "covered": 103
+    },
+    {
+      "path": "inverter_control/forecast_input.py",
+      "sha256": "690ff21b49c6f21251f5390267e2a9f50e1a828c6c5e90eb821aaedc4d706f30",
+      "statements": 39,
+      "covered": 39
+    },
+    {
+      "path": "inverter_control/grid_backup.py",
+      "sha256": "98e05592f343008eb89d94a14839c783fce456d7fe067d190e02a6490fa72250",
+      "statements": 107,
+      "covered": 107
+    },
+    {
+      "path": "inverter_control/grid_energy.py",
+      "sha256": "d1e42005c1d2123f0266e484ccead4f37a0709670c3ab30d947fa48bb09166bf",
+      "statements": 244,
+      "covered": 240
+    },
+    {
+      "path": "inverter_control/grid_filter.py",
+      "sha256": "9d60bf77f3dcae3138c412fe70264817cd4cba0827be6869d756f7c38e4f8e91",
+      "statements": 62,
+      "covered": 62
+    },
+    {
+      "path": "inverter_control/grid_telemetry.py",
+      "sha256": "cc6d551c58ff993787aea65ba84fa64f6c575b36bc7a19be623bb13be5f4f1ea",
+      "statements": 229,
+      "covered": 225
+    },
+    {
+      "path": "inverter_control/homeassistant.py",
+      "sha256": "6e48dbedd157a8e10885d697762ffdf69e5ce63795bda1fc98a9b766bcb7e80e",
+      "statements": 242,
+      "covered": 231
+    },
+    {
+      "path": "inverter_control/log_forwarder.py",
+      "sha256": "c1d95c539a43bc4ff9f36ac864f173b56cbf2f5be809d6451064da7d78f95757",
+      "statements": 240,
+      "covered": 204
+    },
+    {
+      "path": "inverter_control/logic.py",
+      "sha256": "b570d4e78217647a3fdb616b4cd21a022d43436bcf7bfa53a33e346e8fd75cc0",
+      "statements": 235,
+      "covered": 232
+    },
+    {
+      "path": "inverter_control/metrics.py",
+      "sha256": "6fca524cd31a26891466e54ca55510586d4eece68d470901353e8d9ff9a3ead2",
+      "statements": 73,
+      "covered": 67
+    },
+    {
+      "path": "inverter_control/mqtt_bridge.py",
+      "sha256": "2e2d3f65771fbe9ebdb4283a92649a4a16b366d24646e5de0597164795313d32",
+      "statements": 332,
+      "covered": 301
+    },
+    {
+      "path": "inverter_control/precharge.py",
+      "sha256": "46378ab6320c3259a00faa1ec7e49c67c94971dd195554ccf8556b1f99fb8572",
+      "statements": 104,
+      "covered": 102
+    },
+    {
+      "path": "inverter_control/prom_metrics.py",
+      "sha256": "8346f84a12ebcde72e2ddb3bc80505aa09f73088f8355d9b428d1038816fedf5",
+      "statements": 137,
+      "covered": 136
+    },
+    {
+      "path": "inverter_control/requests_tls.py",
+      "sha256": "a7ffd37b932cb59b12ade08cc4f4937bda67e67eb1517a7ec93e34800ca2e1fd",
+      "statements": 55,
+      "covered": 50
+    },
+    {
+      "path": "inverter_control/submeter_trim.py",
+      "sha256": "bee7527101f88e960a820af822844df0695d6eaaa039faea122fdcc031ce9313",
+      "statements": 274,
+      "covered": 267
+    },
+    {
+      "path": "inverter_control/tariff.py",
+      "sha256": "d68de7f2670b107b1122f2fc4bf305c4421b0849eb68a2d2a9fad1dd077fc26f",
+      "statements": 220,
+      "covered": 197
+    },
+    {
+      "path": "inverter_control/tariff_service.py",
+      "sha256": "bc057b85d82797a470511269aa180d37ae8a07810ef386ca16341d41e694eca9",
+      "statements": 44,
+      "covered": 44
+    },
+    {
+      "path": "inverter_control/tls_policy.py",
+      "sha256": "6acfa3d7c07265c90dde6b9df82d71c5c265276463c0bbf9b3ba64444f176f10",
+      "statements": 64,
+      "covered": 62
+    },
+    {
+      "path": "inverter_control/victron.py",
+      "sha256": "4fafaef728e16a1d5cf12ba7b3adfb9b88b3d04a6b62a9a47ef1da2dd0bd8402",
+      "statements": 1677,
+      "covered": 1542
+    },
+    {
+      "path": "inverter_control/victron_parse.py",
+      "sha256": "f31d1460942bc460991bd8b058bf26973b423253f70804a6f08caa2885647fb6",
+      "statements": 42,
+      "covered": 42
+    },
+    {
+      "path": "inverter_control/watchdog.py",
+      "sha256": "a0ae51a962cf5e1cc9a8cfa95ed22bfba651aaa74c2b9b280c7c58d4f0e369ca",
+      "statements": 428,
+      "covered": 414
+    },
+    {
+      "path": "inverter_control/water.py",
+      "sha256": "64409dbc7c4283063fe189174d3eafae7df2f75f69a590d4e1390002477c3fc6",
+      "statements": 49,
+      "covered": 49
+    },
+    {
+      "path": "inverter_control/webhook_server.py",
+      "sha256": "fb64732fbf974157158a262faae6a859cb6189a5d0a8e0d060f5b9eb3b86eb23",
+      "statements": 144,
+      "covered": 141
+    },
+    {
+      "path": "inverter_control/write_diagnostics.py",
+      "sha256": "988e7f931d440580011d8fbc3d7fab27b923ef5ce6bcdca17f6063a746023d52",
+      "statements": 41,
+      "covered": 41
+    },
+    {
+      "path": "main.py",
+      "sha256": "b0928dc1e448bd5cf56dc851854cf234fc9b51daca89a83ab4dbc7d285efe7d9",
+      "statements": 357,
+      "covered": 269
+    },
+    {
+      "path": "scripts/bandit_sarif.py",
+      "sha256": "7a4b1e44d9eb4715674842ec301f42e305594edc38194b569bc5dea635c2ed68",
+      "statements": 46,
+      "covered": 42
+    },
+    {
+      "path": "scripts/build_tls_wheel.py",
+      "sha256": "8714f66c252e227afb382d5214b819ffc719a6fc74008a78bc683e5932624d0e",
+      "statements": 38,
+      "covered": 37
+    },
+    {
+      "path": "scripts/change_scope.py",
+      "sha256": "174e460603f2efe87cf6e5cde1b8682f0a0f2d35c4c129aafe3cde8801299be8",
+      "statements": 160,
+      "covered": 118
+    },
+    {
+      "path": "scripts/check_cffi_sanitizer.py",
+      "sha256": "479b625b72e84ce85af1c18914fe81985200f2b577c099496bb99d723446d68f",
+      "statements": 29,
+      "covered": 27
+    },
+    {
+      "path": "scripts/finalize_tls_bundle.py",
+      "sha256": "b90470f9297e0c3c0547b89cbc6921a4e8326b74fb0033a517262c9715310ae5",
+      "statements": 34,
+      "covered": 33
+    },
+    {
+      "path": "scripts/mock_integration.py",
+      "sha256": "e34ca478b8c6694026096b6c4e00e70bad2769125b5923f0d657841fbdd7fc14",
+      "statements": 37,
+      "covered": 0
+    },
+    {
+      "path": "scripts/package_release.py",
+      "sha256": "3716ae7848309611ba22a68aa8a9bdf6b4ed599b198cf6267e65667bfdc786a5",
+      "statements": 127,
+      "covered": 40
+    },
+    {
+      "path": "scripts/package_tls_bundle.py",
+      "sha256": "2f1612b897ee5922baa0bd00822c429cebefdf49a943280a2031a3f6b69fb2c6",
+      "statements": 29,
+      "covered": 23
+    },
+    {
+      "path": "scripts/prepare_version.py",
+      "sha256": "2111a8ed9ba5979a041d2f3b1c8e93a84ba27dec0aed99305a8fc6f981fece1e",
+      "statements": 211,
+      "covered": 179
+    },
+    {
+      "path": "scripts/regenerate_release.py",
+      "sha256": "ecd28216e9de7a87d791b8d0a25369554331d85e20c0ab389b7ead8d2f6f1827",
+      "statements": 23,
+      "covered": 0
+    },
+    {
+      "path": "scripts/release.py",
+      "sha256": "2584b05d01ef82b48f2ef75dc5d8e649de09df591fc6121097b2388f65a7b4eb",
+      "statements": 187,
+      "covered": 42
+    },
+    {
+      "path": "scripts/release_container_labels.py",
+      "sha256": "8030cb28474e577a97ff9f406acfe75bf6b1d423dc144173667becc0605bec9f",
+      "statements": 35,
+      "covered": 17
+    },
+    {
+      "path": "scripts/release_control.py",
+      "sha256": "cdc1ded1ab86b034280e607ac1677601594af8f40706346ead5a85ba04e3ec7b",
+      "statements": 797,
+      "covered": 729
+    },
+    {
+      "path": "scripts/release_generation_overlay.py",
+      "sha256": "d45e8ef269b7f46bb0f61c4360d893444d5325d1ded5cd10f33c0dc604c562a0",
+      "statements": 60,
+      "covered": 54
+    },
+    {
+      "path": "scripts/release_signatures.py",
+      "sha256": "ed62ef05e143cab3dfad28f9e2628ab9fa86386f15a96b7e9971db2e45f7f699",
+      "statements": 89,
+      "covered": 66
+    },
+    {
+      "path": "scripts/release_signing_overlay.py",
+      "sha256": "b52d5fdcd897cfe26620015b18ac0248063d67bf10f31dbe4e7afd30591617d9",
+      "statements": 33,
+      "covered": 24
+    },
+    {
+      "path": "scripts/release_state.py",
+      "sha256": "d893ce3d2906824f61602fdf76ce9f067b041ecbea79a4642d2ee7f3dc882fc4",
+      "statements": 107,
+      "covered": 107
+    },
+    {
+      "path": "scripts/release_version_adapter.py",
+      "sha256": "2a520b4333d681cfda32437c8f5f00050839dabdcdd29527d1b1346f43fd5792",
+      "statements": 48,
+      "covered": 36
+    },
+    {
+      "path": "scripts/release_versioned.py",
+      "sha256": "c9221e543424a6f052514f628e1f34a4fe51acc3299f26a5ce629c72bd83d697",
+      "statements": 275,
+      "covered": 251
+    },
+    {
+      "path": "scripts/run_bandit.py",
+      "sha256": "132b537577fc375d8e4b2801a1077d98b9d10fc4b719800c4b0ca1bf56d8fe75",
+      "statements": 36,
+      "covered": 31
+    },
+    {
+      "path": "scripts/stage_release_assets.py",
+      "sha256": "cc6d0129d90f2fc200f83534293e723f9cf8764e3946bec1ec524c16f947bb92",
+      "statements": 105,
+      "covered": 94
+    },
+    {
+      "path": "scripts/version_plan.py",
+      "sha256": "b8d2296273a12cb57d6f8e6d28d097363c036ccc38780089e8ae942f250aeee6",
+      "statements": 954,
+      "covered": 930
+    },
+    {
+      "path": "scripts/version_receipt.py",
+      "sha256": "81daa2d38b27a1a0f20c5a9fc1b3751e2b74dfc2d4d5f5c8888b8aeff5003fdb",
+      "statements": 187,
+      "covered": 169
+    },
+    {
+      "path": "scripts/workflow_contracts.py",
+      "sha256": "d3c2a41db5ba8a67464482755c041da8dc481ed2d90604228e6391a010f95a0b",
+      "statements": 104,
+      "covered": 88
+    },
+    {
+      "path": "scripts/write_binary_build_metadata.py",
+      "sha256": "d09d1642bb675b585ab3a69384efb87ff48dc3a37b2c04cadedb693cf5113c41",
+      "statements": 18,
+      "covered": 16
+    },
+    {
+      "path": "scripts/write_web_build_metadata.py",
+      "sha256": "1d962dfedb82feada5a062f2e075e895deb687d79ad982596d915ad6bef668f0",
+      "statements": 24,
+      "covered": 0
+    }
+  ]
+}

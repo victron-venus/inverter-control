@@ -9,6 +9,12 @@ from pathlib import Path
 
 import pytest
 import test_tls_policy as tls_cases
+
+# Accepted test-only deprecation: cryptography 50 deprecates all FFDH APIs.
+# Keep this public loader to independently verify the exact 2047/2048-bit fixtures;
+# changing to ECDHE would remove the finite-field minimum regression. The warning
+# stays visible. When the API is removed, replace only fixture parsing, not the
+# real handshake or no-private-bytes-before-rejection assertions below.
 from cryptography.hazmat.primitives.serialization import load_pem_parameters
 
 chains = tls_cases.chains

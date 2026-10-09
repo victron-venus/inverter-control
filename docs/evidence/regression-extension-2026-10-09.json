@@ -1,0 +1,568 @@
+{
+  "status": "REVIEWED_INTEGRATION_EXTENSION; merge and final CI required before assertion",
+  "baseline_source": "120e3b5ae977975aeb9d080b4216d62f793934fa",
+  "source_end": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "source_end_commit_time": "2026-10-08T17:33:57-07:00",
+  "test_source_revision": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "window_start": "2026-04-09T00:00:00Z",
+  "window_description": "Baseline screens all first-parent history from 2026-04-09T00:00Z to 2026-10-09T00:00Z; this extension includes all net PR305 and Silver changes up to source_end, including integration work after the baseline cutoff. This conservatively covers at least the six months before the October 9 assessment.",
+  "groups": [
+    {
+      "group": "PR305",
+      "source_commit": "356a42490f7c71dcbfde26df685d815abc6ee0e7",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/356a42490f7c71dcbfde26df685d815abc6ee0e7",
+      "review_scope": "Net behavior against baseline120e3b5, not each intermediate development commit",
+      "defects": [
+        {
+          "id": "PR305:1",
+          "failure": "Bandit directory-prefix exclusions omit .github helpers and similarly named production files",
+          "representative_test": "test_directory_exclusions_preserve_ci_and_source_prefixes",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_bandit_discovery.py",
+              "line": 35,
+              "file_sha256": "175c1f21f7936c2805761f7fab2447026c0f32ff14ae38251043c7f7139144f6"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:2",
+          "failure": "Repository-discovered Bandit INI can override the reviewed scan policy",
+          "representative_test": "test_repository_ini_cannot_suppress_findings",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_bandit_discovery.py",
+              "line": 86,
+              "file_sha256": "175c1f21f7936c2805761f7fab2447026c0f32ff14ae38251043c7f7139144f6"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:3",
+          "failure": "Missing generator manifest permits mutable remote action references",
+          "representative_test": "test_mutable_step_action_is_rejected_without_manifest",
+          "additional_regression_tests": [
+            "test_mutable_reusable_workflow_is_rejected_without_manifest",
+            "test_docker_action_requires_content_digest"
+          ],
+          "current_test_locations": [
+            {
+              "path": ".github/workflow-tests/test_action_pins.py",
+              "line": 42,
+              "file_sha256": "6078624f20c10d29ef54c1886f3a99ce2321e53bbe6e99030119250a171133af"
+            },
+            {
+              "path": ".github/workflow-tests/test_action_pins.py",
+              "line": 47,
+              "file_sha256": "6078624f20c10d29ef54c1886f3a99ce2321e53bbe6e99030119250a171133af"
+            },
+            {
+              "path": ".github/workflow-tests/test_action_pins.py",
+              "line": 52,
+              "file_sha256": "6078624f20c10d29ef54c1886f3a99ce2321e53bbe6e99030119250a171133af"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:4",
+          "failure": "Missing generator marker bypasses the generated-workflow contract",
+          "representative_test": "test_generator_marker_is_required_without_manifest",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": ".github/workflow-tests/test_action_pins.py",
+              "line": 59,
+              "file_sha256": "6078624f20c10d29ef54c1886f3a99ce2321e53bbe6e99030119250a171133af"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:5",
+          "failure": "Invalid release notes replace retained evidence or advance publication floor before rejection",
+          "representative_test": "test_candidate_notes_fail_before_evidence_or_publication_floor",
+          "additional_regression_tests": [
+            "test_byte_promotion_notes_fail_before_advancing_rc_floor",
+            "test_invalid_candidate_notes_preserve_existing_evidence"
+          ],
+          "current_test_locations": [
+            {
+              "path": ".github/release-tests/test_versioned_release.py",
+              "line": 1212,
+              "file_sha256": "6f537497836213d045baa3606698db11c20e0bc4a36b248f650c1d0185633ef3"
+            },
+            {
+              "path": ".github/release-tests/test_versioned_release.py",
+              "line": 1231,
+              "file_sha256": "6f537497836213d045baa3606698db11c20e0bc4a36b248f650c1d0185633ef3"
+            },
+            {
+              "path": ".github/release-tests/test_release_control.py",
+              "line": 694,
+              "file_sha256": "f4781e3e0cb91c88d9053261d8a504a87bb924f808079edb4864c787eb53bbfc"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:6",
+          "failure": "Failed archive validation or receipt writing leaves staging output that prevents retry",
+          "representative_test": "test_invalid_archive_does_not_leave_staging_and_can_be_retried",
+          "additional_regression_tests": [
+            "test_failed_receipt_writer_cleans_output_and_allows_retry"
+          ],
+          "current_test_locations": [
+            {
+              "path": ".github/release-tests/test_consumer_versioning.py",
+              "line": 208,
+              "file_sha256": "65925de8c99d87d0bdaf3194d793a12949b2828a54eaa2173920870b279e97f9"
+            },
+            {
+              "path": ".github/release-tests/test_consumer_versioning.py",
+              "line": 242,
+              "file_sha256": "65925de8c99d87d0bdaf3194d793a12949b2828a54eaa2173920870b279e97f9"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:7",
+          "failure": "Valid CRLF release guidance is rejected",
+          "representative_test": "test_crlf_notes_preserve_source_byte_verification",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 98,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:8",
+          "failure": "Fenced example headings can supply release or mandatory guidance sections",
+          "representative_test": "test_fenced_guidance_cannot_satisfy_real_sections",
+          "additional_regression_tests": [
+            "test_fenced_version_headings_do_not_select_or_split_sections"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 549,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            },
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 569,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:9",
+          "failure": "HTML comments can supply invisible release guidance and headings",
+          "representative_test": "test_comment_only_guidance_is_rejected",
+          "additional_regression_tests": [
+            "test_commented_headings_do_not_select_or_split_sections"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 435,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            },
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 457,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:10",
+          "failure": "Empty Markdown containers or separators count as substantive release guidance",
+          "representative_test": "test_empty_markdown_containers_are_not_release_guidance",
+          "additional_regression_tests": [
+            "test_separator_or_subheading_alone_is_not_release_guidance"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 204,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            },
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 273,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:11",
+          "failure": "ATX or Setext appendix boundaries allow unrelated sections to supply release guidance",
+          "representative_test": "test_higher_level_appendix_cannot_supply_version_guidance",
+          "additional_regression_tests": [
+            "test_setext_appendices_cannot_supply_release_guidance"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 392,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            },
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 338,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:12",
+          "failure": "Valid closing hashes on ATX headings prevent release and guidance selection",
+          "representative_test": "test_closing_hashes_select_version_and_required_guidance",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 170,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:13",
+          "failure": "Valid indentation on ATX headings prevents release and guidance selection",
+          "representative_test": "test_indented_version_and_guidance_headings_are_supported",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_notes.py",
+              "line": 318,
+              "file_sha256": "25bf4fc1e1db7559555f3760021ae3cc83b4cd933405cb7583be1b9f68e4c9f0"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:14",
+          "failure": "TOML quoted assignment delimiters are misparsed and block version synchronization",
+          "representative_test": "test_toml_quoted_assignment_keys_preserve_delimiters_and_escapes",
+          "additional_regression_tests": [
+            "test_toml_unrelated_quoted_assignment_keys_do_not_block_version_sync"
+          ],
+          "current_test_locations": [
+            {
+              "path": ".github/release-tests/test_version_plan.py",
+              "line": 406,
+              "file_sha256": "1ce86d399b739a4ef6ac2e47e5b41d22e41e4505adf7a2cbed2c1645755678da"
+            },
+            {
+              "path": ".github/release-tests/test_version_plan.py",
+              "line": 435,
+              "file_sha256": "1ce86d399b739a4ef6ac2e47e5b41d22e41e4505adf7a2cbed2c1645755678da"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "PR305:15",
+          "failure": "TOML closing brackets inside quoted table keys are misparsed",
+          "representative_test": "test_toml_table_delimiters_inside_quoted_keys_are_literal",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": ".github/release-tests/test_version_plan.py",
+              "line": 391,
+              "file_sha256": "1ce86d399b739a4ef6ac2e47e5b41d22e41e4505adf7a2cbed2c1645755678da"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        }
+      ],
+      "original_local_source_commit": "8ba6d083c7f27819e3c198e520edbd004a4b5a99"
+    },
+    {
+      "group": "Silver-runtime",
+      "source_commit": "beff40728838d71efcf9905c41d3381e62a8c407",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/beff40728838d71efcf9905c41d3381e62a8c407",
+      "review_scope": "Net behavior against baseline120e3b5, not each intermediate development commit",
+      "defects": [
+        {
+          "id": "Silver-runtime:1",
+          "failure": "Non-object JSON MQTT commands can trigger callbacks that ignore the payload",
+          "representative_test": "test_non_object_json_cannot_trigger_payload_ignoring_commands",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_mqtt_bridge.py",
+              "line": 442,
+              "file_sha256": "5b5cae7d4735d63ad3101f7d07574bab2faafa7e3214b77de2abd1c581ee1b26"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-runtime:2",
+          "failure": "MQTT command, acknowledgement and forecast payloads lack a byte cap before decoding",
+          "representative_test": "test_mqtt_limit_counts_bytes_before_decoding",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_mqtt_bridge.py",
+              "line": 453,
+              "file_sha256": "5b5cae7d4735d63ad3101f7d07574bab2faafa7e3214b77de2abd1c581ee1b26"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-runtime:3",
+          "failure": "Invalid forecast energy replaces the stored valid summary",
+          "representative_test": "test_invalid_energy_preserves_existing_controller_state",
+          "additional_regression_tests": [
+            "test_invalid_forecast_never_reaches_callback"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_forecast_input.py",
+              "line": 29,
+              "file_sha256": "e7ff7a5a97ae6a456d01344cee9e51f9165f771c55bb5bb3a1c086bfacd7b5cd"
+            },
+            {
+              "path": "tests/test_mqtt_bridge.py",
+              "line": 470,
+              "file_sha256": "5b5cae7d4735d63ad3101f7d07574bab2faafa7e3214b77de2abd1c581ee1b26"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-runtime:4",
+          "failure": "Manual setpoint conversion silently accepts booleans and fractional values",
+          "representative_test": "test_invalid_setpoint_never_reaches_controller",
+          "additional_regression_tests": [],
+          "current_test_locations": [
+            {
+              "path": "tests/test_command_input.py",
+              "line": 15,
+              "file_sha256": "6bd600b8d00f921eaeef75948888c49cc462506ab28f218be624073ef658d6e9"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-runtime:5",
+          "failure": "Loop interval conversion accepts booleans or nonfinite values and mutates the interval",
+          "representative_test": "test_invalid_interval_never_reaches_controller",
+          "additional_regression_tests": [
+            "test_direct_controller_calls_preserve_state_on_invalid_values"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_command_input.py",
+              "line": 31,
+              "file_sha256": "6bd600b8d00f921eaeef75948888c49cc462506ab28f218be624073ef658d6e9"
+            },
+            {
+              "path": "tests/test_command_input.py",
+              "line": 44,
+              "file_sha256": "6bd600b8d00f921eaeef75948888c49cc462506ab28f218be624073ef658d6e9"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-runtime:6",
+          "failure": "Home Assistant entity path fragments can address an unintended HTTP endpoint",
+          "representative_test": "test_invalid_entity_never_sends_http",
+          "additional_regression_tests": [
+            "test_direct_service_path_validation"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_command_input.py",
+              "line": 95,
+              "file_sha256": "6bd600b8d00f921eaeef75948888c49cc462506ab28f218be624073ef658d6e9"
+            },
+            {
+              "path": "tests/test_command_input.py",
+              "line": 136,
+              "file_sha256": "6bd600b8d00f921eaeef75948888c49cc462506ab28f218be624073ef658d6e9"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        }
+      ],
+      "original_local_source_commit": "c35e47e855370a82970f65e17d992d9069c937bf"
+    },
+    {
+      "group": "Silver-coverage",
+      "source_commit": "5cc658a47d6a0a8260492dec29bc0e4ffa567876",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/5cc658a47d6a0a8260492dec29bc0e4ffa567876",
+      "review_scope": "Net behavior against baseline120e3b5, not each intermediate development commit",
+      "defects": [
+        {
+          "id": "Silver-coverage:1",
+          "failure": "Software statement coverage includes test source and omits undiscovered production scripts, giving an incomplete denominator",
+          "representative_test": null,
+          "additional_regression_tests": [],
+          "current_test_locations": [],
+          "evidence_status": "no_regression_credit",
+          "additional_fix_commits": [
+            "74cc52495643ad43f92b1a41c9094accc9ed0a1b"
+          ],
+          "review_note": "The namespace-discovery correction completes the same coverage-denominator defect; it is not counted a second time. Final complete-source CI is pending."
+        }
+      ],
+      "original_local_source_commit": "7958d795636266d086fd5703a011a3e8d88a83f1"
+    },
+    {
+      "group": "Silver-regeneration",
+      "source_commit": "c24bfb6a2d7f6e0177938e3eb8fd21a790b058b6",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/c24bfb6a2d7f6e0177938e3eb8fd21a790b058b6",
+      "review_scope": "Two independently observed wrong outputs of the existing template-regeneration process. The new overlay repairs these outputs; new guard branches are not additional historical bugs.",
+      "defects": [
+        {
+          "id": "Silver-regeneration:1",
+          "failure": "Template regeneration silently downgrades the locally reviewed harden-runner pin in generated workflows",
+          "representative_test": "test_wrapper_restores_templates_on_every_generation",
+          "additional_regression_tests": [
+            "test_overlay_repairs_real_template_drift_and_is_idempotent"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 116,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            },
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 48,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-regeneration:2",
+          "failure": "Template regeneration removes the required source-bound changelog instructions from the generated release runbook",
+          "representative_test": "test_wrapper_restores_templates_on_every_generation",
+          "additional_regression_tests": [
+            "test_release_requirements_cannot_silently_drift"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 116,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            },
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 98,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        }
+      ],
+      "proof": "regression-generation-proof-2026-10-09.json",
+      "original_local_source_commit": "8e97693af82c33568e7acc32e5f14b5597dee3ce"
+    },
+    {
+      "group": "Silver-scanner-configuration",
+      "source_commit": "7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
+      "review_scope": "Dockerfile.dockerignore was already present at120e3b5. The initial exclusion and its corrected nesting are one repair of the same wrong-file classification.",
+      "defects": [
+        {
+          "id": "Silver-scanner-configuration:1",
+          "failure": "Trivy misclassifies Docker ignore-pattern data as Dockerfile source and emits a parser error for the ** pattern",
+          "representative_test": null,
+          "additional_regression_tests": [],
+          "current_test_locations": [],
+          "evidence_status": "no_regression_credit",
+          "review_note": "Real before/after scanner logs verify this correction, but no automated regression test enforces it; no numerator credit."
+        }
+      ],
+      "proof": "regression-trivy-proof-2026-10-09.json",
+      "original_local_source_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b"
+    }
+  ],
+  "summary": {
+    "baseline_defects": 282,
+    "baseline_with_regressions": 148,
+    "additional_defects": 25,
+    "additional_with_regressions": 23,
+    "candidate_defects_conservative_denominator": 307,
+    "defects_with_reviewed_regressions": 171,
+    "defects_without_regression_credit": 136,
+    "conservative_observed_percentage": 55.7003
+  },
+  "exclusions": [
+    "PR305 runtime extraction/refactoring, source typing, ASCII digit preservation (baseline already used ASCII classes), and unchanged receipt validation are not new historical fixes.",
+    "Release-note parser implementation issues introduced and fixed only inside PR305 are not counted separately.",
+    "Silver signing, DESTDIR staging, compiler flags, sanitizer support and native reproducibility are new capabilities; problems found while developing them are not historical fixes.",
+    "HA_TOKEN_FILE is a new credential feature. Its development corrections and authenticated fallback restriction are excluded.",
+    "NO_COLOR and explicit valve text improve accessibility; they are not claimed as repaired historical bugs.",
+    "Style-only E722/F841 corrections and documentation wording are excluded.",
+    "The 55 added native-rejection and change-scope tests in1594a72 are tests of existing behavior, not55 newly fixed production defects.",
+    "Generator policy-mutation rejection is a new guard: the captured real regeneration retained the policy unchanged, so no additional fixed policy-loss bug is asserted.",
+    "The misplaced top-level skip-files setting in1b477cb and its scan.skip-files correction in d207a33 belong to one Trivy classification repair.",
+    "The FIFO/control-input repair in the new Silver release-signature verifier is excluded from both historical counts. Finding it after an intermediate review snapshot does not change its classification as a correction to a new feature. Its before/after proof is retained separately as feature validation."
+  ],
+  "evidence": [
+    "regression-audit-2026-10-09.json",
+    "regression-pr305-proof-2026-10-09.json",
+    "regression-strengthened-proof-2026-10-09.json",
+    "regression-generation-proof-2026-10-09.json",
+    "regression-trivy-proof-2026-10-09.json",
+    "source-bindings-2026-10-09.json"
+  ],
+  "remaining_work": [
+    "Merge the reviewed source and tests, rebind the final source SHA, and confirm final required CI; do not claim a public branch has unmerged tests."
+  ],
+  "validation": {
+    "selected_extension_and_changed_mappings": "84 pytest cases and127 subtests passed; 2379 other cases deselected",
+    "bandit_discovery": "Both real scanner tests passed under Bandit1.9.4; no skip counted as pass",
+    "isolated_module_comparisons": "13 current regression methods fail against the original target module and pass against current source",
+    "reports": [
+      "governance-extension-tests.xml",
+      "governance-pr305-proof.json",
+      "security-ledger-strengthened-tests.xml",
+      "governance-generation-tests.xml",
+      "governance-generation-proof.json",
+      "integration-trivy-config.log",
+      "integration-trivy-config-final.log",
+      "security-sonar308-cli-proof.json",
+      "governance-pr308-final-mapping-tests.xml"
+    ],
+    "subsequent_review": "15 release-regeneration cases passed; isolated old/current wrapper execution confirms pin and notes output repairs separately. Scanner logs provide no automated regression credit.",
+    "new_feature_control_input": "Separate, uncredited new-feature validation: the original release-signature CLI timed out on both FIFO options; the fixed CLI rejects both promptly, and both accept valid external files. Current runtime-regression and release-signature suites pass47cases; full current CI remains required."
+  },
+  "previous_reviewed_snapshot": {
+    "original_local_revision": "1594a724c7f46120569891f5afdb356463c27427",
+    "public_equivalent_revision": "c16141db3ab1f52767cbdcb38bc278b9999f2314"
+  },
+  "public_source_bindings": "source-bindings-2026-10-09.json",
+  "new_feature_validation": [
+    {
+      "feature": "Silver release-signature verifier",
+      "proof": "regression-control-input-proof-2026-10-09.json",
+      "historical_defect_credit": false,
+      "historical_regression_credit": false
+    }
+  ]
+}

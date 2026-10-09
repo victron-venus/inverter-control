@@ -120,6 +120,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      id-token: write
     with:
       version: ${{ needs.prepare.outputs.version }}
       channel: ${{ needs.prepare.outputs.channel }}

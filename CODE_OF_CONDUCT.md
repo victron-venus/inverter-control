@@ -30,7 +30,11 @@ Examples of unacceptable behavior:
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers. All complaints will be reviewed and
+reported to [the project owner, 4alvit](https://github.com/4alvit), using a
+private contact method listed on that profile. If no private method is
+available, open an issue requesting a private contact channel without posting
+identifying details or allegations. The [governance document](GOVERNANCE.md)
+identifies the accountable role. All complaints will be reviewed and
 investigated and will result in a response that is deemed necessary and
 appropriate to the circumstances.
 

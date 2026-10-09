@@ -137,18 +137,27 @@ class ConsoleUI:
                 loads_parts.append(f"{val}{name}")
         return " ".join(loads_parts)
 
+    @staticmethod
+    def _fmt_water_section(wstate: dict[str, Any]) -> str:
+        """Format the water level and a valve state that also works without color."""
+        level = wstate["water_level"]
+        valve = wstate.get("water_valve")
+        valve_text = "unknown"
+        if valve is not None:
+            valve_text = "open" if valve else "closed"
+        if level is None:
+            level_text = f"{C.YELLOW}--%{C.RESET}"
+        else:
+            color = C.RED if valve else C.YELLOW
+            level_text = f"{color}{int(level)}%{C.RESET}"
+        return f"{level_text} valve={valve_text}"
+
     def _fmt_extra_info(self) -> str:
         parts = []
 
         # Water (dbus-pump via D-Bus; level in %)
         if ENABLE_WATER and self.water is not None:
-            wstate = self.water.read()
-            level = wstate["water_level"]
-            if level is None:
-                parts.append(f"{C.YELLOW}--%{C.RESET}")
-            else:
-                color = C.RED if wstate["water_valve"] else C.YELLOW
-                parts.append(f"{color}{int(level)}%{C.RESET}")
+            parts.append(self._fmt_water_section(self.water.read()))
 
         # Car (D-Bus evcharger reader; not HA)
         if ENABLE_EV and self.evcharger is not None:
@@ -160,7 +169,7 @@ class ConsoleUI:
         elif ENABLE_EV:
             parts.append(f"{C.YELLOW}--%{C.RESET}")
 
-        return "".join(parts)
+        return " ".join(parts)
 
 
 def fmt_appliance_time(t):

@@ -18,11 +18,12 @@ software test does not certify electrical safety or suitability for a site.
 
 ## Documentation and support
 
-- Start here: installation and configuration below; [operations and recovery](docs/venus-os-operations.md).
+- Start here: [equipment-free quick start](docs/quick-start.md), installation and configuration below; [operations and recovery](docs/venus-os-operations.md).
 - Integration: [external interfaces](docs/interfaces.md), [MQTT flags](docs/mqtt-control-flags.md), [ESS modes](docs/ess-mode-selection.md), [solar delivery](docs/solar-delivery.md), [electricity tariffs](docs/electricity-tariffs.md).
 - Control: [algorithm](LOGIC.md), [grid validity and fallback](docs/grid-telemetry-safety.md), [submeter trim](docs/submeter-trim.md), [auxiliary readers](docs/auxiliary-readers.md).
 - Implementation: [architecture](.github/docs/system-architecture.md), [native write isolation](docs/native-write-isolation.md), [timing diagnostics](docs/dbus-write-timing.md), [metrics](docs/prometheus-alerts.md), [logging](docs/log-forwarding.md).
-- Contribute: [contribution policy](CONTRIBUTING.md) and [development/test guide](docs/development.md).
+- Build and verify: [installation and build conventions](docs/build-and-install.md), [release signature verification](docs/release-signatures.md).
+- Contribute: [contribution policy](CONTRIBUTING.md), [development/test guide](docs/development.md), [governance](GOVERNANCE.md), and [one-year roadmap](ROADMAP.md).
 - Security: [private reporting and support policy](SECURITY.md), [security design](docs/security-design.md), [scanner policy](docs/security-scanning.md), [OpenSSF evidence](docs/openssf-evidence.md).
 
 Use [GitHub Issues](https://github.com/victron-venus/inverter-control/issues) for
@@ -81,8 +82,10 @@ chmod 600 local_config.py
 ```
 
 Edit the copy locally. Use a validated HTTPS URL for a remote Home Assistant
-instance, its token, and your actual sensor/switch IDs. Home Assistant is
-optional; the placeholder/empty token disables its integration. EV, water and
+instance and your actual sensor/switch IDs. Prefer a separate private token file
+selected by `HA_TOKEN_FILE`; follow [credential provisioning and rotation](docs/credentials.md).
+Inline `HA_TOKEN` remains available for migration from older configurations.
+Home Assistant is optional; an unconfigured token disables its integration. EV, water and
 PV data can come from independent D-Bus publishers. Set their device instances
 only as needed for your deployment.
 

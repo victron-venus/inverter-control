@@ -94,6 +94,7 @@ def test_http_mqtt_size_boundary_parity(size, expected):
     client = Mock()
     MQTTBridge._on_message(
         SimpleNamespace(
+            prefix="inverter",
             forecast_prefix="synthetic/site",
             _callbacks={"pre_charge": callback},
             _disconnect_requested=False,
@@ -302,7 +303,7 @@ def test_length_requires_ascii_decimal_digits(route, length):
 
 @pytest.mark.parametrize("route", ["pre-charge", "forecast"])
 def test_ascii_decimal_with_ows_and_leading_zeroes_is_valid(route):
-    payload = {**request(), "today_kwh": 1, "tomorrow_kwh": 2}
+    payload = request() if route == "pre-charge" else {"today_kwh": 1, "tomorrow_kwh": 2}
     raw = json.dumps(payload).encode()
     handler, callback, _ = parse_memory_request(
         route, raw, f"Content-Length: \t000{len(raw)} \t\r\n"
