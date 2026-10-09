@@ -1,3 +1,7 @@
 # Shared by the local CLI and GitHub Trivy action, which both run at repository root.
 # All scanners, rules and severities keep their existing configuration.
 ignorefile: .trivyignore.yaml
+# Docker's ignore-pattern file is not Dockerfile source; Trivy 0.74 otherwise
+# misclassifies it and attempts to parse '**' as a Docker instruction.
+skip-files:
+  - build-support/tls-armv7/Dockerfile.dockerignore
