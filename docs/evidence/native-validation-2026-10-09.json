@@ -220,5 +220,10 @@
     "ASan instruments native CFFI on x86_64. Leak detection is disabled for CPython process-lifetime allocations; prebuilt cryptography/OpenSSL wheels are outside its instrumentation scope.",
     "Two equal builds demonstrate repeatability for the recorded pinned environment, paths, epoch and flags, not all toolchains or platforms.",
     "Actions artifacts are CI evidence, not an actual published signed release."
-  ]
+  ],
+  "merged_source_binding": {
+    "merged_source_revision": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "audit": "post-merge-audit-2026-10-09.json",
+    "source_tests_and_configuration_identical": true
+  }
 }

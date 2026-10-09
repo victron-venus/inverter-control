@@ -1,0 +1,153 @@
+{
+  "result": "PASS for the published preview and recipient verification",
+  "verified_at_utc": "2026-10-09T00:54:55.824118+00:00",
+  "source_revision": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+  "release": {
+    "tag_name": "v1.23.5-beta.15",
+    "html_url": "https://github.com/victron-venus/inverter-control/releases/tag/v1.23.5-beta.15",
+    "published_at": "2026-10-09T00:54:01Z",
+    "target_commitish": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "draft": false,
+    "prerelease": true
+  },
+  "run": {
+    "id": 37866464358,
+    "run_attempt": 1,
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "html_url": "https://github.com/victron-venus/inverter-control/actions/runs/37866464358",
+    "created_at": "2026-10-09T00:46:24Z",
+    "updated_at": "2026-10-09T00:54:06Z"
+  },
+  "signing_job": {
+    "id": 113615746096,
+    "name": "build / Sign and verify release payloads",
+    "conclusion": "success",
+    "html_url": "https://github.com/victron-venus/inverter-control/actions/runs/37866464358/job/113615746096",
+    "started_at": "2026-10-09T00:52:04Z",
+    "completed_at": "2026-10-09T00:52:41Z"
+  },
+  "trusted_verification_policy": {
+    "expected_source_sha": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "expected_issuer": "https://token.actions.githubusercontent.com",
+    "expected_identity": "https://github.com/victron-venus/inverter-control/.github/workflows/release-build.yml@refs/heads/main",
+    "expected_repository": "victron-venus/inverter-control",
+    "expected_ref": "refs/heads/main",
+    "source_selection": "Expected source selected from the independently reviewed merged commit before inspecting release metadata",
+    "verifier_git_blob_sha256": "ed62ef05e143cab3dfad28f9e2628ab9fa86386f15a96b7e9971db2e45f7f699",
+    "cosign_version": "v3.1.3",
+    "cosign_sha256": "5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76"
+  },
+  "trusted_verifier_url": "https://github.com/victron-venus/inverter-control/blob/f2ea6e76d301f9e05f3992c5378968cc0b440c24/scripts/release_signatures.py",
+  "verification_guide_url": "https://github.com/victron-venus/inverter-control/blob/f2ea6e76d301f9e05f3992c5378968cc0b440c24/docs/release-signatures.md",
+  "recipient_verification": {
+    "correct_source": {
+      "returncode": 0,
+      "result": "Verified OK"
+    },
+    "wrong_source": {
+      "source_sha": "0000000000000000000000000000000000000000",
+      "returncode": 1,
+      "rejected_by": "Certificate GithubWorkflowSHA mismatch"
+    },
+    "signed_inventory_exact": true,
+    "public_downloads_match_github_asset_digests": true
+  },
+  "actual_signing_certificate": {
+    "issuer": "CN=sigstore-intermediate,O=sigstore.dev",
+    "san": [
+      "https://github.com/victron-venus/inverter-control/.github/workflows/release-build.yml@refs/heads/main"
+    ],
+    "oidc_issuer": "https://token.actions.githubusercontent.com",
+    "trigger": "push",
+    "source_sha": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "workflow_name": "Release pipeline",
+    "repository": "victron-venus/inverter-control",
+    "ref": "refs/heads/main",
+    "valid_from": "2026-10-09T00:52:33+00:00",
+    "valid_until": "2026-10-09T01:02:33+00:00",
+    "sha256_fingerprint": "04d8d671d5ca3ac142e9be5f72cf76870d6b368a12476b581150e66b63359143",
+    "transparency": [
+      {
+        "log_index": "3154144356",
+        "integrated_time": "1791507153"
+      }
+    ]
+  },
+  "signed_payloads": {
+    "inverter-control-1.23.5.tar.gz": "8cf9d9c3f7a71085df1b8abd2388335592558c464069eb6c15be77f3a13831a3",
+    "tls-dependencies-cp312-armv7-1.23.5.tar.gz": "47e34fbf01045e3bfeb2fb160eca772abf436f3019139e8e848012da943d008c"
+  },
+  "downloaded_files": [
+    {
+      "name": "inverter-control-1.23.5.tar.gz",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/inverter-control-1.23.5.tar.gz",
+      "size": 422270,
+      "sha256": "8cf9d9c3f7a71085df1b8abd2388335592558c464069eb6c15be77f3a13831a3",
+      "matches_github_digest": true
+    },
+    {
+      "name": "release-inputs-package.json",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/release-inputs-package.json",
+      "size": 3450,
+      "sha256": "100df5a0e2042933616c1e1d910725214ed6e9a3c9ad0f5d864e8165c27ddab9",
+      "matches_github_digest": true
+    },
+    {
+      "name": "release-inputs-signature.json",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/release-inputs-signature.json",
+      "size": 2364,
+      "sha256": "dea77b5872178f05a1ecc8facd30dcf4f6db4df91a748c15f4cc9a9508c91718",
+      "matches_github_digest": true
+    },
+    {
+      "name": "release-manifest.json",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/release-manifest.json",
+      "size": 5159,
+      "sha256": "cbed2b1eb494899a1891e43e5dfdd779c597df25bcc1ec35fc9e72e26ec325b2",
+      "matches_github_digest": true
+    },
+    {
+      "name": "SHA256SUMS",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/SHA256SUMS",
+      "size": 206,
+      "sha256": "109d6225367552b405ec72741f4576000154b1f0c3f15986f08c37aa62361be4",
+      "matches_github_digest": true
+    },
+    {
+      "name": "SHA256SUMS.sigstore.json",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/SHA256SUMS.sigstore.json",
+      "size": 10547,
+      "sha256": "f2a91dbe7ab608ec202cb966acd9dfd8f83e7315074e6dd2eaf08a02ec181449",
+      "matches_github_digest": true
+    },
+    {
+      "name": "tls-dependencies-cp312-armv7-1.23.5.tar.gz",
+      "url": "https://github.com/victron-venus/inverter-control/releases/download/v1.23.5-beta.15/tls-dependencies-cp312-armv7-1.23.5.tar.gz",
+      "size": 5324650,
+      "sha256": "47e34fbf01045e3bfeb2fb160eca772abf436f3019139e8e848012da943d008c",
+      "matches_github_digest": true
+    }
+  ],
+  "scope": "The signature authenticates SHA256SUMS, whose exact two entries authenticate the source and ARMv7 payload archives. Auxiliary release-inputs receipts and release-manifest.json are not covered by this signed inventory. GitHub asset digests were also checked but are not a replacement for the independent publisher-signature verification.",
+  "openssf_assessment": {
+    "signed_releases_status": "Unmet",
+    "criterion_url": "https://www.bestpractices.dev/en/criteria/1?details=true&rationale=true#signed_releases",
+    "explicit_requirement_summary": "Cryptographic signatures are required for releases intended for widespread use, with documented verification and protected signing keys.",
+    "project_assessment": "This published preview verifies the new mechanism. The project still directs stable use to unsigned v1.23.4 and treats beta/RC as previews. We conservatively retain Unmet until a signed stable release completes the documented exact-RC acceptance and independent downloaded-artifact verification.",
+    "interpretation_limit": "OpenSSF does not literally require the word stable, nor does a beta/RC label itself determine compliance. This is a conservative assessment of this project's current release practice, not an additional official OpenSSF requirement or a demand to retroactively sign all history.",
+    "current_stable": {
+      "tag": "v1.23.4",
+      "url": "https://github.com/victron-venus/inverter-control/releases/tag/v1.23.4",
+      "published_at": "2026-10-03T11:43:24Z",
+      "assets": [
+        "inverter-control-1.23.4.tar.gz",
+        "release-inputs-package.json",
+        "release-manifest.json",
+        "SHA256SUMS"
+      ]
+    }
+  }
+}

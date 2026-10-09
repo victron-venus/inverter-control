@@ -1,5 +1,5 @@
 {
-  "status": "REVIEWED_INTEGRATION_EXTENSION; merge and final CI required before assertion",
+  "status": "REVIEWED_MERGED_EXTENSION; source binding and final PR CI verified",
   "baseline_source": "120e3b5ae977975aeb9d080b4216d62f793934fa",
   "source_end": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
   "source_end_commit_time": "2026-10-08T17:33:57-07:00",
@@ -424,7 +424,7 @@
           "additional_fix_commits": [
             "74cc52495643ad43f92b1a41c9094accc9ed0a1b"
           ],
-          "review_note": "The namespace-discovery correction completes the same coverage-denominator defect; it is not counted a second time. Final complete-source CI is pending."
+          "review_note": "The namespace-discovery correction completes the same coverage-denominator defect; it is not counted a second time. The hosted complete-source CI passed; see coverage-2026-10-09.json."
         }
       ],
       "original_local_source_commit": "7958d795636266d086fd5703a011a3e8d88a83f1"
@@ -531,9 +531,7 @@
     "regression-trivy-proof-2026-10-09.json",
     "source-bindings-2026-10-09.json"
   ],
-  "remaining_work": [
-    "Merge the reviewed source and tests, rebind the final source SHA, and confirm final required CI; do not claim a public branch has unmerged tests."
-  ],
+  "remaining_work": [],
   "validation": {
     "selected_extension_and_changed_mappings": "84 pytest cases and127 subtests passed; 2379 other cases deselected",
     "bandit_discovery": "Both real scanner tests passed under Bandit1.9.4; no skip counted as pass",
@@ -550,7 +548,7 @@
       "governance-pr308-final-mapping-tests.xml"
     ],
     "subsequent_review": "15 release-regeneration cases passed; isolated old/current wrapper execution confirms pin and notes output repairs separately. Scanner logs provide no automated regression credit.",
-    "new_feature_control_input": "Separate, uncredited new-feature validation: the original release-signature CLI timed out on both FIFO options; the fixed CLI rejects both promptly, and both accept valid external files. Current runtime-regression and release-signature suites pass47cases; full current CI remains required."
+    "new_feature_control_input": "Separate, uncredited new-feature validation: the original release-signature CLI timed out on both FIFO options; the fixed CLI rejects both promptly, and both accept valid external files. Current runtime-regression and release-signature suites pass47cases; the hosted complete-source CI subsequently passed."
   },
   "previous_reviewed_snapshot": {
     "original_local_revision": "1594a724c7f46120569891f5afdb356463c27427",
@@ -564,5 +562,10 @@
       "historical_defect_credit": false,
       "historical_regression_credit": false
     }
-  ]
+  ],
+  "merged_source_binding": {
+    "merged_source_revision": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "audit": "post-merge-audit-2026-10-09.json",
+    "source_tests_and_configuration_identical": true
+  }
 }
