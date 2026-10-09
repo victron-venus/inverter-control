@@ -5,8 +5,9 @@ The baseline covers the UTC interval from 2026-04-09 through 2026-10-08 at
 `120e3b5ae977975aeb9d080b4216d62f793934fa`. The
 [integration extension](evidence/regression-extension-2026-10-09.json) records
 PR305 and Silver changes through its exact `source_end` revision. These are
-dated results. Before a badge assertion, confirm that this source and its mapped
-tests have merged and that the final required checks passed.
+dated results. The [post-merge audit](evidence/post-merge-audit-2026-10-09.json)
+binds the reviewed source and tests to merged PR308 and its successful final
+CI gate. Refresh that binding when subsequent source changes are assessed.
 
 The [baseline inventory](evidence/regression-audit-2026-10-09.json) screens all
 475 first-parent commits. It contains 282 separately identified repair
@@ -118,8 +119,8 @@ The initial misplaced exclusion and corrected nesting count as one repair.
 The expanded namespace-aware coverage measurement completes the already-counted
 coverage-denominator fix; it does not create a second defect entry. The 55 new
 native-rejection and change-scope tests protect existing behavior and are not
-counted as 55 new bugs. Complete-source CI and the final merged-source binding
-remain required before a badge assertion.
+counted as 55 new bugs. The complete-source CI passed and the final merged-source
+binding is recorded in the post-merge audit.
 
 ## Public source binding and separate new-feature validation
 
@@ -128,7 +129,8 @@ original local experiments to reachable public commits after rebasing onto
 merged PR305. The compared trees have identical source, tests and configuration;
 only the listed evidence-document difference, if any, remains. Original proof
 inputs are retained alongside their public equivalents. The latest mapped test
-source is `73dc560275dbc4b1c7cba039427e1f1b6c9824f6`.
+source is `73dc560275dbc4b1c7cba039427e1f1b6c9824f6`; the same source, tests and
+configuration are merged at `f2ea6e76d301f9e05f3992c5378968cc0b440c24`.
 
 The [control-input comparison](evidence/regression-control-input-proof-2026-10-09.json)
 reproduces a blocking FIFO read in the earlier reviewed release-verification CLI.
@@ -142,5 +144,5 @@ new-feature exclusion. The historical count remains 171/307.
 
 The source and mapped-test refresh also retains the log-write calls outside
 assertions in the runtime regressions. All 47 cases in the current runtime and
-release-signature suites pass. A final complete CI result and the merged source
-identity remain required before asserting this extended result for the badge.
+release-signature suites pass. The later complete hosted CI passed 2,550 cases;
+the post-merge audit verifies the measured and merged source binding.

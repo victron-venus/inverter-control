@@ -37,6 +37,25 @@ This index should be updated when the application, release process, or security
 boundaries change. Do not publish private report contents or credentials as
 evidence.
 
+## Merged source and current findings
+
+[PR #308](https://github.com/victron-venus/inverter-control/pull/308) merged on
+2026-10-09 at 00:46 UTC as `f2ea6e76d301f9e05f3992c5378968cc0b440c24`.
+The [post-merge audit](evidence/post-merge-audit-2026-10-09.json) confirms that its
+production source, tests and build configuration are identical to the measured
+PR source `73dc560275dbc4b1c7cba039427e1f1b6c9824f6`; only evidence documents
+and assessment metadata differ. The final PR CI gate also passed. This binds the
+recorded coverage, native checks and regression mappings to the merged source.
+
+The current default-branch inventory contains **one open finding**:
+[Scorecard #5](https://github.com/victron-venus/inverter-control/security/code-scanning/5),
+`BranchProtectionID`, score 8 because `main` requires one approving review.
+That is the retained review policy; the warning remains open. The same dated
+audit returned zero open Dependabot alerts, repository security advisories and
+open secret-scanning alerts. These are reported inventories, not proof that
+undiscovered vulnerabilities or credentials cannot exist. Historical snapshots
+below retain their original dates and counts.
+
 ## Project, license, and participation
 
 The following criteria have public evidence supporting **Met**:
@@ -155,8 +174,9 @@ The following criteria have evidence supporting **Met**:
   vulnerability-analysis requirement independently of hosted tools.
 - `static_analysis_fixed`: recent remediation and the published release provide
   evidence that confirmed problems are fixed. At the baseline, no open CodeQL,
-  Bandit, or Trivy alerts remained. The two open Scorecard findings concern the
-  badge and review governance; they are not runtime CVEs. Recheck current
+  Bandit, or Trivy alerts remained. The 2026-10-08 snapshot had two open Scorecard
+  findings concerning the badge and review governance. The post-merge inventory
+  above records the current single open warning. Recheck current
   [code scanning](https://github.com/victron-venus/inverter-control/security/code-scanning)
   before submitting or renewing the assessment.
 - `dynamic_analysis`, `dynamic_analysis_enable_assertions`: the

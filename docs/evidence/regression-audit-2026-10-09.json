@@ -2,7 +2,7 @@
   "source_sha": "120e3b5ae977975aeb9d080b4216d62f793934fa",
   "window_start": "2026-04-09T00:00:00Z",
   "window_end_exclusive": "2026-10-09T00:00:00Z",
-  "status": "BASELINE_REVIEW_COMPLETE; proposed new tests require public merge before badge assertion",
+  "status": "BASELINE_REVIEW_COMPLETE; mapped regressions merged in PR308",
   "method": "Screen every first-parent commit in the UTC window, then inspect messages and source/test changes for repair candidates, including extensionless service/setup files and mixed feature PRs. Count separately identifiable failure conditions, not PRs or test function counts. Exclude feature introductions, style-only changes, dependency-only maintenance without identified defects, and documented duplicates. Count uncertain historical repair candidates and all unproved test mappings only in the denominator. A mapped regression must exercise the described failure trigger; coverage percentage and mere test-file changes provide no credit. Later-added meaningful regressions count only after their merge.",
   "summary": {
     "screened_first_parent_commits": 475,
@@ -25,9 +25,7 @@
     "governance-historical-regression-proof.json",
     "governance-additional-regression-proof.json"
   ],
-  "remaining_work": [
-    "Publish reviewed test additions and extension, bind final merged SHA, and confirm required CI before badge submission."
-  ],
+  "remaining_work": [],
   "work_items": [
     {
       "source_commit": "120e3b5ae977975aeb9d080b4216d62f793934fa",
@@ -5339,7 +5337,7 @@
   "coverage_limitations": [
     "The denominator deliberately includes uncertain legacy repair candidates without credit; this is a source-history audit estimate, not a proof that an unreported defect never existed.",
     "Individual tests can cover several distinct failure conditions, but duplicate repairs are counted once.",
-    "Publicly applying the new regressions and extending this dated snapshot to PR305 and the final Silver merge are required before attesting the rolling window.",
+    "The reviewed regressions and PR305/Silver extension are merged at the recorded source. Refresh this dated inventory for later changes before asserting a later rolling window.",
     "No claim is made that unit or mock testing certifies physical equipment."
   ],
   "validation": {
@@ -8772,5 +8770,10 @@
     }
   ],
   "original_test_source_revision": "88587117ee544f7deb524ef47387e4037fcb2450",
-  "public_source_bindings": "source-bindings-2026-10-09.json"
+  "public_source_bindings": "source-bindings-2026-10-09.json",
+  "merged_source_binding": {
+    "merged_source_revision": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "audit": "post-merge-audit-2026-10-09.json",
+    "source_tests_and_configuration_identical": true
+  }
 }

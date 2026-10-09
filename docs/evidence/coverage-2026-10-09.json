@@ -470,5 +470,10 @@
       "statements": 24,
       "covered": 0
     }
-  ]
+  ],
+  "merged_source_binding": {
+    "merged_source_revision": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+    "audit": "post-merge-audit-2026-10-09.json",
+    "source_tests_and_configuration_identical": true
+  }
 }

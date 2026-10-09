@@ -1,0 +1,64 @@
+{
+  "observed_at_utc": "2026-10-09T00:48:31.616516+00:00",
+  "merged_source_revision": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+  "merged_source_url": "https://github.com/victron-venus/inverter-control/commit/f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+  "pull_request": {
+    "number": 308,
+    "url": "https://github.com/victron-venus/inverter-control/pull/308",
+    "state": "MERGED",
+    "merged_at": "2026-10-09T00:46:20Z",
+    "final_pr_head": "7cad6cddf01d539e7e87bba40a9a1216bb6189c4",
+    "final_ci_gate_url": "https://github.com/victron-venus/inverter-control/actions/runs/37865975450/job/113614063466",
+    "final_ci_gate_conclusion": "success",
+    "final_pr_tree_equals_merged": true,
+    "merged_tree_sha": "42a0a888cbbeccad79ff2a9c975c9e6bac0f2d73"
+  },
+  "source_equivalence": {
+    "measured_pr_source": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+    "measured_checkout_revision": "851b2fafed0ded5baa3bdcfb1c4fbe73158d8d7c",
+    "comparison": "git diff --name-only MEASURED_PR_SOURCE MERGED_SOURCE",
+    "changed_paths": [
+      ".bestpractices.json",
+      "docs/evidence/coverage-2026-10-09.json",
+      "docs/evidence/native-validation-2026-10-09.json",
+      "docs/evidence/regression-audit-2026-10-09.json",
+      "docs/evidence/regression-control-input-proof-2026-10-09.json",
+      "docs/evidence/regression-extension-2026-10-09.json",
+      "docs/evidence/regression-generation-proof-2026-10-09.json",
+      "docs/evidence/regression-pr305-proof-2026-10-09.json",
+      "docs/evidence/regression-trivy-proof-2026-10-09.json",
+      "docs/evidence/source-bindings-2026-10-09.json",
+      "docs/openssf-evidence.md",
+      "docs/quality-process.md",
+      "docs/regression-audit.md"
+    ],
+    "all_changes_are_evidence_or_documentation": true,
+    "production_tests_and_build_configuration_identical": true,
+    "coverage_file_hashes_verified": 67,
+    "native_source_file_hashes_verified": 6,
+    "coverage_evidence": "coverage-2026-10-09.json",
+    "native_evidence": "native-validation-2026-10-09.json"
+  },
+  "security_inventories": {
+    "method": "Authenticated GitHub REST queries, fully paginated; code-scanning inventory explicitly restricted to refs/heads/main. Advisory and secret data are summarized without publishing private contents.",
+    "default_branch": "main",
+    "code_scanning_open_count": 1,
+    "code_scanning_open": [
+      {
+        "number": 5,
+        "url": "https://github.com/victron-venus/inverter-control/security/code-scanning/5",
+        "tool": "Scorecard",
+        "rule": "BranchProtectionID",
+        "description": "Branch-Protection",
+        "state": "open",
+        "analysis_commit": "f2ea6e76d301f9e05f3992c5378968cc0b440c24",
+        "message": "score is 8: branch protection is not maximal on development and all release branches:\nWarn: required approving review count is 1 on branch 'main'\nClick Remediation section below to solve this issue"
+      }
+    ],
+    "dependabot_open_count": 0,
+    "repository_advisory_count": 0,
+    "secret_scanning_open_count": 0,
+    "interpretation": "Scorecard reports score8 because main requires one approving review. This is the deliberately retained review policy and remains an open governance warning; it is not dismissed or described as a zero-alert result. Empty vulnerability/secret inventories describe only the reported findings at this time, not proof of absence of undiscovered problems."
+  },
+  "release_publication": "No signed-release claim is established by this post-merge audit. Actual publication and independent recipient verification are recorded separately when complete."
+}
