@@ -1,4 +1,8 @@
-"""Private token-file loading and startup selection without network access."""
+"""Private token-file loading and startup selection without network access.
+
+All token strings below are deterministic fake credentials. The narrow B105/B106
+annotations identify fixture comparisons and configuration inputs, never secrets.
+"""
 
 import importlib.util
 import os
@@ -106,17 +110,21 @@ def load_config(monkeypatch, **values):
 
 def test_file_alone_enables_ha_and_preserves_connection_config(monkeypatch, token_file):
     loaded = load_config(monkeypatch, HA_TOKEN_FILE=str(token_file))
-    assert loaded.HA_TOKEN == "fixture.header.signature"
+    assert loaded.HA_TOKEN == "fixture.header.signature"  # nosec B105
     assert loaded.HA_URL == "https://ha.example.invalid"
     assert loaded.ENABLE_HA
 
 
 def test_selected_file_overrides_inline_and_does_not_fall_back(monkeypatch, token_file):
-    loaded = load_config(monkeypatch, HA_TOKEN_FILE=str(token_file), HA_TOKEN="old-inline")
-    assert loaded.HA_TOKEN == "fixture.header.signature"
+    loaded = load_config(  # nosec B106
+        monkeypatch, HA_TOKEN_FILE=str(token_file), HA_TOKEN="old-inline"
+    )
+    assert loaded.HA_TOKEN == "fixture.header.signature"  # nosec B105
     token_file.unlink()
     with pytest.raises(ValueError, match="cannot be opened"):
-        load_config(monkeypatch, HA_TOKEN_FILE=str(token_file), HA_TOKEN="old-inline")
+        load_config(  # nosec B106
+            monkeypatch, HA_TOKEN_FILE=str(token_file), HA_TOKEN="old-inline"
+        )
 
 
 def test_restarting_config_picks_up_atomic_replacement(monkeypatch, token_file):
@@ -125,15 +133,17 @@ def test_restarting_config_picks_up_atomic_replacement(monkeypatch, token_file):
     replacement.write_bytes(b"replacement.header.signature")
     replacement.chmod(0o600)
     replacement.replace(token_file)
-    assert first.HA_TOKEN == "fixture.header.signature"
+    assert first.HA_TOKEN == "fixture.header.signature"  # nosec B105
     assert (
         load_config(monkeypatch, HA_TOKEN_FILE=str(token_file)).HA_TOKEN
-        == "replacement.header.signature"
+        == "replacement.header.signature"  # nosec B105
     )
 
 
 def test_inline_token_remains_supported(monkeypatch):
-    assert load_config(monkeypatch, HA_TOKEN="legacy-inline").HA_TOKEN == "legacy-inline"
+    assert (
+        load_config(monkeypatch, HA_TOKEN="legacy-inline").HA_TOKEN == "legacy-inline"  # nosec B105, B106
+    )
 
 
 @pytest.mark.parametrize("value", ["", "your_token_here", "your_long_lived_access_token_here"])
