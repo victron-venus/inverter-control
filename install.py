@@ -28,6 +28,8 @@ def reject_links(path: Path) -> None:
     for component in (*reversed(path.parents), path):
         if component.is_symlink():
             raise ValueError(f"Staging path must not contain a symlink: {component}")
+        if component.is_file() and component.stat().st_nlink > 1:
+            raise ValueError(f"Staging path must not contain a hardlink: {component}")
 
 
 def staged_package(destdir: str) -> Path:
@@ -46,6 +48,8 @@ def payload_files(source: Path) -> list[Path]:
     files = []
     for item in PAYLOAD:
         path = source / item
+        if path.is_symlink():
+            raise ValueError(f"Package input must not be a symlink: {path}")
         if not path.exists():
             raise ValueError(f"Missing package input: {item}")
         entries = sorted(path.rglob("*")) if path.is_dir() else [path]

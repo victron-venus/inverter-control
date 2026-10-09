@@ -82,3 +82,30 @@ def test_staging_cli_needs_explicit_safe_root(tmp_path):
         [sys.executable, str(REPO / "install.py"), "install"], env=env, capture_output=True
     )  # nosec B603
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize("name", ["main.py", ".installed-files.json"])
+def test_hardlinked_destination_cannot_modify_another_file(tmp_path, name):
+    root = tmp_path / "stage"
+    package = root / "data/inverter-control"
+    package.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.write_text("must remain unchanged")
+    (package / name).hardlink_to(outside)
+    with pytest.raises(ValueError, match="hardlink"):
+        installer.stage(REPO, str(root))
+    assert outside.read_text() == "must remain unchanged"
+    assert not (package / "version").exists()
+
+
+def test_linked_payload_directory_cannot_leak_outside_files(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    outside = tmp_path / "private"
+    outside.mkdir()
+    (outside / "operator-secret.txt").write_text("private fixture")
+    (source / "main.py").write_text("# fixture")
+    (source / "inverter_control").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        installer.stage(source, str(tmp_path / "stage"))
+    assert not (tmp_path / "stage").exists()
