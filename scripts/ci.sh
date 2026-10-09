@@ -22,5 +22,5 @@ fi
 uv sync --no-build --locked --all-extras
 uv run --no-build --locked ruff check .
 uv run --no-build --locked ruff format --check .
-uv run --no-build --locked pytest --cov=. --cov-report=xml
+uv run --no-build --locked pytest tests .github/release-tests .github/workflow-tests --cov=. --cov-report=xml
 
