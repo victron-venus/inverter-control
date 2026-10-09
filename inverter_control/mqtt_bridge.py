@@ -342,7 +342,7 @@ class MQTTBridge:
             return
         try:
             data = validate_forecast(json.loads(payload.decode()))
-        except (TypeError, ValueError, UnicodeError):
+        except (TypeError, ValueError):
             logger.warning("Invalid forecast summary rejected")
             return
         callback = self._callbacks.get("forecast")
