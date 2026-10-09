@@ -2502,8 +2502,8 @@
           "current_test_locations": [
             {
               "path": "tests/test_runtime_regressions.py",
-              "line": 123,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "line": 125,
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -2542,8 +2542,8 @@
           "current_test_locations": [
             {
               "path": "tests/test_runtime_regressions.py",
-              "line": 35,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "line": 37,
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -2627,8 +2627,8 @@
           "current_test_locations": [
             {
               "path": "tests/test_runtime_regressions.py",
-              "line": 84,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "line": 86,
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -2658,7 +2658,7 @@
             {
               "path": "tests/test_runtime_regressions.py",
               "line": 16,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -2779,8 +2779,8 @@
           "current_test_locations": [
             {
               "path": "tests/test_runtime_regressions.py",
-              "line": 95,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "line": 97,
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -3602,7 +3602,7 @@
             {
               "path": "tests/test_runtime_regressions.py",
               "line": 16,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -4028,8 +4028,8 @@
           "current_test_locations": [
             {
               "path": "tests/test_runtime_regressions.py",
-              "line": 175,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "line": 177,
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -4673,8 +4673,8 @@
           "current_test_locations": [
             {
               "path": "tests/test_runtime_regressions.py",
-              "line": 167,
-              "file_sha256": "44cf66adc1478835e6722946d22c4c97e82f20398fae8f5c1a31fd03d4ce820b"
+              "line": 169,
+              "file_sha256": "5a4e33727536a038693ef9273392a22a7a63ae49ae442cb18332c35e56c89e29"
             }
           ],
           "evidence_status": "reviewed_regression_mapping",
@@ -5335,7 +5335,7 @@
       "source_url": "https://github.com/victron-venus/inverter-control/commit/fca2d92a96156a26dbfa3c5b79b53cbd7dcdfac8"
     }
   ],
-  "test_source_revision": "88587117ee544f7deb524ef47387e4037fcb2450",
+  "test_source_revision": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
   "coverage_limitations": [
     "The denominator deliberately includes uncertain legacy repair candidates without credit; this is a source-history audit estimate, not a proof that an unreported defect never existed.",
     "Individual tests can cover several distinct failure conditions, but duplicate repairs are counted once.",
@@ -5351,7 +5351,63 @@
       "governance-additional-ledger-tests.xml",
       "governance-entrypoint-bandit-clean.json"
     ],
-    "strengthened_regressions": "73 tests and15 subtests passed; both independently supplied mutants rejected by the strengthened behavioral assertions."
+    "strengthened_regressions": "73 tests and15 subtests passed; both independently supplied mutants rejected by the strengthened behavioral assertions.",
+    "public_rebinding": {
+      "source": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+      "changed_test_file": "tests/test_runtime_regressions.py",
+      "change": "Assign the two stream.write results before asserting them; assertions and exercised calls retain their order and values. All other mapped test-file hashes remain unchanged.",
+      "current_targeted_run": "47 runtime-regression and release-signature cases passed; this is not a new execution of every historical baseline mapping.",
+      "updated_locations": [
+        {
+          "defect_id": "06be598e:1",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 123,
+          "current_line": 125
+        },
+        {
+          "defect_id": "f0a16fc2:1",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 35,
+          "current_line": 37
+        },
+        {
+          "defect_id": "84b4951c:5",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 84,
+          "current_line": 86
+        },
+        {
+          "defect_id": "deaad098:1",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 16,
+          "current_line": 16
+        },
+        {
+          "defect_id": "6b0e73c2:1",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 95,
+          "current_line": 97
+        },
+        {
+          "defect_id": "9c3fd8f5:2",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 16,
+          "current_line": 16
+        },
+        {
+          "defect_id": "6f8fdde0:2",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 175,
+          "current_line": 177
+        },
+        {
+          "defect_id": "c2e965c6:1",
+          "path": "tests/test_runtime_regressions.py",
+          "original_line": 167,
+          "current_line": 169
+        }
+      ]
+    }
   },
   "screened_commits": [
     {
@@ -8714,5 +8770,7 @@
       "clarified": "287fca9a:3",
       "reason": "The test detects a removed module at import/collection, not a deployed service execution."
     }
-  ]
+  ],
+  "original_test_source_revision": "88587117ee544f7deb524ef47387e4037fcb2450",
+  "public_source_bindings": "source-bindings-2026-10-09.json"
 }

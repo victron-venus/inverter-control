@@ -1,16 +1,16 @@
 {
   "status": "REVIEWED_INTEGRATION_EXTENSION; merge and final CI required before assertion",
   "baseline_source": "120e3b5ae977975aeb9d080b4216d62f793934fa",
-  "source_end": "1594a724c7f46120569891f5afdb356463c27427",
-  "source_end_commit_time": "2026-10-08T17:27:57-07:00",
-  "test_source_revision": "1594a724c7f46120569891f5afdb356463c27427",
+  "source_end": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "source_end_commit_time": "2026-10-08T17:33:57-07:00",
+  "test_source_revision": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
   "window_start": "2026-04-09T00:00:00Z",
   "window_description": "Baseline screens all first-parent history from 2026-04-09T00:00Z to 2026-10-09T00:00Z; this extension includes all net PR305 and Silver changes up to source_end, including integration work after the baseline cutoff. This conservatively covers at least the six months before the October 9 assessment.",
   "groups": [
     {
       "group": "PR305",
-      "source_commit": "8ba6d083c7f27819e3c198e520edbd004a4b5a99",
-      "source_url": "https://github.com/victron-venus/inverter-control/commit/8ba6d083c7f27819e3c198e520edbd004a4b5a99",
+      "source_commit": "356a42490f7c71dcbfde26df685d815abc6ee0e7",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/356a42490f7c71dcbfde26df685d815abc6ee0e7",
       "review_scope": "Net behavior against baseline120e3b5, not each intermediate development commit",
       "defects": [
         {
@@ -291,12 +291,13 @@
           ],
           "evidence_status": "reviewed_regression_mapping"
         }
-      ]
+      ],
+      "original_local_source_commit": "8ba6d083c7f27819e3c198e520edbd004a4b5a99"
     },
     {
       "group": "Silver-runtime",
-      "source_commit": "c35e47e855370a82970f65e17d992d9069c937bf",
-      "source_url": "https://github.com/victron-venus/inverter-control/commit/c35e47e855370a82970f65e17d992d9069c937bf",
+      "source_commit": "beff40728838d71efcf9905c41d3381e62a8c407",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/beff40728838d71efcf9905c41d3381e62a8c407",
       "review_scope": "Net behavior against baseline120e3b5, not each intermediate development commit",
       "defects": [
         {
@@ -404,12 +405,13 @@
           ],
           "evidence_status": "reviewed_regression_mapping"
         }
-      ]
+      ],
+      "original_local_source_commit": "c35e47e855370a82970f65e17d992d9069c937bf"
     },
     {
       "group": "Silver-coverage",
-      "source_commit": "7958d795636266d086fd5703a011a3e8d88a83f1",
-      "source_url": "https://github.com/victron-venus/inverter-control/commit/7958d795636266d086fd5703a011a3e8d88a83f1",
+      "source_commit": "5cc658a47d6a0a8260492dec29bc0e4ffa567876",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/5cc658a47d6a0a8260492dec29bc0e4ffa567876",
       "review_scope": "Net behavior against baseline120e3b5, not each intermediate development commit",
       "defects": [
         {
@@ -424,12 +426,13 @@
           ],
           "review_note": "The namespace-discovery correction completes the same coverage-denominator defect; it is not counted a second time. Final complete-source CI is pending."
         }
-      ]
+      ],
+      "original_local_source_commit": "7958d795636266d086fd5703a011a3e8d88a83f1"
     },
     {
       "group": "Silver-regeneration",
-      "source_commit": "8e97693af82c33568e7acc32e5f14b5597dee3ce",
-      "source_url": "https://github.com/victron-venus/inverter-control/commit/8e97693af82c33568e7acc32e5f14b5597dee3ce",
+      "source_commit": "c24bfb6a2d7f6e0177938e3eb8fd21a790b058b6",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/c24bfb6a2d7f6e0177938e3eb8fd21a790b058b6",
       "review_scope": "Two independently observed wrong outputs of the existing template-regeneration process. The new overlay repairs these outputs; new guard branches are not additional historical bugs.",
       "defects": [
         {
@@ -475,12 +478,13 @@
           "evidence_status": "reviewed_regression_mapping"
         }
       ],
-      "proof": "regression-generation-proof-2026-10-09.json"
+      "proof": "regression-generation-proof-2026-10-09.json",
+      "original_local_source_commit": "8e97693af82c33568e7acc32e5f14b5597dee3ce"
     },
     {
       "group": "Silver-scanner-configuration",
-      "source_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
-      "source_url": "https://github.com/victron-venus/inverter-control/commit/d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
+      "source_commit": "7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
       "review_scope": "Dockerfile.dockerignore was already present at120e3b5. The initial exclusion and its corrected nesting are one repair of the same wrong-file classification.",
       "defects": [
         {
@@ -493,36 +497,76 @@
           "review_note": "Real before/after scanner logs verify this correction, but no automated regression test enforces it; no numerator credit."
         }
       ],
-      "proof": "regression-trivy-proof-2026-10-09.json"
+      "proof": "regression-trivy-proof-2026-10-09.json",
+      "original_local_source_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b"
+    },
+    {
+      "group": "Silver-post-review-control-input",
+      "source_commit": "eea722dad929545084e78738fbf8ecab5ccf6b54",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/eea722dad929545084e78738fbf8ecab5ccf6b54",
+      "review_scope": "The verify-build feature was new in Silver, but this blocking read already exists in the completed earlier review snapshot c16141d (original local1594a72). This addendum conservatively includes one subsequently demonstrated repair. Development corrections made before that initial review remain excluded.",
+      "defects": [
+        {
+          "id": "Silver-post-review-control-input:1",
+          "failure": "Explicitly selected plan or policy FIFO blocks the read-only release verification CLI waiting for a writer; the same unbounded input read also accepts arbitrarily large regular control files.",
+          "representative_test": "test_build_cli_rejects_fifo_without_waiting_for_writer",
+          "additional_regression_tests": [
+            "test_control_document_size_limit_counts_bytes_and_keeps_exact_boundary",
+            "test_control_document_rejects_directory"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_signatures.py",
+              "line": 223,
+              "file_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a"
+            },
+            {
+              "path": "tests/test_release_signatures.py",
+              "line": 246,
+              "file_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a"
+            },
+            {
+              "path": "tests/test_release_signatures.py",
+              "line": 269,
+              "file_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        }
+      ],
+      "proof": "regression-control-input-proof-2026-10-09.json"
     }
   ],
   "summary": {
     "baseline_defects": 282,
     "baseline_with_regressions": 148,
-    "additional_defects": 25,
-    "additional_with_regressions": 23,
-    "candidate_defects_conservative_denominator": 307,
-    "defects_with_reviewed_regressions": 171,
+    "additional_defects": 26,
+    "additional_with_regressions": 24,
+    "candidate_defects_conservative_denominator": 308,
+    "defects_with_reviewed_regressions": 172,
     "defects_without_regression_credit": 136,
-    "conservative_observed_percentage": 55.7003
+    "conservative_observed_percentage": 55.8442
   },
   "exclusions": [
     "PR305 runtime extraction/refactoring, source typing, ASCII digit preservation (baseline already used ASCII classes), and unchanged receipt validation are not new historical fixes.",
     "Release-note parser implementation issues introduced and fixed only inside PR305 are not counted separately.",
-    "Silver signing, DESTDIR staging, compiler flags, sanitizer support and native reproducibility are new capabilities; problems found while developing them are not historical fixes.",
+    "Silver signing, DESTDIR staging, compiler flags, sanitizer support and native reproducibility are new capabilities; corrections made during their initial development before the previous reviewed snapshot are excluded.",
     "HA_TOKEN_FILE is a new credential feature. Its development corrections and authenticated fallback restriction are excluded.",
     "NO_COLOR and explicit valve text improve accessibility; they are not claimed as repaired historical bugs.",
     "Style-only E722/F841 corrections and documentation wording are excluded.",
     "The 55 added native-rejection and change-scope tests in1594a72 are tests of existing behavior, not55 newly fixed production defects.",
     "Generator policy-mutation rejection is a new guard: the captured real regeneration retained the policy unchanged, so no additional fixed policy-loss bug is asserted.",
-    "The misplaced top-level skip-files setting in1b477cb and its scan.skip-files correction in d207a33 belong to one Trivy classification repair."
+    "The misplaced top-level skip-files setting in1b477cb and its scan.skip-files correction in d207a33 belong to one Trivy classification repair.",
+    "Post-review FIFO/control-input repair is deliberately counted once although its feature was new in Silver. The earlier snapshot already contains the failing implementation. Without this conservative addendum, the prior ratio remains171/307; no other newly added tests or readability refactors create defects."
   ],
   "evidence": [
     "regression-audit-2026-10-09.json",
     "regression-pr305-proof-2026-10-09.json",
     "regression-strengthened-proof-2026-10-09.json",
     "regression-generation-proof-2026-10-09.json",
-    "regression-trivy-proof-2026-10-09.json"
+    "regression-trivy-proof-2026-10-09.json",
+    "source-bindings-2026-10-09.json",
+    "regression-control-input-proof-2026-10-09.json"
   ],
   "remaining_work": [
     "Merge the reviewed source and tests, rebind the final source SHA, and confirm final required CI; do not claim a public branch has unmerged tests."
@@ -538,8 +582,16 @@
       "governance-generation-tests.xml",
       "governance-generation-proof.json",
       "integration-trivy-config.log",
-      "integration-trivy-config-final.log"
+      "integration-trivy-config-final.log",
+      "security-sonar308-cli-proof.json",
+      "governance-pr308-final-mapping-tests.xml"
     ],
-    "subsequent_review": "15 release-regeneration cases passed; isolated old/current wrapper execution confirms pin and notes output repairs separately. Scanner logs provide no automated regression credit."
-  }
+    "subsequent_review": "15 release-regeneration cases passed; isolated old/current wrapper execution confirms pin and notes output repairs separately. Scanner logs provide no automated regression credit.",
+    "post_review_control_input": "Actual original CLI timed out on both FIFO options; current CLI rejects both promptly, and both accept valid external files. Current runtime-regression and release-signature suites pass47cases; full current CI remains required."
+  },
+  "previous_reviewed_snapshot": {
+    "original_local_revision": "1594a724c7f46120569891f5afdb356463c27427",
+    "public_equivalent_revision": "c16141db3ab1f52767cbdcb38bc278b9999f2314"
+  },
+  "public_source_bindings": "source-bindings-2026-10-09.json"
 }

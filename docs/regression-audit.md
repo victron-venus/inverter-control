@@ -19,9 +19,10 @@ MQTT defects, and strengthen two tests that did not prove the claimed behavior.
 The extension adds 15 preexisting defects fixed by PR305, six runtime defects
 fixed by the Silver changes, and one correction to the coverage denominator.
 Subsequent review adds two generator-output defects and one Trivy file-type
-classification defect. The coverage and Trivy fixes receive no regression-test
-credit. Together, these inventories contain **307 repair candidates, 171 with
-reviewed regressions (55.70%)**. Uncertain legacy repair candidates remain in the
+classification defect. A subsequent review adds one control-input FIFO/blocking
+read repair. The coverage and Trivy fixes receive no regression-test credit.
+Together, these inventories contain **308 repair candidates, 172 with
+reviewed regressions (55.84%)**. Uncertain legacy repair candidates remain in the
 denominator without credit. This is an evidence-based estimate over the recorded
 source interval, not a permanent claim about future commits.
 
@@ -92,13 +93,16 @@ being detected, not a failure of the reviewed implementation.
 
 New signing, DESTDIR, native build and credential-file features are excluded
 from the historical defect count, as are corrections made while developing
-those new features. Refactoring, style edits and documentation corrections also
-do not create additional fixed bugs in the inventory.
+those new features before the initial review snapshot. The post-review addendum
+below explicitly records one repair of behavior already present in that snapshot.
+Refactoring, style edits and documentation corrections do not create additional
+fixed bugs in the inventory.
 
 
 ## Subsequent generation and scanner review
 
-At source `1594a724c7f46120569891f5afdb356463c27427`, the extension also records
+At public source `c16141db3ab1f52767cbdcb38bc278b9999f2314`
+(original local snapshot `1594a724c7f46120569891f5afdb356463c27427`), the extension also records
 regeneration that downgraded the reviewed runner pin and removed mandatory
 source-bound changelog instructions. These are two independently observed wrong
 outputs of the generator, rather than editorial wording changes. The
@@ -117,3 +121,26 @@ coverage-denominator fix; it does not create a second defect entry. The 55 new
 native-rejection and change-scope tests protect existing behavior and are not
 counted as 55 new bugs. Complete-source CI and the final merged-source binding
 remain required before a badge assertion.
+
+## Public source binding and subsequent control-input repair
+
+The [source bindings](evidence/source-bindings-2026-10-09.json) connect the
+original local experiments to reachable public commits after rebasing onto
+merged PR305. The compared trees have identical source, tests and configuration;
+only the listed evidence-document difference, if any, remains. Original proof
+inputs are retained alongside their public equivalents. The latest mapped test
+source is `73dc560275dbc4b1c7cba039427e1f1b6c9824f6`.
+
+The [control-input comparison](evidence/regression-control-input-proof-2026-10-09.json)
+reproduces a blocking FIFO read in the earlier reviewed release-verification CLI.
+The old CLI reaches the one-second timeout for both `--plan` and `--policy`;
+the fixed CLI rejects them promptly while retaining successful verification of
+valid files outside the checkout. Two option paths and the size/type checks are
+one defect, not separate credits. This behavior existed in the completed earlier
+review snapshot, so the addendum includes it even though the signing feature was
+new in Silver. The prior snapshot remains 171/307; the extended count is 172/308.
+
+The source and mapped-test refresh also retains the log-write calls outside
+assertions in the runtime regressions. All 47 cases in the current runtime and
+release-signature suites pass. A final complete CI result and the merged source
+identity remain required before asserting this extended result for the badge.

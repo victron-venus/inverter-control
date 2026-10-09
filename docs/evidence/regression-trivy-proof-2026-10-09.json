@@ -1,7 +1,7 @@
 {
   "scanner": "Trivy0.74.0",
   "baseline_file_present_at": "120e3b5ae977975aeb9d080b4216d62f793934fa",
-  "fix_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
+  "fix_commit": "7f43677343c55f7fefa462c9bc60dd8e82d39dc3",
   "path": "build-support/tls-armv7/Dockerfile.dockerignore",
   "before_error": "parse dockerfile instruction: parse instruction \"**\": unknown instruction: **",
   "after_error_present": false,
@@ -16,5 +16,7 @@
       "path": "integration-trivy-config-final.log",
       "sha256": "9f9c5dd694e6d6287b36990ed6a5576675db3f0821b86704bcdcf40cf702a379"
     }
-  ]
+  ],
+  "original_local_fix_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
+  "public_source_bindings": "source-bindings-2026-10-09.json"
 }

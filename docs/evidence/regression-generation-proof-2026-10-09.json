@@ -14,7 +14,8 @@
     },
     "required_notes_restored": false,
     "policy_unchanged": true,
-    "stderr": ""
+    "stderr": "",
+    "public_wrapper_source": "b3ca3966110ad87aec3acff557cfcb05e211d9d4"
   },
   "after": {
     "wrapper_source": "1594a724c7f46120569891f5afdb356463c27427",
@@ -31,7 +32,8 @@
     },
     "required_notes_restored": true,
     "policy_unchanged": true,
-    "stderr": ""
+    "stderr": "",
+    "public_wrapper_source": "c16141db3ab1f52767cbdcb38bc278b9999f2314"
   },
   "method": "Runs the exact old/current wrapper source in a private fixture. The fake reviewed toolkit writes the older pin and removes the local notes block, matching the independently captured real regeneration drift. This is not a full execution of the upstream toolkit or a public mutation.",
   "actual_generator_evidence": "releases-integration-regeneration-audit.json and releases-integration-regeneration-diff.txt",
@@ -43,6 +45,8 @@
     "removed_runbook_requirement": "Update CHANGELOG.md in the release source commit under one ## [X.Y.Z] heading with nonempty ### Upgrade and ### Security sections.",
     "policy_preserved_bytewise": true,
     "audit_sha256": "d1b6250dbcd1bf9bc0dce79f34fc463d5d1e319624a1d2747ef428d734ea02b0",
-    "diff_sha256": "70a58e2b3a35bc01ba02ab2b6ad0e70676397902c173760019c9ae53270063c9"
-  }
+    "diff_sha256": "70a58e2b3a35bc01ba02ab2b6ad0e70676397902c173760019c9ae53270063c9",
+    "public_source_commit": "a2085d303564272d0fa864b77edb920aabb9a6a4"
+  },
+  "public_source_bindings": "source-bindings-2026-10-09.json"
 }

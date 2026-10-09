@@ -314,18 +314,23 @@ native input manifests, update bots and security scans identify components for
 monitoring and replacement.
 
 The [regression inventory](regression-audit.md) combines 475 screened baseline
-commits with reviewed PR305 and Silver fixes: **171 of 307 conservative repair
-candidates (55.70%)** have meaningful automated regressions. Two reviewers
+commits with reviewed PR305 and Silver fixes: **172 of 308 conservative repair
+candidates (55.84%)** have meaningful automated regressions. Two reviewers
 independently sampled mappings; disputed cases were removed, split or given
-stronger assertions. This satisfies the numerical `regression_tests_added50`
+stronger assertions. The latest addendum counts one demonstrated FIFO/control-input
+repair from the prior reviewed snapshot, with public source bindings and bounded
+old/current CLI comparisons. This satisfies the numerical `regression_tests_added50`
 threshold only for the recorded source interval and merged mapped tests.
 
 **Met evidence — `test_statement_coverage80`.** The [complete-source report](evidence/coverage-2026-10-09.json)
-records **10,642 of 11,928 statements covered (89.2186%)** across all 67 tracked
+records the measured source `bd693943a38068e87b42f5195ff5b5943f02162d`
+at **10,642 of 11,928 statements covered (89.2186%)** across all 67 tracked
 executable Python files, including build/release scripts. The runtime, release
 and workflow run passed 2,476 cases; 55 additional native/change-scope cases
 were added to the same measured data. Two optional cases were skipped. Ruff
-checking/formatting passed and the 81% coverage gate passed.
+checking/formatting passed and the 81% coverage gate passed for that source.
+Subsequent source edits require a fresh report; these counts are not silently
+reassigned to the latest PR revision.
 
 Namespace discovery includes scripts that were never imported; identical run
 and report exclusions remove test source, the example configuration and external
