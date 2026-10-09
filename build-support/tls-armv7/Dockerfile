@@ -61,6 +61,8 @@ RUN --network=none python -m venv /verify && \
     /verify/bin/pip check && \
     /verify/bin/python /check/tls_bundle_probe.py --armv7 > /bundle/verification.json
 
+# Artifact-only output for BuildKit --output type=local, never a running service.
+# The path-scoped DS-0026 exception in .trivyignore.yaml documents why no healthcheck applies.
 FROM scratch AS export
 USER 65532:65532
 COPY --from=verify /bundle/ /

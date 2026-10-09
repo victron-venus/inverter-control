@@ -1,0 +1,3 @@
+# Shared by the local CLI and GitHub Trivy action, which both run at repository root.
+# All scanners, rules and severities keep their existing configuration.
+ignorefile: .trivyignore.yaml
