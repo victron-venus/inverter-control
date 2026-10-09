@@ -26,10 +26,13 @@ The published trust policy is:
 - OIDC issuer: `https://token.actions.githubusercontent.com`;
 - workflow identity:
   `https://github.com/victron-venus/inverter-control/.github/workflows/release-build.yml@refs/heads/main`;
+- certificate source repository: `victron-venus/inverter-control`;
+- certificate source ref: `refs/heads/main`;
 - certificate source commit: the expected reviewed source SHA.
 
 These values are fixed; do not replace them with values copied out of an
-untrusted certificate. The workflow identity is the reusable signing workflow,
+untrusted certificate. Binding the source repository and ref prevents a fork
+from reusing the public signing workflow to impersonate an official release. The workflow identity is the reusable signing workflow,
 not the parent release orchestrator. Cosign's trusted Sigstore root authenticates
 the Fulcio certificate and Rekor transparency evidence. The bundle includes the
 short-lived public certificate and the transparency evidence; no project-private
@@ -59,6 +62,8 @@ For an independent manual signature check, use the same fixed policy:
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
   --certificate-identity 'https://github.com/victron-venus/inverter-control/.github/workflows/release-build.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate-github-workflow-repository 'victron-venus/inverter-control' \
+  --certificate-github-workflow-ref 'refs/heads/main' \
   --certificate-github-workflow-sha EXPECTED_40_CHARACTER_SOURCE_SHA SHA256SUMS
 # Only after successful authentication, inspect the two expected filenames:
 sha256sum --check SHA256SUMS

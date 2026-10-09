@@ -76,6 +76,11 @@ def test_verification_binds_expected_identity_issuer_and_reviewed_source(assets)
     assert argv[argv.index("--certificate-identity") + 1] == signatures.IDENTITY
     assert argv[argv.index("--certificate-oidc-issuer") + 1] == signatures.ISSUER
     assert argv[argv.index("--certificate-github-workflow-sha") + 1] == "b" * 40
+    assert (
+        argv[argv.index("--certificate-github-workflow-repository") + 1]
+        == "victron-venus/inverter-control"
+    )
+    assert argv[argv.index("--certificate-github-workflow-ref") + 1] == "refs/heads/main"
     assert command.call_args.kwargs == {"check": True}
 
 
@@ -103,6 +108,8 @@ def test_release_workflow_scopes_identity_token_to_signer_and_requires_verificat
     assert signer["permissions"]["id-token"] == "write"
     assert signer["runs-on"] == "ubuntu-latest"
     assert signer["needs"] == "package"
+    assert "github.repository == 'victron-venus/inverter-control'" in signer["if"]
+    assert "github.ref == 'refs/heads/main'" in signer["if"]
     commands = [step.get("run", "") for step in signer["steps"]]
     assert any("verify-build signed-release-assets" in cmd for cmd in commands)
     verify = next(

@@ -76,6 +76,7 @@ jobs:
   sign:
     name: Sign and verify release payloads
     needs: package
+    if: ${{ github.repository == 'victron-venus/inverter-control' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

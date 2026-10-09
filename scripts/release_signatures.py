@@ -8,6 +8,8 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 ISSUER = "https://token.actions.githubusercontent.com"
+REPOSITORY = "victron-venus/inverter-control"
+REF = "refs/heads/main"
 IDENTITY = "https://github.com/victron-venus/inverter-control/.github/workflows/release-build.yml@refs/heads/main"
 CHECKSUMS = "SHA256SUMS"
 BUNDLE = "SHA256SUMS.sigstore.json"
@@ -77,6 +79,10 @@ def verify_signature(directory: Path, source_sha: str) -> None:
             ISSUER,
             "--certificate-github-workflow-sha",
             source_sha,
+            "--certificate-github-workflow-repository",
+            REPOSITORY,
+            "--certificate-github-workflow-ref",
+            REF,
             str(directory / CHECKSUMS),
         ],
         check=True,
