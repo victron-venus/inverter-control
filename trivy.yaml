@@ -3,5 +3,6 @@
 ignorefile: .trivyignore.yaml
 # Docker's ignore-pattern file is not Dockerfile source; Trivy 0.74 otherwise
 # misclassifies it and attempts to parse '**' as a Docker instruction.
-skip-files:
-  - build-support/tls-armv7/Dockerfile.dockerignore
+scan:
+  skip-files:
+    - build-support/tls-armv7/Dockerfile.dockerignore
