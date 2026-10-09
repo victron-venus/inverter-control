@@ -90,3 +90,74 @@ def test_inverter_state_accepts_actual_dbus_literal_replies(reply, expected):
 def test_inverter_state_rejects_unparseable_replies(reply):
     with pytest.raises(ValueError):
         VictronDBus._parse_inverter_state_code(reply)
+
+
+def test_smartshunt_selection_uses_product_not_mutable_service_suffix():
+    """A chain/system aggregate must not replace the whole-bank shunt meter."""
+    device = object.__new__(VictronDBus)
+    device._vebus_service = None
+    device._shunt_service = None
+    device._shunt_lock = threading.RLock()
+    device._clear_shunt_data = Mock()
+    device._log_service_changes = Mock()
+    names = {
+        "com.victronenergy.battery.ttyUSB4": "JBD battery chain",
+        "com.victronenergy.battery.ttyUSB9": "SmartShunt 500A/50mV",
+        "com.victronenergy.battery.virtual": "Virtual Battery",
+    }
+    device._read_product_name = Mock(side_effect=names.get)
+    device._apply_discovery("\n".join(names))
+    assert device._shunt_service == "com.victronenergy.battery.ttyUSB9"
+    device._clear_shunt_data.assert_called_once()
+    # The same physical meter receives a different serial suffix after reboot.
+    names["com.victronenergy.battery.ttyUSB2"] = names.pop("com.victronenergy.battery.ttyUSB9")
+    device._apply_discovery("\n".join(names))
+    assert device._shunt_service == "com.victronenergy.battery.ttyUSB2"
+    assert device._clear_shunt_data.call_count == 2
+    names.pop("com.victronenergy.battery.ttyUSB2")
+    device._apply_discovery("\n".join(names))
+    assert device._shunt_service is None
+    assert device._clear_shunt_data.call_count == 3
+
+
+def test_blocked_console_client_does_not_block_another_producer(monkeypatch):
+    """Exercise the actual send lock while the control producer enqueues output."""
+    import queue
+    from collections import deque
+
+    from inverter_control import console_server
+
+    entered, release, produced = threading.Event(), threading.Event(), threading.Event()
+    client = Mock()
+
+    def blocked_send(_data):
+        entered.set()
+        if not release.wait(2):
+            raise TimeoutError("fixture console release")
+
+    client.sendall.side_effect = blocked_send
+    monkeypatch.setattr(console_server, "_clients", {client})
+    monkeypatch.setattr(console_server, "_clients_lock", threading.Lock())
+    monkeypatch.setattr(console_server, "_sender_queue", queue.Queue(maxsize=2))
+    monkeypatch.setattr(console_server, "_console_buffer", deque(maxlen=100))
+    sender = threading.Thread(target=console_server._send_to_clients, args=("first",))
+
+    def produce():
+        console_server.broadcast_line("next control status")
+        produced.set()
+
+    producer = threading.Thread(target=produce)
+    sender.start()
+    try:
+        assert entered.wait(1)
+        producer.start()
+        assert produced.wait(0.3), "console sender blocked the control producer"
+        assert console_server._sender_queue.get_nowait() == "next control status"
+        assert list(console_server._console_buffer) == ["next control status"]
+        assert client.sendall.call_count == 1
+    finally:
+        release.set()
+        sender.join(2)
+        if producer.ident is not None:
+            producer.join(2)
+    assert not sender.is_alive() and not producer.is_alive()
