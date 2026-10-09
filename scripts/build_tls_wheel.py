@@ -17,7 +17,7 @@ def build_twice() -> None:
     identities = []
     for output in destinations:
         shutil.rmtree(source / "build", ignore_errors=True)
-        for metadata in source.glob("*.egg-info"):
+        for metadata in source.rglob("*.egg-info"):
             shutil.rmtree(metadata)
         # Build-tool path and all arguments are fixed by the immutable build image.
         subprocess.run(  # nosec B603

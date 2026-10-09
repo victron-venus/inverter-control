@@ -36,7 +36,7 @@ RUN --network=none python finalize_tls_bundle.py && \
 FROM build AS sanitizer
 ENV CFLAGS="-g -O1 -fsanitize=address -fno-omit-frame-pointer" \
     LDFLAGS="-fsanitize=address"
-RUN --network=none rm -rf /build/cffi/build /build/cffi/*.egg-info && \
+RUN --network=none rm -rf /build/cffi/build /build/cffi/src/cffi.egg-info && \
     /tools/bin/pip wheel --no-index --no-deps --no-build-isolation /build/cffi -w /asan-wheels && \
     /tools/bin/pip install --no-index --no-deps /asan-wheels/*.whl /bundle/wheels/pycparser-*.whl
 COPY scripts/check_cffi_sanitizer.py /check/check_cffi_sanitizer.py
