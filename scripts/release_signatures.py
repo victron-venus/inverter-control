@@ -3,7 +3,9 @@
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
 import subprocess  # nosec B404
 from pathlib import Path
 
@@ -13,6 +15,8 @@ REF = "refs/heads/main"
 IDENTITY = "https://github.com/victron-venus/inverter-control/.github/workflows/release-build.yml@refs/heads/main"
 CHECKSUMS = "SHA256SUMS"
 BUNDLE = "SHA256SUMS.sigstore.json"
+# Plans and policies are small control documents, not release payloads.
+MAX_CONTROL_BYTES = 1_048_576
 METADATA = {
     CHECKSUMS,
     BUNDLE,
@@ -35,7 +39,7 @@ def payload_inventory(directory: Path) -> dict[str, str]:
     kinds = set()
     for line in text.splitlines():
         match = re.fullmatch(
-            r"([a-f0-9]{64})  ((inverter-control|tls-dependencies-cp312-armv7)-(\d+\.\d+\.\d+)\.tar\.gz)",
+            r"([a-f0-9]{64}) {2}((inverter-control|tls-dependencies-cp312-armv7)-(\d+\.\d+\.\d+)\.tar\.gz)",
             line,
             re.ASCII,
         )
@@ -90,13 +94,39 @@ def verify_signature(directory: Path, source_sha: str) -> None:
     payload_inventory(directory)
 
 
+def read_control_document(path: Path) -> dict:
+    """Read an explicitly chosen local JSON file, with bounded resource use.
+
+    This read-only CLI intentionally accepts paths outside its checkout, including
+    symlink aliases to regular files. The caller chooses the trusted plan/policy;
+    these paths are not supplied by HTTP requests or release payload metadata.
+    """
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("Release control document must be a regular file")
+        if metadata.st_size > MAX_CONTROL_BYTES:
+            raise ValueError("Release control document exceeds the 1 MiB limit")
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            data = stream.read(MAX_CONTROL_BYTES + 1)
+    finally:
+        os.close(descriptor)
+    if len(data) > MAX_CONTROL_BYTES:
+        raise ValueError("Release control document exceeds the 1 MiB limit")
+    document = json.loads(data.decode("utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError("Release control document must be a JSON object")
+    return document
+
+
 def verify_build(directory: Path, plan_path: Path, policy_path: Path) -> None:
     payload_inventory(directory)
     # These siblings are the reviewed, vendored publication validators.
     from version_plan import validate_plan
     from version_receipt import verify_receipts
 
-    plan = validate_plan(json.loads(plan_path.read_text()))
+    plan = validate_plan(read_control_document(plan_path))
     payloads = [
         {
             "name": path.name,
@@ -105,7 +135,7 @@ def verify_build(directory: Path, plan_path: Path, policy_path: Path) -> None:
         }
         for path in directory.iterdir()
     ]
-    verify_receipts(directory, plan, payloads, json.loads(policy_path.read_text()))
+    verify_receipts(directory, plan, payloads, read_control_document(policy_path))
 
 
 def main() -> None:
@@ -113,8 +143,18 @@ def main() -> None:
     parser.add_argument("action", choices=["verify", "verify-build", "inventory"])
     parser.add_argument("directory", type=Path)
     parser.add_argument("--source-sha")
-    parser.add_argument("--plan", type=Path, default=Path(".release-plan.json"))
-    parser.add_argument("--policy", type=Path, default=Path(".release-policy.json"))
+    parser.add_argument(
+        "--plan",
+        type=Path,
+        default=Path(".release-plan.json"),
+        help="trusted local plan JSON file (regular file, at most 1 MiB)",
+    )
+    parser.add_argument(
+        "--policy",
+        type=Path,
+        default=Path(".release-policy.json"),
+        help="trusted local policy JSON file (regular file, at most 1 MiB)",
+    )
     args = parser.parse_args()
     if args.action == "verify":
         verify_signature(args.directory, args.source_sha or "")

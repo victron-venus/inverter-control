@@ -1,8 +1,10 @@
 """Reject incomplete, redirected and unauthenticated release payloads."""
 
 import hashlib
+import json
 import os
 import subprocess  # nosec B404
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +19,8 @@ REPO = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def assets(tmp_path):
+    tmp_path = tmp_path / "assets"
+    tmp_path.mkdir()
     names = ["inverter-control-1.23.5.tar.gz", "tls-dependencies-cp312-armv7-1.23.5.tar.gz"]
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
@@ -44,6 +48,14 @@ def test_unsigned_or_unsafe_inventory_name_is_rejected(assets, name):
 def test_unsigned_extra_payload_is_rejected(assets):
     (assets / "extra.whl").write_bytes(b"extra")
     with pytest.raises(ValueError, match="inventory"):
+        signatures.payload_inventory(assets)
+
+
+@pytest.mark.parametrize("separator", [" ", "   ", "\t", " \t"])
+def test_inventory_requires_exactly_two_spaces(assets, separator):
+    sums = assets / "SHA256SUMS"
+    sums.write_text(sums.read_text().replace("  ", separator))
+    with pytest.raises(ValueError, match="Invalid or duplicate"):
         signatures.payload_inventory(assets)
 
 
@@ -134,3 +146,126 @@ def test_build_verification_rejects_untrusted_entries_before_reading(assets, kin
     with patch.object(Path, "read_bytes", side_effect=AssertionError("unsafe read")):
         with pytest.raises(ValueError):
             signatures.verify_build(assets, assets / "absent-plan", assets / "absent-policy")
+
+
+@pytest.fixture
+def build_documents(assets, monkeypatch):
+    """Real plan and receipt validators, with control files outside the assets."""
+    monkeypatch.syspath_prepend(str(REPO / "scripts"))
+    import version_plan
+
+    root = assets.parent
+    (root / "version").write_text("1.23.5\n")
+    policy = {
+        "repository": signatures.REPOSITORY,
+        "mode": "release",
+        "version_file": "version",
+        "versioning": {
+            "schema": 1,
+            "promotion": "final-build",
+            "files": [{"path": "version", "format": "text", "value": "full"}],
+        },
+    }
+    plan = version_plan.create_plan("1.23.5", "rc", 1, "a" * 40, policy)
+    files = version_plan.sync_versions(root, policy, plan)
+    receipt = {
+        "source_sha": plan["source_sha"],
+        "plan_sha256": version_plan.plan_digest(plan),
+        "effective_inputs_sha256": version_plan.effective_inputs_digest(files),
+        "files": files,
+        "toolchain": {"python": "3.12.13"},
+        "artifacts": [
+            {
+                "name": p.name,
+                "size": p.stat().st_size,
+                "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+            }
+            for p in assets.iterdir()
+        ],
+    }
+    (assets / "release-inputs-package.json").write_text(json.dumps(receipt))
+    plan_path, policy_path = root / ".release-plan.json", root / ".release-policy.json"
+    plan_path.write_text(json.dumps(plan))
+    policy_path.write_text(json.dumps(policy))
+    return plan_path, policy_path
+
+
+@pytest.mark.parametrize("mode", ["default", "absolute", "relative-parent", "symlink"])
+def test_build_cli_accepts_explicit_control_files_outside_checkout(
+    assets, build_documents, mode, tmp_path
+):
+    plan, policy = build_documents
+    command = [
+        sys.executable,
+        str(REPO / "scripts/release_signatures.py"),
+        "verify-build",
+        str(assets),
+    ]
+    cwd = tmp_path
+    if mode == "relative-parent":
+        cwd = tmp_path / "working"
+        cwd.mkdir()
+        plan, policy = Path("..") / plan.name, Path("..") / policy.name
+    elif mode == "symlink":
+        for path in (plan, policy):
+            path.with_suffix(".alias").symlink_to(path)
+        plan, policy = plan.with_suffix(".alias"), policy.with_suffix(".alias")
+    if mode != "default":
+        command.extend(["--plan", str(plan), "--policy", str(policy)])
+    # Run only this repository's CLI against private test files, without a shell.
+    result = subprocess.run(  # nosec B603
+        command, cwd=cwd, capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("field", ["--plan", "--policy"])
+def test_build_cli_rejects_fifo_without_waiting_for_writer(assets, build_documents, field):
+    plan, policy = build_documents
+    fifo = assets.parent / "control-fifo"
+    os.mkfifo(fifo)
+    command = [
+        sys.executable,
+        str(REPO / "scripts/release_signatures.py"),
+        "verify-build",
+        str(assets),
+        "--plan",
+        str(plan),
+        "--policy",
+        str(policy),
+    ]
+    command[command.index(field) + 1] = str(fifo)
+    # A timeout also bounds this regression if the nonblocking guard is removed.
+    result = subprocess.run(  # nosec B603
+        command, capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode != 0
+    assert "must be a regular file" in result.stderr
+
+
+def test_control_document_size_limit_counts_bytes_and_keeps_exact_boundary(tmp_path):
+    path = tmp_path / "control.json"
+    path.write_bytes(b"{}" + b" " * (signatures.MAX_CONTROL_BYTES - 2))
+    assert signatures.read_control_document(path) == {}
+    path.write_bytes(b"{}" + b" " * (signatures.MAX_CONTROL_BYTES - 1))
+    with pytest.raises(ValueError, match="1 MiB limit"):
+        signatures.read_control_document(path)
+    # Below the character limit but above the byte limit in UTF-8.
+    path.write_text(
+        json.dumps({"value": "é" * (signatures.MAX_CONTROL_BYTES // 2)}, ensure_ascii=False)
+    )
+    with pytest.raises(ValueError, match="1 MiB limit"):
+        signatures.read_control_document(path)
+
+
+@pytest.mark.parametrize("content", ["null", "[]", "true", "42", '"text"'])
+def test_control_document_requires_json_object(tmp_path, content):
+    path = tmp_path / "control.json"
+    path.write_text(content)
+    with pytest.raises(ValueError, match="JSON object"):
+        signatures.read_control_document(path)
+
+
+def test_control_document_rejects_directory(tmp_path):
+    with pytest.raises(ValueError, match="regular file"):
+        signatures.read_control_document(tmp_path)
