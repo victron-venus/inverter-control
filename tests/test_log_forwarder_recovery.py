@@ -123,6 +123,44 @@ def test_rotation_during_directory_scan_keeps_unread_old_inode(source, monkeypat
     assert "Retention loss" not in capsys.readouterr().err
 
 
+def test_file_disappearing_after_scan_keeps_acknowledged_cursor(source, monkeypatch, capsys):
+    current, _ = source
+    oldest = archive_path(current.parent, 1)
+    oldest.write_text("acknowledged\n")
+    current.write_text("pending\n")
+    position, inode = oldest.stat().st_size, oldest.stat().st_ino
+    real_scan = forwarder.retained_log_files
+
+    def scan_then_remove(filepath):
+        files = real_scan(filepath)
+        current.unlink()
+        return files
+
+    monkeypatch.setattr(forwarder, "retained_log_files", scan_then_remove)
+    assert forwarder.read_new_lines(str(current), position, inode) == ([], position, inode)
+    assert "Could not read" in capsys.readouterr().err
+
+
+def test_rotation_after_scan_keeps_acknowledged_cursor(source, monkeypatch):
+    current, _ = source
+    oldest = archive_path(current.parent, 1)
+    oldest.write_text("acknowledged\n")
+    current.write_text("pending\n")
+    position, inode = oldest.stat().st_size, oldest.stat().st_ino
+    real_scan = forwarder.retained_log_files
+
+    def scan_then_rotate(filepath):
+        files = real_scan(filepath)
+        current.rename(archive_path(current.parent, 2))
+        current.write_text("new line\n")
+        return files
+
+    with monkeypatch.context() as context:
+        context.setattr(forwarder, "retained_log_files", scan_then_rotate)
+        assert forwarder.read_new_lines(str(current), position, inode) == ([], position, inode)
+    assert forwarder.read_new_lines(str(current), position, inode)[0] == ["pending"]
+
+
 def test_retention_loss_is_reported_and_available_logs_are_recovered(source, capsys):
     current, _ = source
     current.write_text("new\n")
