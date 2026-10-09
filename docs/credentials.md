@@ -70,6 +70,37 @@ The updater does not create, copy, chmod, or delete this externally provisioned
 file. Keep it outside `/data/inverter-control` so application replacement cannot
 remove it. Uninstalling the application does not revoke the provider's token.
 
+## Loki authentication with the Requests transport
+
+For authenticated Loki Basic authentication, use the supported Requests
+transport and its separate netrc credential file. Put the service account's
+username and password/token in its private `~/.netrc`, or set `NETRC` to an
+absolute private-file path in the **log-forwarder service's** environment.
+Do not put credentials in `LOKI_URL` or the ordinary endpoint file. The netrc
+file is a credential store; its `machine` field identifies the receiving host.
+
+The shape is `machine HOST login USER password SECRET`, replacing the three
+placeholders privately. Keep that file and its parents owner-controlled, with
+file mode `0600`. Include only the intended Loki hostname; do not use a
+`default` entry, and do not share credentials across Home Assistant and Loki
+hosts. Requests consults netrc for other connections too, so a broad entry can
+override an unrelated Authorization header. Use HTTPS for a remote receiver.
+
+The forwarder creates a fresh Requests session for each batch. Atomically
+replacing the netrc file updates credentials for the next batch without code
+changes, recompilation or a controller restart. Revoke the old credential at
+the provider after routine rotation, or immediately on exposure. The actual
+Requests path is covered by a loopback test that observes the two different
+Authorization headers before and after replacement.
+
+The optional standard-library fallback does not implement netrc authentication.
+Install the declared Requests dependency for authenticated Loki, or terminate
+authentication in a separately managed local encrypted tunnel/gateway. A missing
+or mismatched netrc entry can cause an unauthenticated request and a 401/403;
+it does not make an incorrectly exposed public Loki endpoint private. The
+forwarder retains its cursor on a rejected push. Operator URL credentials
+remain a legacy Requests feature but are not the recommended credential store.
+
 ## Other credentials and trust material
 
 SSH deployment uses the operator's separate SSH private keys, agent, known-hosts

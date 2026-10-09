@@ -15,6 +15,7 @@ import requests
 
 # Pre-compiled regex for _parse_numeric (called ~10x per 1.5s poll cycle)
 _NUMERIC_RE = re.compile(r"^([+-]?\d+\.?\d*)")
+_ENTITY_ID_RE = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
 
 from .config import (
     HA_DUMP_LOADS,
@@ -29,6 +30,17 @@ from .dbus import VUESensorDBusClient
 from .requests_tls import VerifiedHTTPAdapter
 
 logger = logging.getLogger("inverter-control")
+
+
+def _entity_domain(entity_id: object) -> str | None:
+    """Accept a bounded HA domain.object_id, never URL path syntax."""
+    if (
+        not isinstance(entity_id, str)
+        or len(entity_id) > 255
+        or not _ENTITY_ID_RE.fullmatch(entity_id)
+    ):
+        return None
+    return entity_id.partition(".")[0]
 
 
 class HomeAssistantError(Exception):
@@ -145,6 +157,8 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
     def _get_state(self, entity_id: str) -> str | None:
         """Get entity state from HA"""
+        if _entity_domain(entity_id) is None:
+            return None
         try:
             response = self._session.get(
                 f"{HA_URL}/api/states/{entity_id}",
@@ -351,6 +365,14 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
 
     def _call_service(self, domain: str, action: str, entity_id: str) -> bool:
         """Call a HA service domain/action for an entity"""
+        entity_domain = _entity_domain(entity_id)
+        if (
+            entity_domain is None
+            or domain != entity_domain
+            or action not in ("toggle", "press", "turn_on", "turn_off")
+        ):
+            logger.warning("HA service call rejected: invalid entity or action")
+            return False
         try:
             response = self._session.post(
                 f"{HA_URL}/api/services/{domain}/{action}",
@@ -362,21 +384,28 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
             logger.warning(f"{action} {entity_id} failed: {e}")
             return False
 
+    def _call_entity_service(self, action: str, entity_id: str) -> bool:
+        domain = _entity_domain(entity_id)
+        if domain is None:
+            logger.warning("HA service call rejected: invalid entity")
+            return False
+        return self._call_service(domain, action, entity_id)
+
     def toggle_entity(self, entity_id: str) -> bool:
         """Toggle a switch or input_boolean"""
-        return self._call_service(entity_id.split(".")[0], "toggle", entity_id)
+        return self._call_entity_service("toggle", entity_id)
 
     def press_button(self, entity_id: str) -> bool:
         """Press a button entity"""
-        return self._call_service(entity_id.split(".")[0], "press", entity_id)
+        return self._call_entity_service("press", entity_id)
 
     def turn_on(self, entity_id: str) -> bool:
         """Turn on a switch or light"""
-        return self._call_service(entity_id.split(".")[0], "turn_on", entity_id)
+        return self._call_entity_service("turn_on", entity_id)
 
     def turn_off(self, entity_id: str) -> bool:
         """Turn off a switch or light"""
-        return self._call_service(entity_id.split(".")[0], "turn_off", entity_id)
+        return self._call_entity_service("turn_off", entity_id)
 
     def control_dump_loads(self, turn_on: bool) -> int:
         """Control all dump loads for minimize_charging. Returns count of changed."""

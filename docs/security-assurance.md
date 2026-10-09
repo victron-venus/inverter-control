@@ -79,11 +79,16 @@ HTTP bodies are bounded and ambiguous framing is rejected. Forecast validation
 requires finite nonnegative numeric energy, rejects booleans and malformed
 metadata, and stores only known fields after validation. Tariffs, setpoint
 overrides, ESS selections and pre-charge requests have their own domain checks.
+Manual setpoints reject fractional/non-finite/boolean values, and loop intervals
+reject non-finite/boolean values before conversion or clamping changes state.
+Home Assistant URL construction permits only bounded `domain.object_id` entity
+IDs and supported service actions, preventing path/query injection.
 
 **Evidence.** [Forecast validator](../inverter_control/forecast_input.py),
 [forecast state tests](../tests/test_forecast_input.py),
 [HTTP roundtrip tests](../tests/test_webhook_forecast.py),
 [MQTT boundary tests](../tests/test_mqtt_bridge.py),
+[numeric and entity-path tests](../tests/test_command_input.py),
 [tariff parser](../inverter_control/tariff.py),
 [tariff tests](../tests/test_tariff.py),
 and [override tests](../tests/test_mqtt_override_isolation.py).
@@ -133,12 +138,15 @@ The bounded loader opens the final path without following a symlink, inspects
 the opened descriptor, and requires a regular file owned by the service user
 with mode 0400 or 0600. It rejects malformed content without printing it.
 Rotation uses private-file preparation, atomic replacement, a controlled
-restart, and revocation at the provider. SSH keys and TLS client keys use their
+restart, and revocation at the provider. Authenticated Loki uses Requests with
+a separate netrc credential store; a fresh session reloads it on each batch.
+The optional standard-library transport does not claim netrc support. SSH keys and TLS client keys use their
 existing separate files; the project does not embed them in source.
 
 **Evidence.** [Credential loader](../inverter_control/credentials.py),
 [startup configuration](../inverter_control/config.py),
 [loader and rotation tests](../tests/test_credentials.py),
+[actual Loki netrc rotation test](../tests/test_log_forwarder.py),
 and [credential operations](credentials.md).
 
 **Limit.** Legacy inline `HA_TOKEN` remains compatible and must be migrated by

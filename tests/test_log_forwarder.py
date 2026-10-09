@@ -408,3 +408,46 @@ def test_loki_does_not_follow_redirects(monkeypatch, use_requests):
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+
+
+def test_requests_loki_reads_separate_netrc_and_rotates_without_rebuild(monkeypatch, tmp_path):
+    """The supported Requests profile keeps Basic credentials out of the URL."""
+    import base64
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+
+    observed = []
+
+    class Receiver(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            observed.append(self.headers.get("Authorization"))
+            self.send_response(204)
+            self.end_headers()
+
+    credentials = tmp_path / "loki.netrc"
+    credentials.write_text("machine 127.0.0.1 login fixture-user password first-fixture\n")
+    credentials.chmod(0o600)
+    monkeypatch.setenv("NETRC", str(credentials))
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    monkeypatch.setattr(log_forwarder, "USE_REQUESTS", True)
+    server = HTTPServer(("127.0.0.1", 0), Receiver)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    monkeypatch.setattr(log_forwarder, "LOKI_URL", f"http://127.0.0.1:{server.server_port}/loki")
+    try:
+        assert log_forwarder.push_to_loki({"streams": []})
+        replacement = tmp_path / "replacement.netrc"
+        replacement.write_text("machine 127.0.0.1 login fixture-user password second-fixture\n")
+        replacement.chmod(0o600)
+        replacement.replace(credentials)
+        assert log_forwarder.push_to_loki({"streams": []})
+        expected = [
+            "Basic " + base64.b64encode(value).decode("ascii")
+            for value in (b"fixture-user:first-fixture", b"fixture-user:second-fixture")
+        ]
+        assert observed == expected
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)

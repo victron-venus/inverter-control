@@ -7,19 +7,31 @@ document gives ready-made alert rules; Grafana/datasource wiring lives in the
 
 ## Remote scraping on Venus OS
 
-The listener defaults to loopback. For a Prometheus server on a trusted network,
-create `/data/inverter-control/metrics.env` on the device (mode 0600):
+The listener defaults to loopback and has no built-in TLS or authentication.
+Keep that default. For remote collection, run an authenticated SSH tunnel from
+the monitoring host, or use an authenticated TLS monitoring gateway. For
+example, after verifying the GX device's SSH host key:
 
 ```sh
-INVERTER_METRICS_HOST=192.168.160.150
-INVERTER_METRICS_PORT=9102
+ssh -N -L 19102:127.0.0.1:9102 root@cerbo
 ```
 
-Use the device's own LAN address and restrict access to trusted monitoring hosts.
-The service run script loads this file; package updates preserve it. Restart the
-service under its supervisor, then check `/metrics` from the Prometheus host and
-confirm `up{job="inverter-control"} == 1`. A successful request to localhost alone
-does not verify remote scraping. Remove the override to restore loopback binding.
+Configure the monitoring host's Prometheus to scrape `127.0.0.1:19102`, supervise
+the tunnel, and verify `up{job="inverter-control"} == 1` through that path.
+Do not disable SSH host-key verification. Use a dedicated restricted forwarding
+account where the platform permits it; a manually started tunnel is an example,
+not a durable production service configuration. A TLS gateway must authenticate
+and authorize every scrape and keep the daemon-facing link on the trusted host.
+
+Legacy installations may set `INVERTER_METRICS_HOST` in
+`/data/inverter-control/metrics.env` (mode 0600) to a non-loopback address. The
+service still supports this explicit override for compatibility, but it sends
+metrics without transport encryption and trusts every host that can connect.
+A private LAN alone does not provide the authenticated encrypted transport
+required by the recommended deployment profile. Remove the override and
+restart under the supervisor to restore loopback binding; package updates
+preserve this administrator-owned file. A successful localhost request does
+not prove the remote tunnel or gateway is working.
 
 The listener starts in a background supervisor. If the configured LAN address is
 not available yet during boot, or the port is temporarily occupied, inverter

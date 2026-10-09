@@ -1,6 +1,7 @@
 """Main controller for grid-zero feed-in management."""
 
 import logging
+import math
 import time
 import traceback
 from typing import Any
@@ -357,6 +358,8 @@ class InverterController:
         self._webhook_server.start()
 
     def set_loop_interval(self, interval: float) -> float:
+        if type(interval) not in (int, float) or not math.isfinite(interval):
+            raise ValueError("Loop interval must be a finite number")
         self.loop_interval = max(0.1, min(5.0, interval))
         logger.info(f"Loop interval changed to {self.loop_interval}s")
         return self.loop_interval
@@ -486,6 +489,8 @@ class InverterController:
         return {**self.state, "ui_config": {**self.ui_config, **self.tariff.snapshot()}}
 
     def set_manual_setpoint(self, value: int) -> bool:
+        if type(value) is not int:
+            raise TypeError("Setpoint must be an integer")
         with self._watchdog._lock:
             self.manual_setpoint = max(self.power_limit_min, min(self.power_limit_max, value))
             self._trim_mode_generation += 1

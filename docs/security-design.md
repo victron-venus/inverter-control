@@ -138,7 +138,13 @@ supported and is plaintext, including the authorization header. Use HTTPS for
 remote hosts and provision a trusted CA when necessary. Keep the token private,
 use a dedicated least-privilege account, and rotate it on exposure. The client
 uses request timeouts, a circuit breaker, and a background poller; stale cached
-HA data is not proof that the remote service is healthy.
+HA data is not proof that the remote service is healthy. Entity IDs used in
+state and service URLs must be at most 255 characters of lowercase letters,
+digits, and underscores in `domain.object_id` form. Path separators, percent
+encoding, query/fragment syntax, and control characters are rejected before a
+request is sent. The service action is one of the four supported operations and
+its domain must match the entity. These checks do not grant entity access: the
+Home Assistant account and broker still define who may operate each device.
 
 The optional [log forwarder](log-forwarding.md) accepts HTTPS endpoints and
 permits plaintext HTTP only for literal loopback addresses. It remains idle
@@ -312,3 +318,11 @@ and vulnerability-remediation claims must be checked against real records.
 The [security assurance case](security-assurance.md) maps the requirements and
 trust boundaries above to implementation, regression evidence, and residual
 risks. It also records the justified exception to encrypted local networking.
+
+Manual-setpoint commands accept integer numbers and integer strings; booleans,
+fractional numbers and non-finite values are rejected. Loop-interval commands
+accept finite numbers or numeric strings and reject booleans/NaN/infinity.
+Existing clamping of valid numeric inputs to configured power limits and
+0.1–5 seconds remains in place. Invalid input leaves the previous state intact.
+These stricter checks may reject malformed values older clients sent; correct
+the producer rather than relying on implicit conversion.
