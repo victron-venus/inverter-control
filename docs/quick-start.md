@@ -18,6 +18,6 @@ The deliberately focused command disables whole-project coverage reporting; befo
 
 ## Install on an intended Venus OS device
 
-Use the [README's requirements, configuration, and installation steps](../README.md#runtime-requirements). Select a compatible released archive, verify it, provision the private configuration, and arrange the operator-controlled commissioning window before starting the service. The [operations guide](venus-os-operations.md) explains status, upgrade, and recovery.
+Use the [README's requirements, configuration, and installation steps](../README.md#runtime-requirements). Select a compatible released archive, verify it, provision the private configuration, and arrange the operator-controlled commissioning window before starting the service. The [build and installation guide](build-and-install.md) documents development and packaging conventions; [signature verification](release-signatures.md) covers published artifact authentication. The [operations guide](venus-os-operations.md) explains status, upgrade, and recovery.
 
 Do not run the live daemon on a device merely to try this quick start. Its default configuration permits hardware control, and `--dry-run` is not an electrical lockout. The synthetic exercise above is the equipment-free path.
