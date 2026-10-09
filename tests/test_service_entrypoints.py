@@ -1,7 +1,9 @@
 """Execute service entry points in a private fake filesystem, without a device."""
 
 import os
-import subprocess
+
+# Execute only repository entrypoints with temporary paths and fixed fake commands.
+import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -39,7 +41,9 @@ def test_python_service_uses_existing_module_and_unbuffered_output(tmp_path, ser
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "EXPECTED_MODULE": target,
     }
-    result = subprocess.run(["sh", str(run)], env=env, capture_output=True, text=True, timeout=5)
+    result = subprocess.run(  # nosec B603
+        ["/bin/sh", str(run)], env=env, capture_output=True, text=True, timeout=5
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == str(package)
 
@@ -67,7 +71,9 @@ def test_service_loggers_create_directory_and_use_available_multilog(tmp_path, s
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "EXPECTED_LOG": str(log_dir),
     }
-    result = subprocess.run(["sh", str(run)], env=env, capture_output=True, text=True, timeout=5)
+    result = subprocess.run(  # nosec B603
+        ["/bin/sh", str(run)], env=env, capture_output=True, text=True, timeout=5
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip() == "logger started"
 
@@ -85,8 +91,8 @@ def test_noninteractive_setup_rejects_unselected_action_before_prompt(tmp_path):
     )
     run = tmp_path / "setup"
     run.write_text(script)
-    result = subprocess.run(
-        ["bash", str(run)],
+    result = subprocess.run(  # nosec B603
+        ["/bin/bash", str(run)],
         stdin=subprocess.DEVNULL,
         env=os.environ | {"PROMPT_MARKER": str(called)},
         capture_output=True,
