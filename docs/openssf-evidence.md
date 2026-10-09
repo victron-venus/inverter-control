@@ -1,12 +1,14 @@
 # OpenSSF Best Practices evidence
 
-This is the evidence index for the project's **Passing** self-assessment against
-the [OpenSSF criteria](https://www.bestpractices.dev/en/criteria/0?details=true&rationale=true).
+This index records the project's **Passing** assessment and the evidence under
+review for **Silver** against the [OpenSSF criteria](https://www.bestpractices.dev/en/criteria/1?details=true&rationale=true).
+Silver has not been awarded; the pending requirements below must be resolved
+before making that claim.
 The project first achieved the **Passing badge on 2026-10-08 at 02:37 UTC**.
 After correcting and retesting its TLS key-strength claim, the project restored
 Passing on **2026-10-09 at 00:08 UTC**. The
 [public assessment](https://www.bestpractices.dev/en/projects/15293/passing)
-records 100% completion: 63 criteria marked Met and four marked N/A with
+recorded 100% completion at restoration: 63 criteria marked Met and four marked N/A with
 justifications. This is a voluntary self-assessment, not an independent security
 certification. It must continue to reflect the released software and actual
 maintainer practices; a successful scanner run does not establish every criterion.
@@ -27,7 +29,8 @@ The documentation and security improvements were subsequently merged in
 in [v1.23.5-beta.10](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.5-beta.10),
 source `17143487b07bcbdd8f77f0878ed9b88373e2dd8d`, before the assessment was submitted.
 The final [quality gate](https://github.com/victron-venus/inverter-control/actions/runs/37714862769)
-passed 1,809 tests with 94.27% statement coverage, and the
+passed 1,809 tests and reported 94.27% statement coverage under the historical
+measurement that included test source, and the
 [release workflow](https://github.com/victron-venus/inverter-control/actions/runs/37715259908)
 succeeded. These checks do not constitute physical-device acceptance.
 This index should be updated when the application, release process, or security
@@ -131,9 +134,11 @@ The following criteria have evidence supporting **Met**:
   [pytest suite](../tests), [CI script](../scripts/ci.sh), and
   [quality gate](../.github/workflows/quality-gate.yml) run unit, regression,
   release-contract, and mock-integration checks before releases.
-- `test_most`: the baseline reports 1,777 passing pytest tests and 96.43% measured
-  statement coverage. That percentage is not a claim of branch coverage,
-  exhaustive input coverage, or testing on physical inverters.
+- `test_most`: the baseline reported 1,777 passing pytest tests and 96.43%
+  statement coverage, including test source. That historical percentage is not
+  production-only coverage and is not used for the Silver 80% claim. The suite
+  exercises control, transport, validation and recovery behavior; its results
+  do not establish exhaustive inputs or testing on physical inverters.
 - `test_policy`, `tests_documented_added`, `tests_are_added`: contribution rules
   require tests for new functionality and regressions. Recent
   [security fixes](https://github.com/victron-venus/inverter-control/pull/301/files)
@@ -163,12 +168,21 @@ The following criteria have evidence supporting **Met**:
 - `dynamic_analysis_fixed`: no unresolved exploitable issue was found by the
   audited fuzz runs. Future confirmed findings must follow [SECURITY.md](../SECURITY.md).
 
-`dynamic_analysis_unsafe` is **N/A** for this project's own Python and shell
-source: it does not produce C/C++ or other manually memory-managed components.
-CPython and native libraries still require dependency and platform updates.
-`warnings_strict` is a **qualified Met candidate**: the project enforces its
-configured checks, but `pyproject.toml` contains documented rule exceptions.
-Review those exceptions; do not claim that every available warning is enabled.
+`dynamic_analysis_unsafe` is **pending**, not N/A: the optional ARMv7 dependency
+bundle builds CFFI native code. The new [native memory-safety check](build-and-install.md#native-memory-safety-checks)
+rebuilds CFFI with AddressSanitizer, verifies linkage and an intentional-overflow
+canary, and runs 2,000 deterministic native-API fuzz iterations. The local ARM64
+check passed; completion of the required hosted x86-64 job must be recorded.
+Leak detection is disabled for CPython lifetime allocations. No claim is made
+that prebuilt cryptography/OpenSSL wheels are instrumented.
+
+`warnings_strict` has practical **Met** evidence: blocking Ruff diagnostics now
+include bare-except `E722` and unused-variable `F841`; their global ignores were
+removed and resulting violations fixed. Remaining exceptions are documented;
+Bandit findings and incomplete scans fail the gate. The known FFDH deprecation
+warning is confined to the exact key-exchange boundary fixture and is retained
+explicitly while a supported replacement is evaluated. It is an `interfaces_current`
+SHOULD exception, not a claim that every available diagnostic is enabled.
 
 ## Cryptography, delivery, and known vulnerabilities
 
@@ -186,7 +200,8 @@ Review those exceptions; do not claim that every available warning is enabled.
   [PR #307](https://github.com/victron-venus/inverter-control/pull/307), source
   `120e3b5ae977975aeb9d080b4216d62f793934fa`. Its
   [main validation](https://github.com/victron-venus/inverter-control/actions/runs/37861640088)
-  passed 1,937 tests with 94.33% statement coverage; the ARMv7 dependency build
+  passed 1,937 tests and reported 94.33% statement coverage including test source;
+  the ARMv7 dependency build
   also passed. The public answer and Passing status were verified again on
   2026-10-09 UTC. Existing equipment still needs the compatible dependency
   bundle and an operator-authorized update; this does not establish that every
@@ -233,7 +248,8 @@ This is a maintainer attestation, not a training certificate or an independent a
 The maintainer also confirmed no vulnerability reports outside GitHub in the
 preceding six months and no other bug reports or enhancement requests outside
 GitHub in the preceding 12 months. Combined with the GitHub inventory above,
-these declarations resolve the report-history questions for this assessment.
+these declarations resolve the Passing report-response questions for that
+review. They do not resolve Silver's separate 12-month reporter-credit requirement.
 
 The assessment was saved and submitted, and its restored Passing status was
 verified on OpenSSF and through the public project API on **2026-10-09 UTC**.
@@ -244,3 +260,111 @@ from `venus-os-ci-toolkit`, including bounded TOML parsing and source-bound
 release-note validation. Consumer release-contract suites exercise the vendored
 release modules from this checkout. Workflow-validator refactoring preserves this repository's
 existing policy; it does not imply all newer toolkit workflow guarantees are enabled.
+
+
+## Silver review: evidence and open requirements
+
+The repository proposals cover all 55 Silver criteria. They describe the reviewed
+source; merging documentation alone does not establish historical practices or
+publish a signed release. The public application must be checked against the
+final merged source and required CI before saving updated answers.
+
+### Governance and documentation
+
+[GOVERNANCE.md](../GOVERNANCE.md) records the decision process, named owner,
+release/security roles, contributor duties and the limits of bot automation.
+[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) sets participation expectations.
+[ROADMAP.md](../ROADMAP.md) covers intended work and exclusions through October
+2027. [CONTRIBUTING.md](../CONTRIBUTING.md) names PEP 8/Ruff conventions and
+requires tests, current documentation and timely achievement updates. The
+[quick start](quick-start.md) exercises the software without connected equipment;
+[architecture](../ARCHITECTURE.md) and [interfaces](interfaces.md) describe its
+components and contracts.
+
+**Pending — `access_continuity`.** Public source, a permissive license and
+runbooks do not prove someone else can administer this repository and release
+within one week. A real human continuity arrangement and usable lawful access
+must be confirmed. No successor, permission or recovery exercise is invented.
+
+**Pending — `vulnerability_report_credit`.** [SECURITY.md](../SECURITY.md)
+requires credit for every reporter unless anonymity is requested. Actual
+resolved-report history over the preceding 12 months remains unconfirmed.
+The earlier six-month outside-report statement must not be extended to a year.
+The documented intake, triage, mitigation, disclosure and rotation procedure
+supports `vulnerability_response_process` independently of that history.
+
+The justified SHOULD exceptions are `dco` (no verified legal assertion from all
+historical nontrivial contributors), `bus_factor` (one documented human
+maintainer), and `internationalization` (no complete message catalog).
+[Accessibility guidance](accessibility.md) records keyboard/text operation,
+`NO_COLOR`, explicit valve-state text and the limits of formal conformance.
+The default GitHub-hosted project sites satisfy the site-password criterion;
+the project does not operate an additional user-password database.
+
+### Build, installation and testing
+
+[Build and installation guidance](build-and-install.md) explains the standard
+`make install`/`uninstall` paths, nonprivileged `DESTDIR` staging and locked
+`uv` developer environment. Tests exercise path confinement and preservation of
+operator files. The native builder accepts compiler/linker variables, preserves
+requested debug information and compares two clean CFFI builds. Recorded local
+builds produced equal wheel and package bytes in the same pinned environment.
+No recursive cross-directory build dependency graph is used. Dependency locks,
+native input manifests, update bots and security scans identify components for
+monitoring and replacement.
+
+The [regression inventory](regression-audit.md) combines 475 screened baseline
+commits with reviewed PR305 and Silver fixes: **169 of 304 conservative repair
+candidates (55.59%)** have meaningful automated regressions. Two reviewers
+independently sampled mappings; disputed cases were removed, split or given
+stronger assertions. This satisfies the numerical `regression_tests_added50`
+threshold only for the recorded source interval and merged mapped tests.
+
+**Pending — `test_statement_coverage80`.** The integrated run at `8858711`
+passed 2,182 tests with two skips and one documented FFDH warning, and Ruff
+checking/formatting passed. Its 85.97% result excluded tests but a subsequent
+inventory found 19 tracked Python files missing from coverage discovery. The
+corrected run enables namespace discovery and includes runtime, release and
+workflow suites under one measurement. Confirm its complete production-file
+inventory and percentage before asserting the 80% criterion; the 81% configured
+gate must not be lowered. Earlier 94–96% figures included test source and are
+retained above only as historical records.
+
+The testing and review policies support `test_policy_mandated`,
+`tests_documented_added`, `coding_standards` and `coding_standards_enforced`.
+`interfaces_current` remains a justified SHOULD exception for the deprecated
+FFDH API used only by its exact boundary fixture. That fixture is not removed
+merely to suppress the warning.
+
+### Security and signed delivery
+
+The [assurance case](security-assurance.md) states threats and trust boundaries,
+connects security requirements to implementations and tests, and records
+limitations. It supports secure design and input validation with explicit
+checks for MQTT/HTTP framing, bounded payloads, finite forecast values, numeric
+commands, Home Assistant paths and install/release inputs. The supported TLS
+clients retain certificate verification before private HTTP data. TLS/OpenSSH
+library negotiation provides algorithm agility; the [credential guide](credentials.md)
+documents separate token/key files and replacement without rebuilding.
+
+`crypto_used_network` is a justified SHOULD exception: trusted local MQTT,
+webhook, console and metrics retain plaintext defaults, and legacy Home
+Assistant HTTP remains configurable. Remote operation requires an authenticated
+encrypted tunnel/gateway or verified HTTPS. This is not described as universal
+encryption. Native CFFI defaults use stack protection and RELRO/NOW; Python
+memory management and bounded parsers/queues provide additional hardening.
+
+**Pending — `signed_releases`.** The new [signature procedure](release-signatures.md)
+authenticates both source and ARMv7 payloads through a signed checksum manifest.
+It binds verification to the trusted issuer, workflow, source repository/ref
+and independently obtained reviewed SHA. Key material exists only in an
+ephemeral signing process, outside the public release store. The actual hosted
+signing job, public release assets and recipient verification still need to be
+observed; implementation and mock tests do not establish a signed release.
+Historical unsigned releases remain unsigned. `version_tags_signed` is an
+unfulfilled suggestion because Git tags remain lightweight.
+
+**Pending — `dynamic_analysis_unsafe`.** Record the required hosted native
+sanitizer run described above. Existing Python Atheris fuzzing and the clean
+Bandit security gate are separate evidence; neither substitutes for native
+memory-safety detection.
