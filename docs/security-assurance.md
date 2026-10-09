@@ -140,8 +140,10 @@ with mode 0400 or 0600. It rejects malformed content without printing it.
 Rotation uses private-file preparation, atomic replacement, a controlled
 restart, and revocation at the provider. Authenticated Loki uses Requests with
 a separate netrc credential store; a fresh session reloads it on each batch.
-The optional standard-library transport does not claim netrc support. SSH keys and TLS client keys use their
-existing separate files; the project does not embed them in source.
+The optional standard-library transport does not claim netrc support. Operator
+SSH keys use their existing separate files; the project does not embed them in
+source. External TLS gateways own their certificate/private-key
+configuration; the daemon exposes no dedicated mutual-TLS client-key setting.
 
 **Evidence.** [Credential loader](../inverter_control/credentials.py),
 [startup configuration](../inverter_control/config.py),
@@ -151,8 +153,10 @@ and [credential operations](credentials.md).
 
 **Limit.** Legacy inline `HA_TOKEN` remains compatible and must be migrated by
 the operator. Administrator-controlled parent directories and backups must be
-protected. The process necessarily holds the active token in memory. Runtime
-file changes do not revoke the token or reload an existing process by themselves.
+protected. The process necessarily holds the active token in memory. Changes to
+`HA_TOKEN_FILE` do not reload an existing process; a controlled restart is
+required. Loki Requests sessions reread netrc per batch. Neither operation
+revokes a provider credential by itself.
 
 ### S5: stale data and slow auxiliary work have bounded control effects
 

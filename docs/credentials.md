@@ -116,11 +116,12 @@ server account's authorized keys; preserve host-key verification. The daemon
 has no SSH private key compiled into it. Operator-configured jump hosts are a
 separate trust boundary.
 
-HTTPS trust roots are provided by the platform or configured CA files. Client
-certificates/private keys supplied through Requests remain separate files. The
-application does not provision these files or rotate external gateway keys;
-follow the owning platform's procedure and restart affected sessions/services
-when required. Do not weaken the certificate/key policy to make rotation pass.
+HTTPS trust roots are provided by the platform or configured CA files. The
+daemon exposes no dedicated mutual-TLS client-key configuration setting.
+External gateways own their separate certificate/private-key files; the
+application does not provision or rotate them. Follow the owning platform's
+procedure and restart affected gateway sessions/services when required. Do not
+weaken the certificate/key policy to make rotation pass.
 
 The MQTT client and local webhook/console/metrics listeners do not accept
 application authentication credentials; protect them at the broker, gateway,
