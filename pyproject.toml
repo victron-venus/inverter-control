@@ -88,6 +88,10 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "--cov=inverter_control --cov-report=term-missing --cov-fail-under=81"
 
+[tool.coverage.run]
+# Test execution is evidence about production code, not production coverage itself.
+omit = ["tests/*", ".github/release-tests/*", ".github/workflow-tests/*"]
+
 
 [tool.bandit.assert_used]
 # Pytest assertions are executable test checks, not production security guards.
