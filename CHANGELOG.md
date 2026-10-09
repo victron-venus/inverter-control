@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.23.5] - Candidate series, started 2026-10-06
 
+### Added
+- Separate Home Assistant token files and documented Loki netrc credential
+  rotation, so credentials can be replaced without editing ordinary configuration.
+- Signed source and optional ARMv7 dependency payloads, with fixed publisher,
+  workflow and source-commit verification. Historical unsigned releases remain
+  unsigned; follow [signature verification](docs/release-signatures.md).
+- Standard `make install` / `make uninstall` entry points and isolated `DESTDIR`
+  staging. Native CFFI builds check repeatability and preserve requested debug
+  information; a separate sanitizer job exercises native memory access.
+- Plain terminal output through `NO_COLOR` and explicit valve-state text.
+
 ### Fixed
+- Reject non-object or oversized MQTT commands, non-finite control values,
+  malformed solar summaries and invalid Home Assistant entity paths before
+  changing accepted state or issuing an HTTP request.
+- Fail closed when an explicitly authenticated Loki configuration would use
+  the standard-library transport, which does not implement netrc authentication.
 - Require at least RSA 2048 for operator SSH deployment/restart, preserving
   stronger configured minima and using fresh authenticated connections.
 - Enforce exact certificate-key minima on Home Assistant and both Loki HTTPS
@@ -32,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bound asynchronous regression-test waits and restore scheduled Trivy reports.
 
 ### Upgrade
+- `HA_TOKEN` remains supported. For new installations or credential migration,
+  provision a private `HA_TOKEN_FILE` outside the application directory; an
+  invalid selected file stops startup instead of reusing an inline token. See
+  [credential operations](docs/credentials.md) before a controlled restart.
+- Fractional manual setpoints, boolean numeric values and malformed forecast
+  metadata are now rejected. Valid integer setpoints, numeric interval strings
+  and partial daily MQTT forecasts retain their documented behavior.
+- Authenticated Loki should use Requests with an explicit private `NETRC` path
+  in the log-forwarder service environment. The optional urllib fallback rejects
+  that configuration; install the declared Requests dependency before migration.
 - Install the new `cryptography` dependency and verify its native wheel/runtime
   compatibility before updating; the installer checks it before stopping the
   controller. HTTPS fails closed without a verified-chain API or supported key.
@@ -64,6 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defaults.
 
 ### Documentation
+- Document maintainer responsibilities, contribution rights, continuity gaps,
+  a one-year roadmap, accessibility limits and a security assurance case.
 - Refresh contributor, development, security, and interface guidance for the
   OpenSSF Best Practices self-assessment. The documentation is evidence for the
   assessment, not a claim of certification or independent hardware review.
