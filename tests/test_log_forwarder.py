@@ -451,3 +451,72 @@ def test_requests_loki_reads_separate_netrc_and_rotates_without_rebuild(monkeypa
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+
+
+@pytest.mark.parametrize("userinfo,explicit_netrc", [(True, False), (False, True)])
+def test_stdlib_never_silently_downgrades_explicit_authentication(
+    monkeypatch, userinfo, explicit_netrc
+):
+    monkeypatch.setattr(log_forwarder, "USE_REQUESTS", False)
+    monkeypatch.setattr(
+        log_forwarder,
+        "LOKI_URL",
+        "https://fixture-user:fixture-value@example.invalid/loki"
+        if userinfo
+        else "https://example.invalid/loki",
+    )
+    if explicit_netrc:
+        monkeypatch.setenv("NETRC", "/unused/explicit.netrc")
+    else:
+        monkeypatch.delenv("NETRC", raising=False)
+    with patch.object(log_forwarder.urllib.request, "build_opener") as opener:
+        assert not log_forwarder.push_to_loki({"streams": []})
+        opener.assert_not_called()
+
+
+def test_netrc_authorization_and_log_body_never_follow_cross_origin_redirect(monkeypatch, tmp_path):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+
+    original_headers = []
+    redirected = []
+
+    class OtherOrigin(BaseHTTPRequestHandler):
+        def do_POST(self):
+            redirected.append(self.path)
+            self.send_response(204)
+            self.end_headers()
+
+        do_GET = do_POST
+
+    other = HTTPServer(("127.0.0.1", 0), OtherOrigin)
+
+    class RedirectOrigin(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            original_headers.append(self.headers.get("Authorization"))
+            self.send_response(307)
+            self.send_header("Location", f"http://127.0.0.1:{other.server_port}/unexpected")
+            self.end_headers()
+
+    original = HTTPServer(("127.0.0.1", 0), RedirectOrigin)
+    workers = [Thread(target=server.serve_forever, daemon=True) for server in (original, other)]
+    for worker in workers:
+        worker.start()
+    credentials = tmp_path / "loki.netrc"
+    credentials.write_text("machine 127.0.0.1 login fixture-user password fixture-value\n")
+    credentials.chmod(0o600)
+    monkeypatch.setenv("NETRC", str(credentials))
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    monkeypatch.setattr(log_forwarder, "USE_REQUESTS", True)
+    monkeypatch.setattr(log_forwarder, "LOKI_URL", f"http://127.0.0.1:{original.server_port}/loki")
+    try:
+        assert not log_forwarder.push_to_loki({"streams": []})
+        assert len(original_headers) == 1
+        assert original_headers[0].startswith("Basic ")
+        assert redirected == []
+    finally:
+        for server, worker in zip((original, other), workers, strict=True):
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=2)

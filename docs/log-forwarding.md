@@ -46,7 +46,9 @@ credentials. A ready Loki endpoint should return HTTP 204 for a valid push.
 For Basic-authenticated Loki, keep credentials in a separate private netrc file
 and use the declared Requests transport. [Credential storage and rotation](credentials.md#loki-authentication-with-the-requests-transport)
 explains the service environment, permissions, next-batch rotation and the
-standard-library fallback limitation. Do not embed secrets in `LOKI_URL`.
+standard-library fallback limitation. A nonempty `NETRC` setting or URL
+userinfo is rejected before network access when Requests is unavailable.
+Do not embed secrets in `LOKI_URL`.
 
 ## Recovery and retention
 

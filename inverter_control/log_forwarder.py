@@ -322,6 +322,12 @@ def push_to_loki(payload):
 
     try:
         validate_loki_url(LOKI_URL)
+        endpoint = urllib.parse.urlsplit(LOKI_URL)
+        if not USE_REQUESTS and (endpoint.username is not None or os.environ.get("NETRC")):
+            # urllib's default opener implements neither URL Basic credentials
+            # nor netrc. Do not silently downgrade an explicitly authenticated
+            # configuration to an unauthenticated push when Requests is absent.
+            raise ValueError("Authenticated Loki requires the Requests transport")
         if USE_REQUESTS:
             with requests.Session() as session:
                 session.mount("https://", VerifiedHTTPAdapter())

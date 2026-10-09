@@ -74,8 +74,10 @@ remove it. Uninstalling the application does not revoke the provider's token.
 
 For authenticated Loki Basic authentication, use the supported Requests
 transport and its separate netrc credential file. Put the service account's
-username and password/token in its private `~/.netrc`, or set `NETRC` to an
-absolute private-file path in the **log-forwarder service's** environment.
+username and password/token in a private file and set `NETRC` to its
+absolute path in the **log-forwarder service's** environment. Requests also
+supports the service account's default `~/.netrc`, but an explicit `NETRC` path
+lets the fallback detect that authentication was requested.
 Do not put credentials in `LOKI_URL` or the ordinary endpoint file. The netrc
 file is a credential store; its `machine` field identifies the receiving host.
 
@@ -91,10 +93,15 @@ replacing the netrc file updates credentials for the next batch without code
 changes, recompilation or a controller restart. Revoke the old credential at
 the provider after routine rotation, or immediately on exposure. The actual
 Requests path is covered by a loopback test that observes the two different
-Authorization headers before and after replacement.
+Authorization headers before and after replacement. A separate two-origin
+redirect test confirms that neither credentials nor the log body is forwarded
+to the redirect destination.
 
 The optional standard-library fallback does not implement netrc authentication.
-Install the declared Requests dependency for authenticated Loki, or terminate
+It rejects URL userinfo and a nonempty explicit `NETRC` setting before network
+access, retaining the cursor for retry. It does not search a default `~/.netrc`;
+use explicit `NETRC` when authentication is required. Install the declared
+Requests dependency for authenticated Loki, or terminate
 authentication in a separately managed local encrypted tunnel/gateway. A missing
 or mismatched netrc entry can cause an unauthenticated request and a 401/403;
 it does not make an incorrectly exposed public Loki endpoint private. The
