@@ -118,7 +118,7 @@ def unstage(destdir: str) -> None:
     try:
         package.rmdir()
     except OSError:
-        pass
+        pass  # Preserve the package directory when operator files remain.
 
 
 def main() -> None:

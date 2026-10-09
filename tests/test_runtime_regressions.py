@@ -18,9 +18,11 @@ def test_log_pipe_backpressure_does_not_abort_the_control_caller(error):
     underlying = Mock()
     underlying.write.side_effect = [error, 4]
     stream = main._BrokenPipeSafeStream(underlying)
-    assert stream.write("status") == len("status")
+    written = stream.write("status")
+    assert written == len("status")
     # Suppression is specific to this failed write; a recovered pipe is reused.
-    assert stream.write("next") == 4
+    written = stream.write("next")
+    assert written == 4
     assert underlying.write.call_count == 2
 
 
