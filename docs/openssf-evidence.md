@@ -230,7 +230,7 @@ OpenSSF and through the public project API on **2026-10-08 UTC**.
 Badge status and Scorecard branch protection are separate assessments.
 
 The October 2026 maintenance imports the release identity and metadata parser
-from `venus-os-ci-toolkit` revision `9dd211a`, including bounded TOML parsing and
-source-bound release-note validation. Consumer release-contract suites verify
-the imported engine. Workflow-validator refactoring preserves this repository's
+from `venus-os-ci-toolkit`, including bounded TOML parsing and source-bound
+release-note validation. Consumer release-contract suites exercise the vendored
+release modules from this checkout. Workflow-validator refactoring preserves this repository's
 existing policy; it does not imply all newer toolkit workflow guarantees are enabled.
