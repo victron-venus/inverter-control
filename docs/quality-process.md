@@ -18,6 +18,8 @@ If an automated regression is impractical, record why and provide a bounded manu
 
 Review the rolling six-month inventory before updating the OpenSSF regression-test claim. Count distinct defects, including installer and release defects, rather than assuming that every PR is one bug or that any change to a test file proves coverage. Record the source interval, exclusions, unresolved ambiguities, and exact tests. High statement coverage and a work-item-level estimate alone are insufficient evidence for the per-defect 50% criterion.
 
+The [dated regression audit](regression-audit.md) records the source interval, per-defect mappings, exclusions, and retrospective comparisons. It must be extended through the final merged source before badge submission.
+
 The retrospective tests in [tests/test_runtime_regressions.py](../tests/test_runtime_regressions.py) cover historical failures including log-pipe backpressure escaping into callers, overlapping discovery subprocesses, and failure to parse typed D-Bus inverter-state replies. Their historical fixes were [#167](https://github.com/victron-venus/inverter-control/pull/167), [f0a16fc](https://github.com/victron-venus/inverter-control/commit/f0a16fc), and [#168](https://github.com/victron-venus/inverter-control/pull/168). They also exercise SmartShunt source selection, a blocked console sender, unit-bearing HA values, and nonfinite D-Bus values. [Service entrypoint tests](../tests/test_service_entrypoints.py) execute private fixtures for the deployed Python/logging commands and headless setup guard.
 
 ## Current interfaces and documentation

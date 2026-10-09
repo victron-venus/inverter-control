@@ -1,0 +1,80 @@
+{
+  "base_sha": "120e3b5ae977975aeb9d080b4216d62f793934fa",
+  "method": "Exact historical/current definitions or entrypoint text, all transports/filesystems replaced by bounded private fixtures; no hardware or external service calls. Missing historical entrypoint is explicitly distinguished from runtime failure.",
+  "cases": {
+    "shunt_product_selection": {
+      "before_ref": "6b0e73c^",
+      "before": null,
+      "after": "com.victronenergy.battery.ttyUSB9",
+      "before_sha": "04855f9ba49db76c610cc7e9749f42f13ee09a26"
+    },
+    "console_lock": {
+      "before_ref": "06be598^",
+      "before": {
+        "returns_while_client_lock_held": false
+      },
+      "after": {
+        "returns_while_client_lock_held": true
+      },
+      "before_sha": "f1a4f56852074f87272855e4cfd8333f6559b5a1"
+    },
+    "ha_unit_suffix": {
+      "before_ref": "c2e965c^",
+      "before": 0,
+      "after": 7.2,
+      "before_sha": "7886e9488644a4869fdcaf9a9772ac8825ab1727"
+    },
+    "nonfinite_float": {
+      "before_ref": "6f8fdde^",
+      "before": "infinity",
+      "after": 0.0,
+      "before_sha": "ca22e0a071e7b66b69a58e81968800d0814b8524"
+    },
+    "unbuffered_controller": {
+      "before_ref": "d0d399f^",
+      "before": {
+        "outcome": "failed",
+        "returncode": 30
+      },
+      "after": {
+        "outcome": "ok",
+        "returncode": 0
+      },
+      "before_sha": "277180dd66a4b07c4908d92ca74f109c305febc8"
+    },
+    "logger_command": {
+      "before_ref": "771ffdf^",
+      "before": {
+        "outcome": "missing_entrypoint"
+      },
+      "after": {
+        "outcome": "ok",
+        "returncode": 0
+      },
+      "before_sha": "d0d399f6bdc6d1e54d261d7d4e3af7249d9bc7ce"
+    },
+    "log_forwarder_directory": {
+      "before_ref": "fe801c9^",
+      "before": {
+        "outcome": "failed",
+        "returncode": 33
+      },
+      "after": {
+        "outcome": "ok",
+        "returncode": 0
+      },
+      "before_sha": "8fe8416cbb0f79a6c1c6054ce809c2b80dd405e2"
+    },
+    "log_forwarder_logger": {
+      "before_ref": "8461a8b^",
+      "before": {
+        "outcome": "missing_entrypoint"
+      },
+      "after": {
+        "outcome": "ok",
+        "returncode": 0
+      },
+      "before_sha": "acbc9c48324d3d577eed78c169f76c0c4e085abe"
+    }
+  }
+}

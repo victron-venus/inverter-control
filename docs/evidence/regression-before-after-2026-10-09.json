@@ -1,0 +1,46 @@
+{
+  "method": "Extract exact old/current production definitions with AST; replace all transport I/O with bounded in-memory mocks; compare same input/concurrency trigger. This does not execute whole historical runtime or prove hardware behavior.",
+  "base_sha": "120e3b5ae977975aeb9d080b4216d62f793934fa",
+  "full_pipe": {
+    "before_ref": "deaad09^",
+    "before": {
+      "outcome": "propagates_EAGAIN"
+    },
+    "after": {
+      "outcome": "returns_and_recovers",
+      "counts": [
+        6,
+        4
+      ]
+    },
+    "before_sha": "b875968f7fa7bdfee2b1c45ae6f09a8a500b758c"
+  },
+  "typed_state": {
+    "before_ref": "84b4951^",
+    "before": {
+      "outcome": "raises_ValueError"
+    },
+    "after": {
+      "outcome": "parsed",
+      "value": [
+        3,
+        "Bulk"
+      ]
+    },
+    "before_sha": "deaad098eb35223a9e43ca5e29087ea54466b28d"
+  },
+  "concurrent_discovery": {
+    "before_ref": "f0a16fc^",
+    "before": {
+      "transport_calls": 2,
+      "second_returned_while_first_blocked": false,
+      "concurrent_transports": true
+    },
+    "after": {
+      "transport_calls": 1,
+      "second_returned_while_first_blocked": true,
+      "concurrent_transports": false
+    },
+    "before_sha": "7e331b6c9d00543012dffdf658e6f0aabfcdcc65"
+  }
+}
