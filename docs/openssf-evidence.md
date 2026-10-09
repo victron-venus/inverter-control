@@ -314,8 +314,8 @@ native input manifests, update bots and security scans identify components for
 monitoring and replacement.
 
 The [regression inventory](regression-audit.md) combines 475 screened baseline
-commits with reviewed PR305 and Silver fixes: **169 of 304 conservative repair
-candidates (55.59%)** have meaningful automated regressions. Two reviewers
+commits with reviewed PR305 and Silver fixes: **171 of 307 conservative repair
+candidates (55.70%)** have meaningful automated regressions. Two reviewers
 independently sampled mappings; disputed cases were removed, split or given
 stronger assertions. This satisfies the numerical `regression_tests_added50`
 threshold only for the recorded source interval and merged mapped tests.

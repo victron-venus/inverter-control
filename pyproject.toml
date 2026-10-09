@@ -89,12 +89,21 @@ dev = [
 addopts = "--cov=inverter_control --cov-report=term-missing --cov-fail-under=81"
 
 [tool.coverage.run]
+source = ["."]
 # Test execution is evidence about production code, not production coverage itself.
-omit = ["tests/*", ".github/release-tests/*", ".github/workflow-tests/*"]
+omit = [
+    "tests/*", ".github/release-tests/*", ".github/workflow-tests/*",
+    ".venv/*", ".venv-ci/*", "local_config.example.py",
+]
 
 [tool.coverage.report]
 # Include unimported scripts that are outside Python packages.
 include_namespace_packages = true
+# Apply the same boundary to combined or appended data from earlier runs.
+omit = [
+    "tests/*", ".github/release-tests/*", ".github/workflow-tests/*",
+    ".venv/*", ".venv-ci/*", "local_config.example.py",
+]
 
 [tool.bandit.assert_used]
 # Pytest assertions are executable test checks, not production security guards.
