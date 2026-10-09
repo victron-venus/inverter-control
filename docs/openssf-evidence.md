@@ -389,15 +389,26 @@ encrypted tunnel/gateway or verified HTTPS. This is not described as universal
 encryption. Native CFFI defaults use stack protection and RELRO/NOW; Python
 memory management and bounded parsers/queues provide additional hardening.
 
-**Pending — `signed_releases`.** The new [signature procedure](release-signatures.md)
-authenticates both source and ARMv7 payloads through a signed checksum manifest.
-It binds verification to the trusted issuer, workflow, source repository/ref
-and independently obtained reviewed SHA. Key material exists only in an
-ephemeral signing process, outside the public release store. The actual hosted
-signing job, public release assets and recipient verification still need to be
-observed; implementation and mock tests do not establish a signed release.
-Historical unsigned releases remain unsigned. `version_tags_signed` is an
-unfulfilled suggestion because Git tags remain lightweight.
+**Unmet — `signed_releases`, with a verified signed preview.**
+[v1.23.5-beta.15](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.5-beta.15)
+was published on 2026-10-09 at 00:54 UTC from merged source
+`f2ea6e76d301f9e05f3992c5378968cc0b440c24`. Its
+[signing job](https://github.com/victron-venus/inverter-control/actions/runs/37866464358/job/113615746096)
+and [independent recipient verification](evidence/signed-preview-validation-2026-10-09.json)
+passed. The signed checksum manifest covers both source and ARMv7 archives.
+Verification used an independently selected source SHA and fixed GitHub issuer,
+workflow, repository and branch; an intentionally wrong SHA was rejected.
+Auxiliary receipts and release metadata are outside that signed inventory.
+
+The current stable release, [v1.23.4](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.4),
+remains unsigned. We conservatively retain **Unmet** until a signed stable
+release completes the documented exact-RC acceptance process and downloaded
+artifact verification. The [OpenSSF criterion](https://www.bestpractices.dev/en/criteria/1?details=true&rationale=true#signed_releases)
+covers releases intended for widespread use; it does not literally require the
+word “stable.” This is our assessment of this project's preview/stable practice,
+not an additional official requirement or a claim that every historical release
+must be signed retroactively. `version_tags_signed` remains an unfulfilled
+suggestion because Git tags are lightweight.
 
 **Met evidence — `dynamic_analysis_unsafe`.** The hosted ASan result above
 provides the native-memory check. Python Atheris fuzzing and the Bandit security

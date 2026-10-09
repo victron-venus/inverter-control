@@ -60,5 +60,10 @@
     "secret_scanning_open_count": 0,
     "interpretation": "Scorecard reports score8 because main requires one approving review. This is the deliberately retained review policy and remains an open governance warning; it is not dismissed or described as a zero-alert result. Empty vulnerability/secret inventories describe only the reported findings at this time, not proof of absence of undiscovered problems."
   },
-  "release_publication": "No signed-release claim is established by this post-merge audit. Actual publication and independent recipient verification are recorded separately when complete."
+  "release_publication": "No signed-release claim is established by this post-merge audit. Actual publication and independent recipient verification are recorded separately when complete.",
+  "subsequent_signed_preview_evidence": {
+    "verified_at_utc": "2026-10-09T00:54:55.824118+00:00",
+    "evidence": "signed-preview-validation-2026-10-09.json",
+    "scope": "Subsequent publication and verification of beta.15; the earlier audit timestamp and its pre-publication observation above remain historical."
+  }
 }
