@@ -1,6 +1,6 @@
 # Project governance
 
-Inverter Control uses a maintainer-led model. The project owner, [4alvit](https://github.com/4alvit), is accountable for its direction and makes final decisions after considering technical evidence and contributor feedback. This is a small community project; participation does not require employment, membership, or a contribution agreement.
+Inverter Control uses a maintainer-led model. The project owner, [4alvit](https://github.com/4alvit), is accountable for its direction and makes final decisions after considering technical evidence and contributor feedback. This is a small community project; participation does not require employment, membership, or a separate contributor license agreement.
 
 ## Roles and responsibilities
 

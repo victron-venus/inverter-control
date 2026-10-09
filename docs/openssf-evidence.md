@@ -2,7 +2,9 @@
 
 This is the evidence index for the project's **Passing** self-assessment against
 the [OpenSSF criteria](https://www.bestpractices.dev/en/criteria/0?details=true&rationale=true).
-The project achieved the **Passing badge on 2026-10-08 at 02:37 UTC**. The
+The project first achieved the **Passing badge on 2026-10-08 at 02:37 UTC**.
+After correcting and retesting its TLS key-strength claim, the project restored
+Passing on **2026-10-09 at 00:08 UTC**. The
 [public assessment](https://www.bestpractices.dev/en/projects/15293/passing)
 records 100% completion: 63 criteria marked Met and four marked N/A with
 justifications. This is a voluntary self-assessment, not an independent security
@@ -11,11 +13,12 @@ maintainer practices; a successful scanner run does not establish every criterio
 
 The public [application is project 15293](https://www.bestpractices.dev/en/projects/15293).
 [.bestpractices.json](../.bestpractices.json) supplies proposed answers in the
-official repository automation format. All 67 proposed statuses matched the
-published assessment when the badge was awarded. Review new evidence and the
+official repository automation format. The repository's TLS answer has been
+synchronized with the restored public assessment, so a later import does not
+restore the superseded answer. Review new evidence and the
 resulting form before saving future updates; do not mark unverified criteria Met.
 
-Evidence was reviewed on **2026-10-08 UTC**. The baseline release is
+Evidence was reviewed on **2026-10-08 and 2026-10-09 UTC**. The original baseline release is
 [v1.23.5-beta.9](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.5-beta.9),
 source `c651e9f3e7114f050fbfa641b16c8c885032186e`, with a successful
 [release validation run](https://github.com/victron-venus/inverter-control/actions/runs/37710820520).
@@ -176,11 +179,18 @@ Review those exceptions; do not claim that every available warning is enabled.
 - **Corrected `crypto_keylength` evidence:** the earlier OpenSSL security-level-2
   inference was insufficient. On CPython 3.12.13/OpenSSL 3.5.7, Home Assistant,
   Loki Requests and Loki urllib accepted a trusted RSA 2047-bit root. The public
-  criterion was corrected while the fix is reviewed. The source now verifies
+  criterion was corrected while the fix was reviewed. The source now verifies
   exact public-key minima on the complete verified chain of the connection
   before sending application data; see [the security design](security-design.md)
-  and `tests/test_tls_policy.py`. This is a candidate repair, not a statement
-  that the public badge or every device deployment has been revalidated.
+  and `tests/test_tls_policy.py`. The repair was merged in
+  [PR #307](https://github.com/victron-venus/inverter-control/pull/307), source
+  `120e3b5ae977975aeb9d080b4216d62f793934fa`. Its
+  [main validation](https://github.com/victron-venus/inverter-control/actions/runs/37861640088)
+  passed 1,937 tests with 94.33% statement coverage; the ARMv7 dependency build
+  also passed. The public answer and Passing status were verified again on
+  2026-10-09 UTC. Existing equipment still needs the compatible dependency
+  bundle and an operator-authorized update; this does not establish that every
+  deployment runs the corrected client.
 - **Evidence for `crypto_working`, `crypto_weaknesses`, `crypto_pfs`:** the audited
   locked Python environment uses TLS 1.2 minimum, certificate/hostname
   verification, and TLS 1.3 or ephemeral ECDHE/DHE suites with at least 128-bit
@@ -225,8 +235,8 @@ preceding six months and no other bug reports or enhancement requests outside
 GitHub in the preceding 12 months. Combined with the GitHub inventory above,
 these declarations resolve the report-history questions for this assessment.
 
-The assessment was saved and submitted, and its Passing status was verified on
-OpenSSF and through the public project API on **2026-10-08 UTC**.
+The assessment was saved and submitted, and its restored Passing status was
+verified on OpenSSF and through the public project API on **2026-10-09 UTC**.
 Badge status and Scorecard branch protection are separate assessments.
 
 The October 2026 maintenance imports the release identity and metadata parser
