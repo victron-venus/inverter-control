@@ -10,6 +10,8 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inverter_control.dbus import VUESensorDBusClient
@@ -223,3 +225,74 @@ class TestDbusSendFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize("native_value", [None, True, "nan", "inf", object()])
+def test_fallback_uses_only_time_remaining_after_native_read(monkeypatch, native_value):
+    clock = [10.0]
+
+    def native_get(*_args, **kwargs):
+        assert kwargs["timeout"] == 0.25
+        clock[0] += 1.8
+        return native_value
+
+    def cli_read(_command, **kwargs):
+        assert kwargs["timeout"] == pytest.approx(0.2)
+        clock[0] += 0.1
+        return subprocess.CompletedProcess([], 0, "variant double 42.0")
+
+    with patch.object(VUESensorDBusClient, "_setup_dbus"):
+        client = VUESensorDBusClient({}, native_get=native_get)
+    client._available = True
+    client._vue_services = {"garage": "com.victronenergy.acload.test"}
+    monkeypatch.setattr("inverter_control.dbus.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("inverter_control.dbus.subprocess.run", cli_read)
+    cache = {"garage": 7.0}
+    client.update_all(cache)
+    assert cache == {"garage": 42.0}
+
+
+@pytest.mark.parametrize("expired_transport", ["native", "cli"])
+def test_expired_transport_never_publishes_a_power_value(monkeypatch, expired_transport):
+    clock = [10.0]
+
+    def native_get(*_args, **_kwargs):
+        if expired_transport == "native":
+            clock[0] += 2.1
+            return "42"
+        return None
+
+    def cli_read(_command, **_kwargs):
+        assert expired_transport == "cli", "expired native reads must not start CLI fallback"
+        clock[0] += 2.1
+        return subprocess.CompletedProcess([], 0, "double 42")
+
+    with patch.object(VUESensorDBusClient, "_setup_dbus"):
+        client = VUESensorDBusClient({}, native_get=native_get)
+    client._available = True
+    client._vue_services = {"garage": "com.victronenergy.acload.test"}
+    monkeypatch.setattr("inverter_control.dbus.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("inverter_control.dbus.subprocess.run", cli_read)
+    cache = {"garage": 7.0}
+    client.update_all(cache)
+    assert cache == {"garage": 7.0}
+
+
+@pytest.mark.parametrize("cancelled_transport", ["native", "cli"])
+def test_power_read_cancellation_reaches_the_caller(cancelled_transport):
+    class Cancelled(BaseException):
+        pass
+
+    cancellation = Cancelled()
+    getter = MagicMock(side_effect=cancellation) if cancelled_transport == "native" else None
+    with patch.object(VUESensorDBusClient, "_setup_dbus"):
+        client = VUESensorDBusClient({}, native_get=getter)
+    client._available = True
+    client._vue_services = {"garage": "com.victronenergy.acload.test"}
+    cache = {"garage": 7.0}
+    with patch("inverter_control.dbus.subprocess.run", side_effect=cancellation) as cli:
+        with pytest.raises(Cancelled) as raised:
+            client.update_all(cache)
+    assert raised.value is cancellation
+    assert cache == {"garage": 7.0}
+    assert cli.call_count == (cancelled_transport == "cli")

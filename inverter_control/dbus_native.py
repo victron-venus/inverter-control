@@ -84,46 +84,51 @@ def _provenance_type(cls):
     }
 
 
+def _provenance_scalar_bounded(value, budget):
+    """Charge scalar storage to the shared fingerprint budget."""
+    if isinstance(value, (bytes, str)):
+        budget[0] -= len(value) * (4 if isinstance(value, str) else 1)
+    elif isinstance(value, int):
+        budget[0] -= max(1, value.bit_length() // 8 + 1)
+    elif value is not None and value is not Ellipsis and not isinstance(value, (float, complex)):
+        return False
+    return budget[0] >= 0
+
+
+def _provenance_value_bounded(value, budget, depth=0):
+    """Bound recursive code metadata before marshal can allocate its encoding."""
+    budget[1] -= 1
+    if depth > 12 or budget[1] < 0:
+        return False
+    if isinstance(value, types.CodeType):
+        return all(
+            _provenance_value_bounded(item, budget, depth + 1)
+            for item in (
+                value.co_code,
+                value.co_consts,
+                value.co_names,
+                value.co_varnames,
+                value.co_freevars,
+                value.co_cellvars,
+                value.co_filename,
+                value.co_name,
+                value.co_qualname,
+                value.co_linetable,
+                value.co_exceptiontable,
+            )
+        )
+    if isinstance(value, (tuple, frozenset)):
+        return len(value) <= 1024 and all(
+            _provenance_value_bounded(item, budget, depth + 1) for item in value
+        )
+    return _provenance_scalar_bounded(value, budget)
+
+
 def _provenance_code(code):
     """Background only: fingerprint the captured code object, never its globals."""
     if not isinstance(code, types.CodeType):
         return {"status": "no_python_code"}
-    budget = [262144, 4096]
-
-    def bounded(value, depth=0):
-        budget[1] -= 1
-        if depth > 12 or budget[1] < 0:
-            return False
-        if isinstance(value, types.CodeType):
-            return all(
-                bounded(item, depth + 1)
-                for item in (
-                    value.co_code,
-                    value.co_consts,
-                    value.co_names,
-                    value.co_varnames,
-                    value.co_freevars,
-                    value.co_cellvars,
-                    value.co_filename,
-                    value.co_name,
-                    value.co_qualname,
-                    value.co_linetable,
-                    value.co_exceptiontable,
-                )
-            )
-        if isinstance(value, (tuple, frozenset)):
-            return len(value) <= 1024 and all(bounded(item, depth + 1) for item in value)
-        if isinstance(value, (bytes, str)):
-            budget[0] -= len(value) * (4 if isinstance(value, str) else 1)
-        elif isinstance(value, int):
-            budget[0] -= max(1, value.bit_length() // 8 + 1)
-        elif (
-            value is not None and value is not Ellipsis and not isinstance(value, (float, complex))
-        ):
-            return False
-        return budget[0] >= 0
-
-    if not bounded(code):
+    if not _provenance_value_bounded(code, [262144, 4096]):
         return {"status": "code_budget_exceeded"}
     encoded = marshal.dumps(code, 4)
     if len(encoded) > 1024 * 1024:
@@ -475,6 +480,25 @@ class NativeDbusClient:
         self._loop = loop
         return loop
 
+    async def _run_before_deadline(self, async_fn, deadline, timing):
+        """Reject expired queued work and time only the actual coroutine wait."""
+        if timing is not None:
+            timing["dispatched_at"] = time.monotonic()
+            timing["loop_native_tid"] = threading.get_native_id()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            # A busy loop must not send an old queued setpoint after the
+            # caller has already timed out and requested a safety zero.
+            raise TimeoutError("Request expired before dispatch")
+        async with asyncio.timeout(remaining):
+            if timing is not None:
+                timing["await_started_at"] = time.monotonic()
+            try:
+                return await async_fn()
+            finally:
+                if timing is not None:
+                    timing["completed_at"] = time.monotonic()
+
     def _call_on_loop(self, async_fn, timeout: float, *, timing=None, existing_loop=None):
         """Run a coroutine factory on the loop, cross-thread safe.
 
@@ -502,25 +526,7 @@ class NativeDbusClient:
             return None
         deadline = time.monotonic() + timeout
 
-        async def _run():
-            if timing is not None:
-                timing["dispatched_at"] = time.monotonic()
-                timing["loop_native_tid"] = threading.get_native_id()
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                # A busy loop must not send an old queued setpoint after the
-                # caller has already timed out and requested a safety zero.
-                raise TimeoutError("Request expired before dispatch")
-            async with asyncio.timeout(remaining):
-                if timing is not None:
-                    timing["await_started_at"] = time.monotonic()
-                try:
-                    return await async_fn()
-                finally:
-                    if timing is not None:
-                        timing["completed_at"] = time.monotonic()
-
-        coroutine = _run()
+        coroutine = self._run_before_deadline(async_fn, deadline, timing)
         try:
             if timing is not None:
                 timing["submitted_at"] = time.monotonic()
@@ -628,8 +634,8 @@ class NativeDbusClient:
                 pass
         return samples
 
-    async def _call_message(self, bus, message, *, timing=None):
-        """Call once, observing replies without consuming them or replacing call()."""
+    def _start_call_observers(self, bus, message, timing):
+        """Attach best-effort send/reply timing without changing message consumption."""
         observer = None
         stop_send_observer = None
         if timing is not None:
@@ -658,25 +664,36 @@ class NativeDbusClient:
             # Optional diagnostics must never interrupt hardware control or recovery.
             except Exception:  # Diagnostics must not prevent a confirmed write.  # nosec B110
                 pass
+        return observer, stop_send_observer
+
+    @staticmethod
+    def _stop_call_observers(bus, observer, stop_send_observer):
+        """Remove optional observers without masking a transport result or error."""
+        if stop_send_observer is not None:
+            try:
+                stop_send_observer()
+            # Optional diagnostics must never interrupt hardware control or recovery.
+            except Exception:  # nosec B110
+                # Preserve the call's result/error if optional cleanup fails.
+                pass
+        if observer is not None:
+            try:
+                bus.remove_message_handler(observer)
+            # Optional diagnostics must never interrupt hardware control or recovery.
+            except Exception:  # nosec B110
+                pass
+
+    async def _call_message(self, bus, message, *, timing=None):
+        """Call once, observing replies without consuming them or replacing call()."""
+        observer, stop_send_observer = self._start_call_observers(bus, message, timing)
+        if timing is not None:
             timing["call_started_at"] = time.monotonic()
         try:
             return await bus.call(message)
         finally:
             if timing is not None:
                 timing["call_finished_at"] = time.monotonic()
-            if stop_send_observer is not None:
-                try:
-                    stop_send_observer()
-                # Optional diagnostics must never interrupt hardware control or recovery.
-                except Exception:  # nosec B110
-                    # Preserve the call's result/error if optional cleanup fails.
-                    pass
-            if observer is not None:
-                try:
-                    bus.remove_message_handler(observer)
-                # Optional diagnostics must never interrupt hardware control or recovery.
-                except Exception:  # nosec B110
-                    pass
+            self._stop_call_observers(bus, observer, stop_send_observer)
             # dbus-fast 2.21.1 leaves cancelled calls in this public Cython dict
             # until a reply/disconnect. A silent endpoint must not leak one
             # handler per retry on the otherwise healthy shared connection.
@@ -911,25 +928,13 @@ class NativeDbusClient:
     # BusItem calls                                                      #
     # ------------------------------------------------------------------ #
 
-    def call_busitem(
-        self,
-        service: str,
-        path: str,
-        member: str,
-        body: list | None = None,
-        timeout: float = 0.5,
-    ):
-        """Call a com.victronenergy.BusItem method; reply Message or None."""
-        if not _DBUS_FAST_AVAILABLE or self._loop_thread_id == threading.get_ident():
-            # A synchronous loop-thread caller cannot await acceptance. Avoid
-            # even acquiring the connection lock: a reconnect may hold it while
-            # waiting for this loop to arm signal matches.
-            return None
+    def _busitem_message(self, service, path, member, body):
+        """Validate the caller's request without attributing errors to the connection."""
         from dbus_fast import Message
 
         try:
             kwargs = {"body": body, "signature": "v"} if body is not None else {}
-            message = Message(
+            return Message(
                 destination=service,
                 path=path,
                 interface=BUSITEM_INTERFACE,
@@ -950,6 +955,24 @@ class NativeDbusClient:
                 path=path,
                 error_type=type(e).__name__,
             )
+            return None
+
+    def call_busitem(
+        self,
+        service: str,
+        path: str,
+        member: str,
+        body: list | None = None,
+        timeout: float = 0.5,
+    ):
+        """Call a com.victronenergy.BusItem method; reply Message or None."""
+        if not _DBUS_FAST_AVAILABLE or self._loop_thread_id == threading.get_ident():
+            # A synchronous loop-thread caller cannot await acceptance. Avoid
+            # even acquiring the connection lock: a reconnect may hold it while
+            # waiting for this loop to arm signal matches.
+            return None
+        message = self._busitem_message(service, path, member, body)
+        if message is None:
             return None
 
         timing = (
@@ -993,6 +1016,10 @@ class NativeDbusClient:
         finally:
             if timing is not None:
                 self._record_write_timing(timing, bus, message)
+        return self._accepted_busitem_reply(bus, reply, service, path)
+
+    def _accepted_busitem_reply(self, bus, reply, service, path):
+        """Reject missing/error replies and retire only a demonstrably dead connection."""
         if reply is None:
             if (
                 not getattr(bus, "connected", True)

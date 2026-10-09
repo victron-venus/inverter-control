@@ -9,15 +9,46 @@ from typing import Any
 
 from .grid_telemetry import _number
 
+BACKUP_ROLE_PATH = "/Role"
+BACKUP_POWER_PATH = "/Ac/Power"
+BACKUP_UPDATED_PATH = "/LastUpdate"
+BACKUP_INSTANCE_PATH = "/DeviceInstance"
+BACKUP_CUSTOM_NAME_PATH = "/CustomName"
+BACKUP_PRODUCT_NAME_PATH = "/ProductName"
+
 BACKUP_PATHS = (
     "/Connected",
-    "/Role",
-    "/Ac/Power",
-    "/LastUpdate",
-    "/DeviceInstance",
-    "/CustomName",
-    "/ProductName",
+    BACKUP_ROLE_PATH,
+    BACKUP_POWER_PATH,
+    BACKUP_UPDATED_PATH,
+    BACKUP_INSTANCE_PATH,
+    BACKUP_CUSTOM_NAME_PATH,
+    BACKUP_PRODUCT_NAME_PATH,
 )
+
+
+def _parse_backup_value(block, path):
+    numeric = re.search(
+        r'string "Value"\s+variant\s+(?:double|u?int(?:16|32|64))\s+([^\s]+)',
+        block,
+    )
+    text = re.search(r'string "Value"\s+variant\s+string\s+"([^"\n]+)"', block)
+    value = None
+    if numeric:
+        value = numeric.group(1)
+    elif text:
+        value = text.group(1)
+    if path == BACKUP_UPDATED_PATH and numeric:
+        # dbus-send formats doubles with limited significant digits:
+        # 1.78935e+09 can conceal hours of source age. Fail closed if
+        # the text cannot identify the source timestamp to a second.
+        try:
+            timestamp = Decimal(numeric.group(1))
+            if not timestamp.is_finite() or timestamp.as_tuple().exponent > 0:
+                value = None
+        except InvalidOperation:
+            value = None
+    return value
 
 
 def parse_backup_snapshot(output: str) -> dict[str, Any]:
@@ -25,22 +56,7 @@ def parse_backup_snapshot(output: str) -> dict[str, Any]:
     blocks = re.split(r'string "(/[^"\n]+)"', output)
     for path, block in zip(blocks[1::2], blocks[2::2]):
         if path in fields:
-            numeric = re.search(
-                r'string "Value"\s+variant\s+(?:double|u?int(?:16|32|64))\s+([^\s]+)',
-                block,
-            )
-            text = re.search(r'string "Value"\s+variant\s+string\s+"([^"\n]+)"', block)
-            fields[path] = numeric.group(1) if numeric else text.group(1) if text else None
-            if path == "/LastUpdate" and numeric:
-                # dbus-send formats doubles with limited significant digits:
-                # 1.78935e+09 can conceal hours of source age. Fail closed if
-                # the text cannot identify the source timestamp to a second.
-                try:
-                    timestamp = Decimal(numeric.group(1))
-                    if not timestamp.is_finite() or timestamp.as_tuple().exponent > 0:
-                        fields[path] = None
-                except InvalidOperation:
-                    fields[path] = None
+            fields[path] = _parse_backup_value(block, path)
     return fields
 
 
@@ -85,17 +101,17 @@ class GridBackup:
             if generation != self._generation:
                 return
             source = fields or {}
-            text_paths = ("/Role", "/CustomName", "/ProductName")
+            text_paths = (BACKUP_ROLE_PATH, BACKUP_CUSTOM_NAME_PATH, BACKUP_PRODUCT_NAME_PATH)
             self._fields = {p: _number(source.get(p)) for p in BACKUP_PATHS if p not in text_paths}
             self._fields.update({p: source.get(p) for p in text_paths})
-            instance = self._fields.get("/DeviceInstance")
+            instance = self._fields.get(BACKUP_INSTANCE_PATH)
             if (
-                self._fields["/Role"] == "acload"
+                self._fields[BACKUP_ROLE_PATH] == "acload"
                 and instance is not None
                 and instance >= 0
                 and instance.is_integer()
             ):
-                names = (source.get("/CustomName"), source.get("/ProductName"))
+                names = (source.get(BACKUP_CUSTOM_NAME_PATH), source.get(BACKUP_PRODUCT_NAME_PATH))
                 self._identity = {
                     "device_instance": int(instance),
                     "name": next(
@@ -104,20 +120,59 @@ class GridBackup:
                     ),
                 }
             self._read_time = time.monotonic()
-            timestamp = self._fields.get("/LastUpdate")
+            timestamp = self._fields.get(BACKUP_UPDATED_PATH)
             age = time.time() - timestamp if timestamp is not None else float("inf")
             self._deadline = (
                 self._read_time + self.max_age - max(0.0, age) if -5 <= age <= self.max_age else 0.0
             )
 
+    def _select_backup(self, primary_valid, ready, now):
+        if primary_valid:
+            if self._primary_since is None:
+                self._primary_since = now
+        else:
+            self._primary_since = None
+        use_backup = (
+            self.enabled
+            and ready
+            and (
+                not primary_valid
+                or (self._using_backup and now - self._primary_since < self.recovery_seconds)
+            )
+        )
+        return use_backup
+
+    def _record_transition(self, primary, primary_valid, use_backup, now):
+        self._selection_generation += 1
+        # Any cache reader (including GridFilter) can observe this edge
+        # before the control loop. Preserve its cause through recovery;
+        # instantaneous primary status below deliberately stays current.
+        primary_source = primary.get("_grid_source")
+        primary_source = primary_source[:512] if isinstance(primary_source, str) else None
+        backup_source = self.service[:512] if isinstance(self.service, str) else None
+        reason = primary.get("_grid_invalid_reason")
+        self._source_transitions.append(
+            {
+                "selection_generation": self._selection_generation,
+                "observed_at_monotonic": now,
+                "observed_at_unix": time.time(),
+                "from_source": backup_source if self._using_backup else primary_source,
+                "to_source": backup_source if use_backup else primary_source,
+                "using_backup": bool(use_backup),
+                "primary_valid": primary_valid,
+                "primary_reason": reason[:512] if isinstance(reason, str) else None,
+            }
+        )
+        self._using_backup = use_backup
+
     def select(self, primary: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             now = time.monotonic()
-            instance = self._fields.get("/DeviceInstance")
+            instance = self._fields.get(BACKUP_INSTANCE_PATH)
             ready = (
                 self._fields.get("/Connected") == 1
-                and self._fields.get("/Role") == "acload"
-                and self._fields.get("/Ac/Power") is not None
+                and self._fields.get(BACKUP_ROLE_PATH) == "acload"
+                and self._fields.get(BACKUP_POWER_PATH) is not None
                 and instance is not None
                 and instance >= 0
                 and instance.is_integer()
@@ -125,41 +180,9 @@ class GridBackup:
                 and now - self._read_time <= 3.0
             )
             primary_valid = primary.get("_grid_valid") is True
-            if primary_valid:
-                if self._primary_since is None:
-                    self._primary_since = now
-            else:
-                self._primary_since = None
-            use_backup = (
-                self.enabled
-                and ready
-                and (
-                    not primary_valid
-                    or (self._using_backup and now - self._primary_since < self.recovery_seconds)
-                )
-            )
+            use_backup = self._select_backup(primary_valid, ready, now)
             if use_backup != self._using_backup:
-                self._selection_generation += 1
-                # Any cache reader (including GridFilter) can observe this edge
-                # before the control loop. Preserve its cause through recovery;
-                # instantaneous primary status below deliberately stays current.
-                primary_source = primary.get("_grid_source")
-                primary_source = primary_source[:512] if isinstance(primary_source, str) else None
-                backup_source = self.service[:512] if isinstance(self.service, str) else None
-                reason = primary.get("_grid_invalid_reason")
-                self._source_transitions.append(
-                    {
-                        "selection_generation": self._selection_generation,
-                        "observed_at_monotonic": now,
-                        "observed_at_unix": time.time(),
-                        "from_source": backup_source if self._using_backup else primary_source,
-                        "to_source": backup_source if use_backup else primary_source,
-                        "using_backup": bool(use_backup),
-                        "primary_valid": primary_valid,
-                        "primary_reason": reason[:512] if isinstance(reason, str) else None,
-                    }
-                )
-                self._using_backup = use_backup
+                self._record_transition(primary, primary_valid, use_backup, now)
             status = dict(primary)
             status.update(
                 _grid_backup=use_backup,
@@ -171,8 +194,8 @@ class GridBackup:
                     "service": self.service,
                     "generation": self._generation,
                     **self._identity,
-                    "power": self._fields.get("/Ac/Power") if ready else None,
-                    "measurement_time": self._fields.get("/LastUpdate"),
+                    "power": self._fields.get(BACKUP_POWER_PATH) if ready else None,
+                    "measurement_time": self._fields.get(BACKUP_UPDATED_PATH),
                     "age_seconds": max(0.0, self.max_age - (self._deadline - now))
                     if self._deadline > 0
                     else None,
@@ -188,7 +211,7 @@ class GridBackup:
                 status.update(
                     g1=None,
                     g2=None,
-                    gt=round(self._fields["/Ac/Power"]),
+                    gt=round(self._fields[BACKUP_POWER_PATH]),
                     _grid_valid=True,
                     _grid_invalid_reason=None,
                     _grid_age=max(0.0, self.max_age - (self._deadline - now)),
@@ -196,6 +219,6 @@ class GridBackup:
                     _grid_source=self.service,
                     _grid_source_instance=int(instance),
                     _grid_total_only=True,
-                    _grid_measurement_time=self._fields["/LastUpdate"],
+                    _grid_measurement_time=self._fields[BACKUP_UPDATED_PATH],
                 )
             return status

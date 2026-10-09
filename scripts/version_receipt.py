@@ -64,6 +64,27 @@ def capture_toolchain() -> dict:
     return result
 
 
+def receipt_packages(assets: Path) -> list[dict]:
+    """Inventory a nonempty flat package directory without existing receipts."""
+    packages = []
+    seen = set()
+    for path in sorted(assets.iterdir()):
+        if path.name.startswith("release-inputs-") and path.suffix == ".json":
+            raise ValueError("Package directory already contains a version receipt")
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"Package must be a flat regular file: {path.name}")
+        if path.name.casefold() in seen or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}", path.name
+        ):
+            raise ValueError("Unsafe or duplicate package name")
+        seen.add(path.name.casefold())
+        data = path.read_bytes()
+        packages.append({"name": path.name, "size": len(data), "sha256": sha256(data)})
+    if not packages:
+        raise ValueError("Cannot attest an empty package directory")
+    return packages
+
+
 def create_receipt(
     plan_path: Path, inputs_path: Path, assets: Path, output: Path
 ) -> dict:
@@ -84,22 +105,7 @@ def create_receipt(
         r"release-inputs-[A-Za-z0-9._-]+\.json", output.name
     ):
         raise ValueError("Receipt must have a unique release-inputs-TARGET.json name")
-    packages = []
-    seen = set()
-    for path in sorted(assets.iterdir()):
-        if path.name.startswith("release-inputs-") and path.suffix == ".json":
-            raise ValueError("Package directory already contains a version receipt")
-        if path.is_symlink() or not path.is_file():
-            raise ValueError(f"Package must be a flat regular file: {path.name}")
-        if path.name.casefold() in seen or not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}", path.name
-        ):
-            raise ValueError("Unsafe or duplicate package name")
-        seen.add(path.name.casefold())
-        data = path.read_bytes()
-        packages.append({"name": path.name, "size": len(data), "sha256": sha256(data)})
-    if not packages:
-        raise ValueError("Cannot attest an empty package directory")
+    packages = receipt_packages(assets)
     result = {**evidence, "artifacts": packages, "toolchain": capture_toolchain()}
     verify_current_inputs(plan_path.parent, evidence["files"])
     # Fail if a caller reuses an existing receipt path, including a symlink.
@@ -137,8 +143,42 @@ def verify_current_inputs(root: Path, files: list[dict]) -> None:
             raise ValueError(f"Build input changed after version sync: {item['path']}")
 
 
-# Each branch rejects a distinct invalid receipt or missing payload condition.
-# pylint: disable-next=too-many-branches
+def verify_receipt_evidence(receipt, plan, name, policy) -> None:
+    """Validate a receipt's source, toolchain and frozen version projections."""
+    if receipt.get("plan_sha256") != version_plan.plan_digest(plan):
+        raise ValueError(f"Build used a different release plan: {name}")
+    if receipt.get("source_sha") != plan["source_sha"] or not receipt.get("files"):
+        raise ValueError("Receipt lacks source-bound version input evidence")
+    if not isinstance(receipt.get("toolchain"), dict) or not receipt[
+        "toolchain"
+    ].get("python"):
+        raise ValueError("Receipt lacks actual build toolchain versions")
+    if receipt.get(
+        "effective_inputs_sha256"
+    ) != version_plan.effective_inputs_digest(receipt["files"]):
+        raise ValueError("Receipt version input digest mismatch")
+    if policy is not None and {item["path"] for item in receipt["files"]} != {
+        item["path"] for item in policy["versioning"]["files"]
+    }:
+        raise ValueError("Receipt does not cover every declared version source")
+    if policy is not None:
+        validate_input_fields(receipt["files"], policy, plan)
+
+
+def cover_receipt_artifacts(receipt, expected, receipts, covered) -> None:
+    """Accept exact payload metadata once, refusing recursive receipt coverage."""
+    artifacts = receipt.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise ValueError("Empty receipt artifact inventory")
+    for artifact in artifacts:
+        asset_name = artifact.get("name")
+        if asset_name in covered or asset_name in receipts:
+            raise ValueError("Payload has duplicate or recursive build coverage")
+        if expected.get(asset_name) != artifact:
+            raise ValueError(f"Receipt does not match staged payload: {asset_name}")
+        covered.add(asset_name)
+
+
 def verify_receipts(
     directory: Path, plan: dict, payloads: list[dict], policy=None
 ) -> list[dict]:
@@ -158,34 +198,8 @@ def verify_receipts(
         if len(raw) > 2_000_000:
             raise ValueError("Oversized build receipt")
         receipt = json.loads(raw)
-        if receipt.get("plan_sha256") != version_plan.plan_digest(plan):
-            raise ValueError(f"Build used a different release plan: {name}")
-        if receipt.get("source_sha") != plan["source_sha"] or not receipt.get("files"):
-            raise ValueError("Receipt lacks source-bound version input evidence")
-        if not isinstance(receipt.get("toolchain"), dict) or not receipt[
-            "toolchain"
-        ].get("python"):
-            raise ValueError("Receipt lacks actual build toolchain versions")
-        if receipt.get(
-            "effective_inputs_sha256"
-        ) != version_plan.effective_inputs_digest(receipt["files"]):
-            raise ValueError("Receipt version input digest mismatch")
-        if policy is not None and {item["path"] for item in receipt["files"]} != {
-            item["path"] for item in policy["versioning"]["files"]
-        }:
-            raise ValueError("Receipt does not cover every declared version source")
-        if policy is not None:
-            validate_input_fields(receipt["files"], policy, plan)
-        artifacts = receipt.get("artifacts")
-        if not isinstance(artifacts, list) or not artifacts:
-            raise ValueError("Empty receipt artifact inventory")
-        for artifact in artifacts:
-            asset_name = artifact.get("name")
-            if asset_name in covered or asset_name in receipts:
-                raise ValueError("Payload has duplicate or recursive build coverage")
-            if expected.get(asset_name) != artifact:
-                raise ValueError(f"Receipt does not match staged payload: {asset_name}")
-            covered.add(asset_name)
+        verify_receipt_evidence(receipt, plan, name, policy)
+        cover_receipt_artifacts(receipt, expected, receipts, covered)
         results.append({"name": name, "sha256": sha256(raw), "inputs": receipt})
     if covered != set(expected) - receipts:
         raise ValueError("Some release payloads lack version input evidence")
@@ -242,6 +256,16 @@ def verify_declared_artifacts(directory: Path, policy: dict, plan: dict) -> list
     return result
 
 
+def check_cli_path_kind(resolved: Path, kind: str) -> None:
+    """Enforce input/output filesystem roles after path confinement."""
+    if kind == "file" and not resolved.is_file():
+        raise ValueError("CLI input must be a regular file")
+    if kind == "directory" and not resolved.is_dir():
+        raise ValueError("CLI assets must be a directory")
+    if kind == "new" and (resolved.exists() or not resolved.parent.is_dir()):
+        raise ValueError("CLI output must be a new file in an existing directory")
+
+
 def confined_cli_path(root: Path, value: Path, kind: str) -> Path:
     """Constrain CLI paths to their installed checkout before any content I/O."""
     root = root.resolve(strict=True)
@@ -263,12 +287,7 @@ def confined_cli_path(root: Path, value: Path, kind: str) -> Path:
         # Includes the synchronizer's regular-file, hardlink and metadata limits.
         # pylint: disable-next=protected-access
         return version_plan._path(root, relative.as_posix())
-    if kind == "file" and not resolved.is_file():
-        raise ValueError("CLI input must be a regular file")
-    if kind == "directory" and not resolved.is_dir():
-        raise ValueError("CLI assets must be a directory")
-    if kind == "new" and (resolved.exists() or not resolved.parent.is_dir()):
-        raise ValueError("CLI output must be a new file in an existing directory")
+    check_cli_path_kind(resolved, kind)
     return resolved
 
 

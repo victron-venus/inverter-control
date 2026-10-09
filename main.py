@@ -180,6 +180,83 @@ def _handle_toggle(controller, payload: dict) -> None:
         controller.ha.toggle_entity(entity)
 
 
+def _mqtt_safe_loop_interval(controller, p):
+    try:
+        val = float(p.get("interval", 0.33))
+    except (ValueError, TypeError) as e:
+        logger.warning("MQTT loop_interval rejected: %s", e)
+        return
+    controller.set_loop_interval(val)
+
+
+def _mqtt_select_ess_mode(controller, bridge, payload):
+    try:
+        controller.select_ess_mode(payload)
+    except ValueError as exc:
+        logger.warning("MQTT ESS selection rejected: %s", exc)
+        return
+    bridge.publish_state(controller.get_state_for_mqtt())
+
+
+def _mqtt_safe_limits(controller, p):
+    try:
+        values = (p.get("min", -2300), p.get("max", 2250))
+        if any(
+            type(value) is bool or (type(value) is float and not value.is_integer())
+            for value in values
+        ):
+            raise ValueError("Power limits must be integers")
+        # Preserve integer strings from older clients, without truncating
+        # fractional values or silently interpreting booleans as watts.
+        lo, hi = map(int, values)
+        controller.set_power_limits(lo, hi)
+    except (ValueError, TypeError, OverflowError) as e:
+        logger.warning("MQTT limits rejected: %s", e)
+        return
+
+
+def _mqtt_dry_run(controller, bridge, payload):
+    if isinstance(payload, dict) and "value" in payload:
+        if type(payload["value"]) is not bool:
+            logger.warning("MQTT dry_run rejected: value must be boolean")
+            return
+        controller.set_dry_run(payload["value"])
+    else:
+        # Compatibility with older desktop versions that sent a toggle.
+        controller.toggle_dry_run()
+    # Publish immediately, including when meter loss pauses normal state
+    # rebuilding. Duplicate delivery of an explicit value is idempotent.
+    bridge.publish_state(controller.get_state_for_mqtt())
+
+
+def _mqtt_setpoint_override(controller, payload):
+    request_id = payload.get("request_id") if isinstance(payload, dict) else None
+    if request_id is not None and not isinstance(request_id, str):
+        request_id = None
+    if not isinstance(payload, dict) or "value" not in payload:
+        controller._watchdog.reject_setpoint_override(
+            "Expected JSON object with value: int32 integer or null", request_id
+        )
+        return
+    controller.set_setpoint_override(payload["value"], request_id)
+
+
+def _mqtt_safe_setpoint(controller, p):
+    try:
+        val = int(p.get("value", 0))
+    except (ValueError, TypeError) as e:
+        logger.warning("MQTT setpoint rejected: %s", e)
+        return
+    controller.set_manual_setpoint(val)
+
+
+def _mqtt_electricity_tariff(controller, bridge, payload):
+    controller.tariff.apply(payload)
+    # A saved plan and its acknowledgement must reach editors even while
+    # a grid telemetry outage pauses the normal state rebuild.
+    bridge.publish_state(controller.get_state_for_mqtt())
+
+
 def _setup_mqtt_bridge(controller):
     """Set up MQTT bridge and register command callbacks. Returns bridge or None."""
     from inverter_control.config import (  # pylint: disable=import-outside-toplevel
@@ -199,92 +276,28 @@ def _setup_mqtt_bridge(controller):
     bridge.register_callback("pre_charge", controller._handle_pre_charge_webhook)
     bridge.register_callback("toggle", lambda p: _handle_toggle(controller, p))
 
-    def _electricity_tariff(payload):
-        controller.tariff.apply(payload)
-        # A saved plan and its acknowledgement must reach editors even while
-        # a grid telemetry outage pauses the normal state rebuild.
-        bridge.publish_state(controller.get_state_for_mqtt())
-
-    bridge.register_callback("electricity_tariff", _electricity_tariff)
+    bridge.register_callback(
+        "electricity_tariff", lambda payload: _mqtt_electricity_tariff(controller, bridge, payload)
+    )
     bridge.register_callback("press", lambda p: controller.ha.press_button(p.get("entity", "")))
 
-    def _safe_setpoint(p):
-        try:
-            val = int(p.get("value", 0))
-        except (ValueError, TypeError) as e:
-            logger.warning("MQTT setpoint rejected: %s", e)
-            return
-        controller.set_manual_setpoint(val)
+    bridge.register_callback("setpoint", lambda p: _mqtt_safe_setpoint(controller, p))
 
-    bridge.register_callback("setpoint", _safe_setpoint)
-
-    def _setpoint_override(payload):
-        request_id = payload.get("request_id") if isinstance(payload, dict) else None
-        if request_id is not None and not isinstance(request_id, str):
-            request_id = None
-        if not isinstance(payload, dict) or "value" not in payload:
-            controller._watchdog.reject_setpoint_override(
-                "Expected JSON object with value: int32 integer or null", request_id
-            )
-            return
-        controller.set_setpoint_override(payload["value"], request_id)
-
-    bridge.register_callback("setpoint_override", _setpoint_override)
+    bridge.register_callback(
+        "setpoint_override", lambda payload: _mqtt_setpoint_override(controller, payload)
+    )
     controller._watchdog.set_override_status_callback(bridge.publish_setpoint_override)
 
-    def _dry_run(payload):
-        if isinstance(payload, dict) and "value" in payload:
-            if type(payload["value"]) is not bool:
-                logger.warning("MQTT dry_run rejected: value must be boolean")
-                return
-            controller.set_dry_run(payload["value"])
-        else:
-            # Compatibility with older desktop versions that sent a toggle.
-            controller.toggle_dry_run()
-        # Publish immediately, including when meter loss pauses normal state
-        # rebuilding. Duplicate delivery of an explicit value is idempotent.
-        bridge.publish_state(controller.get_state_for_mqtt())
+    bridge.register_callback("dry_run", lambda payload: _mqtt_dry_run(controller, bridge, payload))
 
-    bridge.register_callback("dry_run", _dry_run)
-
-    def _safe_limits(p):
-        try:
-            values = (p.get("min", -2300), p.get("max", 2250))
-            if any(
-                type(value) is bool or (type(value) is float and not value.is_integer())
-                for value in values
-            ):
-                raise ValueError("Power limits must be integers")
-            # Preserve integer strings from older clients, without truncating
-            # fractional values or silently interpreting booleans as watts.
-            lo, hi = map(int, values)
-            controller.set_power_limits(lo, hi)
-        except (ValueError, TypeError, OverflowError) as e:
-            logger.warning("MQTT limits rejected: %s", e)
-            return
-
-    bridge.register_callback("limits", _safe_limits)
+    bridge.register_callback("limits", lambda p: _mqtt_safe_limits(controller, p))
     bridge.register_callback("ess_mode", lambda p: controller.toggle_ess_mode())
 
-    def _select_ess_mode(payload):
-        try:
-            controller.select_ess_mode(payload)
-        except ValueError as exc:
-            logger.warning("MQTT ESS selection rejected: %s", exc)
-            return
-        bridge.publish_state(controller.get_state_for_mqtt())
+    bridge.register_callback(
+        "set_ess_mode", lambda payload: _mqtt_select_ess_mode(controller, bridge, payload)
+    )
 
-    bridge.register_callback("set_ess_mode", _select_ess_mode)
-
-    def _safe_loop_interval(p):
-        try:
-            val = float(p.get("interval", 0.33))
-        except (ValueError, TypeError) as e:
-            logger.warning("MQTT loop_interval rejected: %s", e)
-            return
-        controller.set_loop_interval(val)
-
-    bridge.register_callback("loop_interval", _safe_loop_interval)
+    bridge.register_callback("loop_interval", lambda p: _mqtt_safe_loop_interval(controller, p))
     # Install every command handler and the startup null status before the
     # broker can deliver commands. Overrides intentionally do not survive a
     # daemon restart; closing the desktop does not stop an active daemon mode.
@@ -357,21 +370,21 @@ def _maybe_run_gc(last_gc_time: float, gc_interval: float) -> float:
     return now
 
 
-def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0) -> bool:
-    """Confirm managed workers stopped and native close requested in one budget.
+def _shutdown_io(controller, mqtt_bridge, mqtt_done, close_allowed, completed, remaining):
+    try:
+        completed["mqtt"] = mqtt_bridge is None or mqtt_bridge.disconnect() is True
+    except Exception:
+        return
+    finally:
+        mqtt_done.set()
+    if close_allowed.wait(remaining()) and remaining() > 0:
+        try:
+            completed["close_requested"] = controller.victron.close(timeout=remaining()) is True
+        except Exception:
+            return
 
-    The public Paho loop_stop can wait for a hardware-writing callback. Keep
-    that wait off the main thread, and do not close its shared D-Bus connection
-    unless both MQTT and watchdog writers (and the readers) actually finished.
-    One-shot mode has no heartbeat worker; pass None for its event and thread.
-    Native loop exit is not acknowledged. This bounds our waits, not logging,
-    kernel I/O or interpreter finalization.
-    """
-    deadline = time.monotonic() + max(0.0, timeout)
 
-    def remaining():
-        return max(0.0, deadline - time.monotonic())
-
+def _request_worker_stops(controller, mqtt_bridge, hb_stop):
     requests_ok = True
     requests = [
         controller._watchdog.request_stop,
@@ -394,25 +407,37 @@ def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0
             request()
         except Exception:
             requests_ok = False
+    return requests_ok
+
+
+def _shutdown_main_loop(controller, mqtt_bridge, hb_stop, hb_thread, timeout=5.0) -> bool:
+    """Confirm managed workers stopped and native close requested in one budget.
+
+    The public Paho loop_stop can wait for a hardware-writing callback. Keep
+    that wait off the main thread, and do not close its shared D-Bus connection
+    unless both MQTT and watchdog writers (and the readers) actually finished.
+    One-shot mode has no heartbeat worker; pass None for its event and thread.
+    Native loop exit is not acknowledged. This bounds our waits, not logging,
+    kernel I/O or interpreter finalization.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+
+    def remaining():
+        return max(0.0, deadline - time.monotonic())
+
+    requests_ok = _request_worker_stops(controller, mqtt_bridge, hb_stop)
 
     mqtt_done = threading.Event()
     close_allowed = threading.Event()
     completed = {"mqtt": False, "close_requested": False}
 
-    def close_io():
-        try:
-            completed["mqtt"] = mqtt_bridge is None or mqtt_bridge.disconnect() is True
-        except Exception:
-            return
-        finally:
-            mqtt_done.set()
-        if close_allowed.wait(remaining()) and remaining() > 0:
-            try:
-                completed["close_requested"] = controller.victron.close(timeout=remaining()) is True
-            except Exception:
-                return
-
-    io_thread = threading.Thread(target=close_io, name="shutdown-io", daemon=True)
+    io_thread = threading.Thread(
+        target=lambda: _shutdown_io(
+            controller, mqtt_bridge, mqtt_done, close_allowed, completed, remaining
+        ),
+        name="shutdown-io",
+        daemon=True,
+    )
     io_thread.start()
 
     def stop(worker):

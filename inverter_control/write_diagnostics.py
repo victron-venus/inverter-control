@@ -40,6 +40,19 @@ EVENT_LEVELS = {
 }
 
 
+def _add_record_values(record, accepted, dry_run, value, seconds):
+    if type(accepted) is bool:
+        record["accepted"] = accepted
+    if type(dry_run) is bool:
+        record["dry_run"] = dry_run
+    if type(value) is int and -(2**31) <= value < 2**31:
+        record["value"] = value
+    if (type(seconds) is float and math.isfinite(seconds)) or (
+        type(seconds) is int and 0 <= seconds <= 2**31
+    ):
+        record["seconds"] = seconds
+
+
 class WriteDiagnostics:
     """Never call a sink, stringify arbitrary objects, or wait for the consumer."""
 
@@ -72,16 +85,7 @@ class WriteDiagnostics:
         ):
             if type(text) is str:
                 record[key] = text[:MAX_TEXT]
-        if type(accepted) is bool:
-            record["accepted"] = accepted
-        if type(dry_run) is bool:
-            record["dry_run"] = dry_run
-        if type(value) is int and -(2**31) <= value < 2**31:
-            record["value"] = value
-        if (type(seconds) is float and math.isfinite(seconds)) or (
-            type(seconds) is int and 0 <= seconds <= 2**31
-        ):
-            record["seconds"] = seconds
+        _add_record_values(record, accepted, dry_run, value, seconds)
         if event == "control_stage_slow":
             if type(stage) is not str or "seconds" not in record or record["seconds"] < 0:
                 return

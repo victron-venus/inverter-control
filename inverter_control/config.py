@@ -526,6 +526,35 @@ def _check_range(name: str, value, lo, hi) -> str | None:
     return None
 
 
+def _validate_grid_timing(checks):
+    for name, value, low, high in (
+        ("GRID_BACKUP_MAX_AGE_SECONDS", GRID_BACKUP_MAX_AGE_SECONDS, 10, 300),
+        ("GRID_BACKUP_RECOVERY_SECONDS", GRID_BACKUP_RECOVERY_SECONDS, 0, 60),
+    ):
+        if type(value) not in (int, float) or not low <= value <= high:
+            checks.append(f"{name} must be a finite number from {low} to {high}")
+    if GRID_LOSS_HOLD_SECONDS is not None and (
+        type(GRID_LOSS_HOLD_SECONDS) not in (int, float) or not 0 <= GRID_LOSS_HOLD_SECONDS <= 30
+    ):
+        checks.append("GRID_LOSS_HOLD_SECONDS must be None or a finite number from 0 to 30")
+
+
+def _validate_grid_config(checks):
+    if not isinstance(GRID_EXPECTED_SERVICE, str) or (
+        GRID_EXPECTED_SERVICE and not GRID_EXPECTED_SERVICE.startswith("com.victronenergy.")
+    ):
+        checks.append("GRID_EXPECTED_SERVICE must be empty or a Victron D-Bus service name")
+    if type(GRID_EXPECTED_PHASES) is not int or GRID_EXPECTED_PHASES not in (0, 1, 2):
+        checks.append("GRID_EXPECTED_PHASES must be 0 (learn), 1 or 2")
+    if type(USE_GRID_SUBMETER_AS_BACKUP) is not bool:
+        checks.append("USE_GRID_SUBMETER_AS_BACKUP must be True or False")
+    if not isinstance(GRID_BACKUP_SERVICE, str) or (
+        GRID_BACKUP_SERVICE and not GRID_BACKUP_SERVICE.startswith("com.victronenergy.acload.")
+    ):
+        checks.append("GRID_BACKUP_SERVICE must be empty or an AC load D-Bus service name")
+    _validate_grid_timing(checks)
+
+
 def _validate_config():
     """Validate critical config values at import time."""
     checks = [
@@ -566,28 +595,7 @@ def _validate_config():
     if GRID_FILTER_TAU < 0:
         checks.append(f"GRID_FILTER_TAU must be >= 0, got {GRID_FILTER_TAU!r}")
 
-    if not isinstance(GRID_EXPECTED_SERVICE, str) or (
-        GRID_EXPECTED_SERVICE and not GRID_EXPECTED_SERVICE.startswith("com.victronenergy.")
-    ):
-        checks.append("GRID_EXPECTED_SERVICE must be empty or a Victron D-Bus service name")
-    if type(GRID_EXPECTED_PHASES) is not int or GRID_EXPECTED_PHASES not in (0, 1, 2):
-        checks.append("GRID_EXPECTED_PHASES must be 0 (learn), 1 or 2")
-    if type(USE_GRID_SUBMETER_AS_BACKUP) is not bool:
-        checks.append("USE_GRID_SUBMETER_AS_BACKUP must be True or False")
-    if not isinstance(GRID_BACKUP_SERVICE, str) or (
-        GRID_BACKUP_SERVICE and not GRID_BACKUP_SERVICE.startswith("com.victronenergy.acload.")
-    ):
-        checks.append("GRID_BACKUP_SERVICE must be empty or an AC load D-Bus service name")
-    for name, value, low, high in (
-        ("GRID_BACKUP_MAX_AGE_SECONDS", GRID_BACKUP_MAX_AGE_SECONDS, 10, 300),
-        ("GRID_BACKUP_RECOVERY_SECONDS", GRID_BACKUP_RECOVERY_SECONDS, 0, 60),
-    ):
-        if type(value) not in (int, float) or not low <= value <= high:
-            checks.append(f"{name} must be a finite number from {low} to {high}")
-    if GRID_LOSS_HOLD_SECONDS is not None and (
-        type(GRID_LOSS_HOLD_SECONDS) not in (int, float) or not 0 <= GRID_LOSS_HOLD_SECONDS <= 30
-    ):
-        checks.append("GRID_LOSS_HOLD_SECONDS must be None or a finite number from 0 to 30")
+    _validate_grid_config(checks)
     if WATCHDOG_TIMEOUT_SECONDS <= 0:
         checks.append(
             f"WATCHDOG_TIMEOUT_SECONDS must be positive, got {WATCHDOG_TIMEOUT_SECONDS!r}"

@@ -252,3 +252,38 @@ def test_busy_diagnostic_sink_cannot_block_a_real_native_write(diagnostic_queue)
     samples = facade.drain_write_timings()
     lost_phase = "write_lock" if diagnostic_queue == "outer" else "native_call"
     assert all(sample["phase"] != lost_phase for sample in samples)
+
+
+@pytest.mark.parametrize("transport_fails", [False, True])
+def test_optional_observer_cleanup_errors_preserve_transport_outcome(transport_fails):
+    async def run():
+        client, bus = NativeDbusClient(observe_write_send=True), ObservedBus()
+        stop_send = Mock(side_effect=RuntimeError("send observer cleanup failed"))
+        bus.observe_send = Mock(return_value=stop_send)
+        bus.remove_message_handler = Mock(side_effect=RuntimeError("reply observer cleanup failed"))
+        original_call = bus.call
+        failure = OSError("transport failed")
+
+        async def call(message):
+            result = await original_call(message)
+            if transport_fails:
+                raise failure
+            return result
+
+        bus.call = call
+        timing = {}
+        message = Message(destination=SERVICE, path="/Setpoint", member="SetValue")
+        if transport_fails:
+            with pytest.raises(OSError) as raised:
+                await client._call_message(bus, message, timing=timing)
+            assert raised.value is failure
+        else:
+            result = await client._call_message(bus, message, timing=timing)
+            assert result.body == [0]
+        stop_send.assert_called_once_with()
+        bus.remove_message_handler.assert_called_once()
+        assert bus.calls == 1
+        assert not bus._method_return_handlers
+        assert timing["call_finished_at"] >= timing["call_started_at"]
+
+    asyncio.run(run())

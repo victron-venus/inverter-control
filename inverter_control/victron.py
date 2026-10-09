@@ -51,6 +51,7 @@ from .write_diagnostics import WriteDiagnostics
 logger = logging.getLogger("inverter-control")
 
 # D-Bus path constants
+CONNECTED_PATH = "/Connected"
 DC_CURRENT_PATH = "/Dc/0/Current"
 SETTINGS_SERVICE = "com.victronenergy.settings"
 TIME_ZONE_PATH = "/Settings/System/TimeZone"
@@ -335,7 +336,7 @@ class VictronDBus:
             (SYSTEM_SERVICE, path) for path in dict.fromkeys((*SYSTEM_SIGNAL_PATHS, *GRID_PATHS))
         ]
         if self._shunt_service:
-            targets.append((self._shunt_service, "/Connected"))
+            targets.append((self._shunt_service, CONNECTED_PATH))
             targets.extend((self._shunt_service, path) for path in SHUNT_SIGNAL_PATHS)
         if self._vebus_service:
             targets.append((self._vebus_service, VEBUS_STATE_PATH))
@@ -369,10 +370,12 @@ class VictronDBus:
             subscribed.append(self._native.subscribe_service_items(self._shunt_service))
         if self._vebus_service:
             # vebus is a C++ service; arm both signal shapes for it
-            subscribed.append(self._native.subscribe_service_items(self._vebus_service))
-            subscribed.append(self._native.subscribe_busitem(self._vebus_service, VEBUS_STATE_PATH))
-            subscribed.append(
-                self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH)
+            subscribed.extend(
+                [
+                    self._native.subscribe_service_items(self._vebus_service),
+                    self._native.subscribe_busitem(self._vebus_service, VEBUS_STATE_PATH),
+                    self._native.subscribe_busitem(self._vebus_service, VEBUS_INV_POWER_PATH),
+                ]
             )
         # Discovered services (solarcharger C++, pvinverter/acload velib-python)
         for service in (*self._mppt_services, *self._pv_inverter_services, *self._acload_services):
@@ -454,16 +457,7 @@ class VictronDBus:
             self._invalidate_grid_snapshot(generation, "System grid snapshot unavailable")
         self._schedule_grid_retry()
         for service, path in self._fast_targets():
-            if service == SYSTEM_SERVICE and path in GRID_PATHS:
-                continue
-            token = self._shunt_token() if service == self._shunt_service else None
-            raw = self._native.get_value(service, path)
-            if token is None:
-                self._apply_fast_value(service, path, raw)
-            else:
-                with self._shunt_lock:
-                    if token == self._shunt_token():
-                        self._apply_fast_value(service, path, raw)
+            self._seed_fast_target(service, path)
         self._last_signal_reconcile = time.monotonic()
 
     def _signals_healthy(self) -> bool:
@@ -565,40 +559,9 @@ class VictronDBus:
             self._set_grid_energy_timezone(raw)
             return
         with self._shunt_lock:
-            if service is not None and service == self._shunt_service:
-                if path == "/Connected":
-                    self._shunt_generation += 1
-                    self._shunt_connected = self._optional_float(raw) == 1
-                    if not self._shunt_connected:
-                        self._clear_shunt_data()
-                    return
-                key = SHUNT_SIGNAL_PATHS.get(path)
-                if key:
-                    self._shunt_generation += 1
-                    if self._shunt_connected is False:
-                        return
-                    value = self._optional_float(raw)
-                    if key == "bv" and value is not None and value <= 0:
-                        value = None
-                    self._system_data[key] = (
-                        round(value) if key == "bp" and value is not None else value
-                    )
-                    self._shunt_read_times[key] = time.monotonic()
-                    self._system_data["_last_update"] = time.time()
-                    self._last_signal_ok_monotonic = time.monotonic()
-                    return
-        meter_updated = False
-        with self._grid_energy_timezone_lock:
-            generation = self._grid_telemetry.generation
-            if service == SYSTEM_SERVICE and path in GRID_PATHS:
-                old_meter = self._grid_telemetry.selected_meter()
-                self._grid_telemetry.update(path, raw)
-                if self._grid_telemetry.selected_meter() != old_meter:
-                    self._discovery_requested.set()
-            else:
-                meter_updated = self._grid_telemetry.update_meter(service, path, raw)
-            if self._grid_telemetry.generation != generation:
-                self._grid_energy.invalidate()
+            if self._apply_shunt_value_locked(service, path, raw):
+                return
+        meter_updated = self._update_grid_fast_value(service, path, raw)
         if raw is None or meter_updated:
             return
         if service == SYSTEM_SERVICE:
@@ -606,12 +569,7 @@ class VictronDBus:
         elif service is not None and service == self._shunt_service:
             key = SHUNT_SIGNAL_PATHS.get(path)
         elif service is not None and service == self._vebus_service:
-            if path == VEBUS_STATE_PATH:
-                code = int(float(raw))
-                self._cached_inverter_state = (code, INVERTER_STATES.get(code, f"? ({code})"))
-                self._last_inverter_state_time = time.time()
-            elif path == VEBUS_INV_POWER_PATH:
-                self._system_data["inv_power"] = int(float(raw))
+            self._apply_vebus_fast_value(path, raw)
             # Observed traffic proves the signal path alive; see _poll_all.
             self._last_signal_ok_monotonic = time.monotonic()
             return
@@ -624,6 +582,73 @@ class VictronDBus:
             return  # unknown sender: not a subscribed fast input, ignore
         if key is None:
             return
+        self._apply_numeric_system_value(key, raw)
+
+    def _seed_fast_target(self, service: str, path: str) -> None:
+        """Apply a seed only while its SmartShunt generation is still current."""
+        if service == SYSTEM_SERVICE and path in GRID_PATHS:
+            return
+        token = self._shunt_token() if service == self._shunt_service else None
+        raw = self._native.get_value(service, path)
+        if token is None:
+            self._apply_fast_value(service, path, raw)
+        else:
+            with self._shunt_lock:
+                if token == self._shunt_token():
+                    self._apply_fast_value(service, path, raw)
+
+    def _apply_shunt_value_locked(self, service, path, raw) -> bool:
+        """Apply SmartShunt readings while the caller holds the observation lock."""
+        if service is None or service != self._shunt_service:
+            return False
+        if path == CONNECTED_PATH:
+            self._shunt_generation += 1
+            self._shunt_connected = self._optional_float(raw) == 1
+            if not self._shunt_connected:
+                self._clear_shunt_data()
+            return True
+        key = SHUNT_SIGNAL_PATHS.get(path)
+        if key:
+            self._shunt_generation += 1
+            if self._shunt_connected is False:
+                return True
+            value = self._optional_float(raw)
+            if key == "bv" and value is not None and value <= 0:
+                value = None
+            self._system_data[key] = round(value) if key == "bp" and value is not None else value
+            self._shunt_read_times[key] = time.monotonic()
+            self._system_data["_last_update"] = time.time()
+            self._last_signal_ok_monotonic = time.monotonic()
+            return True
+        return False
+
+    def _update_grid_fast_value(self, service, path, raw) -> bool:
+        """Update grid data and energy validity under the existing timezone lock."""
+        meter_updated = False
+        with self._grid_energy_timezone_lock:
+            generation = self._grid_telemetry.generation
+            if service == SYSTEM_SERVICE and path in GRID_PATHS:
+                old_meter = self._grid_telemetry.selected_meter()
+                self._grid_telemetry.update(path, raw)
+                if self._grid_telemetry.selected_meter() != old_meter:
+                    self._discovery_requested.set()
+            else:
+                meter_updated = self._grid_telemetry.update_meter(service, path, raw)
+            if self._grid_telemetry.generation != generation:
+                self._grid_energy.invalidate()
+        return meter_updated
+
+    def _apply_vebus_fast_value(self, path: str, raw) -> None:
+        """Update the inverter cache from one recognized VE.Bus path."""
+        if path == VEBUS_STATE_PATH:
+            code = int(float(raw))
+            self._cached_inverter_state = (code, INVERTER_STATES.get(code, f"? ({code})"))
+            self._last_inverter_state_time = time.time()
+        elif path == VEBUS_INV_POWER_PATH:
+            self._system_data["inv_power"] = int(float(raw))
+
+    def _apply_numeric_system_value(self, key: str, raw) -> None:
+        """Store a numeric system reading and refresh its derived totals."""
         # Observed traffic proves the signal path alive; see _poll_all.
         self._last_signal_ok_monotonic = time.monotonic()
         now = time.time()
@@ -641,6 +666,123 @@ class VictronDBus:
             self._system_data["_last_update"] = now
         except (ValueError, TypeError):
             pass  # non-numeric payload (e.g. NULL variant); next event fixes it
+
+    def _battery_observation(self, data: dict, key: str, now: float):
+        """Normalize one reading without changing the aggregate availability reason."""
+        value = self._optional_float(data.get(key))
+        observed = self._shunt_read_times.get(key)
+        age = now - observed if observed is not None else None
+        stale = age is not None and not 0 <= age <= SHUNT_READ_MAX_AGE
+        if stale:
+            value = None
+        if key == "bv" and value is not None and value <= 0:
+            value = None
+        return value, age, stale
+
+    def _cached_system_snapshot(self) -> dict[str, Any]:
+        """Pair cached readings with their current battery and grid validity."""
+        # The signal path can update _system_data one key at a time, so on
+        # the very first cycle the cached dict may hold only a subset of
+        # keys. Merge over full defaults so hot-path consumers (which index
+        # g1/g2/t1/t2/gt/tt/bv/bc/bp directly) never KeyError on startup.
+        data = dict(self._system_data)
+        for k in _SYSTEM_DATA_KEYS:
+            data.setdefault(k, None if k in SHUNT_SIGNAL_PATHS.values() else 0)
+        self._merge_battery_status(data)
+        self._merge_grid_status(data)
+        return data
+
+    def _ess_mode_description(self, hub4_mode, bl_state) -> tuple[str, bool]:
+        """Describe the observed ESS profile without issuing additional reads."""
+        if hub4_mode == 3:
+            mode_name = "External control"
+            is_external = True
+        elif hub4_mode in (1, 2):
+            is_external = False
+            if bl_state in (0, 10, 11, 12):
+                mode_name = "Optimized without BatteryLife"
+            elif bl_state == 9:
+                mode_name = "Keep batteries charged"
+            elif bl_state in range(1, 9):
+                mode_name = "Optimized (BatteryLife)"
+            else:
+                mode_name = "Unknown ESS profile"
+        else:
+            mode_name = f"Unknown ({hub4_mode})"
+            is_external = False
+
+        return mode_name, is_external
+
+    def _ess_mode_writes(self, mode: str, battery_life_path: str) -> list[tuple[str, str, int]]:
+        """Validate and plan ESS writes while the selection lock is held."""
+        if mode in ("off", "on"):
+            service = self._vebus_service
+            if not service or self._dbus_get(service, "/ModeIsAdjustable") != "1":
+                raise RuntimeError("Inverter switch is unavailable or not adjustable")
+            writes = [(service, "/Mode", 4 if mode == "off" else 3)]
+        else:
+            raw = self._dbus_get(SETTINGS_SERVICE, HUB4_MODE_PATH)
+            if raw not in ("1", "2", "3"):
+                raise RuntimeError("Current ESS settings are unavailable")
+            if mode == "external_control":
+                writes = [(SETTINGS_SERVICE, HUB4_MODE_PATH, 3)]
+            else:
+                value = {
+                    "optimized_with_battery_life": 1,
+                    "optimized_without_battery_life": 10,
+                    "keep_batteries_charged": 9,
+                }[mode]
+                # Preserve phase compensation mode 2 when already selected.
+                # Write the profile first; a rejection must not enable another profile.
+                writes = [
+                    (SETTINGS_SERVICE, battery_life_path, value),
+                    (SETTINGS_SERVICE, HUB4_MODE_PATH, 2 if raw == "2" else 1),
+                ]
+        return writes
+
+    def _query_battery(self, service: str, name: str) -> dict[str, Any]:
+        quality = self._battery_source_status(service)
+        if not quality["available"]:
+            return {
+                "name": name,
+                "voltage": None,
+                "current": None,
+                "power": None,
+                "soc": None,
+                "state": "Unknown",
+                "time_to_go": "",
+                "time_to_go_sec": None,
+                **quality,
+            }
+        current = self._optional_float(self._dbus_get(service, DC_CURRENT_PATH))
+        state = self._battery_state(current)
+        ttg_sec = None
+        # Native-only: these chain/virtual battery services do not export
+        # /TimeToGo, so a dbus-send fallback would fail too — but at 0.5s x
+        # chain under _dbus_lock, causing the update_state tail spikes.
+        ttg_raw = self._dbus_get_native_only(service, "/TimeToGo")
+        if ttg_raw is not None:
+            try:
+                ttg_sec = max(0, int(float(ttg_raw)))
+            except (TypeError, ValueError, OverflowError):
+                ttg_sec = None
+        voltage = self._optional_float(self._dbus_get(service, "/Dc/0/Voltage"))
+        voltage = voltage if voltage is not None and voltage > 0 else None
+        soc = self._optional_float(self._dbus_get(service, "/Soc"))
+        soc = soc if soc is not None and 0 <= soc <= 100 else None
+        if voltage is None or current is None:
+            quality.update(available=False, reason="incomplete")
+        return {
+            "name": name,
+            "voltage": voltage,
+            "current": current,
+            "power": self._optional_float(self._dbus_get(service, "/Dc/0/Power")),
+            "soc": soc,
+            "state": state,
+            "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
+            "time_to_go_sec": ttg_sec,
+            **quality,
+        }
 
     def _apply_group_value(self, service: str | None, path: str, raw: str) -> bool:
         """Route one polled-group reading (MPPT/PV/acload) into its cache.
@@ -1185,7 +1327,7 @@ class VictronDBus:
             parsed = self._snapshot_numbers(fields, SHUNT_SIGNAL_PATHS)
             if "bp" in parsed:
                 parsed["bp"] = int(parsed["bp"])
-            connected = fields.get("/Connected")
+            connected = fields.get(CONNECTED_PATH)
             self._commit_shunt_snapshot(
                 token, None if connected is None else self._optional_float(connected) == 1, parsed
             )
@@ -1264,16 +1406,11 @@ class VictronDBus:
             reason = "disconnected"
         ages = []
         for key in SHUNT_SIGNAL_PATHS.values():
-            value = self._optional_float(data.get(key))
-            observed = self._shunt_read_times.get(key)
-            age = now - observed if observed is not None else None
+            value, age, stale = self._battery_observation(data, key, now)
             if age is not None:
                 ages.append(age)
-            if age is not None and not 0 <= age <= SHUNT_READ_MAX_AGE:
-                value = None
+            if stale:
                 reason = reason or "stale_read"
-            if key == "bv" and value is not None and value <= 0:
-                value = None
             data[key] = None if reason in ("missing_source", "disconnected") else value
         available = all(data.get(key) is not None for key in ("bv", "bc", "bp"))
         data["battery_data"] = {
@@ -2010,7 +2147,7 @@ class VictronDBus:
             # BusItem.SetValue returns zero on acceptance, nonzero on rejection.
             # A successful dbus-send dispatch with no reply proves nothing.
             accepted = isinstance(result, str) and bool(
-                re.search(r"^\s*(?:u?int32)\s+0\s*$", result, re.MULTILINE)
+                re.search(r"^\s*u?int32\s+0\s*$", result, re.MULTILINE)
             )
             if accepted:
                 self._consecutive_errors = 0
@@ -2045,16 +2182,7 @@ class VictronDBus:
             or (self._signals_healthy() and self._system_data.get("_last_update", 0) > 0)
         )
         if cache_fresh:
-            # The signal path can update _system_data one key at a time, so on
-            # the very first cycle the cached dict may hold only a subset of
-            # keys. Merge over full defaults so hot-path consumers (which index
-            # g1/g2/t1/t2/gt/tt/bv/bc/bp directly) never KeyError on startup.
-            data = dict(self._system_data)
-            for k in _SYSTEM_DATA_KEYS:
-                data.setdefault(k, None if k in SHUNT_SIGNAL_PATHS.values() else 0)
-            self._merge_battery_status(data)
-            self._merge_grid_status(data)
-            return data
+            return self._cached_system_snapshot()
 
         # Fallback: synchronous call if cache stale (should rarely happen)
         data = {
@@ -2304,22 +2432,7 @@ class VictronDBus:
             except (ValueError, TypeError) as e:
                 logger.debug("BatteryLife state parse failed: %s", e)
 
-        if hub4_mode == 3:
-            mode_name = "External control"
-            is_external = True
-        elif hub4_mode in (1, 2):
-            is_external = False
-            if bl_state in (0, 10, 11, 12):
-                mode_name = "Optimized without BatteryLife"
-            elif bl_state == 9:
-                mode_name = "Keep batteries charged"
-            elif bl_state in range(1, 9):
-                mode_name = "Optimized (BatteryLife)"
-            else:
-                mode_name = "Unknown ESS profile"
-        else:
-            mode_name = f"Unknown ({hub4_mode})"
-            is_external = False
+        mode_name, is_external = self._ess_mode_description(hub4_mode, bl_state)
 
         from .ess_modes import selected_mode
 
@@ -2371,29 +2484,7 @@ class VictronDBus:
         if mode not in MODES:
             raise ValueError("Unknown ESS mode")
         with self._ess_selection_lock:
-            if mode in ("off", "on"):
-                service = self._vebus_service
-                if not service or self._dbus_get(service, "/ModeIsAdjustable") != "1":
-                    raise RuntimeError("Inverter switch is unavailable or not adjustable")
-                writes = [(service, "/Mode", 4 if mode == "off" else 3)]
-            else:
-                raw = self._dbus_get(SETTINGS_SERVICE, HUB4_MODE_PATH)
-                if raw not in ("1", "2", "3"):
-                    raise RuntimeError("Current ESS settings are unavailable")
-                if mode == "external_control":
-                    writes = [(SETTINGS_SERVICE, HUB4_MODE_PATH, 3)]
-                else:
-                    value = {
-                        "optimized_with_battery_life": 1,
-                        "optimized_without_battery_life": 10,
-                        "keep_batteries_charged": 9,
-                    }[mode]
-                    # Preserve phase compensation mode 2 when already selected.
-                    # Write the profile first; a rejection must not enable another profile.
-                    writes = [
-                        (SETTINGS_SERVICE, BATTERY_LIFE_PATH, value),
-                        (SETTINGS_SERVICE, HUB4_MODE_PATH, 2 if raw == "2" else 1),
-                    ]
+            writes = self._ess_mode_writes(mode, BATTERY_LIFE_PATH)
             try:
                 for service, path, value in writes:
                     if not self._dbus_set(service, path, value, "int32"):
@@ -2423,7 +2514,7 @@ class VictronDBus:
         }
         if (
             not self._service_healthy(service)
-            or self._optional_float(self._dbus_get(service, "/Connected")) != 1
+            or self._optional_float(self._dbus_get(service, CONNECTED_PATH)) != 1
         ):
             return status
         complete_raw = self._dbus_get_native_only(service, "/Info/DataComplete")
@@ -2545,52 +2636,10 @@ class VictronDBus:
             ("com.victronenergy.battery.virtual_chain", "Virtual Battery"),
         ]
 
-        def _query_battery(service: str, name: str) -> dict[str, Any]:
-            quality = self._battery_source_status(service)
-            if not quality["available"]:
-                return {
-                    "name": name,
-                    "voltage": None,
-                    "current": None,
-                    "power": None,
-                    "soc": None,
-                    "state": "Unknown",
-                    "time_to_go": "",
-                    "time_to_go_sec": None,
-                    **quality,
-                }
-            current = self._optional_float(self._dbus_get(service, DC_CURRENT_PATH))
-            state = self._battery_state(current)
-            ttg_sec = None
-            # Native-only: these chain/virtual battery services do not export
-            # /TimeToGo, so a dbus-send fallback would fail too — but at 0.5s x
-            # chain under _dbus_lock, causing the update_state tail spikes.
-            ttg_raw = self._dbus_get_native_only(service, "/TimeToGo")
-            if ttg_raw is not None:
-                try:
-                    ttg_sec = max(0, int(float(ttg_raw)))
-                except (TypeError, ValueError, OverflowError):
-                    ttg_sec = None
-            voltage = self._optional_float(self._dbus_get(service, "/Dc/0/Voltage"))
-            voltage = voltage if voltage is not None and voltage > 0 else None
-            soc = self._optional_float(self._dbus_get(service, "/Soc"))
-            soc = soc if soc is not None and 0 <= soc <= 100 else None
-            if voltage is None or current is None:
-                quality.update(available=False, reason="incomplete")
-            return {
-                "name": name,
-                "voltage": voltage,
-                "current": current,
-                "power": self._optional_float(self._dbus_get(service, "/Dc/0/Power")),
-                "soc": soc,
-                "state": state,
-                "time_to_go": self._format_time_to_go(ttg_sec or 0, state),
-                "time_to_go_sec": ttg_sec,
-                **quality,
-            }
-
         with ThreadPoolExecutor(max_workers=len(battery_services)) as pool:
-            futures = [pool.submit(_query_battery, svc, name) for svc, name in battery_services]
+            futures = [
+                pool.submit(self._query_battery, svc, name) for svc, name in battery_services
+            ]
             batteries = [f.result() for f in futures]
 
         self._cached_all_batteries = batteries

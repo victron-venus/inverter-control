@@ -153,6 +153,21 @@ def build_containers(
         )
 
 
+def archive_inputs(names: list[str], config: dict[str, Any]) -> list[str]:
+    """Require declared inputs and select the snapshot files for the archive."""
+    for required in config.get("required", []):
+        if not any(name == required or name.startswith(required + "/") for name in names):
+            raise ValueError(f"Required input is missing or not tracked: {required}")
+    includes = config.get("include")
+    return [
+        name
+        for name in names
+        if name in {".release-plan.json", ".release-inputs.json"}
+        or not includes
+        or any(name == item or name.startswith(item + "/") for item in includes)
+    ]
+
+
 def build_candidate(
     root: Path, version: str, channel: str, output: Path, *, containers: bool = True
 ) -> list[Path]:
@@ -189,17 +204,7 @@ def build_candidate(
         source = Path(directory) / project
         source.mkdir()
         names = snapshot(root, source)
-        for required in config.get("required", []):
-            if not any(name == required or name.startswith(required + "/") for name in names):
-                raise ValueError(f"Required input is missing or not tracked: {required}")
-        includes = config.get("include")
-        archive_names = [
-            name
-            for name in names
-            if name in {".release-plan.json", ".release-inputs.json"}
-            or not includes
-            or any(name == item or name.startswith(item + "/") for item in includes)
-        ]
+        archive_names = archive_inputs(names, config)
         archive(source, archive_names, output / f"{project}-{version}.tar.gz", project)
         if config.get("python_distribution"):
             build_python_distribution(root, source, output)

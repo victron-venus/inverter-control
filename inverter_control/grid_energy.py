@@ -21,13 +21,16 @@ from datetime import time as midnight
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+METER_INSTANCE_PATH = "/DeviceInstance"
+METER_SERIAL_PATH = "/Serial"
+
 STATE_FILE = Path("/data/setupOptions/inverter-control/grid-energy-state.json")
 MAX_AGE = 90.0
 MIDNIGHT_BRACKET = 30.0
 PERSIST_INTERVAL = 60.0
 CLOCK_TOLERANCE = 5.0
 _COUNTERS = ("/Ac/Energy/Forward", "/Ac/Energy/Reverse")
-_FIELDS = (*_COUNTERS, "/DeviceInstance", "/Serial", "/Connected")
+_FIELDS = (*_COUNTERS, METER_INSTANCE_PATH, METER_SERIAL_PATH, "/Connected")
 
 
 def parse_energy_snapshot(output: str) -> dict:
@@ -59,8 +62,8 @@ def _number(value):
 
 def parse_meter_source(service, fields):
     """Validate and normalize physical meter identity from a complete D-Bus reply."""
-    instance = _number(fields.get("/DeviceInstance"))
-    serial = fields.get("/Serial")
+    instance = _number(fields.get(METER_INSTANCE_PATH))
+    serial = fields.get(METER_SERIAL_PATH)
     if (
         not isinstance(service, str)
         or not service.startswith("com.victronenergy.grid.")
@@ -81,6 +84,30 @@ def _calendar(at, name):
     local = datetime.fromtimestamp(float(at), ZoneInfo(name))
     boundary = datetime.combine(local.date(), midnight(), local.tzinfo).timestamp()
     return local.date().isoformat(), boundary
+
+
+def _validate_saved_readings(state):
+    latest = state["latest"]
+    numeric = [state["started_at"], latest["observed_at"]]
+    for key in ("import_kwh", "export_kwh"):
+        numeric.extend((state["baseline"][key], latest[key]))
+    if any(type(value) not in (int, float) or _number(value) is None for value in numeric):
+        raise ValueError("Saved readings must be finite JSON numbers")
+    date, boundary = _calendar(latest["observed_at"], state["time_zone"])
+    if (
+        date != state["date"]
+        or _number(state["started_at"]) is None
+        or not boundary <= state["started_at"] <= latest["observed_at"]
+        or (state["complete"] and state["started_at"] != boundary)
+    ):
+        raise ValueError("Invalid saved date boundary")
+    for key in ("import_kwh", "export_kwh"):
+        if (
+            _number(state["baseline"][key]) is None
+            or _number(latest[key]) is None
+            or latest[key] < state["baseline"][key]
+        ):
+            raise ValueError("Invalid saved counter")
 
 
 class GridEnergyLedger:
@@ -134,32 +161,12 @@ class GridEnergyLedger:
         source = state["source"]
         if type(source["device_instance"]) is not int or source != parse_meter_source(
             source["service"],
-            {"/DeviceInstance": source["device_instance"], "/Serial": source["serial"]},
+            {METER_INSTANCE_PATH: source["device_instance"], METER_SERIAL_PATH: source["serial"]},
         ):
             raise ValueError("Invalid saved meter identity")
         if not isinstance(state["complete"], bool) or not isinstance(state["reason"], str):
             raise TypeError("Invalid coverage")
-        latest = state["latest"]
-        numeric = [state["started_at"], latest["observed_at"]]
-        for key in ("import_kwh", "export_kwh"):
-            numeric.extend((state["baseline"][key], latest[key]))
-        if any(type(value) not in (int, float) or _number(value) is None for value in numeric):
-            raise ValueError("Saved readings must be finite JSON numbers")
-        date, boundary = _calendar(latest["observed_at"], state["time_zone"])
-        if (
-            date != state["date"]
-            or _number(state["started_at"]) is None
-            or not boundary <= state["started_at"] <= latest["observed_at"]
-            or (state["complete"] and state["started_at"] != boundary)
-        ):
-            raise ValueError("Invalid saved date boundary")
-        for key in ("import_kwh", "export_kwh"):
-            if (
-                _number(state["baseline"][key]) is None
-                or _number(latest[key]) is None
-                or latest[key] < state["baseline"][key]
-            ):
-                raise ValueError("Invalid saved counter")
+        _validate_saved_readings(state)
 
     def invalidate(self, reason="meter_unavailable", *, reset=False):
         """Invalidate display freshness without doing filesystem or D-Bus work."""
@@ -167,6 +174,32 @@ class GridEnergyLedger:
             self._read_error = reason
             if reset:
                 self._reset_pending = reason
+
+    def _observe_locked(self, source, time_zone, latest, mono, date, boundary, at):
+        previous = self._state
+        reason = self._reseed_reason(source, time_zone, latest, mono)
+        if previous is None or reason or previous["date"] != date:
+            complete = self._midnight_proved(date, latest, mono, reason)
+            self._state = {
+                "schema": 1,
+                "generation": previous["generation"] + 1 if previous else 1,
+                "source": source,
+                "date": date,
+                "time_zone": time_zone,
+                "started_at": boundary if complete else at,
+                "baseline": {key: latest[key] for key in ("import_kwh", "export_kwh")},
+                "latest": latest,
+                "complete": complete,
+                "reason": "midnight_verified" if complete else reason or "incomplete_day",
+            }
+        else:
+            self._state["latest"] = latest
+        self._reset_observation = bool(reason)
+        self._observed_mono = mono
+        self._read_error = None
+        self._reset_pending = None
+        self._dirty = True
+        self._revision += 1
 
     def observe(self, service, fields, time_zone, *, observed_at=None, observed_mono=None):
         """Consume one accepted complete meter reply, timestamped at read completion."""
@@ -189,30 +222,7 @@ class GridEnergyLedger:
         latest = dict(zip(("import_kwh", "export_kwh"), counters))
         latest["observed_at"] = at
         with self._lock:
-            previous = self._state
-            reason = self._reseed_reason(source, time_zone, latest, mono)
-            if previous is None or reason or previous["date"] != date:
-                complete = self._midnight_proved(date, latest, mono, reason)
-                self._state = {
-                    "schema": 1,
-                    "generation": previous["generation"] + 1 if previous else 1,
-                    "source": source,
-                    "date": date,
-                    "time_zone": time_zone,
-                    "started_at": boundary if complete else at,
-                    "baseline": {key: latest[key] for key in ("import_kwh", "export_kwh")},
-                    "latest": latest,
-                    "complete": complete,
-                    "reason": "midnight_verified" if complete else reason or "incomplete_day",
-                }
-            else:
-                self._state["latest"] = latest
-            self._reset_observation = bool(reason)
-            self._observed_mono = mono
-            self._read_error = None
-            self._reset_pending = None
-            self._dirty = True
-            self._revision += 1
+            self._observe_locked(source, time_zone, latest, mono, date, boundary, at)
 
     def _reseed_reason(self, source, time_zone, latest, mono):
         previous = self._state
