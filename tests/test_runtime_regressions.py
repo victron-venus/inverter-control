@@ -161,3 +161,19 @@ def test_blocked_console_client_does_not_block_another_producer(monkeypatch):
         if producer.ident is not None:
             producer.join(2)
     assert not sender.is_alive() and not producer.is_alive()
+
+
+@pytest.mark.parametrize("value,expected", [("7.2 kW", 7.2), ("85 %", 85), ("-50 W", -50)])
+def test_ha_numeric_measurement_retains_value_before_unit_suffix(value, expected):
+    """Legacy HA sensors supplied units; direct float conversion discarded them."""
+    from inverter_control.homeassistant import HomeAssistantClient
+
+    assert HomeAssistantClient._parse_numeric(None, value) == expected
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+def test_legacy_dbus_float_reader_rejects_nonfinite_values(value):
+    """A successful D-Bus transport does not make NaN or infinity a measurement."""
+    device = object.__new__(VictronDBus)
+    device._dbus_get = Mock(return_value=value)
+    assert device._get_float("com.victronenergy.fixture", "/Ac/Power") == 0.0
