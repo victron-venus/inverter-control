@@ -44,22 +44,28 @@ def staged_package(destdir: str) -> Path:
     return package
 
 
+def payload_item_files(path: Path) -> list[Path]:
+    """Validate one payload root and collect regular files without bytecode caches."""
+    if path.is_symlink():
+        raise ValueError(f"Package input must not be a symlink: {path}")
+    if not path.exists():
+        raise ValueError(f"Missing package input: {path.name}")
+    entries = sorted(path.rglob("*")) if path.is_dir() else [path]
+    files = []
+    for entry in entries:
+        if entry.is_symlink():
+            raise ValueError(f"Package input must not be a symlink: {entry}")
+        if entry.is_file() and not any(
+            part == "__pycache__" or part.endswith((".pyc", ".pyo")) for part in entry.parts
+        ):
+            files.append(entry)
+    return files
+
+
 def payload_files(source: Path) -> list[Path]:
     files = []
     for item in PAYLOAD:
-        path = source / item
-        if path.is_symlink():
-            raise ValueError(f"Package input must not be a symlink: {path}")
-        if not path.exists():
-            raise ValueError(f"Missing package input: {item}")
-        entries = sorted(path.rglob("*")) if path.is_dir() else [path]
-        for entry in entries:
-            if entry.is_symlink():
-                raise ValueError(f"Package input must not be a symlink: {entry}")
-            if entry.is_file() and not any(
-                part == "__pycache__" or part.endswith((".pyc", ".pyo")) for part in entry.parts
-            ):
-                files.append(entry)
+        files.extend(payload_item_files(source / item))
     return files
 
 
