@@ -34,8 +34,8 @@ RUN --network=none python finalize_tls_bundle.py && \
 
 # A separate native CI target instruments CFFI; these binaries are never shipped.
 FROM build AS sanitizer
-ENV CFLAGS="-g -O1 -fsanitize=address -fno-omit-frame-pointer" \
-    LDFLAGS="-fsanitize=address"
+ENV CFLAGS="${CFLAGS} -g -O1 -fsanitize=address -fno-omit-frame-pointer" \
+    LDFLAGS="${LDFLAGS} -fsanitize=address"
 RUN --network=none rm -rf /build/cffi/build /build/cffi/src/cffi.egg-info && \
     /tools/bin/pip wheel --no-index --no-deps --no-build-isolation /build/cffi -w /asan-wheels && \
     /tools/bin/pip install --no-index --no-deps /asan-wheels/*.whl /bundle/wheels/pycparser-*.whl
