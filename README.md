@@ -81,8 +81,10 @@ chmod 600 local_config.py
 ```
 
 Edit the copy locally. Use a validated HTTPS URL for a remote Home Assistant
-instance, its token, and your actual sensor/switch IDs. Home Assistant is
-optional; the placeholder/empty token disables its integration. EV, water and
+instance and your actual sensor/switch IDs. Prefer a separate private token file
+selected by `HA_TOKEN_FILE`; follow [credential provisioning and rotation](docs/credentials.md).
+Inline `HA_TOKEN` remains available for migration from older configurations.
+Home Assistant is optional; an unconfigured token disables its integration. EV, water and
 PV data can come from independent D-Bus publishers. Set their device instances
 only as needed for your deployment.
 
