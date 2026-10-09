@@ -529,6 +529,20 @@ class TestLogic(unittest.TestCase):
         # brake = -(-110) * 0.3 = +33 (slow down the correction)
         self.assertIn("[D:", result2.flags)
 
+        # A flag alone would pass even if the computed brake were discarded.
+        # Replay the same two observations with zero derivative gain and require
+        # the +33 W correction to reach output through 0.9 convergence (30 W).
+        unbraked = SetpointCalculator({**self.config, "D_GAIN": 0.0})
+        reference = self.get_base_state()
+        reference.previous_setpoint = 500
+        reference.gt = 80
+        reference.filtered_gt = 80.0
+        unbraked.calculate(reference)
+        reference.gt = -30
+        reference.filtered_gt = -30.0
+        result_without_brake = unbraked.calculate(reference)
+        self.assertEqual(result2.setpoint, result_without_brake.setpoint + 30)
+
     def test_d_term_no_brake_outside_zone(self):
         """When gt is far from zero, D-term should not fire even if moving fast."""
         self.config["EMA_ALPHA"] = 1.0
