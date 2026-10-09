@@ -1,6 +1,7 @@
 """Reject incomplete, redirected and unauthenticated release payloads."""
 
 import hashlib
+import os
 import subprocess  # nosec B404
 from pathlib import Path
 from unittest.mock import patch
@@ -114,3 +115,15 @@ def test_release_workflow_scopes_identity_token_to_signer_and_requires_verificat
     )
     assert verify < upload
     overlay(REPO / ".github/workflows/release-pipeline.yml", check=True)
+
+
+@pytest.mark.parametrize("kind", ["extra", "fifo"])
+def test_build_verification_rejects_untrusted_entries_before_reading(assets, kind):
+    extra = assets / "unexpected"
+    if kind == "fifo":
+        os.mkfifo(extra)
+    else:
+        extra.write_text("unexpected")
+    with patch.object(Path, "read_bytes", side_effect=AssertionError("unsafe read")):
+        with pytest.raises(ValueError):
+            signatures.verify_build(assets, assets / "absent-plan", assets / "absent-policy")

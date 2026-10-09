@@ -85,6 +85,7 @@ def verify_signature(directory: Path, source_sha: str) -> None:
 
 
 def verify_build(directory: Path, plan_path: Path, policy_path: Path) -> None:
+    payload_inventory(directory)
     # These siblings are the reviewed, vendored publication validators.
     from version_plan import validate_plan
     from version_receipt import verify_receipts
@@ -98,7 +99,6 @@ def verify_build(directory: Path, plan_path: Path, policy_path: Path) -> None:
         }
         for path in directory.iterdir()
     ]
-    payload_inventory(directory)
     verify_receipts(directory, plan, payloads, json.loads(policy_path.read_text()))
 
 
