@@ -1,11 +1,11 @@
 {
   "status": "REVIEWED_INTEGRATION_EXTENSION; merge and final CI required before assertion",
   "baseline_source": "120e3b5ae977975aeb9d080b4216d62f793934fa",
-  "source_end": "88587117ee544f7deb524ef47387e4037fcb2450",
-  "source_end_commit_time": "2026-10-08T17:23:17-07:00",
-  "test_source_revision": "88587117ee544f7deb524ef47387e4037fcb2450",
+  "source_end": "1594a724c7f46120569891f5afdb356463c27427",
+  "source_end_commit_time": "2026-10-08T17:27:57-07:00",
+  "test_source_revision": "1594a724c7f46120569891f5afdb356463c27427",
   "window_start": "2026-04-09T00:00:00Z",
-  "window_description": "Baseline screens all first-parent history from2026-04-09T00:00Z to2026-10-09T00:00Z; this extension includes all net PR305 and Silver changes up to source_end, including integration work after the baseline cutoff. This conservatively covers at least the six months before the October9 assessment.",
+  "window_description": "Baseline screens all first-parent history from 2026-04-09T00:00Z to 2026-10-09T00:00Z; this extension includes all net PR305 and Silver changes up to source_end, including integration work after the baseline cutoff. This conservatively covers at least the six months before the October 9 assessment.",
   "groups": [
     {
       "group": "PR305",
@@ -414,24 +414,97 @@
       "defects": [
         {
           "id": "Silver-coverage:1",
-          "failure": "Test source is included in software statement coverage and inflates the reported percentage",
+          "failure": "Software statement coverage includes test source and omits undiscovered production scripts, giving an incomplete denominator",
           "representative_test": null,
           "additional_regression_tests": [],
           "current_test_locations": [],
-          "evidence_status": "no_regression_credit"
+          "evidence_status": "no_regression_credit",
+          "additional_fix_commits": [
+            "74cc52495643ad43f92b1a41c9094accc9ed0a1b"
+          ],
+          "review_note": "The namespace-discovery correction completes the same coverage-denominator defect; it is not counted a second time. Final complete-source CI is pending."
         }
       ]
+    },
+    {
+      "group": "Silver-regeneration",
+      "source_commit": "8e97693af82c33568e7acc32e5f14b5597dee3ce",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/8e97693af82c33568e7acc32e5f14b5597dee3ce",
+      "review_scope": "Two independently observed wrong outputs of the existing template-regeneration process. The new overlay repairs these outputs; new guard branches are not additional historical bugs.",
+      "defects": [
+        {
+          "id": "Silver-regeneration:1",
+          "failure": "Template regeneration silently downgrades the locally reviewed harden-runner pin in generated workflows",
+          "representative_test": "test_wrapper_restores_templates_on_every_generation",
+          "additional_regression_tests": [
+            "test_overlay_repairs_real_template_drift_and_is_idempotent"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 116,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            },
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 48,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        },
+        {
+          "id": "Silver-regeneration:2",
+          "failure": "Template regeneration removes the required source-bound changelog instructions from the generated release runbook",
+          "representative_test": "test_wrapper_restores_templates_on_every_generation",
+          "additional_regression_tests": [
+            "test_release_requirements_cannot_silently_drift"
+          ],
+          "current_test_locations": [
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 116,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            },
+            {
+              "path": "tests/test_release_regeneration.py",
+              "line": 98,
+              "file_sha256": "9d3d02283dfaadaa7318f728b83a7620b52772ecaf468f044e127d49e75d474e"
+            }
+          ],
+          "evidence_status": "reviewed_regression_mapping"
+        }
+      ],
+      "proof": "regression-generation-proof-2026-10-09.json"
+    },
+    {
+      "group": "Silver-scanner-configuration",
+      "source_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
+      "source_url": "https://github.com/victron-venus/inverter-control/commit/d207a33c20c59481dd6f71df05fd3c0a7c5eb45b",
+      "review_scope": "Dockerfile.dockerignore was already present at120e3b5. The initial exclusion and its corrected nesting are one repair of the same wrong-file classification.",
+      "defects": [
+        {
+          "id": "Silver-scanner-configuration:1",
+          "failure": "Trivy misclassifies Docker ignore-pattern data as Dockerfile source and emits a parser error for the ** pattern",
+          "representative_test": null,
+          "additional_regression_tests": [],
+          "current_test_locations": [],
+          "evidence_status": "no_regression_credit",
+          "review_note": "Real before/after scanner logs verify this correction, but no automated regression test enforces it; no numerator credit."
+        }
+      ],
+      "proof": "regression-trivy-proof-2026-10-09.json"
     }
   ],
   "summary": {
     "baseline_defects": 282,
     "baseline_with_regressions": 148,
-    "additional_defects": 22,
-    "additional_with_regressions": 21,
-    "candidate_defects_conservative_denominator": 304,
-    "defects_with_reviewed_regressions": 169,
-    "defects_without_regression_credit": 135,
-    "conservative_observed_percentage": 55.5921
+    "additional_defects": 25,
+    "additional_with_regressions": 23,
+    "candidate_defects_conservative_denominator": 307,
+    "defects_with_reviewed_regressions": 171,
+    "defects_without_regression_credit": 136,
+    "conservative_observed_percentage": 55.7003
   },
   "exclusions": [
     "PR305 runtime extraction/refactoring, source typing, ASCII digit preservation (baseline already used ASCII classes), and unchanged receipt validation are not new historical fixes.",
@@ -439,12 +512,17 @@
     "Silver signing, DESTDIR staging, compiler flags, sanitizer support and native reproducibility are new capabilities; problems found while developing them are not historical fixes.",
     "HA_TOKEN_FILE is a new credential feature. Its development corrections and authenticated fallback restriction are excluded.",
     "NO_COLOR and explicit valve text improve accessibility; they are not claimed as repaired historical bugs.",
-    "Style-only E722/F841 corrections and documentation wording are excluded."
+    "Style-only E722/F841 corrections and documentation wording are excluded.",
+    "The 55 added native-rejection and change-scope tests in1594a72 are tests of existing behavior, not55 newly fixed production defects.",
+    "Generator policy-mutation rejection is a new guard: the captured real regeneration retained the policy unchanged, so no additional fixed policy-loss bug is asserted.",
+    "The misplaced top-level skip-files setting in1b477cb and its scan.skip-files correction in d207a33 belong to one Trivy classification repair."
   ],
   "evidence": [
     "regression-audit-2026-10-09.json",
     "regression-pr305-proof-2026-10-09.json",
-    "regression-strengthened-proof-2026-10-09.json"
+    "regression-strengthened-proof-2026-10-09.json",
+    "regression-generation-proof-2026-10-09.json",
+    "regression-trivy-proof-2026-10-09.json"
   ],
   "remaining_work": [
     "Merge the reviewed source and tests, rebind the final source SHA, and confirm final required CI; do not claim a public branch has unmerged tests."
@@ -456,7 +534,12 @@
     "reports": [
       "governance-extension-tests.xml",
       "governance-pr305-proof.json",
-      "security-ledger-strengthened-tests.xml"
-    ]
+      "security-ledger-strengthened-tests.xml",
+      "governance-generation-tests.xml",
+      "governance-generation-proof.json",
+      "integration-trivy-config.log",
+      "integration-trivy-config-final.log"
+    ],
+    "subsequent_review": "15 release-regeneration cases passed; isolated old/current wrapper execution confirms pin and notes output repairs separately. Scanner logs provide no automated regression credit."
   }
 }

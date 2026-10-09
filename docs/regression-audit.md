@@ -17,10 +17,11 @@ correct behavior and a performance optimization from the count, separate two
 MQTT defects, and strengthen two tests that did not prove the claimed behavior.
 
 The extension adds 15 preexisting defects fixed by PR305, six runtime defects
-fixed by the Silver changes, and the correction to a coverage measurement that
-included test source. The latter receives no regression-test credit. Together,
-these inventories contain **304 repair candidates, 169 with reviewed
-regressions (55.59%)**. Uncertain legacy repair candidates remain in the
+fixed by the Silver changes, and one correction to the coverage denominator.
+Subsequent review adds two generator-output defects and one Trivy file-type
+classification defect. The coverage and Trivy fixes receive no regression-test
+credit. Together, these inventories contain **307 repair candidates, 171 with
+reviewed regressions (55.70%)**. Uncertain legacy repair candidates remain in the
 denominator without credit. This is an evidence-based estimate over the recorded
 source interval, not a permanent claim about future commits.
 
@@ -93,3 +94,26 @@ New signing, DESTDIR, native build and credential-file features are excluded
 from the historical defect count, as are corrections made while developing
 those new features. Refactoring, style edits and documentation corrections also
 do not create additional fixed bugs in the inventory.
+
+
+## Subsequent generation and scanner review
+
+At source `1594a724c7f46120569891f5afdb356463c27427`, the extension also records
+regeneration that downgraded the reviewed runner pin and removed mandatory
+source-bound changelog instructions. These are two independently observed wrong
+outputs of the generator, rather than editorial wording changes. The
+[bounded old/current comparison](evidence/regression-generation-proof-2026-10-09.json)
+confirms both effects using captured generator output shapes, and all 15
+regeneration tests pass.
+
+[Trivy before/after evidence](evidence/regression-trivy-proof-2026-10-09.json)
+records the erroneous interpretation of `Dockerfile.dockerignore` as Dockerfile
+instructions. Correcting the exclusion configuration removes that parse error
+without excluding the actual Dockerfile. It receives no regression-test credit.
+The initial misplaced exclusion and corrected nesting count as one repair.
+
+The expanded namespace-aware coverage measurement completes the already-counted
+coverage-denominator fix; it does not create a second defect entry. The 55 new
+native-rejection and change-scope tests protect existing behavior and are not
+counted as 55 new bugs. Complete-source CI and the final merged-source binding
+remain required before a badge assertion.
