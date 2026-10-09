@@ -1,7 +1,9 @@
 # Offline TLS dependencies on ARMv7
 
 The TLS key check adds `cryptography==50.0.2`, `cffi==2.1.1` and `pycparser==3.1`
-to the runtime. The native source archive does not contain or install dependencies.
+to the runtime. The native source archive does not contain or install dependencies. New signed
+releases also provide a separate versioned TLS bundle; verify both payloads using
+[the release signature instructions](release-signatures.md).
 The ARMv7 bundle contains exactly this new dependency closure; existing Requests,
 MQTT, D-Bus and other application requirements still apply. Do not stop a working
 controller before validating the interpreter and dependencies for the upgrade.
@@ -45,8 +47,11 @@ Inspect `provenance.json` (commit, image digests, platform, wheel hashes),
 `verification.json` (native imports and key boundaries), `builder-packages.txt`
 and the input requirement files. The locally compiled wheel hash is recorded in
 the generated `requirements.txt`; it must match the artifact from the reviewed
-successful build. Input pinning is reproducible; bit-for-bit reproducibility of
-independent compiler runs is not claimed.
+successful build. Every build now performs two clean CFFI compilations and fails unless the wheel
+bytes match. `repeatability.json` records that digest, build flags and retained
+debug information. This is repeatability in the pinned environment, not a claim
+that arbitrary toolchains reproduce the same binary. See the
+[build and installation guide](build-and-install.md).
 
 ## Operator-controlled installation
 

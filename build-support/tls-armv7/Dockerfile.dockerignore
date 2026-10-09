@@ -8,3 +8,6 @@
 !tests/tls_bundle_probe.py
 !inverter_control/
 !inverter_control/tls_policy.py
+!scripts/build_tls_wheel.py
+!scripts/check_cffi_sanitizer.py
+!tests/fuzz_cffi_sanitized.py

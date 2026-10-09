@@ -9,7 +9,8 @@
     "version",
     "gitHubInfo",
     "local_config.example.py",
-    "uv.lock"
+    "uv.lock",
+    "install.py"
   ],
   "include": [
     "main.py",
@@ -37,6 +38,8 @@
     ".python-version",
     "LOGIC.md",
     ".github/docs",
-    ".bestpractices.json"
+    ".bestpractices.json",
+    "install.py",
+    "Makefile"
   ]
 }

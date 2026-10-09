@@ -3,6 +3,14 @@
 # inverter-control SetupHelper compatible setup script
 # Grid-zero feed-in control for Victron inverters with Home Assistant integration
 
+# Package builders must be able to stage files without sourcing live helpers.
+if [ -n "${DESTDIR:-}" ]; then
+    case "${1:-}" in
+        install|uninstall) exec python3 "$(dirname "$0")/install.py" "$1" --destdir "$DESTDIR" ;;
+        *) echo "DESTDIR requires an explicit install or uninstall action" >&2; exit 1 ;;
+    esac
+fi
+
 #### following line incorporates SetupHelper resources into this script
 source "/data/SetupHelper/HelperResources/IncludeHelpers"
 #### end of lines to include helper resources

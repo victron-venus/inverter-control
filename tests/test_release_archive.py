@@ -63,6 +63,18 @@ def test_release_archive_contains_complete_installer_payload(tmp_path):
         cwd=tmp_path,
         check=True,
     )
+    # Touch source timestamps and build again: neither local mtimes nor gzip time
+    # may change the source payload or checksum manifest.
+    import os
+
+    os.utime(tmp_path / "main.py", (1234567890, 1234567890))
+    subprocess.run(  # nosec B603, B607
+        ["bash", "scripts/package-release.sh", version, "rc", "--output", str(tmp_path / "repeat")],
+        cwd=tmp_path,
+        check=True,
+    )
+    for asset in (tmp_path / "release-dist").iterdir():
+        assert asset.read_bytes() == (tmp_path / "repeat" / asset.name).read_bytes()
     with tarfile.open(tmp_path / "release-dist" / f"inverter-control-{version}.tar.gz") as archive:
         members = set(archive.getnames())
         runtime_items = re.search(

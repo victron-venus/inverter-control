@@ -87,5 +87,29 @@ jobs:
           name: tls-dependencies-cp312-armv7
           path: release-dist/tls-armv7/
           if-no-files-found: error
+  tls-native-sanitizer:
+    name: CFFI native memory safety fuzz check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build with ASan, calibrate detection, and fuzz native CFFI APIs
+        run: |
+          docker buildx build --platform linux/amd64 \
+            --file build-support/tls-armv7/Dockerfile --target sanitizer-export \
+            --build-arg SOURCE_REVISION="$GITHUB_SHA" \
+            --output type=local,dest=release-dist/sanitizer --progress plain .
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cffi-address-sanitizer
+          path: release-dist/sanitizer/sanitizer-result.json
+          if-no-files-found: error
 'on':
   workflow_call: {}

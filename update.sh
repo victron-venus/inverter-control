@@ -16,13 +16,16 @@
 set -eu
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -n "${DESTDIR:-}" ]; then
+    exec python3 "$SRC_DIR/install.py" install --destdir "$DESTDIR"
+fi
 INSTALL_DIR="${1:-/data/inverter-control}"
 SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
 
 # Device-local files that must never be overwritten by an update.
 
 # Runtime items shipped at the repo root and installed at INSTALL_DIR root.
-RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh setup_ssl.sh keepalive.sh local_config.example.py"
+RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh install.py setup_ssl.sh keepalive.sh local_config.example.py"
 
 # Historical flat-file leftovers from older layouts that are now dead code
 # (all of these live in the inverter_control/ package since 1.17).
