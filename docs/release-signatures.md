@@ -99,9 +99,16 @@ reviewed toolkit checkout:
 ```sh
 uv run python scripts/regenerate_release.py /path/to/venus-os-ci-toolkit
 uv run python scripts/release_signing_overlay.py --check
+uv run python scripts/release_generation_overlay.py --check
 ```
 
 The wrapper reapplies the minimal `id-token: write` permission needed by the
-reusable signing job. Tests fail if raw regeneration removes it or the caller
-shape changes. Review regenerated diffs and run the complete normal CI gate.
+reusable signing job. It retains the reviewed harden-runner SHA and version from
+the non-generated `release-build.yml` adapter and restores the
+[required release-note format](release-notes-policy.md) in `RELEASING.md`.
+It fails if the generator changes `.release-policy.json`, including its
+`release_notes` hook or validation workflows. Tests fail if raw regeneration
+removes an overlay or the expected template structure changes. Review regenerated
+diffs and run the complete normal CI gate; other shared tooling changes still
+require review.
 Do not add signing permission to pull-request validators or compilation jobs.
