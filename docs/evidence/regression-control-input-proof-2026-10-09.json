@@ -83,5 +83,6 @@
     ],
     "junit_sha256": "d95cad07635f5a00a941934762fb0123bd942b7590be61495753406855343b67"
   },
-  "counting": "One control-input resource/type validation defect; do not count plan and policy, each boundary assertion, or test parameter separately."
+  "counting": "The plan/policy FIFO and size/type checks concern one control-input issue in a newly introduced feature. No historical defect or regression credit is assigned; discovery after an intermediate review does not create an exception to the new-feature exclusion.",
+  "classification": "Validation of a new Silver feature; excluded from both the historical defect denominator and regression numerator."
 }

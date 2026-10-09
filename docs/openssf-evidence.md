@@ -314,12 +314,12 @@ native input manifests, update bots and security scans identify components for
 monitoring and replacement.
 
 The [regression inventory](regression-audit.md) combines 475 screened baseline
-commits with reviewed PR305 and Silver fixes: **172 of 308 conservative repair
-candidates (55.84%)** have meaningful automated regressions. Two reviewers
+commits with reviewed PR305 and Silver fixes: **171 of 307 conservative repair
+candidates (55.70%)** have meaningful automated regressions. Two reviewers
 independently sampled mappings; disputed cases were removed, split or given
-stronger assertions. The latest addendum counts one demonstrated FIFO/control-input
-repair from the prior reviewed snapshot, with public source bindings and bounded
-old/current CLI comparisons. This satisfies the numerical `regression_tests_added50`
+stronger assertions. Public source bindings preserve the mappings after rebasing.
+The FIFO/control-input checks of the new signature verifier remain separate
+feature validation, excluded from both historical counts. This satisfies the numerical `regression_tests_added50`
 threshold only for the recorded source interval and merged mapped tests.
 
 **Met evidence — `test_statement_coverage80`.** The [complete-source report](evidence/coverage-2026-10-09.json)

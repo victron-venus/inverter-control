@@ -499,65 +499,29 @@
       ],
       "proof": "regression-trivy-proof-2026-10-09.json",
       "original_local_source_commit": "d207a33c20c59481dd6f71df05fd3c0a7c5eb45b"
-    },
-    {
-      "group": "Silver-post-review-control-input",
-      "source_commit": "eea722dad929545084e78738fbf8ecab5ccf6b54",
-      "source_url": "https://github.com/victron-venus/inverter-control/commit/eea722dad929545084e78738fbf8ecab5ccf6b54",
-      "review_scope": "The verify-build feature was new in Silver, but this blocking read already exists in the completed earlier review snapshot c16141d (original local1594a72). This addendum conservatively includes one subsequently demonstrated repair. Development corrections made before that initial review remain excluded.",
-      "defects": [
-        {
-          "id": "Silver-post-review-control-input:1",
-          "failure": "Explicitly selected plan or policy FIFO blocks the read-only release verification CLI waiting for a writer; the same unbounded input read also accepts arbitrarily large regular control files.",
-          "representative_test": "test_build_cli_rejects_fifo_without_waiting_for_writer",
-          "additional_regression_tests": [
-            "test_control_document_size_limit_counts_bytes_and_keeps_exact_boundary",
-            "test_control_document_rejects_directory"
-          ],
-          "current_test_locations": [
-            {
-              "path": "tests/test_release_signatures.py",
-              "line": 223,
-              "file_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a"
-            },
-            {
-              "path": "tests/test_release_signatures.py",
-              "line": 246,
-              "file_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a"
-            },
-            {
-              "path": "tests/test_release_signatures.py",
-              "line": 269,
-              "file_sha256": "e4a59c7113be535997e82c2a22f229e12eeafe83595ee1683b1572a7d92e082a"
-            }
-          ],
-          "evidence_status": "reviewed_regression_mapping"
-        }
-      ],
-      "proof": "regression-control-input-proof-2026-10-09.json"
     }
   ],
   "summary": {
     "baseline_defects": 282,
     "baseline_with_regressions": 148,
-    "additional_defects": 26,
-    "additional_with_regressions": 24,
-    "candidate_defects_conservative_denominator": 308,
-    "defects_with_reviewed_regressions": 172,
+    "additional_defects": 25,
+    "additional_with_regressions": 23,
+    "candidate_defects_conservative_denominator": 307,
+    "defects_with_reviewed_regressions": 171,
     "defects_without_regression_credit": 136,
-    "conservative_observed_percentage": 55.8442
+    "conservative_observed_percentage": 55.7003
   },
   "exclusions": [
     "PR305 runtime extraction/refactoring, source typing, ASCII digit preservation (baseline already used ASCII classes), and unchanged receipt validation are not new historical fixes.",
     "Release-note parser implementation issues introduced and fixed only inside PR305 are not counted separately.",
-    "Silver signing, DESTDIR staging, compiler flags, sanitizer support and native reproducibility are new capabilities; corrections made during their initial development before the previous reviewed snapshot are excluded.",
+    "Silver signing, DESTDIR staging, compiler flags, sanitizer support and native reproducibility are new capabilities; problems found while developing them are not historical fixes.",
     "HA_TOKEN_FILE is a new credential feature. Its development corrections and authenticated fallback restriction are excluded.",
     "NO_COLOR and explicit valve text improve accessibility; they are not claimed as repaired historical bugs.",
     "Style-only E722/F841 corrections and documentation wording are excluded.",
     "The 55 added native-rejection and change-scope tests in1594a72 are tests of existing behavior, not55 newly fixed production defects.",
     "Generator policy-mutation rejection is a new guard: the captured real regeneration retained the policy unchanged, so no additional fixed policy-loss bug is asserted.",
     "The misplaced top-level skip-files setting in1b477cb and its scan.skip-files correction in d207a33 belong to one Trivy classification repair.",
-    "Post-review FIFO/control-input repair is deliberately counted once although its feature was new in Silver. The earlier snapshot already contains the failing implementation. Without this conservative addendum, the prior ratio remains171/307; no other newly added tests or readability refactors create defects."
+    "The FIFO/control-input repair in the new Silver release-signature verifier is excluded from both historical counts. Finding it after an intermediate review snapshot does not change its classification as a correction to a new feature. Its before/after proof is retained separately as feature validation."
   ],
   "evidence": [
     "regression-audit-2026-10-09.json",
@@ -565,8 +529,7 @@
     "regression-strengthened-proof-2026-10-09.json",
     "regression-generation-proof-2026-10-09.json",
     "regression-trivy-proof-2026-10-09.json",
-    "source-bindings-2026-10-09.json",
-    "regression-control-input-proof-2026-10-09.json"
+    "source-bindings-2026-10-09.json"
   ],
   "remaining_work": [
     "Merge the reviewed source and tests, rebind the final source SHA, and confirm final required CI; do not claim a public branch has unmerged tests."
@@ -587,11 +550,19 @@
       "governance-pr308-final-mapping-tests.xml"
     ],
     "subsequent_review": "15 release-regeneration cases passed; isolated old/current wrapper execution confirms pin and notes output repairs separately. Scanner logs provide no automated regression credit.",
-    "post_review_control_input": "Actual original CLI timed out on both FIFO options; current CLI rejects both promptly, and both accept valid external files. Current runtime-regression and release-signature suites pass47cases; full current CI remains required."
+    "new_feature_control_input": "Separate, uncredited new-feature validation: the original release-signature CLI timed out on both FIFO options; the fixed CLI rejects both promptly, and both accept valid external files. Current runtime-regression and release-signature suites pass47cases; full current CI remains required."
   },
   "previous_reviewed_snapshot": {
     "original_local_revision": "1594a724c7f46120569891f5afdb356463c27427",
     "public_equivalent_revision": "c16141db3ab1f52767cbdcb38bc278b9999f2314"
   },
-  "public_source_bindings": "source-bindings-2026-10-09.json"
+  "public_source_bindings": "source-bindings-2026-10-09.json",
+  "new_feature_validation": [
+    {
+      "feature": "Silver release-signature verifier",
+      "proof": "regression-control-input-proof-2026-10-09.json",
+      "historical_defect_credit": false,
+      "historical_regression_credit": false
+    }
+  ]
 }
