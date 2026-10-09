@@ -168,13 +168,13 @@ The following criteria have evidence supporting **Met**:
 - `dynamic_analysis_fixed`: no unresolved exploitable issue was found by the
   audited fuzz runs. Future confirmed findings must follow [SECURITY.md](../SECURITY.md).
 
-`dynamic_analysis_unsafe` is **pending**, not N/A: the optional ARMv7 dependency
-bundle builds CFFI native code. The new [native memory-safety check](build-and-install.md#native-memory-safety-checks)
-rebuilds CFFI with AddressSanitizer, verifies linkage and an intentional-overflow
-canary, and runs 2,000 deterministic native-API fuzz iterations. The local ARM64
-check passed; completion of the required hosted x86-64 job must be recorded.
-Leak detection is disabled for CPython lifetime allocations. No claim is made
-that prebuilt cryptography/OpenSSL wheels are instrumented.
+`dynamic_analysis_unsafe` has **Met** evidence in the
+[hosted native validation](evidence/native-validation-2026-10-09.json). The
+[successful x86-64 ASan job](https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408761)
+rebuilt CFFI, confirmed AddressSanitizer linkage, detected an intentional overflow
+canary, and passed 2,000 deterministic native-API fuzz iterations (seed 15293).
+Leak detection is disabled for CPython lifetime allocations. Prebuilt
+cryptography/OpenSSL wheels are outside the instrumentation scope.
 
 `warnings_strict` has practical **Met** evidence: blocking Ruff diagnostics now
 include bare-except `E722` and unused-variable `F841`; their global ignores were
@@ -307,8 +307,12 @@ the project does not operate an additional user-password database.
 `make install`/`uninstall` paths, nonprivileged `DESTDIR` staging and locked
 `uv` developer environment. Tests exercise path confinement and preservation of
 operator files. The native builder accepts compiler/linker variables, preserves
-requested debug information and compares two clean CFFI builds. Recorded local
-builds produced equal wheel and package bytes in the same pinned environment.
+requested debug information and compares two clean CFFI builds. The [hosted ARMv7 job](https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408782)
+produced two byte-identical clean CFFI wheels with `.debug_info`, installed the
+dependency bundle offline, and passed six certificate-key boundary checks. The
+[native report](evidence/native-validation-2026-10-09.json) records artifact
+digests, compiler inputs and scope; earlier local packaging checks also produced
+equal archive bytes in the same pinned environment.
 No recursive cross-directory build dependency graph is used. Dependency locks,
 native input manifests, update bots and security scans identify components for
 monitoring and replacement.
@@ -323,22 +327,23 @@ feature validation, excluded from both historical counts. This satisfies the num
 threshold only for the recorded source interval and merged mapped tests.
 
 **Met evidence — `test_statement_coverage80`.** The [complete-source report](evidence/coverage-2026-10-09.json)
-records the measured source `bd693943a38068e87b42f5195ff5b5943f02162d`
-at **10,642 of 11,928 statements covered (89.2186%)** across all 67 tracked
-executable Python files, including build/release scripts. The runtime, release
-and workflow run passed 2,476 cases; 55 additional native/change-scope cases
-were added to the same measured data. Two optional cases were skipped. Ruff
-checking/formatting passed and the 81% coverage gate passed for that source.
-Subsequent source edits require a fresh report; these counts are not silently
-reassigned to the latest PR revision.
+records **10,679 of 11,957 statements covered (89.3117%)** across all 67 tracked
+executable Python files, including build/release scripts. The
+[hosted CI job](https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408753)
+passed **2,550 tests**, with two skips and the documented FFDH fixture warning,
+in one runtime/release/workflow invocation. Ruff checking/formatting and the
+81% coverage gate passed. The measured merge checkout
+`851b2fafed0ded5baa3bdcfb1c4fbe73158d8d7c` and PR source
+`73dc560275dbc4b1c7cba039427e1f1b6c9824f6` have the same complete Git tree.
 
 Namespace discovery includes scripts that were never imported; identical run
 and report exclusions remove test source, the example configuration and external
-virtual environments. The first namespace-aware report exposed a virtualenv
-scope error; the same test data were successfully reported after correcting that
-boundary. Per-file hashes and commands in the report make the final scope
-reviewable. Earlier percentages containing test code or missing scripts are not
-used for the Silver claim. This is statement coverage, not hardware acceptance.
+virtual environments. Independent parsing confirms the complete expected file
+set and the line totals. The report records per-file source hashes, the XML hash,
+the uploaded artifact identity and commands. The prior local result of 89.2186%
+at `bd693943a38068e87b42f5195ff5b5943f02162d` is retained as dated history only;
+the current claim uses the hosted report. This is statement coverage, not
+hardware acceptance.
 
 The testing and review policies support `test_policy_mandated`,
 `tests_documented_added`, `coding_standards` and `coding_standards_enforced`.
@@ -374,7 +379,6 @@ observed; implementation and mock tests do not establish a signed release.
 Historical unsigned releases remain unsigned. `version_tags_signed` is an
 unfulfilled suggestion because Git tags remain lightweight.
 
-**Pending — `dynamic_analysis_unsafe`.** Record the required hosted native
-sanitizer run described above. Existing Python Atheris fuzzing and the clean
-Bandit security gate are separate evidence; neither substitutes for native
-memory-safety detection.
+**Met evidence — `dynamic_analysis_unsafe`.** The hosted ASan result above
+provides the native-memory check. Python Atheris fuzzing and the Bandit security
+gate remain separate evidence; they do not substitute for the native check.

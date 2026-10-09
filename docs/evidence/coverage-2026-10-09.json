@@ -1,25 +1,72 @@
 {
-  "source_revision": "bd693943a38068e87b42f5195ff5b5943f02162d",
+  "source_revision": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "measured_checkout_revision": "851b2fafed0ded5baa3bdcfb1c4fbe73158d8d7c",
+  "source_tree_sha": "502cefa7bd13795059b6e5d5af317bcd206e44b5",
   "date_utc": "2026-10-09",
+  "source_binding": "The successful job checked out refs/pull/308/merge. The GitHub API reports exactly the same complete tree for that merge commit and the PR head; local Git confirms the PR tree identity. Per-file SHA-256 values below are calculated from that committed PR source.",
   "scope": "All 67 tracked executable Python files, including unimported build/release scripts and the fuzz harness. Excludes test sources, local_config.example.py, and external virtual environments.",
-  "measurement": "coverage.py 7.15.4 via pytest-cov 7.1.0; namespace discovery enabled; run/report scope identical",
+  "measurement": "coverage.py 7.15.4 via pytest-cov 7.1.0 on CPython 3.12.13 / Linux; namespace discovery enabled; run/report scope identical",
   "tests": {
-    "combined_runtime_release_workflow": 2476,
-    "additional_native_and_change_scope": 55,
-    "total_passed": 2531,
-    "skipped": 2
+    "total_passed": 2550,
+    "skipped": 2,
+    "warnings": 1,
+    "duration_seconds": 125.86,
+    "warning_scope": "The documented CryptographyDeprecationWarning in tests/test_tls_key_exchange.py:18 for the exact FFDH boundary fixture."
   },
   "commands": [
     "bash scripts/ci.sh",
-    "uv run --no-build --locked pytest tests/test_change_scope.py tests/test_release_artifact_checks.py --cov=. --cov-append --cov-report=xml",
-    "uv run --no-build --locked coverage xml --fail-under=81",
-    "uv run --no-build --locked coverage report --fail-under=81"
+    "uv run --no-build --locked pytest tests .github/release-tests .github/workflow-tests --cov=. --cov-report=xml"
   ],
-  "covered_statements": 10642,
-  "total_statements": 11928,
-  "coverage_percent": 89.2186452045607,
+  "covered_statements": 10679,
+  "total_statements": 11957,
+  "coverage_percent": 89.31170025926235,
   "minimum_percent": 81,
-  "validation_note": "The first namespace-aware report included .venv source; run/report omissions were corrected, then the same collected test data were reported successfully. No covered-line counts were manually edited. The final CI command includes all test files in a single run.",
+  "github": {
+    "run_id": 37865438945,
+    "run_attempt": 1,
+    "job_id": 113611408753,
+    "job_url": "https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408753",
+    "job_conclusion": "success",
+    "job_started_at": "2026-10-09T00:35:53Z",
+    "job_completed_at": "2026-10-09T00:38:25Z",
+    "artifact_id": 11587922802,
+    "artifact_name": "python-coverage",
+    "artifact_api_digest": "sha256:5bfd55a42a365c282daee2f102473f0760cba9046c0467f6da899e9984458249",
+    "artifact_size_bytes": 29426,
+    "artifact_created_at": "2026-10-09T00:38:22Z"
+  },
+  "report": {
+    "filename": "coverage.xml",
+    "sha256": "5df15f66d081038a19660141f24a124534f49573bd974b926309ad7815d7d3f0",
+    "coverage_version": "7.15.4",
+    "timestamp_milliseconds": 1791506300444,
+    "job_log_sha256": "8d5bd62f54501cec0f0360814352646ee6a6e40900490dd65446358c435059c9"
+  },
+  "configuration": {
+    "pyproject_sha256": "61522da08661323b96985c581ea6ec3262ffeb3364522127f5e9c6bf97222faa",
+    "ci_script_sha256": "c12bf39c53aa8b864afe3a7783acae46afc5b2dbafd8f54a0efe6f32149ba1ff",
+    "source": [
+      "."
+    ],
+    "include_namespace_packages": true,
+    "run_and_report_omit": [
+      "tests/*",
+      ".github/release-tests/*",
+      ".github/workflow-tests/*",
+      ".venv/*",
+      ".venv-ci/*",
+      "local_config.example.py"
+    ]
+  },
+  "validation_note": "One successful hosted invocation ran all three test directories and passed the 81% threshold. Independent parsing found exactly 67 expected source files, no duplicate file/line entries, no test or virtualenv files, and totals identical to the XML root and job log. Counts were not manually edited or inferred from the older local report.",
+  "superseded_local_measurement": {
+    "source_revision": "bd693943a38068e87b42f5195ff5b5943f02162d",
+    "covered_statements": 10642,
+    "total_statements": 11928,
+    "coverage_percent": 89.2186452045607,
+    "total_passed": 2531,
+    "note": "Historical local result before later source edits; replaced for the current claim by the single hosted run above."
+  },
   "files": [
     {
       "path": "__init__.py",
@@ -28,22 +75,16 @@
       "covered": 0
     },
     {
-      "path": "install.py",
-      "sha256": "a6faddcd27bde0925afbc9110812ddb77c92c0ae63e7b6b9c219a5d14d2bcf18",
-      "statements": 86,
-      "covered": 61
-    },
-    {
-      "path": "main.py",
-      "sha256": "b0928dc1e448bd5cf56dc851854cf234fc9b51daca89a83ab4dbc7d285efe7d9",
-      "statements": 357,
-      "covered": 269
-    },
-    {
       "path": "fuzz/fuzz_tariff.py",
       "sha256": "724aa5769f972d841ed61e52c53fa68365affdae08c2be8ac703a6669a677c51",
       "statements": 24,
       "covered": 0
+    },
+    {
+      "path": "install.py",
+      "sha256": "bc4879086e862373dffaa74b588f3410e09dd928e7d1ab0b27a7f14bad30f6a5",
+      "statements": 89,
+      "covered": 65
     },
     {
       "path": "inverter_control/__init__.py",
@@ -77,9 +118,9 @@
     },
     {
       "path": "inverter_control/console_ui.py",
-      "sha256": "862bcde819c87fadf49b4e19c50f327f594ed42d48e4614a7a9fb072469788a7",
-      "statements": 101,
-      "covered": 97
+      "sha256": "67a034d64331c80ce0ffad7b33d3e889084082067f812eb0a7a321a63d1f30d0",
+      "statements": 103,
+      "covered": 99
     },
     {
       "path": "inverter_control/control_flags.py",
@@ -131,9 +172,9 @@
     },
     {
       "path": "inverter_control/forecast_input.py",
-      "sha256": "9f625e22b841ef84ef1d7c9f59f1d33e76f93e4f3bd87d298151bf041e7362e1",
-      "statements": 35,
-      "covered": 35
+      "sha256": "690ff21b49c6f21251f5390267e2a9f50e1a828c6c5e90eb821aaedc4d706f30",
+      "statements": 39,
+      "covered": 39
     },
     {
       "path": "inverter_control/grid_backup.py",
@@ -181,11 +222,11 @@
       "path": "inverter_control/metrics.py",
       "sha256": "6fca524cd31a26891466e54ca55510586d4eece68d470901353e8d9ff9a3ead2",
       "statements": 73,
-      "covered": 60
+      "covered": 67
     },
     {
       "path": "inverter_control/mqtt_bridge.py",
-      "sha256": "36a2050bd4d17cbacc6a90bf7ad052802c77b241a8520b06c0cfffa4774aa072",
+      "sha256": "2e2d3f65771fbe9ebdb4283a92649a4a16b366d24646e5de0597164795313d32",
       "statements": 332,
       "covered": 301
     },
@@ -266,6 +307,12 @@
       "sha256": "988e7f931d440580011d8fbc3d7fab27b923ef5ce6bcdca17f6063a746023d52",
       "statements": 41,
       "covered": 41
+    },
+    {
+      "path": "main.py",
+      "sha256": "b0928dc1e448bd5cf56dc851854cf234fc9b51daca89a83ab4dbc7d285efe7d9",
+      "statements": 357,
+      "covered": 269
     },
     {
       "path": "scripts/bandit_sarif.py",
@@ -353,9 +400,9 @@
     },
     {
       "path": "scripts/release_signatures.py",
-      "sha256": "f7bb8ee5c61e8ba8a60c7d2e1807ed3bbfde38a90c7bf1e54251ac9a205ab4dc",
-      "statements": 69,
-      "covered": 47
+      "sha256": "ed62ef05e143cab3dfad28f9e2628ab9fa86386f15a96b7e9971db2e45f7f699",
+      "statements": 89,
+      "covered": 66
     },
     {
       "path": "scripts/release_signing_overlay.py",
@@ -403,7 +450,7 @@
       "path": "scripts/version_receipt.py",
       "sha256": "81daa2d38b27a1a0f20c5a9fc1b3751e2b74dfc2d4d5f5c8888b8aeff5003fdb",
       "statements": 187,
-      "covered": 168
+      "covered": 169
     },
     {
       "path": "scripts/workflow_contracts.py",

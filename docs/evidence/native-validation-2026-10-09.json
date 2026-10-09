@@ -1,0 +1,224 @@
+{
+  "result": "PASS",
+  "source_revision": "73dc560275dbc4b1c7cba039427e1f1b6c9824f6",
+  "measured_checkout_revision": "851b2fafed0ded5baa3bdcfb1c4fbe73158d8d7c",
+  "source_tree_sha": "502cefa7bd13795059b6e5d5af317bcd206e44b5",
+  "source_binding": "GitHub checked out refs/pull/308/merge; both that merge commit and the PR head have the same complete Git tree. The ARMv7 provenance records the measured merge revision. The ASan artifact is bound by the successful job and its checkout/build inputs.",
+  "date_utc": "2026-10-09",
+  "run_id": 37865438945,
+  "run_attempt": 1,
+  "run_url": "https://github.com/victron-venus/inverter-control/actions/runs/37865438945",
+  "jobs": [
+    {
+      "id": 113611408761,
+      "name": "check-0 / CFFI native memory safety fuzz check",
+      "conclusion": "success",
+      "started_at": "2026-10-09T00:35:53Z",
+      "completed_at": "2026-10-09T00:36:47Z",
+      "html_url": "https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408761"
+    },
+    {
+      "id": 113611408782,
+      "name": "check-0 / ARMv7 offline TLS dependency bundle",
+      "conclusion": "success",
+      "started_at": "2026-10-09T00:35:53Z",
+      "completed_at": "2026-10-09T00:38:52Z",
+      "html_url": "https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408782"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 11587094696,
+      "name": "cffi-address-sanitizer",
+      "sha256": "81950f0f7f6b8e7ad91711a5edd64a57f7ae56fd6c31ed552c75d3e99a06e3d6",
+      "size_bytes": 460,
+      "created_at": "2026-10-09T00:36:35Z",
+      "extracted_file_count": 1,
+      "all_extracted_files_match_archive": true
+    },
+    {
+      "id": 11588395662,
+      "name": "tls-dependencies-cp312-armv7",
+      "sha256": "0e76dff970b31254c703a904df0a278185f15d7dfa9d988a1e88458524518e06",
+      "size_bytes": 5329070,
+      "created_at": "2026-10-09T00:38:38Z",
+      "extracted_file_count": 12,
+      "all_extracted_files_match_archive": true
+    }
+  ],
+  "sanitizer": {
+    "machine": "x86_64",
+    "python": "3.12.13 (main, Aug  5 2026, 03:53:07) [GCC 12.2.0]",
+    "address_sanitizer_linked": true,
+    "intentional_overflow_detected": true,
+    "leak_detection": false,
+    "reason": "CPython process lifetime allocations are outside this bounded memory-access check",
+    "fuzz": {
+      "iterations": 2000,
+      "seed": 15293
+    },
+    "scope": "CFFI native API, not instrumentation of prebuilt cryptography/OpenSSL wheels"
+  },
+  "armv7_verification": {
+    "python": "3.12.13 (main, Aug  5 2026, 01:55:45) [GCC 12.2.0]",
+    "cffi_backend": "2.1.1",
+    "machine": "armv7l",
+    "libc": [
+      "glibc",
+      "2.36"
+    ],
+    "versions": {
+      "cryptography": "50.0.2",
+      "cffi": "2.1.1",
+      "pycparser": "3.1"
+    },
+    "key_checks": [
+      {
+        "key": "rsa2047",
+        "accepted": false
+      },
+      {
+        "key": "rsa2048",
+        "accepted": true
+      },
+      {
+        "key": "ec192",
+        "accepted": false
+      },
+      {
+        "key": "ec224",
+        "accepted": true
+      },
+      {
+        "key": "ed25519",
+        "accepted": true
+      },
+      {
+        "key": "ed448",
+        "accepted": true
+      }
+    ],
+    "scope": "Native imports and certificate-key checks; not device or TLS handshake certification"
+  },
+  "native_repeatability": {
+    "clean_builds": 2,
+    "sha256": "07d29e2de620b42ee41e9497bf923c7454115ad8cf223ebb27dc1dd9d411bec1",
+    "debug_requested": true,
+    "debug_info_preserved": true,
+    "scope": "Same pinned image, inputs, source path, epoch and compiler flags; clean objects each run",
+    "environment": {
+      "CC": "gcc",
+      "CXX": "g++",
+      "CPPFLAGS": "",
+      "CFLAGS": "-g -O2 -fstack-protector-strong",
+      "CXXFLAGS": "-g -O2 -fstack-protector-strong",
+      "LDFLAGS": "-Wl,-z,relro,-z,now",
+      "SOURCE_DATE_EPOCH": "1791417600"
+    }
+  },
+  "armv7_provenance": {
+    "images": {
+      "build": "python:3.12.13-bookworm@sha256:3cd9086bdb30f7c9bc08a3fa621d9842e0d3f6f9291aeb4677e0547817c10b12",
+      "verify": "python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2"
+    },
+    "python": "3.12.13 (main, Aug  5 2026, 05:05:25) [GCC 12.2.0]",
+    "machine": "armv7l",
+    "source_revision": "851b2fafed0ded5baa3bdcfb1c4fbe73158d8d7c",
+    "libc": [
+      "glibc",
+      "2.36"
+    ],
+    "wheels": [
+      {
+        "name": "cffi",
+        "version": "2.1.1",
+        "file": "cffi-2.1.1-cp312-cp312-linux_armv7l.whl",
+        "sha256": "07d29e2de620b42ee41e9497bf923c7454115ad8cf223ebb27dc1dd9d411bec1"
+      },
+      {
+        "name": "cryptography",
+        "version": "50.0.2",
+        "file": "cryptography-50.0.2-cp311-abi3-manylinux_2_31_armv7l.whl",
+        "sha256": "ac9ed99d81760c62fe89d5f0815cdfa1ba9a35141cf30f1c2d044f04b4803d2e"
+      },
+      {
+        "name": "pycparser",
+        "version": "3.1",
+        "file": "pycparser-3.1-py3-none-any.whl",
+        "sha256": "f09d358c840bd147b79e55f2bc494f18ea869dc897f5852a8f5766b74f787882"
+      }
+    ],
+    "target": "CPython 3.12, Linux ARMv7 hard-float, glibc >= 2.36, libffi.so.8",
+    "scope": "TLS dependency closure only; existing application dependencies remain required"
+  },
+  "independent_checks": {
+    "downloaded_archive_sha256_matches_api": true,
+    "extracted_files_match_archives": true,
+    "wheel_hashes_match_provenance": true,
+    "two_matching_clean_wheel_hashes_in_job_log": true,
+    "offline_dependency_check_passed": true,
+    "native_extension": {
+      "elf_class": "ELF32",
+      "endianness": "little",
+      "machine": 40,
+      "architecture": "ARM",
+      "debug_info_section_present": true
+    }
+  },
+  "record_hashes": [
+    {
+      "path": "asan/sanitizer-result.json",
+      "sha256": "0dc43d94716ef2d602a107a9c917508886969a4ac046f783e04b1058b2978b8b"
+    },
+    {
+      "path": "armv7/repeatability.json",
+      "sha256": "09bb05e00e2095ef061bdc2ad826ff042c2b31df84789632eabd011037c1e635"
+    },
+    {
+      "path": "armv7/verification.json",
+      "sha256": "5c32d6ace6841cffd8778d1f04a2ab875982943984003df9abbee5cca09f1a57"
+    },
+    {
+      "path": "armv7/provenance.json",
+      "sha256": "1df8c851e628ace8cb4c497260d431dcccf62a3897c9797dd30b5a961e3d0da6"
+    }
+  ],
+  "source_files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "2f5860d843ca7c66274ca32f29c0c7d912adcac578d01dc59b08f93cad6cd9ff",
+      "url": "https://github.com/victron-venus/inverter-control/blob/73dc560275dbc4b1c7cba039427e1f1b6c9824f6/.github/workflows/ci.yml"
+    },
+    {
+      "path": "build-support/tls-armv7/Dockerfile",
+      "sha256": "ebb3312c927826b0a3a49663ad769ee60a059932aa2f4f9d6e664d19be3ad5e5",
+      "url": "https://github.com/victron-venus/inverter-control/blob/73dc560275dbc4b1c7cba039427e1f1b6c9824f6/build-support/tls-armv7/Dockerfile"
+    },
+    {
+      "path": "scripts/build_tls_wheel.py",
+      "sha256": "8714f66c252e227afb382d5214b819ffc719a6fc74008a78bc683e5932624d0e",
+      "url": "https://github.com/victron-venus/inverter-control/blob/73dc560275dbc4b1c7cba039427e1f1b6c9824f6/scripts/build_tls_wheel.py"
+    },
+    {
+      "path": "scripts/check_cffi_sanitizer.py",
+      "sha256": "479b625b72e84ce85af1c18914fe81985200f2b577c099496bb99d723446d68f",
+      "url": "https://github.com/victron-venus/inverter-control/blob/73dc560275dbc4b1c7cba039427e1f1b6c9824f6/scripts/check_cffi_sanitizer.py"
+    },
+    {
+      "path": "tests/fuzz_cffi_sanitized.py",
+      "sha256": "ecd6f21a05fe4aaaaf4c650ed215da5a7b0c272425c4d2d758c8897fe34757a9",
+      "url": "https://github.com/victron-venus/inverter-control/blob/73dc560275dbc4b1c7cba039427e1f1b6c9824f6/tests/fuzz_cffi_sanitized.py"
+    },
+    {
+      "path": "tests/tls_bundle_probe.py",
+      "sha256": "32a1061ef970bf5970569138c89d198cf6099676f7c2a976d69af6a238b5c249",
+      "url": "https://github.com/victron-venus/inverter-control/blob/73dc560275dbc4b1c7cba039427e1f1b6c9824f6/tests/tls_bundle_probe.py"
+    }
+  ],
+  "limits": [
+    "ARMv7 validation uses a QEMU container with CPython 3.12 and glibc 2.36; it is not a physical Venus-device acceptance test.",
+    "ASan instruments native CFFI on x86_64. Leak detection is disabled for CPython process-lifetime allocations; prebuilt cryptography/OpenSSL wheels are outside its instrumentation scope.",
+    "Two equal builds demonstrate repeatability for the recorded pinned environment, paths, epoch and flags, not all toolchains or platforms.",
+    "Actions artifacts are CI evidence, not an actual published signed release."
+  ]
+}

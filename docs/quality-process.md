@@ -10,7 +10,7 @@ The pytest coverage configuration measures Python statements using the FLOSS `co
 
 At merged source `120e3b5ae977975aeb9d080b4216d62f793934fa` on 2026-10-08, [main CI](https://github.com/victron-venus/inverter-control/actions/runs/37861640088/job/113598901119) reported 1,937 passing tests and 94.33% under the older measurement, which included test source. Do not compare that percentage directly with the corrected production-only result. Coverage is a dated source result, not a permanent claim for future commits or proof of hardware acceptance.
 
-The [complete-source audit](evidence/coverage-2026-10-09.json) records 89.2186% statement coverage across all 67 executable project Python files on 2026-10-09. Its per-file hashes identify the measured source.
+The [complete-source audit](evidence/coverage-2026-10-09.json) records 89.3117% statement coverage (10,679/11,957) across all 67 executable project Python files in the [successful hosted CI job](https://github.com/victron-venus/inverter-control/actions/runs/37865438945/job/113611408753) on 2026-10-09. The job passed 2,550 tests, with two skips and the documented FFDH fixture warning. Its per-file hashes and equal Git tree identities bind the measured merge checkout to PR source `73dc560275dbc4b1c7cba039427e1f1b6c9824f6`.
 
 The unit suite, mock MQTT/D-Bus integration, fuzz target, security checks, installer checks, and release contract tests cover different boundaries. Follow [development and validation](development.md), [security scanning](security-scanning.md), and the release instructions for the applicable commands. Do not replace a missing test with a statement that coverage is high.
 
