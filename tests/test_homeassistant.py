@@ -274,7 +274,7 @@ class TestHomeAssistantClient:
     def test_control_dump_loads(self):
         """Test control dump loads"""
         with patch.object(self.client, "turn_on", return_value=True) as mock_on:
-            with patch.object(self.client, "turn_off", return_value=False) as mock_off:
+            with patch.object(self.client, "turn_off", return_value=False):
                 changed = self.client.control_dump_loads(turn_on=True)
                 assert changed == 2
                 assert mock_on.call_count == 2
@@ -428,7 +428,7 @@ class TestHomeAssistantClient:
     def test_control_dump_loads_mixed_results(self):
         """Test control_dump_loads with mixed results"""
         with patch("inverter_control.homeassistant.HA_DUMP_LOADS", ["load1", "load2", "load3"]):
-            with patch.object(self.client, "turn_on", side_effect=[True, False, True]) as mock_on:
+            with patch.object(self.client, "turn_on", side_effect=[True, False, True]):
                 changed = self.client.control_dump_loads(turn_on=True)
                 assert changed == 2
 

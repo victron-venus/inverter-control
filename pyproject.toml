@@ -67,8 +67,6 @@ line-length = 100
 
 [tool.ruff.lint]
 ignore = [
-    "E722",  # Do not use bare except
-    "F841",  # Local variable assigned but never used
     "BLE001",  # Do not catch blind exception (hardware control needs broad exception handling)
     "S110",    # try-except-pass (deliberate in watchdog/failsafe paths)
     "EXE001",  # Shebang in non-executable (module files not scripts)
