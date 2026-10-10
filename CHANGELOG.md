@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.23.5] - Candidate series, started 2026-10-06
 
 ### Added
+- Read-only [D-Bus diagnostic tools](docs/dbus-diagnostics.md) for saved timing
+  and writer provenance records, with bounded runtime inventory verification.
 - Separate Home Assistant token files and documented Loki netrc credential
   rotation, so credentials can be replaced without editing ordinary configuration.
 - Signed source and optional ARMv7 dependency payloads, with fixed publisher,
