@@ -2,8 +2,11 @@
 
 import copy
 import hashlib
+import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -97,3 +100,45 @@ def test_valid_changed_count_still_requires_exact_on_disk_names(runtime_fixture)
     assert read_provenance.runtime_snapshot(
         runtime_fixture.runtime, runtime_fixture.proc, runtime_fixture.expected
     )
+
+
+def test_optional_text_requires_explicit_null_or_plain_string():
+    assert provenance_parser.text(None, 4)
+    assert not provenance_parser.text(None, 4, optional=False)
+    assert provenance_parser.text("name", 4)
+    assert not provenance_parser.text("longer", 4)
+    for value in (False, 123, {}, []):
+        assert not provenance_parser.text(value, 4)
+
+
+def test_expectations_input_is_bounded_and_rejects_duplicate_keys(runtime_fixture):
+    data = json.dumps(runtime_fixture.expected).encode()
+    assert read_provenance.read_expectations(io.BytesIO(data)) == runtime_fixture.expected
+    for invalid, message in (
+        (b" " * 65537, "byte limit"),
+        (b'{"pid": 22, "pid": 23}', "Duplicate expectation key"),
+        (b"{}", "Invalid expectation fields"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            read_provenance.read_expectations(io.BytesIO(invalid))
+
+
+def test_reader_cli_uses_caller_supplied_stdin(runtime_fixture, monkeypatch, capsys):
+    data = json.dumps(runtime_fixture.expected).encode()
+    monkeypatch.setattr(read_provenance.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(data)))
+    monkeypatch.setattr(read_provenance.sys, "argv", ["read_provenance"])
+    collect = Mock(return_value={"status": "matched_runtime_record"})
+    monkeypatch.setattr(read_provenance, "collect", collect)
+    assert read_provenance.main() == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "matched_runtime_record"
+    assert collect.call_args.args[-1] == runtime_fixture.expected
+
+
+def test_reader_cli_rejects_invalid_input_before_reading_runtime(monkeypatch, capsys):
+    monkeypatch.setattr(read_provenance.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(b"{}")))
+    monkeypatch.setattr(read_provenance.sys, "argv", ["read_provenance"])
+    collect = Mock()
+    monkeypatch.setattr(read_provenance, "collect", collect)
+    assert read_provenance.main() == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "rejected"
+    collect.assert_not_called()

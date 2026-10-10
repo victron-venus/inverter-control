@@ -466,16 +466,23 @@ def collect(runtime_root, log_root, proc_root, expected, *, pid_lookup=lookup_se
     return result
 
 
+def read_expectations(stream):
+    """Read one bounded JSON document from the caller-owned input stream."""
+    data = stream.read(65537)
+    if len(data) > 65536:
+        raise ValueError("Expectations exceed byte limit")
+    return validate_expectations(json.loads(data, object_pairs_hook=unique_object))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expectations", type=Path, required=True)
+    parser.epilog = "Read the expected identity and source hashes as JSON from standard input."
     parser.add_argument("--runtime-root", type=Path, default=Path("/data/inverter-control"))
     parser.add_argument("--log-root", type=Path, default=Path("/var/log/inverter-control"))
     parser.add_argument("--proc-root", type=Path, default=Path("/proc"))
     args = parser.parse_args()
     try:
-        data, _ = read_regular(args.expectations, 65536)
-        expected = json.loads(data, object_pairs_hook=unique_object)
+        expected = read_expectations(sys.stdin.buffer)
         result = collect(args.runtime_root, args.log_root, args.proc_root, expected)
     except (ValueError, OSError, UnicodeError, KeyError, TypeError) as error:
         result = {

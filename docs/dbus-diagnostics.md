@@ -26,7 +26,7 @@ For an existing Linux runtime, `read_provenance` can bind saved records to an
 explicitly expected process and current source inventory:
 
 ```sh
-python3 -m scripts.dbus_diagnostics.read_provenance --expectations expectations.json > provenance.json
+python3 -m scripts.dbus_diagnostics.read_provenance < expectations.json > provenance.json
 ```
 
 Expectations must provide `pid`, `process_start_ticks`, `boot_id`, `version`,
@@ -35,7 +35,9 @@ Expectations must provide `pid`, `process_start_ticks`, `boot_id`, `version`,
 `version` and every installed `inverter_control/*.py` file to its SHA-256. The
 inventory is bounded, but its count is not tied to a particular historical
 release. Missing, extra or changed source files fail verification. Obtain these
-expectations independently for the intended process and time window.
+expectations independently for the intended process and time window. Supply the
+JSON through standard input (at most 64 KiB); the reader does not accept an
+expectations filename or choose which file the caller supplies.
 
 The default roots are `/data/inverter-control`, `/var/log/inverter-control` and
 `/proc`; explicit `--runtime-root`, `--log-root` and `--proc-root` override them.

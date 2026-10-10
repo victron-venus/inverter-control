@@ -30,7 +30,11 @@ HASH = re.compile(r"[0-9a-f]{64}")
 
 
 def text(value, limit, optional=True):
-    return (value is None and optional) or (type(value) is str and len(value) <= limit)
+    if value is None:
+        return optional
+    if type(value) is not str:
+        return False
+    return len(value) <= limit
 
 
 def finite(value):
