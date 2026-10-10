@@ -374,8 +374,9 @@ class InverterController:
             self.calculator.power_limit_min = self.power_limit_min
             self.calculator.power_limit_max = self.power_limit_max
             self._trim_mode_generation += 1
-        logger.info(f"Power limits changed to [{self.power_limit_min}, {self.power_limit_max}]")
-        return {"min": self.power_limit_min, "max": self.power_limit_max}
+            applied = {"min": self.power_limit_min, "max": self.power_limit_max}
+        logger.info(f"Power limits changed to [{applied['min']}, {applied['max']}]")
+        return applied
 
     def set_dry_run(self, enabled: bool) -> bool:
         with self._watchdog._lock:

@@ -836,6 +836,42 @@ class TestSetPowerLimits(unittest.TestCase):
             assert (calculator.power_limit_min, calculator.power_limit_max) == (-2300, 2250)
             assert controller._trim_mode_generation == generation
 
+    def test_response_retains_its_applied_limits_during_concurrent_update(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        controller, victron, _, calculator = _make_controller()
+        generation = controller._trim_mode_generation
+        first_logging = threading.Event()
+        second_applied = threading.Event()
+        messages = []
+
+        def log_after_unlock(message):
+            messages.append(message)
+            if message == "Power limits changed to [-1000, 1000]":
+                first_logging.set()
+                assert second_applied.wait(5)
+
+        with patch(f"{_MOD}.logger.info", side_effect=log_after_unlock):
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                first = executor.submit(controller.set_power_limits, -1000, 1000)
+                try:
+                    assert first_logging.wait(5)
+                    second = controller.set_power_limits(-2000, 2000)
+                finally:
+                    second_applied.set()
+                assert first.result(timeout=5) == {"min": -1000, "max": 1000}
+
+        assert second == {"min": -2000, "max": 2000}
+        assert messages == [
+            "Power limits changed to [-1000, 1000]",
+            "Power limits changed to [-2000, 2000]",
+        ]
+        assert (controller.power_limit_min, controller.power_limit_max) == (-2000, 2000)
+        assert (calculator.power_limit_min, calculator.power_limit_max) == (-2000, 2000)
+        assert controller._trim_mode_generation == generation + 2
+        victron.set_grid_setpoint.assert_not_called()
+
 
 @pytest.mark.parametrize("previous,expected", [(5000, 2250), (-5000, -2300)])
 def test_stop_override_resumes_with_a_bounded_automatic_write(previous, expected):

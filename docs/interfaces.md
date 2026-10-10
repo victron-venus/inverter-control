@@ -88,7 +88,9 @@ Supported command suffixes:
 - `limits`: `{"min":-2300,"max":2250}` sets ordered integer limits in watts.
   The controller clamps each endpoint to the supported range `[-3000,3000]`.
   Invalid ordering, booleans and fractional values are rejected. The state
-  publication exposes effective limits.
+  publication exposes effective limits. The controller's returned result and
+  diagnostic log describe the range applied by that call; a later concurrent
+  update can already be reflected in the state publication.
 - `loop_interval`: `{"interval":0.33}` sets a runtime interval in seconds,
   constrained to `[0.1,5.0]`. Observe the effective `loop_interval` in state.
 - `set_ess_mode`: `{"mode":"external_control","request_id":"operator-3"}`.
