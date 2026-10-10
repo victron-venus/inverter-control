@@ -1,0 +1,127 @@
+{
+  "provenance": {
+    "dbus_fast": "2.21.1",
+    "source_base": "51a810c2024c8f875037bfaa2af15b61c091ca57",
+    "files": {
+      "inverter_control/dbus_native.py": "972e2269f1a97e6c7e0283e6a36ab0b9c0ffebb57e1ae26d0b40bb31783f697c",
+      "tests/test_dbus_send_observer.py": "b026e81aa55cacc26c87c3050499704c17593395b5a43d2c9e0d4104bc25d7c4"
+    },
+    "method": "Real dbus-fast call/send/reply dispatch; __new__ bus with socket-free Writer fixture. Diagnostic threshold patched to zero only to retain small offline records. No network/device or production changes."
+  },
+  "cases": [
+    {
+      "case": "immediate",
+      "record": {
+        "phase": "native_call",
+        "clock": "monotonic",
+        "pid": 60431,
+        "caller_native_tid": 31255928,
+        "loop_native_tid": 31255928,
+        "anchors": {
+          "started_at": 906160.020804,
+          "submitted_at": 906160.020804208,
+          "dispatched_at": 906160.020804291,
+          "await_started_at": 906160.020804375,
+          "call_started_at": 906160.020856666,
+          "send_started_at": 906160.020860583,
+          "send_returned_at": 906160.020863791,
+          "send_done_observed_at": 906160.02086425,
+          "reply_observed_at": 906160.020885916,
+          "call_finished_at": 906160.02090225,
+          "completed_at": 906160.02091925,
+          "returned_at": 906160.020919375
+        },
+        "sender": ":1.42",
+        "serial": 1,
+        "total_ms": 0.115,
+        "setup_ms": 0.0,
+        "dispatch_ms": 0.0,
+        "await_reply_ms": 0.115,
+        "caller_wakeup_ms": 0.0,
+        "call_to_reply_observer_ms": 0.029,
+        "reply_observer_to_resume_ms": 0.016,
+        "send_sync_ms": 0.003,
+        "send_return_to_done_observer_ms": 0.0,
+        "send_future_cancelled": false
+      },
+      "fixture_only_expected_application_reply_body": 0,
+      "original_send_count": 1
+    },
+    {
+      "case": "queued_done_after_reply_observer",
+      "record": {
+        "phase": "native_call",
+        "clock": "monotonic",
+        "pid": 60431,
+        "caller_native_tid": 31255928,
+        "loop_native_tid": 31255928,
+        "anchors": {
+          "started_at": 906160.021052833,
+          "submitted_at": 906160.021052833,
+          "dispatched_at": 906160.021052875,
+          "await_started_at": 906160.021052916,
+          "call_started_at": 906160.021084208,
+          "send_started_at": 906160.021086833,
+          "send_returned_at": 906160.021088916,
+          "send_done_observed_at": 906160.021123041,
+          "reply_observed_at": 906160.021108083,
+          "call_finished_at": 906160.021124,
+          "completed_at": 906160.0211405,
+          "returned_at": 906160.021140625
+        },
+        "sender": ":1.42",
+        "serial": 1,
+        "total_ms": 0.088,
+        "setup_ms": 0.0,
+        "dispatch_ms": 0.0,
+        "await_reply_ms": 0.088,
+        "caller_wakeup_ms": 0.0,
+        "call_to_reply_observer_ms": 0.024,
+        "reply_observer_to_resume_ms": 0.016,
+        "send_sync_ms": 0.002,
+        "send_return_to_done_observer_ms": 0.034,
+        "send_future_cancelled": false
+      },
+      "fixture_only_expected_application_reply_body": 0,
+      "original_send_count": 1
+    },
+    {
+      "case": "cancelled",
+      "record": {
+        "phase": "native_call",
+        "clock": "monotonic",
+        "pid": 60431,
+        "caller_native_tid": 31255928,
+        "loop_native_tid": 31255928,
+        "anchors": {
+          "started_at": 906160.021166,
+          "submitted_at": 906160.021166125,
+          "dispatched_at": 906160.021166166,
+          "await_started_at": 906160.02116625,
+          "call_started_at": 906160.021190333,
+          "send_started_at": 906160.021191833,
+          "send_returned_at": 906160.021193125,
+          "send_done_observed_at": 906160.021223083,
+          "reply_observed_at": null,
+          "call_finished_at": 906160.021241583,
+          "completed_at": 906160.0212585,
+          "returned_at": 906160.021258583
+        },
+        "sender": ":1.42",
+        "serial": 1,
+        "total_ms": 0.093,
+        "setup_ms": 0.0,
+        "dispatch_ms": 0.0,
+        "await_reply_ms": 0.092,
+        "caller_wakeup_ms": 0.0,
+        "call_to_reply_observer_ms": null,
+        "reply_observer_to_resume_ms": null,
+        "send_sync_ms": 0.001,
+        "send_return_to_done_observer_ms": 0.03,
+        "send_future_cancelled": true
+      },
+      "fixture_only_expected_application_reply_body": null,
+      "original_send_count": 1
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "method": "Synthetic identities, paths, byte sizes and fingerprints; schema modeled on a socket-free dbus-fast 2.21.1 writer. Not runtime evidence.",
+  "record": {
+    "phase": "writer_provenance",
+    "schema": "dbus-send-provenance-v1",
+    "clock": "monotonic",
+    "observed_at": 100,
+    "pid": 22,
+    "loop_native_tid": 23,
+    "sender": ":1.42",
+    "send_returned": true,
+    "underlying_send": {
+      "module": "dbus_fast.aio.message_bus",
+      "qualname": "MessageBus.send",
+      "bound_callable_type": {
+        "module": "builtins",
+        "qualname": "method"
+      },
+      "code": {
+        "status": "captured_python_code",
+        "format": "python-marshal-v4-sha256",
+        "python": "3.12",
+        "sha256": "fdd136d3a1afd41851aac52c803fe13bdb1ed97d894ce80552b61ac47003b09c"
+      }
+    },
+    "bus": {
+      "class": {
+        "module": "tests.test_dbus_send_observer",
+        "qualname": "ObservedBus"
+      },
+      "mro": [
+        {
+          "module": "tests.test_dbus_send_observer",
+          "qualname": "ObservedBus"
+        },
+        {
+          "module": "inverter_control.dbus_native",
+          "qualname": "_SendTimingBusMixin"
+        },
+        {
+          "module": "dbus_fast.aio.message_bus",
+          "qualname": "MessageBus"
+        },
+        {
+          "module": "dbus_fast.message_bus",
+          "qualname": "BaseMessageBus"
+        },
+        {
+          "module": "builtins",
+          "qualname": "object"
+        }
+      ],
+      "mro_truncated": false
+    },
+    "writer": {
+      "class": {
+        "module": "tests.test_dbus_send_observer",
+        "qualname": "make_bus.<locals>.Writer"
+      },
+      "mro": [
+        {
+          "module": "tests.test_dbus_send_observer",
+          "qualname": "make_bus.<locals>.Writer"
+        },
+        {
+          "module": "builtins",
+          "qualname": "object"
+        }
+      ],
+      "mro_truncated": false
+    },
+    "future": {
+      "class": {
+        "module": "_asyncio",
+        "qualname": "Future"
+      },
+      "mro": [
+        {
+          "module": "_asyncio",
+          "qualname": "Future"
+        },
+        {
+          "module": "builtins",
+          "qualname": "object"
+        }
+      ],
+      "mro_truncated": false
+    },
+    "modules": [
+      {
+        "module": "dbus_fast.aio.message_bus",
+        "file": "/opt/diagnostic-fixture/dbus_fast/aio/message_bus.py",
+        "spec_origin": "/opt/diagnostic-fixture/dbus_fast/aio/message_bus.py",
+        "status": "current_file_hashed",
+        "bytes": 100,
+        "current_file_sha256": "a43c797b912bfd3efb8f10616a1b5a8440c006cd518b7f21c7cd559bc2555582",
+        "loaded_bytes_verified": false
+      },
+      {
+        "module": "tests.test_dbus_send_observer",
+        "file": null,
+        "spec_origin": null,
+        "status": "module_not_allowlisted"
+      },
+      {
+        "module": "inverter_control.dbus_native",
+        "file": "/opt/diagnostic-fixture/inverter_control/dbus_native.py",
+        "spec_origin": "/opt/diagnostic-fixture/inverter_control/dbus_native.py",
+        "status": "current_file_hashed",
+        "bytes": 100,
+        "current_file_sha256": "ab3566a6d43fc3a5058d1ebab597aa964567800f9b22d30d96abfc64d9e0a87f",
+        "loaded_bytes_verified": false
+      },
+      {
+        "module": "dbus_fast.message_bus",
+        "file": "/opt/diagnostic-fixture/dbus_fast/message_bus.py",
+        "spec_origin": "/opt/diagnostic-fixture/dbus_fast/message_bus.py",
+        "status": "current_file_hashed",
+        "bytes": 100,
+        "current_file_sha256": "d78d64ce35d7a345364063c542e6fa56f9cdca999ca00b0c6acff147cb799cb9",
+        "loaded_bytes_verified": false
+      },
+      {
+        "module": "builtins",
+        "file": null,
+        "spec_origin": "/opt/diagnostic-fixture/builtins.py",
+        "status": "no_bounded_file_path"
+      },
+      {
+        "module": "_asyncio",
+        "file": null,
+        "spec_origin": "/opt/diagnostic-fixture/_asyncio.py",
+        "status": "no_bounded_file_path"
+      }
+    ],
+    "modules_truncated": false
+  }
+}
