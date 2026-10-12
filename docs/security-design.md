@@ -26,6 +26,38 @@ not replace them. See [grid telemetry safety](grid-telemetry-safety.md),
 [native write isolation](native-write-isolation.md), and
 [Venus OS operations](venus-os-operations.md) before commissioning.
 
+## Command ownership
+
+Run one active `inverter-control` process for the selected VE.Bus inverter.
+Its automatic regulation, watchdog and explicit setpoint override share the
+local setpoint write path (`/Hub4/L1/AcPowerSetpoint`). An override has priority;
+it is not another independently running controller. The write lock serializes
+this process only. It does not arbitrate with another daemon, Node-RED flow,
+MCP client, HA automation or direct Venus MQTT `W/` publisher.
+
+While this controller owns regulation, those clients must submit supported
+commands through its interfaces rather than write competing inverter setpoints.
+For maintenance by a separate writer, explicitly hand off control and verify the
+actual ESS state first. A stable D-Bus name or a successful write response does
+not establish exclusive physical ownership. Neither the archived
+`venus-os-governance` project nor this repository's governance document is a
+runtime authorization or actuator safety gate.
+
+Water and vehicle integrations are telemetry consumers here: valve/pump policy
+belongs to `dbus-pump`, and the vehicle/charger projection belongs to `dbus-ev`.
+Do not add direct pump, charger or thermostat writes to the regulation loop.
+The existing optional HA command forwarding and dump-load control are separate
+write paths, scoped to their configured entities; coordinate their ownership
+with local HA automations too. A generic HA forwarding endpoint is not a
+cross-project safety interlock.
+
+Missing, stale, incomplete or changed-source grid data suspends normal
+regulation and invokes the configured watchdog policy; it does not revoke an
+explicit persistent override. The exact fallback, recovery, cold-start and
+DRY-mode limits are documented in [grid telemetry safety](grid-telemetry-safety.md).
+An accepted D-Bus method reply is not an independent measurement of physical
+power, nor does it certify that another writer has stayed idle.
+
 ## Interfaces and trust boundaries
 
 ### Local process, configuration, and D-Bus
