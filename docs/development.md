@@ -161,7 +161,7 @@ requires one matching base-version section with nonempty `### Upgrade` and
 `### Security` guidance. The generated build provenance is retained below it.
 Update these notes in the same PR as user-visible or security changes; do not
 mark a future feature or an unperformed validation as already released.
-`tests/test_release_notes.py` verifies this contract. Regenerating vendored
+`tests/test_control_release_notes.py` verifies this contract. Regenerating vendored
 files without carrying the hook forward would remove this publication check.
 
 ## Configuration and device acceptance

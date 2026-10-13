@@ -103,7 +103,7 @@ The following criteria have public evidence supporting **Met**:
   commit, selects that release's base version, and rejects missing or incomplete
   notes before creating a release. The policy is enforced in
   [release_control.py](../scripts/release_control.py) and checked by
-  [release-note tests](../tests/test_release_notes.py).
+  [release-note tests](../tests/test_control_release_notes.py).
 - **N/A candidate — `release_notes_vulns`:** no public advisory for a
   vulnerability in this project's own code was found in the GitHub repository
   advisory inventory. Maintainers must confirm that there are no other assigned
