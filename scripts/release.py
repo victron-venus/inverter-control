@@ -340,7 +340,10 @@ def execute(args: argparse.Namespace, config: dict) -> None:
             )
         # Legacy validation-only clients do not include versioning modules.
         # pylint: disable-next=import-outside-toplevel
-        from prepare_version import prepare
+        if __package__:
+            from .prepare_version import prepare
+        else:
+            from prepare_version import prepare
 
         print(
             json.dumps(

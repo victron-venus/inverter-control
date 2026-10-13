@@ -2,8 +2,22 @@
 
 The source of truth is `.release-policy.json`. `quality-gate.yml` runs the callable
 validation workflows and produces the required **CI gate** status on every PR
-and merge-queue commit. Missing, failed and skipped validation workflows fail
-the gate. Workflow and lockfile changes are included in validation.
+and merge-queue commit. Superseded PR runs are cancelled. Without an explicit
+`change_scope` policy, every change keeps full CI and normal release preparation.
+Documentation-only skipping requires that explicit opt-in. When enabled, the
+Change scope job checks the complete Git diff first; the gate accepts only proven
+documentation skips. Missing, failed or unexpectedly skipped workflows fail the
+gate. Unknown files, incomplete history, code, workflows and lockfile changes run
+full validation.
+
+The optional `change_scope` policy provides exact `documentation_paths`, exact
+`required_paths` for documentation used as a build input, and
+`always_validate_workflows` for independently required checks. Documentation paths
+cannot exempt source, tests, fixtures, build configuration or dependencies.
+Manual dispatch, scheduled runs and release qualification remain full. Only with
+explicit `change_scope` opt-in does a documentation-only push stop before release
+preparation, version allocation, artifact builds or publication. This does not
+change the configured nightly policy.
 
 ## Local checks
 
@@ -19,6 +33,7 @@ Callable validation workflows:
 - `.github/workflows/ci.yml`
 - `.github/workflows/codeql.yml`
 - `.github/workflows/release-security.yml`
+- `.github/workflows/dependency-review.yml`
 
 The [release strategy](../RELEASING.md) defines versioning, channels, acceptance,
 ownership, hotfixes and rollback. This document is the operational runbook.
@@ -58,13 +73,25 @@ branch; `package` builds locally, `status` reads run history, and `--dry-run` on
 displays the request.
 
 If the base version already has a stable release, bump the committed version through
-a PR before beta/RC publication. Nightly builds may still use that existing base.
+a PR before beta/RC publication. Nightly builds may still use that existing base. After every fresh check and platform build passes, an automatic nightly skips duplicate GitHub publication if retained immutable evidence qualifies an existing beta/RC/stable at the same source, policy and base. It reports `reused` with that tag, retains its Actions build artifacts, and does not advance the publication floor or create new promotion evidence. Reserved counters may have gaps. Mutable build inputs and current security databases are still exercised. Manual nightly requests, new sources and missing/expired/unverifiable evidence retain full publication.
+Automatic push betas skip packaging/publication with `version-required` when their
+committed base already has a stable tag. Quality and security checks still run.
+Prepare the next version through a PR; manual beta/RC requests still fail strictly.
 
 Candidate tags are unique and immutable: `vX.Y.Z-beta.N`, `vX.Y.Z-rc.N`, or
 `vX.Y.Z-nightly.<UTC timestamp>.<run>.<attempt>`. Candidates are prereleases and
 never update stable/latest. All required platforms must build before publication.
 `release-manifest.json` records source SHA, workflow/run attempt and every payload
 SHA-256. The manifest is also saved in immutable Actions evidence for 90 days.
+
+Automatic push betas and scheduled nightlies publish the current default HEAD.
+An older source is explicitly marked `superseded` only after ancestry and one
+newer automatic replacement run at current HEAD are verified. This does not claim
+that the replacement passed or published. No tag, release or promotion evidence
+is created for that skipped publication, and its reserved number is not reused.
+Missing replacement evidence or API failures remain errors. Manual releases keep
+their existing checks. A race after the final check can still fail publication;
+inspect the error and dispatch a fresh run at current HEAD, never reset the ledger.
 
 ## Stable promotion
 
@@ -104,8 +131,10 @@ credentials/streams and production access are not implied by unit tests or build
 The release engine/client are vendored from `victron-venus/venus-os-ci-toolkit`.
 They are excluded from consumer-specific formatting/type policy. Application
 release workflows run the mandatory Release tooling contracts job; validation-only
-projects receive the local client, whose contracts run in the toolkit. Update the toolkit source and rerun
-`scripts/install_release.py`; `--check` detects drift.
+projects receive the local client, whose contracts run in the toolkit. Update the toolkit source, then run
+`python3 scripts/install_release.py /path/to/consumer` from the toolkit checkout;
+add `--check` to detect drift without writing files. The installer is not vendored
+into consumer repositories.
 
 References: [GitHub schedules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule),
 [protected environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments),
