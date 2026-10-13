@@ -33,8 +33,9 @@ version is also consistent across both installation paths.
 
 `fuzz/fuzz_tariff.py` uses Atheris to exercise the bounded tariff JSON import path.
 It checks rejection of malformed input, stable normalization and strict JSON
-round trips. CI replays the committed valid/invalid seeds and fuzzes for 60 seconds
-on every PR and release validation; the full quality gate also runs weekly.
+round trips. The shared release pipeline replays the committed valid/invalid seeds and fuzzes
+for 60 seconds only for public release candidates. PR, beta, push and scheduled
+workflows do not start a campaign. See [the complete policy](fuzzing.md).
 To reproduce on Linux with Python 3.12:
 
 ```sh

@@ -94,3 +94,9 @@ tariff-install.json
 # Local security scan output
 bandit-results.json
 bandit-results.sarif
+
+# Isolated RC fuzz runtime and local libFuzzer diagnostics
+.fuzz-venv/
+crash-*
+timeout-*
+oom-*
