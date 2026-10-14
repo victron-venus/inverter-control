@@ -29,7 +29,24 @@
         "-max_len=100001"
       ],
       "seconds": 60,
-      "corpus": "fuzz/corpus/tariff"
+      "corpus": "fuzz/corpus/tariff",
+      "instrumentation": [
+        {
+          "module": "inverter_control.tariff",
+          "functions": [
+            "_read_stream",
+            "validate_tariff"
+          ]
+        }
+      ]
     }
+  ],
+  "preflight-paths": [
+    ".github/requirements-fuzz.in",
+    "fuzz",
+    "inverter_control",
+    "pyproject.toml",
+    "requirements.txt",
+    "uv.lock"
   ]
 }
