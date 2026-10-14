@@ -94,8 +94,9 @@ using downloaded release payloads.
 
 ## Native memory-safety checks
 
-The required CI workflow also rebuilds CFFI with AddressSanitizer on native
-x86-64. It verifies sanitizer linkage and first requires an intentionally invalid
+The manually dispatched `native-memory-check.yml` diagnostic rebuilds CFFI
+with AddressSanitizer on native x86-64. It is no longer part of automatic PR,
+beta or scheduled CI; the public-RC gate runs the separate Atheris tariff target. It verifies sanitizer linkage and first requires an intentionally invalid
 standalone canary to be detected, then runs 2,000 deterministic fuzz iterations
 of CFFI declaration parsing, arrays, structs, buffers and owned pointer casts.
 The sanitizer image has no network during the test. Instrumented binaries are

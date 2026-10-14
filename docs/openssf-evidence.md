@@ -103,7 +103,7 @@ The following criteria have public evidence supporting **Met**:
   commit, selects that release's base version, and rejects missing or incomplete
   notes before creating a release. The policy is enforced in
   [release_control.py](../scripts/release_control.py) and checked by
-  [release-note tests](../tests/test_release_notes.py).
+  [release-note tests](../tests/test_control_release_notes.py).
 - **N/A candidate — `release_notes_vulns`:** no public advisory for a
   vulnerability in this project's own code was found in the GitHub repository
   advisory inventory. Maintainers must confirm that there are no other assigned
@@ -182,7 +182,7 @@ The following criteria have evidence supporting **Met**:
 - `dynamic_analysis`, `dynamic_analysis_enable_assertions`: the
   [Atheris harness](../fuzz/fuzz_tariff.py) varies tariff input and checks
   normalization/JSON round-trip invariants. The
-  [fuzz job](../.github/workflows/fuzz.yml) runs before release; pytest assertions
+  [shared RC fuzz gate](fuzzing.md) runs before each public release candidate; pytest assertions
   remain enabled. This evidence does not rely on confusing statement coverage
   with the criteria's alternative branch-coverage threshold.
 - `dynamic_analysis_fixed`: no unresolved exploitable issue was found by the
@@ -194,7 +194,9 @@ The following criteria have evidence supporting **Met**:
 rebuilt CFFI, confirmed AddressSanitizer linkage, detected an intentional overflow
 canary, and passed 2,000 deterministic native-API fuzz iterations (seed 15293).
 Leak detection is disabled for CPython lifetime allocations. Prebuilt
-cryptography/OpenSSL wheels are outside the instrumentation scope.
+cryptography/OpenSSL wheels are outside the instrumentation scope. This is a
+historical run, not a claim that each new RC ran ASan. The native diagnostic is
+now manual-only; see [the cadence change](fuzzing.md#change-from-the-previous-cadence).
 
 `warnings_strict` has practical **Met** evidence: blocking Ruff diagnostics now
 include bare-except `E722` and unused-variable `F841`; their global ignores were

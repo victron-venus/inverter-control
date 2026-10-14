@@ -26,6 +26,9 @@ import version_receipt
 # pylint: disable-next=too-many-instance-attributes
 class CurrentBuildInputsTests(unittest.TestCase):
     def setUp(self):
+        # This synthetic fixture intentionally has no detached OCI contract.
+        import release_provenance
+        self.enterContext(patch.object(release_provenance, "REQUIRED_PAIRS", ()))
         # unittest owns cleanup across setup, the test body and assertion failures.
         # pylint: disable-next=consider-using-with
         self.temporary = tempfile.TemporaryDirectory()
@@ -111,6 +114,7 @@ class CurrentBuildInputsTests(unittest.TestCase):
         toolchain.assert_not_called()
         self.assertFalse(self.output.exists())
 
+
     def test_publisher_rejects_mutated_receipt_identity_and_coverage(self):
         original = self.create()
         artifact = original["artifacts"][0]
@@ -135,6 +139,81 @@ class CurrentBuildInputsTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     version_receipt.verify_receipts(
                         self.assets, self.plan, payloads, self.policy
+                    )
+
+
+    def test_large_package_receipt_does_not_buffer_the_payload(self):
+        payload = b"package" * 400_000
+        (self.assets / "package.bin").write_bytes(payload)
+        with patch.object(
+            Path, "read_bytes", side_effect=AssertionError("Whole-file payload read")
+        ):
+            result = self.create()
+        self.assertEqual(
+            result["artifacts"],
+            [
+                {
+                    "name": "package.bin",
+                    "size": len(payload),
+                    "sha256": version_receipt.sha256(payload),
+                }
+            ],
+        )
+
+    def test_oversized_receipt_reads_only_a_bounded_prefix(self):
+        self.create()
+        with self.output.open("ab") as output:
+            output.truncate(64 * 1024 * 1024)
+        with self.output.open("rb") as source:
+            original_read = source.read
+
+            def bounded_read(size=-1):
+                self.assertGreater(size, 0, "Receipt read must have a size limit")
+                self.assertLessEqual(size, 2_000_001)
+                return original_read(size)
+
+            with (
+                patch.object(Path, "open", return_value=source),
+                patch.object(source, "read", side_effect=bounded_read) as read,
+                self.assertRaisesRegex(ValueError, "Oversized build receipt"),
+            ):
+                version_receipt.verify_receipts(
+                    self.assets, self.plan, [{"name": self.output.name}], self.policy
+                )
+            read.assert_called_once_with(2_000_001)
+
+    def test_receipt_size_boundary_preserves_exact_bytes_and_validation(self):
+        receipt = self.create()
+        original = self.output.read_bytes()
+        for size in (1_999_999, 2_000_000, 2_000_001):
+            with self.subTest(size=size):
+                raw = original.ljust(size, b" ")
+                self.output.write_bytes(raw)
+                payloads = receipt["artifacts"] + [
+                    {
+                        "name": self.output.name,
+                        "size": size,
+                        "sha256": version_receipt.sha256(raw),
+                    }
+                ]
+                if size > 2_000_000:
+                    with self.assertRaisesRegex(ValueError, "Oversized build receipt"):
+                        version_receipt.verify_receipts(
+                            self.assets, self.plan, payloads, self.policy
+                        )
+                else:
+                    verified = version_receipt.verify_receipts(
+                        self.assets, self.plan, payloads, self.policy
+                    )
+                    self.assertEqual(
+                        verified,
+                        [
+                            {
+                                "name": self.output.name,
+                                "sha256": version_receipt.sha256(raw),
+                                "inputs": receipt,
+                            }
+                        ],
                     )
 
     def test_dependency_change_after_sync_fails_without_a_receipt(self):

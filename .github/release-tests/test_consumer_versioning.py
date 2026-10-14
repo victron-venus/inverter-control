@@ -37,6 +37,9 @@ class ConsumerVersioningTests(unittest.TestCase):
     """Require a source-bound overlay before producing publishable platform assets."""
 
     def setUp(self):
+        # This synthetic fixture intentionally has no detached OCI contract.
+        import release_provenance
+        self.enterContext(patch.object(release_provenance, "REQUIRED_PAIRS", ()))
         self.environment = patch.dict(os.environ)
         self.environment.start()
         self.addCleanup(self.environment.stop)
@@ -181,9 +184,10 @@ class ConsumerVersioningTests(unittest.TestCase):
         self.assertEqual(len(metadata), 1)
         payload = output / "app.tar.gz"
         payload.write_bytes(payload.read_bytes() + b"changed after build")
+        inventory = self.inventory(output)
         with self.assertRaises(ValueError):
             version_receipt.verify_receipts(
-                output, plan, self.inventory(output), self.policy
+                output, plan, inventory, self.policy
             )
 
     def test_staging_rejects_dropped_input_evidence(self):

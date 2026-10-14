@@ -58,6 +58,22 @@ def policy(files=None, promotion="final-build"):
 
 
 class PlanTest(unittest.TestCase):
+    def test_nightly_sequence_requires_ascii_digits(self):
+        configuration = policy()
+        sequence = "20261008123456.1.1"
+        plan = version.create_plan("1.2.3", "nightly", sequence, SHA, configuration)
+        self.assertEqual(plan["tag"], "v1.2.3-nightly." + sequence)
+        invalid_sequences = (
+            "２０２６１００８１２３４５６.1.1",
+            "20261008123456.١.1",
+            "20261008123456.1.𝟙",
+            "20261008123456.1١.1",
+            "20261008123456.1.1𝟙",
+        )
+        for invalid in invalid_sequences:
+            with self.subTest(sequence=invalid), self.assertRaises(ValueError):
+                version.create_plan("1.2.3", "nightly", invalid, SHA, configuration)
+
     def test_exact_identity_and_package_profiles(self):
         for profile in ("final-build", "promote-bytes"):
             config = policy(promotion=profile)
@@ -649,7 +665,7 @@ version = "2.5.42"
         for name in (
             "../escape",
             # Malicious absolute-path fixture verifies rejection; no file is created.
-            "/tmp/escape",  # nosec B108
+            "/outside-checkout/escape",
             "sub/../original.json",
             "alias.json",
             "linked/original.json",

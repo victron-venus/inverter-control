@@ -1,5 +1,7 @@
 # Inverter Control
 
+[![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
+
 [![CI](https://github.com/victron-venus/inverter-control/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/inverter-control/actions/workflows/ci.yml)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15293/badge)](https://www.bestpractices.dev/projects/15293)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -208,3 +210,9 @@ describes broker permissions and remote access requirements.
 
 Released under the [MIT license](LICENSE). Contributions use the same license;
 see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Release-candidate fuzzing
+
+The target calls the production tariff stream reader and validator. It checks stable normalization and strict JSON round trips using compact, dashboard-shaped and invalid tariff seeds. It does not exercise the physical control loop or D-Bus writes.
+
+[RC-only fuzzing policy, local reproduction and failure handling](docs/fuzzing.md).

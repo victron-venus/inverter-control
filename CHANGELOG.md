@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.23.5] - Candidate series, started 2026-10-06
 
+### Release candidate validation
+
+- Require bounded fuzzing on public release candidates, with source-bound reports and retained diagnostics; beta and ordinary CI do not run mutation campaigns.
+
 ### Added
 - Read-only [D-Bus diagnostic tools](docs/dbus-diagnostics.md) for saved timing
   and writer provenance records, with bounded runtime inventory verification.

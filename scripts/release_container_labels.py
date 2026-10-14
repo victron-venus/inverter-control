@@ -14,8 +14,12 @@ import json
 import subprocess  # nosec B404
 from pathlib import Path
 
-import version_plan
-from release_version_adapter import checked_version, resolve_plan_path
+if __package__:
+    from . import version_plan
+    from .release_version_adapter import checked_version, resolve_plan_path
+else:
+    import version_plan
+    from release_version_adapter import checked_version, resolve_plan_path
 
 
 def labels(root: Path) -> dict[str, str]:
