@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.6] - 2026-10-14
+
+### Changed
+
+- Validate each public release candidate with bounded, network-isolated fuzz campaigns against its exact source revision.
+- Require positive engine execution counts, instrumented production code and validated seed corpora; retain source-bound reports and diagnostic evidence.
+- Run deterministic seed and configuration checks in ordinary CI without starting mutation campaigns on betas.
+
+### Upgrade
+
+Use the existing installation procedure, preserve local configuration and keep the previous accepted package for rollback. This maintenance release updates release validation and does not change the application configuration format. Deployment and applicable device or integration acceptance remain separate from publication.
+
+### Security
+
+The release gate rejects absent or invalid fuzz evidence and unsafe seed inputs. No application vulnerability or new target-device acceptance is claimed by these tooling changes.
+
 ## [1.23.5] - Candidate series, started 2026-10-06
 
 ### Release candidate validation
