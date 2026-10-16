@@ -1,5 +1,9 @@
 # Release-candidate fuzz testing
 
+See the [illustrated RC fuzzing process and verified rollout results](https://github.com/victron-venus/venus-os-ci-toolkit/blob/main/docs/rc-fuzzing-results.md)
+for the shared release flow, evidence requirements and a dated cross-project
+snapshot. The project-specific scope and reproduction guidance below still apply.
+
 ## Scope and assertions
 
 **Bounded tariff import.** The target calls the production tariff stream reader and validator. It checks stable normalization and strict JSON round trips using compact, dashboard-shaped and invalid tariff seeds. It does not exercise the physical control loop or D-Bus writes.
