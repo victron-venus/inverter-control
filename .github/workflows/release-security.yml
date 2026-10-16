@@ -23,7 +23,7 @@ jobs:
           version: 0.12.7
       - run: bash scripts/ci.sh bandit
       - name: Block high and critical dependencies, secrets and misconfiguration
-        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e # master
+        uses: aquasecurity/trivy-action@6abccf398f78b4c337599c0656f933d91efb91a0 # master
         with:
           scan-type: fs
           scan-ref: .
