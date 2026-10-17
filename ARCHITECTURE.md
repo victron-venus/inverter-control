@@ -46,6 +46,9 @@ for compatibility; it does not make the flag an HA entity.
 
 ## victron.py
 
+See [D-Bus service discovery](docs/service-discovery.md) for event handling,
+rescan fallbacks and background-thread ownership.
+
 D-Bus interface to Victron Venus OS:
 - System data (grid, battery, solar)
 - ESS mode control

@@ -79,7 +79,9 @@ coverage. Security, mock integration, dependency, and release-tooling checks
 also run in GitHub Actions. A green local run is only part of PR validation.
 Do not use administrative bypasses as a substitute for fixing a failed check.
 PR approval and release promotion remain subject to repository policy; the
-legacy `commit.sh` helper is not required to contribute.
+legacy `commit.sh` helper is not required to contribute. If you use it, create
+your own ignored `commit.txt` containing the current commit title and description;
+commit messages and PR drafts are local working files, not repository documentation.
 
 ## Standards for acceptable changes
 
