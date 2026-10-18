@@ -66,7 +66,7 @@
   "single_entry_ci": true,
   "release_notes": "CHANGELOG.md",
   "fuzzing": {
-    "toolkit_ref": "ece79d1b1ca40d3068d373e515daf58115489a22"
+    "toolkit_ref": "e255868026de4b56729893d110bafd2385fc8703"
   },
   "toolkit_revision": "5e413f80a4353d328b4529eae57992ac3987e2dd"
 }
