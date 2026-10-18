@@ -18,6 +18,12 @@ standard ESS behavior. Commission it against your meter topology, inverter,
 battery limits and failure cases before unattended operation. A successful
 software test does not certify electrical safety or suitability for a site.
 
+[![Historical Venus OS console illustration of ESS and DVCC settings. Inverter Control is a daemon; this is the companion console, not a built-in controller interface](docs/images/app-hero.png)](docs/images/venus-ess-dvcc.png)
+
+*Historical Venus OS console illustration of ESS and DVCC settings. Inverter Control is a daemon; this is the companion console, not a built-in controller interface. Click for the original screenshot.*
+
+[Artwork source and regeneration](docs/images/README.md).
+
 ## Documentation and support
 
 - Start here: [equipment-free quick start](docs/quick-start.md), installation and configuration below; [operations and recovery](docs/venus-os-operations.md).
