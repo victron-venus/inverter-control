@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.8] - 2026-10-18
+
+### Changed
+
+- Route Dependabot metadata approval through the trusted default branch while preserving the existing author and review policy.
+- Refresh the documented dashboard preview and shared CI workflow pins.
+- Use uv 0.12.18 in Linux validation and release security jobs, matching the maintained shared generator.
+
+### Upgrade
+
+Use the existing installation procedure and preserve configuration. No runtime interfaces or data formats change.
+
+### Security
+
+The uv update includes the upstream Windows wheel-extraction fix. These jobs run on Linux; this release does not claim a corresponding application runtime vulnerability. Existing device acceptance remains required.
+
 ## [1.23.7] - 2026-10-17
 
 ### Changed
