@@ -181,7 +181,6 @@ class MetadataEventsTests(unittest.TestCase):
             with self.subTest(author=author, draft=draft, event=event, same_repo=same_repo):
                 self.assertEqual(bool(evaluate(condition, data)), expected)
 
-
     def test_dependabot_requires_default_branch_metadata(self):
         condition = definition(CALLERS[0])["jobs"]["auto-approve"]["if"]
         for event in ("pull_request", "pull_request_target"):
