@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.7] - 2026-10-17
+
+### Changed
+
+- Replace stale service-discovery handoff notes with maintained operating and architecture guidance.
+- Remove obsolete local drafts and link source-bound RC fuzzing results.
+
+### Upgrade
+
+Use the existing installation procedure and preserve configuration. Service-discovery behavior and runtime interfaces are unchanged.
+
+### Security
+
+This documentation maintenance release introduces no new security policy or vulnerability fix. Existing device acceptance remains required.
+
 ## [1.23.6] - 2026-10-14
 
 ### Changed
