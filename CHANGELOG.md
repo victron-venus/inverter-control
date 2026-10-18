@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Route Dependabot metadata approval through the trusted default branch while preserving the existing author and review policy.
 - Refresh the documented dashboard preview and shared CI workflow pins.
 - Use uv 0.12.18 in Linux validation and release security jobs, matching the maintained shared generator.
 
