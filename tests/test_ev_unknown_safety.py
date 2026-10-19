@@ -1,4 +1,4 @@
-"""Unknown site power cannot silently disable automatic EV exclusion."""
+"""Unknown EV power respects explicit modes without disabling house support."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -39,7 +39,7 @@ def system_state(**changes):
 
 
 @pytest.mark.parametrize("power", [None, True, False, float("nan"), float("inf"), -1, "9300"])
-def test_unknown_and_invalid_site_power_never_request_automatic_output(power):
+def test_unknown_and_invalid_site_power_in_only_charging_never_request_output(power):
     result = SetpointCalculator({}).calculate(system_state(ev_power=power))
     assert result.setpoint == 0
     assert "[NoEV:site-unknown]" in result.flags
@@ -78,6 +78,38 @@ def test_known_zero_and_noev_disabled_preserve_ordinary_control():
     assert "site-unknown" not in known_zero.flags + disabled.flags
 
 
+@pytest.mark.parametrize("noev", [False, True])
+@pytest.mark.parametrize("only_charging", [False, True])
+@pytest.mark.parametrize("no_feed", [False, True])
+def test_unknown_mode_matrix_preserves_house_support_unless_explicitly_restricted(
+    noev, only_charging, no_feed
+):
+    mode = {
+        "do_not_supply_charger": noev,
+        "only_charging": only_charging,
+        "no_feed": no_feed,
+    }
+    result = SetpointCalculator({}).calculate(system_state(**mode))
+    ordinary = SetpointCalculator({}).calculate(system_state(ev_power=0, **mode))
+    if noev and (only_charging or no_feed):
+        assert result.setpoint >= 0
+        assert "[NoEV:site-unknown]" in result.flags
+    else:
+        assert result.setpoint == ordinary.setpoint
+        assert result.filtered_gt == ordinary.filtered_gt
+        if not (only_charging or no_feed):
+            assert result.setpoint < 0
+        assert ("[NoEV:exclusion-unavailable]" in result.flags) is noev
+
+
+@pytest.mark.parametrize("power", [None, True, False, float("nan"), float("inf"), -1, "9300"])
+def test_invalid_site_reading_does_not_disable_ordinary_house_support(power):
+    result = SetpointCalculator({}).calculate(system_state(ev_power=power, only_charging=False))
+    assert result.setpoint < 0
+    assert "[NoEV:exclusion-unavailable]" in result.flags
+    assert "[NoEV:site-unknown]" not in result.flags
+
+
 @pytest.fixture
 def rig(no_network, monkeypatch):
     controller, victron, _, _ = _make_controller()
@@ -114,6 +146,17 @@ def test_unknown_reaches_calculator_and_accepted_zero_becomes_baseline(rig):
     assert rig.controller.previous_setpoint == 0
 
 
+def test_unknown_reaches_calculator_and_house_output_is_written_when_modes_off(rig):
+    rig.controller.set_control_flag("only_charging", False)
+    assert rig.controller.run_cycle()
+    output = rig.victron.set_grid_setpoint.call_args.args[0]
+    assert output < 0
+    assert rig.controller.previous_setpoint == output
+    flags = rig.controller._render_cycle_telemetry.call_args.args[3]
+    assert "[NoEV:exclusion-unavailable]" in flags
+    assert "[NoEV:site-unknown]" not in flags
+
+
 def test_backup_sample_hold_cannot_replay_negative_output_when_ev_unknown(rig):
     rig.data.update(_grid_backup=True, _grid_measurement_time=123)
     rig.controller._last_backup_measurement = 123
@@ -146,6 +189,54 @@ def test_final_write_revalidates_availability_flag_and_limits(rig, race):
     assert rig.controller.previous_setpoint == 0
     if race == "negative_only_limits":
         assert "limits-conflict" in rig.controller._render_cycle_telemetry.call_args.args[3]
+
+
+@pytest.mark.parametrize("mode", ["only_charging", "no_feed"])
+def test_restrictive_mode_enabled_after_calculation_is_checked_at_write(rig, mode):
+    rig.controller.set_control_flag("only_charging", False)
+
+    def before_write():
+        rig.controller.set_control_flag(mode, True)
+        return rig.data
+
+    rig.victron.get_grid_status.side_effect = before_write
+    assert rig.controller.run_cycle()
+    rig.victron.set_grid_setpoint.assert_called_once_with(0)
+    flags = rig.controller._render_cycle_telemetry.call_args.args[3]
+    assert "[NoEV:site-unknown]" in flags
+    assert "exclusion-unavailable" not in flags
+
+
+@pytest.mark.parametrize("mode", ["only_charging", "no_feed"])
+def test_disabled_restrictive_mode_restores_house_support_next_cycle(rig, mode):
+    rig.controller.set_control_flag("only_charging", mode == "only_charging")
+    rig.controller.set_control_flag("no_feed", mode == "no_feed")
+
+    def before_write():
+        rig.controller.set_control_flag(mode, False)
+        return rig.data
+
+    rig.victron.get_grid_status.side_effect = before_write
+    assert rig.controller.run_cycle()
+    # A previously restricted candidate is not retroactively reconstructed at
+    # the write boundary. The next calculation uses the disabled mode.
+    flags = rig.controller._render_cycle_telemetry.call_args.args[3]
+    assert "[NoEV:exclusion-unavailable]" in flags
+    assert "[NoEV:site-unknown]" not in flags
+    assert rig.controller.run_cycle()
+    assert rig.victron.set_grid_setpoint.call_args.args[0] < 0
+
+
+def test_recovery_before_write_clears_obsolete_unknown_diagnostic(rig):
+    def before_write():
+        rig.controller.evcharger.read.return_value = {"ev_power": 9000}
+        return rig.data
+
+    rig.victron.get_grid_status.side_effect = before_write
+    assert rig.controller.run_cycle()
+    flags = rig.controller._render_cycle_telemetry.call_args.args[3]
+    assert "site-unknown" not in flags
+    assert "exclusion-unavailable" not in flags
 
 
 def test_background_age_expiry_before_write_is_unknown_without_synchronous_io(rig, monkeypatch):

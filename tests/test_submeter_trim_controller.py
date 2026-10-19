@@ -174,6 +174,7 @@ def test_ev_safety_discards_unwritten_zero_delta_trim_proposal(rig, change):
 
     def before_write(_):
         controller.evcharger.read.return_value = {"ev_power": None}
+        controller.set_control_flag("only_charging", True)
         if change == "flag":
             controller.set_control_flag("do_not_supply_charger", True)
 

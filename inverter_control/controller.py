@@ -742,18 +742,27 @@ class InverterController:
                 setpoint = bounded_setpoint
             if automatic:
                 # Re-read the bounded-age cache under the flag/write lock: a
-                # measurement may expire, or NoEV turn on, after calculation.
+                # measurement or any governing mode may change after calculation.
                 safe_setpoint, safety_flags = guard_unknown_ev_power(
                     setpoint,
                     self.get_control_flag("do_not_supply_charger"),
                     self._read_ev_site_power(),
                     self.power_limit_max,
+                    only_charging=self.get_control_flag("only_charging"),
+                    no_feed=self.get_control_flag("no_feed"),
                 )
                 if safe_setpoint != setpoint:
                     self._reset_submeter_trim("ev_site_power_unknown")
                     setpoint = safe_setpoint
-                if safety_flags and safety_flags not in flags:
-                    flags += safety_flags
+                # Replace calculation-time availability diagnostics with the
+                # write-time state, including recovery or a mode being disabled.
+                for diagnostic in (
+                    "[NoEV:site-unknown]",
+                    "[NoEV:limits-conflict]",
+                    "[NoEV:exclusion-unavailable]",
+                ):
+                    flags = flags.replace(diagnostic + " ", "").replace(diagnostic, "")
+                flags += safety_flags
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
                 write_ok = self._watchdog.write_control_setpoint(

@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Preserve unavailable EV site-meter power as unknown instead of treating it as zero. With `DO_NOT_SUPPLY_CHARGER` enabled, automatic control prevents negative setpoints while that measurement is unknown, including after slew limiting and immediately before writing the setpoint.
-- Report the unknown measurement and any conflict with a negative-only configured setpoint range. A valid zero reading remains distinct from unknown; explicit manual commands and grid-loss watchdog ownership retain their existing behavior.
+- Preserve unavailable EV site-meter power as unknown instead of treating it as a measured zero. With `DO_NOT_SUPPLY_CHARGER` enabled, normal house-load regulation continues when `ONLY CHARGING` and `NO FEED` are both off; a diagnostic makes the temporarily unavailable EV exclusion explicit.
+- Remove the separate EV-exclusion solar-only cap so a valid EV reading can be excluded while the battery supplies the house. `ONLY CHARGING` keeps its own discharge limit, and `NO FEED` keeps its existing target.
+- Apply the unknown-EV nonnegative setpoint floor only when either of those restricting modes is active. Recheck the reading and all governing flags at the write boundary, replace stale availability diagnostics, and report incompatible negative-only limits. Explicit manual commands and grid-loss watchdog ownership retain their existing behavior.
 
 ### Upgrade
 
-This change has not been released or deployed. Preserve the existing site-meter binding and configuration when adopting a future package; device acceptance remains required. The guard does not establish the accuracy of a finite nonnegative meter reading and does not use vehicle telemetry as a fallback.
+This change has not been released or deployed. Preserve the existing site-meter binding and configuration when adopting a future package; device acceptance remains required. The guard does not establish the accuracy of a finite nonnegative meter reading and does not use vehicle telemetry as a fallback. While the site reading is unavailable and both restricting modes are off, some EV load may be supplied as part of normal regulation.
 
 ### Security
 

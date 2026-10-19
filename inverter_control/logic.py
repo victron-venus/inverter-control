@@ -83,15 +83,25 @@ def valid_ev_site_power(value: Any) -> float | None:
 
 
 def guard_unknown_ev_power(
-    setpoint: int, enabled: bool, ev_power: float | None, power_limit_max: int
+    setpoint: int,
+    enabled: bool,
+    ev_power: float | None,
+    power_limit_max: int,
+    *,
+    only_charging: bool,
+    no_feed: bool,
 ) -> tuple[int, str]:
-    """An automatic no-EV command cannot discharge without a site measurement.
+    """Respect house support unless an explicit charge/no-feed mode restricts it.
 
-    This safety floor wins over ordinary output-only ranges and slew limits.
-    It does not request grid charging or govern explicit manual/watchdog writes.
+    With unknown EV power we cannot separate its load from the house. Ordinary
+    regulation stays available, with a diagnostic that exclusion is unavailable.
+    In restricted modes the safety floor wins over output-only ranges and slew.
+    This does not govern explicit manual/watchdog writes or force grid charging.
     """
     if not enabled or valid_ev_site_power(ev_power) is not None:
         return setpoint, ""
+    if not (only_charging or no_feed):
+        return setpoint, "[NoEV:exclusion-unavailable] "
     reason = "[NoEV:site-unknown] "
     if power_limit_max < 0:
         reason += "[NoEV:limits-conflict] "
@@ -183,22 +193,6 @@ def only_charging_strategy(
     return current_vanew, "[OC~] "
 
 
-def do_not_supply_charger_strategy(
-    state: SystemState,
-    current_vanew: int,
-    *,
-    efficiency: float,
-    solar_offset: int,
-) -> tuple[int, str]:
-    """Don't let battery power the EV charger"""
-    if state.do_not_supply_charger and state.ev_power is not None and state.ev_power > 100:
-        max_ac_output = max(0, int(state.mppt_total * efficiency) - solar_offset)
-        min_setpoint = -max_ac_output
-        if current_vanew < min_setpoint:
-            return min_setpoint, f"[NoEV:{max_ac_output}] "
-    return current_vanew, ""
-
-
 def limit_to_ev_strategy(
     state: SystemState,
     current_vanew: int,
@@ -255,7 +249,6 @@ def charge_battery_strategy(
 STRATEGIES: list[StrategyFn] = [
     normal_strategy,
     only_charging_strategy,
-    do_not_supply_charger_strategy,
     limit_to_ev_strategy,
     no_feed_strategy,
     house_support_strategy,
@@ -402,7 +395,7 @@ class SetpointCalculator:
                 if not normal_holds:
                     raw_vanew, d_flags = self._apply_d_term(raw_vanew, effective_gt)
                 flags = burst_flags + d_flags + flags
-            elif strategy is only_charging_strategy or strategy is do_not_supply_charger_strategy:
+            elif strategy is only_charging_strategy:
                 raw_vanew, flags = strategy(
                     state,
                     raw_vanew,
@@ -512,7 +505,12 @@ class SetpointCalculator:
         vanew = max(self.power_limit_min, min(self.power_limit_max, vanew))
 
         vanew, safety_flags = guard_unknown_ev_power(
-            vanew, state.do_not_supply_charger, state.ev_power, self.power_limit_max
+            vanew,
+            state.do_not_supply_charger,
+            state.ev_power,
+            self.power_limit_max,
+            only_charging=state.only_charging,
+            no_feed=state.no_feed,
         )
         total_flags += safety_flags
 
