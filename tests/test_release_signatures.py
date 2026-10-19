@@ -20,8 +20,8 @@ RELEASE_RUNNER = (
     "${{ fromJSON((vars.CI_RUNNER_MODE == 'self-hosted' || vars.CI_RUNNER_MODE == "
     '\'k3s\') && (contains(fromJSON(\'["push","schedule","workflow_dispatch"]\'), '
     "github.event_name) && github.ref == format('refs/heads/{0}', "
-    'github.event.repository.default_branch)) && (vars.CI_RUNNER_RELEASE_LABELS || '
-    '\'[]\') || \'["ubuntu-latest"]\') }}'
+    "github.event.repository.default_branch)) && (vars.CI_RUNNER_RELEASE_LABELS || "
+    "'[]') || '[\"ubuntu-latest\"]') }}"
 )
 
 
