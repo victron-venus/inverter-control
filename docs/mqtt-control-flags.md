@@ -57,6 +57,28 @@ start **off on every daemon restart**; existing Settings or HA values do not
 restore them. Writing the Settings mirror directly does not change a daemon
 flag. Use the command topic to change a flag.
 
+## EV exclusion when the site measurement is unavailable
+
+`DO NOT SUPPLY EV` uses the configured home charger meter. Vehicle telemetry is
+not a substitute: a vehicle may report charging at another location. A measured
+zero remains a valid reading; missing, disconnected, expired or invalid site
+power is unknown.
+
+While this flag is on and site power is unknown, automatic control applies a
+nonnegative setpoint floor. This stops requesting AC output and leaves solar
+available for the battery without forcing the `CHARGE BATTERY` target. The
+`[NoEV:site-unknown]` control diagnostic identifies this restriction. The floor
+is applied after mode priorities, slew limits and ordinary power limits, and
+the bounded-age cache and flag are checked again at the final write. An
+incompatible negative-only power range yields zero and an additional
+`[NoEV:limits-conflict]` diagnostic. The accepted zero becomes the next control
+baseline; recovery to a valid measurement restores normal calculations.
+
+This restriction governs automatic commands only. Explicit one-shot/manual
+overrides and the existing grid-loss watchdog retain their ownership. It does
+not validate the accuracy of a non-null meter reading or change the configured
+meter/channel binding.
+
 ## Optional Home Assistant switches
 
 The repository's `mqtt.yaml` is an optional HA MQTT configuration, included under

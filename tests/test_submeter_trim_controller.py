@@ -162,6 +162,30 @@ def test_limit_edit_discards_an_unwritten_zero_delta_trim_proposal(rig):
     assert rig.controller.submeter_trim.status()["last_accepted_setpoint"] == 1000
 
 
+@pytest.mark.parametrize("change", ["flag", "availability"])
+def test_ev_safety_discards_unwritten_zero_delta_trim_proposal(rig, change):
+    controller = rig.controller
+    controller.evcharger.read.return_value = {"ev_power": 0}
+    rig.warm(until=9)
+    if change == "availability":
+        controller.set_control_flag("do_not_supply_charger", True)
+    commit = MagicMock(wraps=controller.submeter_trim.commit)
+    controller.submeter_trim.commit = commit
+
+    def before_write(_):
+        controller.evcharger.read.return_value = {"ev_power": None}
+        if change == "flag":
+            controller.set_control_flag("do_not_supply_charger", True)
+
+    rig.cycle(12, before_write=before_write)
+    rig.victron.set_grid_setpoint.assert_called_with(0)
+    assert controller.previous_setpoint == 0
+    commit.assert_not_called()
+    assert controller._trim_decision is None
+    assert controller._trim_context is None
+    assert controller.submeter_trim.status()["reason"] == "ev_site_power_unknown"
+
+
 @pytest.mark.parametrize("flag", CONTROL_FLAG_KEYS)
 def test_every_operating_mode_excludes_slow_trim(rig, flag):
     rig.warm()

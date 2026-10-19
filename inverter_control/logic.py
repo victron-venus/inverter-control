@@ -4,6 +4,7 @@ Separated from I/O for stability and testability.
 """
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -34,7 +35,7 @@ class SystemState:
     pv_total: float
 
     # External data
-    ev_power: float
+    ev_power: float | None
     garage_power: float
 
     # Control switches
@@ -70,6 +71,33 @@ class ControlResult:
 StrategyFn = Callable[[SystemState, int], tuple[int, str]]
 
 
+def valid_ev_site_power(value: Any) -> float | None:
+    """Unknown site telemetry is distinct from a measured zero, including bools."""
+    if type(value) not in (int, float):
+        return None
+    try:
+        power = float(value)
+    except OverflowError:
+        return None
+    return power if math.isfinite(power) and power >= 0 else None
+
+
+def guard_unknown_ev_power(
+    setpoint: int, enabled: bool, ev_power: float | None, power_limit_max: int
+) -> tuple[int, str]:
+    """An automatic no-EV command cannot discharge without a site measurement.
+
+    This safety floor wins over ordinary output-only ranges and slew limits.
+    It does not request grid charging or govern explicit manual/watchdog writes.
+    """
+    if not enabled or valid_ev_site_power(ev_power) is not None:
+        return setpoint, ""
+    reason = "[NoEV:site-unknown] "
+    if power_limit_max < 0:
+        reason += "[NoEV:limits-conflict] "
+    return max(0, setpoint), reason
+
+
 def normal_strategy(
     state: SystemState,
     current_vanew: int,
@@ -95,7 +123,7 @@ def normal_strategy(
     _creep_max = _state.get("creep_max", creep_max)
 
     # Adjust Grid for EV Exclusion Mode
-    if state.do_not_supply_charger and state.ev_power > 100:
+    if state.do_not_supply_charger and state.ev_power is not None and state.ev_power > 100:
         effective_gt = state.gt - state.ev_power
         flags += f"[EV:{int(state.ev_power)}] "
 
@@ -163,7 +191,7 @@ def do_not_supply_charger_strategy(
     solar_offset: int,
 ) -> tuple[int, str]:
     """Don't let battery power the EV charger"""
-    if state.do_not_supply_charger and state.ev_power > 100:
+    if state.do_not_supply_charger and state.ev_power is not None and state.ev_power > 100:
         max_ac_output = max(0, int(state.mppt_total * efficiency) - solar_offset)
         min_setpoint = -max_ac_output
         if current_vanew < min_setpoint:
@@ -182,7 +210,9 @@ def limit_to_ev_strategy(
     if not state.limit_to_ev:
         return current_vanew, ""
 
-    ev_charging_detected = state.garage_power > 1000 or state.ev_power > 1000
+    ev_charging_detected = state.garage_power > 1000 or (
+        state.ev_power is not None and state.ev_power > 1000
+    )
     if ev_charging_detected:
         ac_output = int(state.mppt_total * efficiency)
         export_power = max(0, ac_output - reserve)
@@ -428,11 +458,16 @@ class SetpointCalculator:
     def calculate(self, state: SystemState) -> ControlResult:
         """Execute the control logic pipeline"""
 
+        state.ev_power = valid_ev_site_power(state.ev_power)
         # Keep the instantaneous grid and the current background EMA distinct.
         # filtered_gt is only the previous EMA for callers using the legacy
         # per-cycle filter; a background sample must not be filtered again or
         # overwritten with the instantaneous reading.
-        ev_exclusion = state.ev_power if state.do_not_supply_charger and state.ev_power > 100 else 0
+        ev_exclusion = (
+            state.ev_power
+            if state.do_not_supply_charger and state.ev_power is not None and state.ev_power > 100
+            else 0
+        )
         effective_gt = state.gt - ev_exclusion
         prefiltered_gt = (
             state.prefiltered_gt - ev_exclusion if state.prefiltered_gt is not None else None
@@ -475,6 +510,11 @@ class SetpointCalculator:
         # A manual override or a newly reduced range can leave the previous
         # output outside these bounds. Absolute limits win over the slew rate.
         vanew = max(self.power_limit_min, min(self.power_limit_max, vanew))
+
+        vanew, safety_flags = guard_unknown_ev_power(
+            vanew, state.do_not_supply_charger, state.ev_power, self.power_limit_max
+        )
+        total_flags += safety_flags
 
         return ControlResult(
             setpoint=int(vanew),
