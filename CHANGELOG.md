@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Preserve unavailable EV site-meter power as unknown instead of treating it as zero. With `DO_NOT_SUPPLY_CHARGER` enabled, automatic control prevents negative setpoints while that measurement is unknown, including after slew limiting and immediately before writing the setpoint.
+- Report the unknown measurement and any conflict with a negative-only configured setpoint range. A valid zero reading remains distinct from unknown; explicit manual commands and grid-loss watchdog ownership retain their existing behavior.
+
+### Upgrade
+
+This change has not been released or deployed. Preserve the existing site-meter binding and configuration when adopting a future package; device acceptance remains required. The guard does not establish the accuracy of a finite nonnegative meter reading and does not use vehicle telemetry as a fallback.
+
+### Security
+
+This is an automatic-control safety correction, not a claimed security vulnerability fix. It adds no permission or authentication changes, and no live-device validation is claimed for this unreleased change.
+
 ## [1.23.8] - 2026-10-18
 
 ### Changed
