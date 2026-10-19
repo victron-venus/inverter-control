@@ -16,6 +16,14 @@ from scripts.release_signing_overlay import overlay
 
 REPO = Path(__file__).resolve().parents[1]
 
+RELEASE_RUNNER = (
+    "${{ fromJSON((vars.CI_RUNNER_MODE == 'self-hosted' || vars.CI_RUNNER_MODE == "
+    '\'k3s\') && (contains(fromJSON(\'["push","schedule","workflow_dispatch"]\'), '
+    "github.event_name) && github.ref == format('refs/heads/{0}', "
+    'github.event.repository.default_branch)) && (vars.CI_RUNNER_RELEASE_LABELS || '
+    '\'[]\') || \'["ubuntu-latest"]\') }}'
+)
+
 
 @pytest.fixture
 def assets(tmp_path):
@@ -118,7 +126,8 @@ def test_release_workflow_scopes_identity_token_to_signer_and_requires_verificat
     assert "id-token" not in workflow["jobs"]["package"].get("permissions", {})
     signer = workflow["jobs"]["sign"]
     assert signer["permissions"]["id-token"] == "write"
-    assert signer["runs-on"] == "ubuntu-latest"
+    # Publication may select only the reviewed default-branch release pool.
+    assert signer["runs-on"] == RELEASE_RUNNER
     assert signer["needs"] == "package"
     assert "github.repository == 'victron-venus/inverter-control'" in signer["if"]
     assert "github.ref == 'refs/heads/main'" in signer["if"]
