@@ -34,6 +34,36 @@ def test_log_pipe_does_not_hide_unrelated_io_errors():
     assert caught.value.errno == errno.ENOSPC
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        BrokenPipeError(errno.EPIPE, "closed"),
+        BlockingIOError(errno.EAGAIN, "full"),
+        BlockingIOError(errno.EWOULDBLOCK, "would block"),
+    ],
+    ids=["epipe", "eagain", "ewouldblock"],
+)
+def test_log_pipe_flush_suppresses_pipe_errors_and_allows_later_flush(error):
+    """A transient flush error must not disable later flush attempts."""
+    underlying = Mock()
+    underlying.flush.side_effect = [error, None]
+    stream = main._BrokenPipeSafeStream(underlying)
+    assert stream.flush() is None
+    assert stream.flush() is None
+    assert underlying.flush.call_count == 2
+
+
+@pytest.mark.parametrize("code", [errno.ENOSPC, errno.EIO], ids=["enospc", "eio"])
+def test_log_pipe_flush_preserves_unrelated_io_errors(code):
+    underlying = Mock()
+    error = OSError(code, "unrelated I/O failure")
+    underlying.flush.side_effect = error
+    with pytest.raises(OSError) as caught:
+        main._BrokenPipeSafeStream(underlying).flush()
+    assert caught.value is error
+    underlying.flush.assert_called_once_with()
+
+
 def test_overlapping_discovery_skips_instead_of_queuing_another_process():
     """Startup/signal/poll races must not pile up expensive discovery subprocesses."""
     device = object.__new__(VictronDBus)

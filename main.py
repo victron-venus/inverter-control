@@ -77,13 +77,14 @@ logger.addHandler(sh)
 
 
 class _BrokenPipeSafeStream:
-    """Wrap stdout/stderr so a closed log pipe (EPIPE) never crashes the loop.
+    """Tolerate closed pipes and temporary backpressure on stdout/stderr.
 
     Venus OS runs us under daemontools with stdout piped to multilog. If that
     pipe breaks (e.g. the log service is restarted), a plain print() raises
     BrokenPipeError which previously killed the control cycle mid-run.
-    Also handles EAGAIN/EWOULDBLOCK when pipe buffer is full to prevent
-    blocking the control loop.
+    Writes and flushes also tolerate EAGAIN/EWOULDBLOCK when a nonblocking
+    stream reports a full buffer. The underlying stream's blocking mode
+    is unchanged; other I/O errors still propagate.
     """
 
     def __init__(self, stream):
@@ -101,8 +102,10 @@ class _BrokenPipeSafeStream:
     def flush(self) -> None:
         try:
             self._stream.flush()
-        except BrokenPipeError:
-            pass  # Ignore broken pipe when log service restarts
+        except OSError as e:
+            if isinstance(e, BrokenPipeError) or e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                return
+            raise
 
     def __getattr__(self, name):
         return getattr(self._stream, name)
