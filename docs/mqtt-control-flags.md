@@ -57,6 +57,44 @@ start **off on every daemon restart**; existing Settings or HA values do not
 restore them. Writing the Settings mirror directly does not change a daemon
 flag. Use the command topic to change a flag.
 
+## EV exclusion when the site measurement is unavailable
+
+`DO NOT SUPPLY EV` uses the configured home charger meter. Vehicle telemetry is
+not a substitute: a vehicle may report charging at another location. A measured
+zero remains a valid reading; missing, disconnected, expired or invalid site
+power is unknown.
+
+With a valid site measurement, `DO NOT SUPPLY EV` subtracts the EV load from
+raw, filtered and derived-grid calculations. It does not impose a solar-only
+output cap: the battery can support the remaining house load unless a separate
+operating mode restricts it. `ONLY CHARGING` retains its solar-only limit;
+`NO FEED` retains its own target and existing mode priority.
+
+If site power is unknown and both `ONLY CHARGING` and `NO FEED` are off,
+normal load regulation continues. `[NoEV:exclusion-unavailable]` indicates that
+the controller cannot currently separate EV demand from house demand. This
+explicitly prioritizes house support; some EV demand can temporarily be supplied.
+No stale EV estimate or vehicle measurement is substituted for the missing input.
+
+If either `ONLY CHARGING` or `NO FEED` is on together with `DO NOT SUPPLY EV`,
+unknown site power applies a nonnegative automatic setpoint floor. This stops
+requesting AC output without forcing the `CHARGE BATTERY` target. The
+`[NoEV:site-unknown]` diagnostic identifies this restriction. The floor is applied
+after mode priorities, slew limits and ordinary power limits. An incompatible
+negative-only range yields zero and `[NoEV:limits-conflict]`.
+
+The bounded-age cache and all three flags are checked again at the final write.
+Availability diagnostics describe that final check. If a restrictive mode is
+switched off after calculation, the already restricted candidate may be sent
+for that cycle; the next cycle calculates ordinary house support. The write
+boundary does not reconstruct an earlier candidate from a stale setpoint.
+Only an accepted write becomes the next control baseline.
+
+These rules govern automatic commands only. Explicit one-shot/manual overrides
+and the existing grid-loss watchdog retain their ownership. They do not validate
+the accuracy of a non-null meter reading or change the configured meter/channel
+binding. A valid zero measurement remains different from unknown.
+
 ## Optional Home Assistant switches
 
 The repository's `mqtt.yaml` is an optional HA MQTT configuration, included under
