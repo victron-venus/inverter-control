@@ -10,7 +10,8 @@
     "gitHubInfo",
     "local_config.example.py",
     "uv.lock",
-    "install.py"
+    "install.py",
+    "runtime_python.py"
   ],
   "include": [
     "main.py",
@@ -44,6 +45,7 @@
     ".github/docs",
     ".bestpractices.json",
     "install.py",
+    "runtime_python.py",
     "Makefile"
   ]
 }

@@ -8,6 +8,7 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
+from runtime_fixtures import install_selector, real_selector_bootstrap
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -17,6 +18,7 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
     services = tmp_path / "service"
     package = data / "inverter-control"
     package.mkdir(parents=True)
+    install_selector(package, data)
     services.mkdir()
     (data / "rc.local").write_text("#!/bin/sh\n# another package\nexit 0\n")
     (package / "local_config.py").write_text("USER_SETTING = 42\n")
@@ -56,7 +58,7 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
     script = re.sub(r"(?<![A-Za-z0-9_./}])/service", str(services), script)
     script = script.replace("/var/log/", f"{tmp_path}/log/")
     script = script.replace("/run/inverter-control", str(heartbeat_dir))
-    (package / "update.sh").write_text(script)
+    (package / "update.sh").write_text(real_selector_bootstrap(script))
     return package, services, {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
 
 

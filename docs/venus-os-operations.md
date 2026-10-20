@@ -15,6 +15,21 @@ Keep code, configuration and service templates under `/data/inverter-control`. `
 
 `setup install auto` and `update.sh` share the same installer. It checks syntax/dependencies before stopping services, preserves local configuration and supervisor directory inodes, handles installation from the package directory itself, and waits for a fresh heartbeat before ending maintenance keepalive. A failed startup returns an error; inspect logs and restore a known release using the documented update procedure. Reboot and firmware-upgrade recovery still require a planned live check.
 
+The optional [private Python runtime](tls-dependencies.md#operator-controlled-installation)
+is selected identically by the installer, controller and log forwarder. Keep its
+versioned environment outside the application directory and preserve the
+device-local selector during updates. An invalid selection stops installation
+before service interruption. The default remains system Python when the selector
+is absent. An older package may not understand this selector, so rollback also
+requires checking that package's original interpreter and dependencies.
+
+Control mode flags and manual overrides are process state, not an installation
+backup. Before a planned restart, record fresh flags, limits, ESS mode and
+configuration identity. After startup, restore the intended modes through the
+ordinary command interface and verify fresh readback. Do not replay an old manual
+power request automatically. A retained status message does not prove that the new
+process restored the previous state.
+
 Heartbeat files are primed after creating their runtime directory and refreshed
 every five seconds. Deployment keepalive accepts an age below 15 seconds to allow
 for missed ticks. It removes the old controller heartbeat at startup, so only a

@@ -25,7 +25,7 @@ SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
 # Device-local files that must never be overwritten by an update.
 
 # Runtime items shipped at the repo root and installed at INSTALL_DIR root.
-RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh install.py setup_ssl.sh keepalive.sh local_config.example.py"
+RUNTIME_ITEMS="main.py inverter_control version gitHubInfo setup update.sh install.py runtime_python.py setup_ssl.sh keepalive.sh local_config.example.py"
 
 # Historical flat-file leftovers from older layouts that are now dead code
 # (all of these live in the inverter_control/ package since 1.17).
@@ -62,7 +62,8 @@ fi
 
 # Validate the release and dependencies before interrupting the controller.
 # compile() avoids generating __pycache__ in a package manager's source tree.
-python3 - "$SRC_DIR" <<'CHECK'
+PYTHON="$(python3 -I -B "$SRC_DIR/runtime_python.py")" || exit $?
+"$PYTHON" - "$SRC_DIR" <<'CHECK'
 import pathlib
 import re
 import sys
@@ -75,7 +76,7 @@ release = re.fullmatch(r"(\d{1,6})\.(\d{1,6})\.(\d{1,6})", version("cryptography
 if release is None or tuple(map(int, release.groups())) < (50, 0, 2):
     raise RuntimeError("cryptography stable version >= 50.0.2 is required before updating")
 root = pathlib.Path(sys.argv[1])
-for source in [root / "main.py", *(root / "inverter_control").glob("*.py")]:
+for source in [root / "main.py", root / "runtime_python.py", *(root / "inverter_control").glob("*.py")]:
     compile(source.read_bytes(), str(source), "exec")
 CHECK
 for name in inverter-control log-forwarder watchdog; do
@@ -85,7 +86,7 @@ done
 # Validate explicitly supplied deployment tariffs before any service interruption.
 # Ordinary releases carry no tariff-install.json and preserve the operator file.
 if [ -f "$SRC_DIR/tariff-install.json" ]; then
-    python3 "$SRC_DIR/inverter_control/tariff.py" --stdin --check < "$SRC_DIR/tariff-install.json"
+    "$PYTHON" "$SRC_DIR/inverter_control/tariff.py" --stdin --check < "$SRC_DIR/tariff-install.json"
 fi
 
 # Repair old broad permissions before stopping services or copying any secrets.
@@ -181,7 +182,7 @@ if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; the
 fi
 
 if [ -f "$SRC_DIR/tariff-install.json" ]; then
-    python3 "$SRC_DIR/inverter_control/tariff.py" --stdin --install \
+    "$PYTHON" "$SRC_DIR/inverter_control/tariff.py" --stdin --install \
         < "$SRC_DIR/tariff-install.json"
     sep "installed explicitly supplied electricity tariff"
 fi

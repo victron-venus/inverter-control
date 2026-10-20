@@ -17,6 +17,7 @@ PAYLOAD = (
     "keepalive.sh",
     "local_config.example.py",
     "install.py",
+    "runtime_python.py",
     "service",
 )
 MANIFEST = ".installed-files.json"
