@@ -66,7 +66,12 @@ from inverter_control.evcharger import EvChargerReader
 from inverter_control.forecast_input import validate_forecast
 from inverter_control.grid_filter import GridFilter
 from inverter_control.homeassistant import get_ha
-from inverter_control.logic import SetpointCalculator, SystemState
+from inverter_control.logic import (
+    SetpointCalculator,
+    SystemState,
+    guard_unknown_ev_power,
+    valid_ev_site_power,
+)
 from inverter_control.metrics import CycleMetrics
 from inverter_control.precharge import PrechargeInbox
 from inverter_control.prom_metrics import publish as prom_metrics_publish
@@ -574,7 +579,7 @@ class InverterController:
             mppt_total=mppt_total,
             pv_inverter_total=pv_inverter_total,
             pv_total=mppt_total + pv_inverter_total,
-            ev_power=(self.evcharger.read()["ev_power"] or 0) if self.evcharger else 0,
+            ev_power=self._read_ev_site_power(),
             garage_power=self.ha.get_vue_sensor("garage", 0),
             home_total=home_total,
             only_charging=self.get_control_flag("only_charging"),
@@ -708,7 +713,7 @@ class InverterController:
                 grid_filter.reset()
 
     def _write_cycle_setpoint(
-        self, setpoint, generation, sys_data, flags, current_grid, cycle_started
+        self, setpoint, generation, sys_data, flags, current_grid, cycle_started, *, automatic=True
     ):
         """Revalidate and write while preserving the watchdog lock and accepted baseline."""
 
@@ -735,6 +740,29 @@ class InverterController:
             if bounded_setpoint != setpoint:
                 self._reset_submeter_trim("power_limits_changed")
                 setpoint = bounded_setpoint
+            if automatic:
+                # Re-read the bounded-age cache under the flag/write lock: a
+                # measurement or any governing mode may change after calculation.
+                safe_setpoint, safety_flags = guard_unknown_ev_power(
+                    setpoint,
+                    self.get_control_flag("do_not_supply_charger"),
+                    self._read_ev_site_power(),
+                    self.power_limit_max,
+                    only_charging=self.get_control_flag("only_charging"),
+                    no_feed=self.get_control_flag("no_feed"),
+                )
+                if safe_setpoint != setpoint:
+                    self._reset_submeter_trim("ev_site_power_unknown")
+                    setpoint = safe_setpoint
+                # Replace calculation-time availability diagnostics with the
+                # write-time state, including recovery or a mode being disabled.
+                for diagnostic in (
+                    "[NoEV:site-unknown]",
+                    "[NoEV:limits-conflict]",
+                    "[NoEV:exclusion-unavailable]",
+                ):
+                    flags = flags.replace(diagnostic + " ", "").replace(diagnostic, "")
+                flags += safety_flags
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
                 write_ok = self._watchdog.write_control_setpoint(
@@ -892,6 +920,11 @@ class InverterController:
             self._cached_mppt_chargers = self.victron.get_mppt_chargers()
             self._last_chargers_time = now
         return self._cached_mppt_chargers
+
+    def _read_ev_site_power(self) -> float | None:
+        if self.evcharger is None:
+            return None
+        return valid_ev_site_power(self.evcharger.read().get("ev_power"))
 
     def _get_ev_state(self) -> dict[str, Any]:
         if not ENABLE_EV:
@@ -1415,7 +1448,13 @@ class InverterController:
             previous_for_display = self.previous_setpoint
 
             write_result = self._write_cycle_setpoint(
-                setpoint, generation, sys_data, flags, current_grid, cycle_started
+                setpoint,
+                generation,
+                sys_data,
+                flags,
+                current_grid,
+                cycle_started,
+                automatic=pending_manual is None,
             )
             if write_result is None:
                 return True

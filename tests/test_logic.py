@@ -7,7 +7,6 @@ import unittest
 from inverter_control.logic import (
     SetpointCalculator,
     SystemState,
-    do_not_supply_charger_strategy,
     house_support_strategy,
     limit_to_ev_strategy,
     no_feed_strategy,
@@ -755,8 +754,8 @@ class TestLimitToEvStrategy(unittest.TestCase):
         assert result == -1380
 
 
-class TestDoNotSupplyChargerStrategy(unittest.TestCase):
-    """Test do_not_supply_charger_strategy: prevents battery from powering EV charger"""
+class TestEVExclusion(unittest.TestCase):
+    """EV exclusion removes the car load, not the ability to supply the house."""
 
     def _state(self, **kwargs):
         defaults = {
@@ -783,46 +782,78 @@ class TestDoNotSupplyChargerStrategy(unittest.TestCase):
         defaults.update(kwargs)
         return SystemState(**defaults)
 
-    def test_active_ev_charging_limits_discharge(self):
-        state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=2000)
-        # Current setpoint discharges at -2500 (exceeding solar), should cap at -1880
-        result, flags = do_not_supply_charger_strategy(state, -2500, efficiency=1.0, solar_offset=0)
-        assert result == -2000
-        assert "[NoEV:" in flags
+    def test_battery_can_supply_house_while_measured_ev_load_is_excluded(self):
+        state = self._state(gt=10000, do_not_supply_charger=True, ev_power=9000)
+        result = SetpointCalculator({}).calculate(state)
+        self.assertEqual(result.filtered_gt, 1000)
+        self.assertEqual(result.setpoint, -630)
+        self.assertIn("[EV:9000]", result.flags)
 
-    def test_active_no_ev_charging(self):
-        state = self._state(do_not_supply_charger=True, ev_power=50, mppt_total=2000)
-        result, flags = do_not_supply_charger_strategy(state, -2500, efficiency=1.0, solar_offset=0)
-        assert result == -2500
-        assert flags == ""
+    def test_known_ev_matches_equivalent_house_only_grid(self):
+        for solar in (0, 1000, 3000):
+            for house in (500, 1500):
+                for ev in (200, 9000):
+                    with self.subTest(solar=solar, house=house, ev=ev):
+                        measured = SetpointCalculator({}).calculate(
+                            self._state(
+                                gt=house + ev,
+                                prefiltered_gt=house + ev,
+                                derived_gt=house + ev,
+                                mppt_total=solar,
+                                do_not_supply_charger=True,
+                                ev_power=ev,
+                            )
+                        )
+                        house_only = SetpointCalculator({}).calculate(
+                            self._state(
+                                gt=house,
+                                prefiltered_gt=house,
+                                derived_gt=house,
+                                mppt_total=solar,
+                            )
+                        )
+                        self.assertEqual(measured.setpoint, house_only.setpoint)
+                        self.assertEqual(measured.filtered_gt, house_only.filtered_gt)
 
-    def test_inactive(self):
-        state = self._state(do_not_supply_charger=False, ev_power=1500, mppt_total=2000)
-        result, flags = do_not_supply_charger_strategy(state, -2500, efficiency=1.0, solar_offset=0)
-        assert result == -2500
-        assert flags == ""
-
-    def test_active_within_solar_limit(self):
-        state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=2000)
-        result, flags = do_not_supply_charger_strategy(state, -1000, efficiency=1.0, solar_offset=0)
-        assert result == -1000
-        assert flags == ""
-
-    def test_active_zero_solar(self):
-        state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=0)
-        result, _flags = do_not_supply_charger_strategy(
-            state, -1000, efficiency=1.0, solar_offset=0
+    def test_only_charging_still_prevents_house_battery_discharge(self):
+        result = SetpointCalculator({}).calculate(
+            self._state(gt=10000, do_not_supply_charger=True, ev_power=9000, only_charging=True)
         )
-        # max_ac_output = max(0, 0-0) = 0, min_setpoint = 0
-        assert result == 0
+        self.assertEqual(result.setpoint, 0)
+        self.assertIn("[OC:", result.flags)
 
-    def test_with_solar_offset(self):
-        state = self._state(do_not_supply_charger=True, ev_power=1500, mppt_total=2000)
-        result, _flags = do_not_supply_charger_strategy(
-            state, -2500, efficiency=1.0, solar_offset=60
+    def test_only_charging_retains_solar_output_limit(self):
+        result = SetpointCalculator({}).calculate(
+            self._state(
+                gt=14000,
+                do_not_supply_charger=True,
+                ev_power=9000,
+                only_charging=True,
+                mppt_total=1000,
+            )
         )
-        # max_ac_output = max(0, 2000-60) = 1940
-        assert result == -1940
+        self.assertGreaterEqual(result.setpoint, -880)
+        self.assertLess(result.setpoint, 0)
+
+    def test_no_feed_retains_its_target_with_ev_excluded(self):
+        result = SetpointCalculator({}).calculate(
+            self._state(
+                gt=10000,
+                do_not_supply_charger=True,
+                ev_power=9000,
+                no_feed=True,
+                pv_inverter_total=500,
+            )
+        )
+        self.assertEqual(result.setpoint, 450)
+        self.assertIn("[NF]", result.flags)
+
+    def test_below_detection_threshold_matches_ordinary_control(self):
+        actual = SetpointCalculator({}).calculate(
+            self._state(gt=1000, do_not_supply_charger=True, ev_power=50)
+        )
+        expected = SetpointCalculator({}).calculate(self._state(gt=1000))
+        self.assertEqual(actual, expected)
 
 
 class TestGridSmoothingWithHome(unittest.TestCase):
@@ -1116,10 +1147,16 @@ class TestPrefilteredGrid(unittest.TestCase):
             self.assertEqual(result.setpoint, -500)
             self.assertEqual(calc._normal_state["creep_accumulator"], 0.0)
 
-    def test_burst_cannot_bypass_solar_only_or_ev_discharge_caps(self):
+    def test_burst_cannot_bypass_explicit_only_charging_cap(self):
         cases = (
             {"only_charging": True, "gt": 500, "prefiltered_gt": 0},
-            {"do_not_supply_charger": True, "ev_power": 1500, "gt": 2000, "prefiltered_gt": 1500},
+            {
+                "do_not_supply_charger": True,
+                "only_charging": True,
+                "ev_power": 1500,
+                "gt": 2000,
+                "prefiltered_gt": 1500,
+            },
         )
         for case in cases:
             with self.subTest(case=case):

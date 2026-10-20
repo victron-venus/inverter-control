@@ -7,6 +7,7 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
+from runtime_fixtures import install_selector, real_selector_bootstrap
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_python_service_uses_existing_module_and_unbuffered_output(tmp_path, service, target):
     package = tmp_path / "package"
     package.mkdir()
+    install_selector(package, tmp_path / "data")
     destination = package / target
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("# fixture module, never executed\n")
@@ -36,7 +38,7 @@ def test_python_service_uses_existing_module_and_unbuffered_output(tmp_path, ser
         .replace("/data/inverter-control", str(package))
     )
     run = tmp_path / "run"
-    run.write_text(script)
+    run.write_text(real_selector_bootstrap(script))
     env = os.environ | {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "EXPECTED_MODULE": target,

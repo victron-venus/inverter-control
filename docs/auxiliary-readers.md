@@ -10,10 +10,12 @@ reader before joining. The readers share one one-second default join budget (or
 the main shutdown's remaining budget); a timed-out join reports incomplete
 cleanup and never falls back to synchronous I/O.
 
-The existing control policy maps unknown EV power to zero. This candidate does
-not change or qualify that policy. It needs device acceptance with the installed
-EV-dependent flags before deployment, including startup, stale data, EV service
-loss/recovery and charger transitions. Water/EV reads are confirmed synchronous
+The original auxiliary-reader candidate left the then-existing unknown-EV-to-zero
+policy unchanged. The current unreleased [EV exclusion policy](mqtt-control-flags.md#ev-exclusion-when-the-site-measurement-is-unavailable)
+preserves unknown power and applies mode-aware behavior instead. Device acceptance
+with the installed EV-dependent flags is still required before deployment,
+including startup, stale data, EV service loss/recovery and charger transitions.
+Water/EV reads are confirmed synchronous
 call sites in the previous code; that does not prove they explain all observed
 cycle overruns. Background work may still contend for CPU or the D-Bus service.
 

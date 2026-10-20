@@ -320,6 +320,9 @@ def test_service_loads_persistent_endpoint_and_recovers_invalid_config(
         "f.CONFIG_RETRY_INTERVAL = f.POLL_INTERVAL = 0.02\n"
         "f.main()\n"
     )
+    from runtime_fixtures import install_selector
+
+    install_selector(install, tmp_path / "data")
     launcher = tmp_path / "run"
     launcher.write_text(
         (REPO / "service/log-forwarder/run")

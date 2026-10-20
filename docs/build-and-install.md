@@ -30,6 +30,13 @@ validates required runtime imports before interrupting services. Uninstall stops
 the services and removes their activation hooks while retaining operator settings
 and data for deliberate cleanup.
 
+On devices sharing firmware Python with other services, prepare the optional
+[private runtime](tls-dependencies.md#operator-controlled-installation) before
+selecting it. Both service launchers and live installer checks use that selection.
+The runtime directory and selector are device-local state, not part of a release
+archive. Preparing a source staging directory does not create or activate an
+environment.
+
 Package builders can stage the exact native payload using the POSIX `DESTDIR`
 convention, without root, SetupHelper, runtime dependencies, or a connected device:
 
