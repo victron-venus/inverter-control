@@ -8,6 +8,7 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
+from runtime_fixtures import install_selector, real_selector_bootstrap
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -54,6 +55,7 @@ def prepare_setup(tmp_path, option):
     helpers.mkdir(parents=True)
     package = data / "inverter-control"
     package.mkdir()
+    install_selector(package, data)
     options = data / "setupOptions/inverter-control"
     options.mkdir(parents=True)
     (options / "local_config.py").write_text("SITE_PRIVATE = 42\n")
@@ -67,7 +69,9 @@ def prepare_setup(tmp_path, option):
     )
     (package / "update.sh").write_text(f'#!/bin/sh\ntouch "{data}/updated"\n')
     script = tmp_path / "setup"
-    script.write_text((REPO / "setup").read_text().replace("/data/", f"{data}/"))
+    script.write_text(
+        real_selector_bootstrap((REPO / "setup").read_text().replace("/data/", f"{data}/"))
+    )
     return data, package, script
 
 

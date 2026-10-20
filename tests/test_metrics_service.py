@@ -7,6 +7,7 @@ import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
+from runtime_fixtures import install_selector, real_selector_bootstrap
 
 
 @pytest.mark.parametrize("override", [None, "192.0.2.10"])
@@ -14,7 +15,8 @@ def test_metrics_service_environment(tmp_path, override):
     root = Path(__file__).resolve().parents[1]
     script = (root / "service/inverter-control/run").read_text()
     script = script.replace("/data/inverter-control", str(tmp_path))
-    (tmp_path / "run").write_text(script)
+    install_selector(tmp_path, tmp_path / "data")
+    (tmp_path / "run").write_text(real_selector_bootstrap(script))
     if override:
         (tmp_path / "metrics.env").write_text(f"INVERTER_METRICS_HOST={override}\n")
     fake_python = tmp_path / "python3"

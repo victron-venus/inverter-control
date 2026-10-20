@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.23.9] - 2026-10-19
 
+### Added
+
+- Support an explicitly selected private Python environment for the controller, log forwarder and installer checks. New application dependencies can be prepared before the update without replacing Python packages used by other Venus OS services.
+
 ### Fixed
 
 - Preserve unavailable EV site-meter power as unknown instead of treating it as a measured zero. With `DO_NOT_SUPPLY_CHARGER` enabled, normal house-load regulation continues when `ONLY CHARGING` and `NO FEED` are both off; a diagnostic makes the temporarily unavailable EV exclusion explicit.
@@ -15,11 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade
 
-Preserve the existing site-meter binding and active configuration when updating. Validate the supported Python dependencies before stopping the controller, retain the previous package for rollback, and verify operation on the target device. Control flags are process state: record their current values before the controlled restart and explicitly restore and verify any active modes afterwards. The guard does not establish the accuracy of a finite nonnegative meter reading and does not use vehicle telemetry as a fallback. While the site reading is unavailable and both restricting modes are off, some EV load may be supplied as part of normal regulation.
+Preserve the existing site-meter binding and active configuration when updating. Prepare and validate the supported Python dependencies before stopping the controller; a private runtime is opt-in through the device-local `runtime-python` selector described in `docs/tls-dependencies.md`. Retain the previous package and selector for rollback, and verify operation on the target device. Control flags are process state: record their current values before the controlled restart and explicitly restore and verify any active modes afterwards. The guard does not establish the accuracy of a finite nonnegative meter reading and does not use vehicle telemetry as a fallback. While the site reading is unavailable and both restricting modes are off, some EV load may be supplied as part of normal regulation.
 
 ### Security
 
-This is an automatic-control safety correction, not a claimed security vulnerability fix. It adds no permission or authentication changes. Automated validation does not replace acceptance of the exact release candidate on the target device.
+This is an automatic-control safety correction, not a claimed security vulnerability fix. The optional runtime selector is restricted to a private, root-owned device setting and a bounded runtime path; an invalid selection fails closed rather than silently running a different interpreter. Application authentication and permissions are unchanged. Automated validation does not replace acceptance of the exact release candidate on the target device.
 
 ## [1.23.8] - 2026-10-18
 

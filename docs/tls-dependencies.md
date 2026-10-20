@@ -61,21 +61,61 @@ Back up the existing installation and confirm the service's exact interpreter:
 python3 -c 'import sys, platform, ctypes; print(sys.version, platform.machine(), platform.libc_ver()); ctypes.CDLL("libffi.so.8")'
 ```
 
-Transfer the verified bundle to the target without including site credentials.
-Using the supported package installer for that interpreter (install `python3-pip`
-from the matching Venus feed if it is absent), install only from this bundle:
+Venus services share the firmware's Python packages. Prefer an application
+environment over replacing those packages with system-wide pip. Starting with
+1.23.9, an optional device-local selector at
+`/data/setupOptions/inverter-control/runtime-python` chooses the interpreter for
+both application services and the live installer checks. Its contents must be one
+absolute path of the form
+`/data/inverter-control-runtimes/<id>/bin/python3`. Keep the selector root-owned,
+regular (not a link), and writable only by root. Its parent directories `/data`,
+`/data/setupOptions` and `/data/setupOptions/inverter-control` must also be real,
+root-owned directories without group or other write permission. A missing selector retains the
+system Python default; an invalid or broken selection is an error, not a request
+to fall back.
+
+Create a new environment directly at its final, versioned path; do not move or
+modify an environment used by running services. For example:
 
 ```sh
-python3 -m pip install --no-index --only-binary=:all: --require-hashes \
-  --find-links=/path/to/tls-armv7/wheels -r /path/to/tls-armv7/requirements.txt
-python3 -c 'import cryptography, cffi, pycparser; from cryptography import x509; print(cryptography.__version__, cffi.__version__, pycparser.__version__)'
+python3 -m venv --copies --system-site-packages /data/inverter-control-runtimes/control-1.23.9
 ```
 
-Do not replace firmware Python or bypass an externally-managed-environment
-restriction. If the image does not permit this supported installation path,
-prepare a matching application environment with the device maintainer before
-upgrading. Test imports using the same account/interpreter as **both** the
-controller and log-forwarder service. `update.sh` validates imports before it
-stops services; a missing or incompatible extension leaves the existing
-installation running. Keep the source and dependency upgrade together, then
-perform the documented target-device acceptance checks.
+The system-site option deliberately retains the firmware's native D-Bus/GI
+modules. It is not a fully isolated or immutable operating system. Verify
+`sys.prefix` is the intended private directory and differs from `sys.base_prefix`
+before installing anything. Transfer the authenticated TLS bundle and any other
+required wheels without site credentials. Assemble an explicit, hash-locked
+runtime requirement list from the reviewed `uv.lock` and the signed TLS bundle;
+the TLS archive alone does not contain Requests, MQTT or the other application
+dependencies. Install that closure only into the new environment:
+
+```sh
+/data/inverter-control-runtimes/control-1.23.9/bin/python3 -m pip install \
+  --no-index --no-deps --ignore-installed --only-binary=:all: --require-hashes \
+  --find-links=/path/to/verified-wheels -r /path/to/verified-runtime-requirements.txt
+```
+
+Here `--ignore-installed` ensures inherited system packages do not satisfy the
+private installation. Do not use this command with the system interpreter.
+Verify versions, native imports, TLS key checks and configuration loading with the
+exact private interpreter before the controlled update. Confirm system package
+files and opkg metadata remain unchanged.
+
+During an exclusive maintenance window, save the current selector (including its
+absence), active configuration and control modes. Stop the existing application
+services before atomically selecting the prepared environment, then use the
+ordinary `update.sh` procedure. The new installer validates the selected
+interpreter before its own service interruption. Never leave a changed selector
+in place after a failed preflight without restoring the prior selection. Preserve
+the old environment and accepted package for rollback; restore both package and
+selector together. Runtime control flags still require explicit restoration and
+readback after a restart.
+
+Do not replace firmware Python or bypass externally-managed-environment
+restrictions. If the image lacks compatible venv/ensurepip support, prepare a
+supported application environment before upgrading. A firmware update may
+change the underlying interpreter or inherited native modules, so revalidate the
+private runtime after that change. Packaging with `DESTDIR` never reads the live
+selector. Keep source and dependencies together, then perform the documented
+target-device acceptance checks.
