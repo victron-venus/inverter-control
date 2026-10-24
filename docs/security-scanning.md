@@ -29,7 +29,15 @@ refreshing the toolkit and rerun the gate afterwards.
 Both `pyproject.toml` and `requirements.txt` require `idna>=3.15` to exclude
 CVE-2026-45409. Updating `uv.lock` alone does not protect installations that
 resolve `requirements.txt` or reuse an older system dependency. Requests' minimum
-version is also consistent across both installation paths.
+version is also consistent across both installation paths. Both manifests require
+`certifi>=2026.10.19` to exclude affected emSign CA roots described in
+[GHSA-6q48-6c7w-9gw2](https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2).
+`uv sync --locked` uses the reviewed lockfile; ordinary pip installs resolve the
+manifest constraints and may retain already-installed packages that satisfy
+them. The explicit certifi floor therefore protects those installs as well.
+Changing a manifest does not update a running controller: rebuild or update its
+isolated environment and follow the [runtime validation procedure](tls-dependencies.md#operator-controlled-installation)
+before switching services.
 
 `fuzz/fuzz_tariff.py` uses Atheris to exercise the bounded tariff JSON import path.
 It checks rejection of malformed input, stable normalization and strict JSON
@@ -94,8 +102,13 @@ that execution path. Updating the build dependency removes the vulnerable pin
 without claiming an application runtime exploit or rebuilding deployed devices.
 
 The same alert also named certifi; the current `uv.lock` already pins
-2026.10.19. An empty Dependabot list does not establish that every independent
-scanner is current. Preserve the finding until a complete Scorecard run against
-the merged revision reports the result. The separate one-review branch-protection
+2026.10.19, and both installation manifests now require at least that version.
+The [completed Scorecard run for PR #343](https://github.com/victron-venus/inverter-control/actions/runs/40125302370)
+no longer reported setuptools, but still reported certifi in alert 1339. The
+current lockfile and GitHub dependency graph contain the fixed certifi version;
+the scanner's package/version/source evidence still needs to be reconciled.
+An empty Dependabot list or the new manifest floor does not prove that the
+independent scanner finding has cleared. Preserve it until a complete Scorecard
+run against the merged revision reports the result. The separate one-review branch-protection
 finding is an organizational policy observation; do not close it by fabricating
 an approval or disabling the scanner.
