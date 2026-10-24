@@ -82,3 +82,20 @@ AI usage limit blocked further scans until October 31. Their individual outcomes
 Do not enable paid AI overages or claim a fresh AI scan to clear these historical
 snapshots. Reconcile them against source, and retain the ordinary CodeQL,
 Code Quality, Sonar, Bandit, Trivy and test checks.
+
+## Scheduled maintenance check: 2026-10-24
+
+Scorecard alert 1339 identified an older setuptools pin in the isolated ARMv7
+TLS artifact builder. The builder now uses setuptools 84.1.0 with its PyPI wheel
+SHA-256, retaining `--require-hashes` and binary-only tool installation.
+[GHSA-xmj3-9gf7-h52w](https://github.com/advisories/GHSA-xmj3-9gf7-h52w) concerns
+legacy wheel extraction on Windows; this Linux builder was not shown to expose
+that execution path. Updating the build dependency removes the vulnerable pin
+without claiming an application runtime exploit or rebuilding deployed devices.
+
+The same alert also named certifi; the current `uv.lock` already pins
+2026.10.19. An empty Dependabot list does not establish that every independent
+scanner is current. Preserve the finding until a complete Scorecard run against
+the merged revision reports the result. The separate one-review branch-protection
+finding is an organizational policy observation; do not close it by fabricating
+an approval or disabling the scanner.
