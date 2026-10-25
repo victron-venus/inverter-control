@@ -237,7 +237,7 @@ wheels = [
 
 [[package]]
 name = "inverter-control"
-version = "1.23.9"
+version = "1.23.10"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
