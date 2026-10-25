@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.10] - 2026-10-24
+
+### Fixed
+
+- Require `certifi>=2026.10.19` in both runtime installation manifests so an unlocked installation cannot retain the older certificate bundle. The reviewed lockfile already selects this version.
+
+### Changed
+
+- Refresh GitHub Actions and reusable workflow pins, and update the isolated ARMv7 TLS artifact builder to the hash-pinned setuptools 84.1.0 wheel.
+
+### Upgrade
+
+Updating application files alone does not update a running Python environment. Prepare and validate the complete dependency set from this release's lockfile and authenticated TLS bundle in a new private runtime before the controlled service update. Do not replace the firmware's shared Python packages. Preserve the active configuration, site-meter binding, tariff, control modes, limits and override; retain the previous package and runtime selector for rollback. Verify the selected interpreter's certifi version, native D-Bus/GI imports and fresh telemetry after switching. There are no configuration or tariff format changes, and NoEV house-support behavior is unchanged from 1.23.9.
+
+### Security
+
+The certifi floor removes the affected emSign CA roots identified by GHSA-6q48-6c7w-9gw2 from newly resolved application environments. Setuptools 84.1.0 addresses GHSA-xmj3-9gf7-h52w in the build dependency; the advisory's legacy Windows wheel-extraction path was not demonstrated on this Linux builder. These changes do not automatically remediate an already installed runtime. Acceptance of the exact release assets on the target device remains required.
+
 ## [1.23.9] - 2026-10-19
 
 ### Added
