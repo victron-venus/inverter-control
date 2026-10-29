@@ -37,7 +37,8 @@ manifest constraints and upgrade an installed package that does not satisfy
 them. The explicit certifi floor therefore protects environments that are
 resolved again. Changing a manifest does not update a running controller: the
 device updater's preflight rejects a selected interpreter with an older or
-unreadable certifi before stopping services, but it does not install packages.
+unreadable `cryptography`, `certifi`, `requests` or `idna` before stopping
+services, but it does not install packages.
 Rebuild or update the isolated environment and follow the
 [runtime validation procedure](tls-dependencies.md#operator-controlled-installation)
 before switching services.
