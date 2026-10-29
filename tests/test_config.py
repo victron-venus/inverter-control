@@ -2,9 +2,11 @@
 Unit tests for Inverter Control Configuration
 """
 
+import ast
 import importlib.util
 import os
 import sys
+from pathlib import Path
 from types import ModuleType
 from unittest.mock import mock_open, patch
 
@@ -14,6 +16,63 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from inverter_control import config
+
+
+def test_every_calculator_setting_is_exported():
+    """A new calculator option must not silently use its fallback in the daemon."""
+    source = Path(config.__file__).with_name("logic.py")
+    tree = ast.parse(source.read_text())
+    consumed = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and ast.unparse(node.func.value) in ("config", "self.config")
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    assert consumed <= set(config.EXPORTED_KEYS)
+    assert all(hasattr(config, key) for key in config.EXPORTED_KEYS)
+
+
+def test_every_active_example_setting_is_loaded(monkeypatch):
+    """Change every advertised setting so a hardcoded default cannot mask a missing import."""
+    overrides = {
+        "HA_URL": "https://ha.example.test:8123",
+        "HA_TOKEN": "your_token_here",  # nosec B105 - documented placeholder
+        "HA_SENSORS": {"net_usage": "sensor.override_usage"},
+        "VUE_SENSORS": {"garage": "Override"},
+        "HA_DUMP_LOADS": ["switch.override_load"],
+        "TOU_EXPENSIVE_START_HOUR": 20,
+        "TOU_EXPENSIVE_END_HOUR": 6,
+        "WATER_TANK_INSTANCE": 31,
+        "WATER_PUMP_INSTANCE": 3,
+        "WATER_VALVE_INSTANCE": 4,
+        "EV_INSTANCE": 33,
+        "EVCHARGER_INSTANCE": 44,
+        "GRID_EXPECTED_SERVICE": "com.victronenergy.grid.override",
+        "GRID_EXPECTED_PHASES": 1,
+        "SUBMETER_TRIM_ENABLED": True,
+        "USE_GRID_SUBMETER_AS_BACKUP": True,
+        "GRID_BACKUP_SERVICE": "com.victronenergy.acload.override",
+        "GRID_BACKUP_MAX_AGE_SECONDS": 45.0,
+        "GRID_BACKUP_RECOVERY_SECONDS": 7.0,
+        "GRID_LOSS_HOLD_SECONDS": 3.0,
+        "TIMEZONE": "Europe/Berlin",
+    }
+    example = Path(config.__file__).parents[1] / "local_config.example.py"
+    names = {
+        target.id
+        for node in ast.parse(example.read_text()).body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert names == set(overrides), "Exercise each advertised option with a non-default value"
+    loaded = TestCreepLocalConfig.load_config(monkeypatch, **overrides)
+    assert {name: getattr(loaded, name) for name in names} == overrides
 
 
 class TestConfigValidation:

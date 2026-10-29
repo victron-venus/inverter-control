@@ -54,6 +54,7 @@ class SystemState:
     derived_gt: float | None = None  # Grid derived from home_total - production
     filtered_gt: float | None = None  # Previous effective-grid EMA (legacy path)
     prefiltered_gt: float | None = None  # Current raw-grid EMA from GridFilter
+    charge_battery_blocked: bool = False  # TOU blocks forced charging, not grid regulation
 
 
 @dataclass
@@ -239,8 +240,10 @@ def charge_battery_strategy(
     state: SystemState,
     current_vanew: int,
 ) -> tuple[int, str]:
-    """Force battery charging at maximum rate"""
+    """Force battery charging only when the TOU policy permits it."""
     if state.charge_battery:
+        if state.charge_battery_blocked:
+            return current_vanew, "[CHG:TOU] "
         return 2200, "[CHG] "
     return current_vanew, ""
 

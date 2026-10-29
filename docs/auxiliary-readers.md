@@ -10,8 +10,20 @@ reader before joining. The readers share one one-second default join budget (or
 the main shutdown's remaining budget); a timed-out join reports incomplete
 cleanup and never falls back to synchronous I/O.
 
+Reader cache expiry uses a monotonic clock, so a wall-clock correction cannot
+extend a cached reading. Water level and vehicle SoC must be finite percentages
+from 0 through 100; water pump/valve state must be exactly 0 or 1. Invalid readings
+remain unknown rather than displaying an empty tank, a stopped pump or a full
+battery. Invalid vehicle SoC does not discard a valid wallbox power reading.
+
+The console resolves its display timezone at startup. If that timezone is
+invalid or its IANA data is unavailable, console timestamps explicitly use UTC.
+This display fallback does not change the separate TOU policy, which blocks
+forced charging when the GX timezone is unavailable.
+
 The original auxiliary-reader candidate left the then-existing unknown-EV-to-zero
-policy unchanged. The current unreleased [EV exclusion policy](mqtt-control-flags.md#ev-exclusion-when-the-site-measurement-is-unavailable)
+policy unchanged. The [EV exclusion policy](mqtt-control-flags.md#ev-exclusion-when-the-site-measurement-is-unavailable)
+released in 1.23.9
 preserves unknown power and applies mode-aware behavior instead. Device acceptance
 with the installed EV-dependent flags is still required before deployment,
 including startup, stale data, EV service loss/recovery and charger transitions.
@@ -23,10 +35,11 @@ Cycle telemetry now publishes `window_capacity` and per-series `samples`.
 Percentiles retain the existing rounded zero-based index algorithm. Do not merge
 overlapping snapshots or interpret cache age as physical command latency.
 
-## Candidate boundaries
+## Historical candidate boundaries
 
-The acceptance workspace contains two separate changesets: one based on current
-main, and a narrow backport based on installed `1.23.4-beta.22` / `26520fd`.
+The original acceptance workspace contained two separate changesets: one based
+on the then-current main, and a narrow backport based on installed
+`1.23.4-beta.22` / `26520fd`.
 Only the latter can be compared directly with the recorded Cerbo baseline.
 Neither was installed, and there are no post-fix hardware latency numbers.
 

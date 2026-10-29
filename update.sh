@@ -72,9 +72,23 @@ import requests
 import paho.mqtt.client
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
-release = re.fullmatch(r"(\d{1,6})\.(\d{1,6})\.(\d{1,6})", version("cryptography"), re.ASCII)
-if release is None or tuple(map(int, release.groups())) < (50, 0, 2):
-    raise RuntimeError("cryptography stable version >= 50.0.2 is required before updating")
+def require_stable(name, minimum):
+    """Reject an installed release below the floor declared by both manifests."""
+    parts = [int(part) for part in minimum.split(".")]
+    floor = tuple((parts + [0, 0])[:3])
+    pattern = r"(\d{1,6})\.(\d{1,6})(?:\.(\d{1,6}))?"
+    match = re.fullmatch(pattern, version(name), re.ASCII)
+    if match is None or tuple(int(part or 0) for part in match.groups()) < floor:
+        raise RuntimeError(f"{name} stable version >= {minimum} is required before updating")
+
+
+# Security floors from pyproject.toml and requirements.txt. A stale package would
+# silently keep the affected CA roots or vulnerable parsing while the update
+# reports success, so the selected interpreter is checked before services stop.
+require_stable("cryptography", "50.0.2")
+require_stable("certifi", "2026.10.19")
+require_stable("requests", "2.34.2")
+require_stable("idna", "3.15")
 root = pathlib.Path(sys.argv[1])
 for source in [root / "main.py", root / "runtime_python.py", *(root / "inverter_control").glob("*.py")]:
     compile(source.read_bytes(), str(source), "exec")

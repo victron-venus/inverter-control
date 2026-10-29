@@ -37,7 +37,7 @@ This index should be updated when the application, release process, or security
 boundaries change. Do not publish private report contents or credentials as
 evidence.
 
-## Merged source and current findings
+## Merged source and findings recorded on 2026-10-09
 
 [PR #308](https://github.com/victron-venus/inverter-control/pull/308) merged on
 2026-10-09 at 00:46 UTC as `f2ea6e76d301f9e05f3992c5378968cc0b440c24`.
@@ -47,7 +47,7 @@ PR source `73dc560275dbc4b1c7cba039427e1f1b6c9824f6`; only evidence documents
 and assessment metadata differ. The final PR CI gate also passed. This binds the
 recorded coverage, native checks and regression mappings to the merged source.
 
-The current default-branch inventory contains **one open finding**:
+The default-branch inventory recorded on 2026-10-09 contained **one open finding**:
 [Scorecard #5](https://github.com/victron-venus/inverter-control/security/code-scanning/5),
 `BranchProtectionID`, score 8 because `main` requires one approving review.
 That is the retained review policy; the warning remains open. The same dated
@@ -176,7 +176,7 @@ The following criteria have evidence supporting **Met**:
   evidence that confirmed problems are fixed. At the baseline, no open CodeQL,
   Bandit, or Trivy alerts remained. The 2026-10-08 snapshot had two open Scorecard
   findings concerning the badge and review governance. The post-merge inventory
-  above records the current single open warning. Recheck current
+  above records the single open warning at that audit date. Recheck current
   [code scanning](https://github.com/victron-venus/inverter-control/security/code-scanning)
   before submitting or renewing the assessment.
 - `dynamic_analysis`, `dynamic_analysis_enable_assertions`: the
@@ -402,15 +402,18 @@ Verification used an independently selected source SHA and fixed GitHub issuer,
 workflow, repository and branch; an intentionally wrong SHA was rejected.
 Auxiliary receipts and release metadata are outside that signed inventory.
 
-The current stable release, [v1.23.4](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.4),
-remains unsigned. We conservatively retain **Unmet** until a signed stable
+At the 2026-10-09 assessment, the stable release
+[v1.23.4](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.4)
+was unsigned. The assessment conservatively retained **Unmet** until a signed stable
 release completes the documented exact-RC acceptance process and downloaded
 artifact verification. The [OpenSSF criterion](https://www.bestpractices.dev/en/criteria/1?details=true&rationale=true#signed_releases)
 covers releases intended for widespread use; it does not literally require the
 word “stable.” This is our assessment of this project's preview/stable practice,
 not an additional official requirement or a claim that every historical release
 must be signed retroactively. `version_tags_signed` remains an unfulfilled
-suggestion because Git tags are lightweight.
+suggestion because Git tags are lightweight. These statements record that
+assessment, not the current release inventory; see [published releases](https://github.com/victron-venus/inverter-control/releases)
+for current versions. A later release alone does not update the public assessment.
 
 **Met evidence — `dynamic_analysis_unsafe`.** The hosted ASan result above
 provides the native-memory check. Python Atheris fuzzing and the Bandit security

@@ -17,7 +17,7 @@ from inverter_control.watchdog import HardwareWatchdog
 
 def bind_readers(readers):
     controller = SimpleNamespace(
-        **dict(zip(("water", "evcharger", "telemetry", "performance"), readers, strict=True))
+        **dict(zip(("water", "evcharger", "telemetry", "performance", "tou"), readers, strict=True))
     )
     controller.request_stop_auxiliary_readers = MethodType(
         InverterController.request_stop_auxiliary_readers, controller
@@ -30,9 +30,9 @@ def bind_readers(readers):
 
 def test_slow_readers_all_receive_stop_before_first_join_and_share_budget():
     release = threading.Event()
-    entered = [threading.Event() for _ in range(4)]
+    entered = [threading.Event() for _ in range(5)]
     readers = []
-    for index in range(4):
+    for index in range(5):
 
         def refresh(i=index):
             entered[i].set()
@@ -55,7 +55,7 @@ def test_slow_readers_all_receive_stop_before_first_join_and_share_budget():
     started = time.monotonic()
     try:
         assert controller.stop_auxiliary_readers(timeout=0.08) is False
-        assert time.monotonic() - started < 0.3  # Four serial waits would use0.32s.
+        assert time.monotonic() - started < 0.3  # Five serial waits would use 0.4s.
         assert 0 <= budgets[0] <= 0.08
         assert all(reader.read() == {} for reader in readers)
     finally:
@@ -65,7 +65,7 @@ def test_slow_readers_all_receive_stop_before_first_join_and_share_budget():
 
 
 def test_reader_join_cancellation_propagates_after_all_stop_requests():
-    readers = [Mock() for _ in range(4)]
+    readers = [Mock() for _ in range(5)]
     readers[0].stop.side_effect = KeyboardInterrupt
     controller = bind_readers(readers)
     with pytest.raises(KeyboardInterrupt):

@@ -15,6 +15,7 @@ never 0/False, so consumers can distinguish outage from an empty tank.
 """
 
 import logging
+import math
 import time
 from collections.abc import Callable
 from typing import Any
@@ -43,27 +44,28 @@ class WaterSystemReader:
     def _startstop_service(instance: int) -> str:
         return f"com.victronenergy.pump.startstop{instance}"
 
-    def _read_level(self) -> float | None:
-        raw = self._dbus_get(self._tank_service(WATER_TANK_INSTANCE), "/Level")
-        if raw is None:
+    def _read_number(self, service: str, path: str) -> float | None:
+        raw = self._dbus_get(service, path)
+        if raw is None or isinstance(raw, bool):
             return None
         try:
-            return float(raw)
-        except ValueError:
+            value = float(raw)
+        except (ValueError, TypeError, OverflowError):
             return None
+        return value if math.isfinite(value) else None
+
+    def _read_level(self) -> float | None:
+        value = self._read_number(self._tank_service(WATER_TANK_INSTANCE), "/Level")
+        return value if value is not None and 0 <= value <= 100 else None
 
     def _read_startstop(self, instance: int) -> bool | None:
-        raw = self._dbus_get(self._startstop_service(instance), "/State")
-        if raw is None:
-            return None
-        try:
-            return float(raw) != 0
-        except ValueError:
-            return None
+        value = self._read_number(self._startstop_service(instance), "/State")
+        # dbus-pump publishes only 0 (stopped/closed), 1 (running/open), or invalid.
+        return bool(value) if value in (0, 1) else None
 
     def read(self, force: bool = False) -> dict[str, Any]:
         """Return {"water_level", "water_valve", "pump_switch"}; values may be None."""
-        now = time.time()
+        now = time.monotonic()
         if not force and self._cache is not None and now - self._cache_time < CACHE_TTL:
             return self._cache
         state = {

@@ -4,7 +4,9 @@ Unit tests for Console UI
 
 import os
 import sys
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
 
@@ -86,6 +88,35 @@ class TestConsoleUI:
         assert "54.50" in line
         assert "150" in line
         assert "300" in line
+
+    @pytest.mark.parametrize("error", [ZoneInfoNotFoundError("missing tzdata"), ValueError("TZ")])
+    def test_timezone_failure_uses_labelled_utc_without_repeated_lookup(self, error):
+        with patch("inverter_control.console_ui.ZoneInfo", side_effect=error) as zone:
+            ui = console_ui.ConsoleUI(
+                self.mock_ha, self.mock_victron, self.mock_water, self.mock_evcharger
+            )
+            data = dict.fromkeys(("g1", "g2", "gt", "t1", "t2", "tt"), 0)
+            with patch("inverter_control.console_ui.datetime") as clock:
+                clock.now.return_value = datetime(2026, 10, 29, 3, 4, 5, tzinfo=UTC)
+                for _ in range(2):
+                    assert ui.format_line(data, 0, 0, "", 0).startswith("03:04:05 UTC>")
+                    clock.now.assert_called_with(UTC)
+            zone.assert_called_once()
+
+    @pytest.mark.parametrize("raw", [float("nan"), float("inf"), -1, 101, True, "50", 10**400])
+    def test_invalid_water_level_does_not_break_valve_display(self, raw):
+        output = self.ui._fmt_water_section({"water_level": raw, "water_valve": raw})
+        assert "--%" in output
+        assert ("valve=open" if raw is True else "valve=unknown") in output
+
+    @pytest.mark.parametrize("raw", [float("nan"), float("inf"), -1, 101, True, "50", 10**400])
+    def test_invalid_vehicle_snapshot_remains_unknown(self, raw):
+        self.mock_evcharger.read.return_value = {"car_soc": raw}
+        with (
+            patch("inverter_control.console_ui.ENABLE_WATER", False),
+            patch("inverter_control.console_ui.ENABLE_EV", True),
+        ):
+            assert "--%" in self.ui._fmt_extra_info()
 
     def test_format_line_grid_section(self):
         """Test grid section formatting"""

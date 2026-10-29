@@ -4,6 +4,7 @@ import logging
 import math
 import time
 import traceback
+from datetime import datetime
 from typing import Any
 
 from inverter_control import config as _config
@@ -88,7 +89,7 @@ from inverter_control.write_diagnostics import EVENT_LEVELS
 
 logger = logging.getLogger("inverter-control")
 
-# How often the GUI-editable TOU settings are re-read from localsettings
+# Background refresh cadence for GUI-editable TOU settings and timezone.
 TOU_SETTING_TTL_SECONDS = 60.0
 
 # A control-cycle stage taking longer than this (ms) is flagged as slow in the
@@ -245,9 +246,16 @@ class InverterController:
         self._ess_warn_last_time = 0.0
         self._ess_notification_active = False
 
-        # TOU window settings cache (see _tou_hours)
-        self._tou_cache: tuple[int, int] | None = None
-        self._tou_cache_time = 0.0
+        # Settings I/O never runs in the control cycle or under the write lock.
+        self.tou = BackgroundReader(
+            self._read_tou_settings,
+            {"start": None, "end": None, "timezone": None},
+            name="tou-settings",
+            interval=TOU_SETTING_TTL_SECONDS,
+            max_age=3 * TOU_SETTING_TTL_SECONDS,
+        )
+        self._calculated_charge_battery = False
+        self._last_setpoint_was_charge = False
         if not getattr(self.victron, "_test_mode", False):
             self.victron.ensure_tou_settings(
                 _config.TOU_EXPENSIVE_START_HOUR, _config.TOU_EXPENSIVE_END_HOUR
@@ -421,33 +429,35 @@ class InverterController:
 
         Hours come from the GUI-editable localsettings entries
         (/Settings/InverterControl/TouExpensive*) so they can be changed
-        from the Venus Settings menu without SSH. Falls back to the
-        local_config/env values when the settings are unreadable.
+        from the Venus Settings menu without SSH. Config defaults bootstrap
+        these settings; unreadable settings block forced charging.
         Hour comes from the GX timezone setting (/Settings/System/TimeZone),
         so the window follows the user's wall clock even though the Venus
         system clock runs UTC.
         """
-        start, end = self._tou_hours()
+        snapshot = self.tou.read()
+        start, end = snapshot["start"], snapshot["end"]
+        # Unknown/stale settings never authorize forced grid charging.
+        if any(type(hour) is not int or not -1 <= hour <= 24 for hour in (start, end)):
+            return True
         if start < 0 or end < 0 or start == end:
             return False
-        hour = self.victron.get_local_hour()
+        if snapshot["timezone"] is None:
+            return True
+        hour = datetime.now(snapshot["timezone"]).hour
         if start < end:
             return start <= hour < end
         return hour >= start or hour < end  # wraps midnight
 
-    def _tou_hours(self) -> tuple[int, int]:
-        """TOU window hours from localsettings, refreshed at most once per
-        TOU_SETTING_TTL_SECONDS (subprocess D-Bus reads are not free on RPi)."""
-        now = time.time()
-        if self._tou_cache is None or now - self._tou_cache_time >= TOU_SETTING_TTL_SECONDS:
-            start = self.victron.get_tou_setting(TOU_START_SETTING)
-            end = self.victron.get_tou_setting(TOU_END_SETTING)
-            self._tou_cache = (
-                _config.TOU_EXPENSIVE_START_HOUR if start is None else start,
-                _config.TOU_EXPENSIVE_END_HOUR if end is None else end,
-            )
-            self._tou_cache_time = now
-        return self._tou_cache
+    def _read_tou_settings(self) -> dict:
+        """Read localsettings on the dedicated worker, including timezone edits."""
+        start = self.victron.get_tou_setting(TOU_START_SETTING)
+        end = self.victron.get_tou_setting(TOU_END_SETTING)
+        return {
+            "start": start,
+            "end": end,
+            "timezone": self.victron.get_configured_timezone(),
+        }
 
     def _handle_pre_charge_webhook(self, payload: dict) -> dict:
         """Persist one decision before scheduling the existing one-cycle intent."""
@@ -516,12 +526,12 @@ class InverterController:
 
     def start_auxiliary_readers(self) -> None:
         """Start bounded-age auxiliary snapshots without blocking startup."""
-        for reader in (self.water, self.evcharger, self.telemetry, self.performance):
+        for reader in (self.water, self.evcharger, self.telemetry, self.performance, self.tou):
             if reader is not None:
                 reader.start()
 
     def request_stop_auxiliary_readers(self) -> None:
-        for reader in (self.water, self.evcharger, self.telemetry, self.performance):
+        for reader in (self.water, self.evcharger, self.telemetry, self.performance, self.tou):
             if reader is not None:
                 reader.request_stop()
 
@@ -529,7 +539,7 @@ class InverterController:
         deadline = time.monotonic() + max(0.0, timeout)
         self.request_stop_auxiliary_readers()
         stopped = True
-        for reader in (self.water, self.evcharger, self.telemetry, self.performance):
+        for reader in (self.water, self.evcharger, self.telemetry, self.performance, self.tou):
             if reader is not None:
                 stopped = reader.stop(max(0.0, deadline - time.monotonic())) and stopped
         return stopped
@@ -538,6 +548,7 @@ class InverterController:
         """Orchestrate state collection and delegate calculation to logic.py"""
         self._trim_decision = None
         self._trim_context = None
+        self._calculated_charge_battery = False
         if (
             sys_data.get("_grid_backup")
             and sys_data.get("_grid_measurement_time") == self._last_backup_measurement
@@ -545,6 +556,9 @@ class InverterController:
             self._reset_submeter_trim("backup_source")
             # HA can report more slowly than the control loop. Refresh the
             # accepted output, but apply feedback only once per source sample.
+            self._calculated_charge_battery = self._last_setpoint_was_charge
+            if self._calculated_charge_battery and self._in_expensive_window():
+                return min(0, self.previous_setpoint), "[SUBMETER HOLD] [CHG:TOU] "
             return self.previous_setpoint, "[SUBMETER HOLD] "
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
@@ -566,6 +580,10 @@ class InverterController:
         # Handle pre-charge request from solar forecast webhook
         charge_battery = self.get_control_flag("charge_battery")
         charge_battery = self._consume_precharge_request(charge_battery)
+        charge_battery_blocked = charge_battery and self._in_expensive_window()
+        self._calculated_charge_battery = (charge_battery and not charge_battery_blocked) or (
+            self._last_setpoint_was_charge and self._in_expensive_window()
+        )
 
         # HA-heavy SystemState snapshot
         state = SystemState(
@@ -586,6 +604,7 @@ class InverterController:
             no_feed=self.get_control_flag("no_feed"),
             house_support=self.get_control_flag("house_support"),
             charge_battery=charge_battery,
+            charge_battery_blocked=charge_battery_blocked,
             do_not_supply_charger=self.get_control_flag("do_not_supply_charger"),
             limit_to_ev=self.get_control_flag("set_limit_to_ev_charger"),
             previous_setpoint=self.previous_setpoint,
@@ -725,6 +744,7 @@ class InverterController:
                     self._trim_decision, now=time.monotonic(), wall_time=time.time()
                 )
             self.previous_setpoint = setpoint
+            self._last_setpoint_was_charge = automatic and self._calculated_charge_battery
             self._last_backup_measurement = (
                 sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
             )
@@ -763,6 +783,7 @@ class InverterController:
                 ):
                     flags = flags.replace(diagnostic + " ", "").replace(diagnostic, "")
                 flags += safety_flags
+                setpoint, flags = self._guard_tou_charge(setpoint, flags)
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
                 write_ok = self._watchdog.write_control_setpoint(
@@ -775,6 +796,17 @@ class InverterController:
                 )
                 self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
         return setpoint, flags, write_ok
+
+    def _guard_tou_charge(self, setpoint: int, flags: str) -> tuple[int, str]:
+        """Recheck the wall clock and cached policy under the hardware-write lock."""
+        if not self._calculated_charge_battery or not self._in_expensive_window():
+            return setpoint, flags
+        self._reset_submeter_trim("tou_changed_before_write")
+        self._calculated_charge_battery = False
+        flags = flags.replace("[CHG]", "") + "[CHG:TOU] "
+        if self.power_limit_min > 0:
+            flags += "[CHG:limits-conflict] "
+        return min(0, setpoint), flags
 
     def _delay_no_feed(self) -> None:
         """Apply the optional no-feed delay without interrupting the next safety cycle."""
@@ -895,17 +927,28 @@ class InverterController:
             if bp is None:
                 return
             if 0 < net_usage < 200 and bp > 750:
-                changed = self.ha.control_dump_loads(turn_on=True)
-                if changed > 0:
+                queued = self._request_dump_loads(turn_on=True)
+                if queued > 0:
                     self.delay = 6
-                    print(f" [MC+{changed}] ", end="")
+                    print(f" [MC+queued:{queued}] ", end="")
             elif bp < -650 or net_usage > 650:
-                changed = self.ha.control_dump_loads(turn_on=False)
-                if changed > 0:
+                queued = self._request_dump_loads(turn_on=False)
+                if queued > 0:
                     self.delay = 6
-                    print(f" [MC-{changed}] ", end="")
+                    print(f" [MC-queued:{queued}] ", end="")
         except Exception as e:
             logger.warning(f"minimize_charging error: {e}")
+
+    def _cancel_dump_loads(self) -> None:
+        if ENABLE_HA:
+            self.ha.cancel_dump_loads()
+
+    def _request_dump_loads(self, *, turn_on: bool) -> int:
+        # Share flag cancellation's lock so a late enqueue cannot undo it.
+        with self._watchdog._lock:
+            if not ENABLE_HA or not self.get_control_flag("minimize_charging"):
+                return 0
+            return self.ha.request_dump_loads(turn_on=turn_on)
 
     def _get_cached_batteries(self) -> list:
         now = time.time()
@@ -982,6 +1025,8 @@ class InverterController:
             if self._control_flags[key] != value:
                 self._trim_mode_generation += 1
             self._control_flags[key] = value
+            if key == "minimize_charging" and not value:
+                self._cancel_dump_loads()
         try:
             if getattr(self.victron, "_test_mode", False):
                 pass  # ponytail: skip Settings write in test mode
@@ -1259,6 +1304,7 @@ class InverterController:
         """Gate control on a usable grid snapshot and orderly watchdog recovery."""
         self.state.update(self._grid_status_fields(sys_data))
         if sys_data.get("_grid_valid") is not True:
+            self._cancel_dump_loads()
             self._reset_submeter_trim("primary_invalid")
             self._watchdog.mark_dbus_invalid()
             # The same watchdog owns both outage and stalled-loop writes.
@@ -1279,6 +1325,7 @@ class InverterController:
         self._watchdog.mark_dbus_update()
         selection = sys_data.get("_grid_selection_generation", 0)
         if selection != self._control_grid_selection:
+            self._cancel_dump_loads()
             self._reset_submeter_trim("source_changed")
             self._control_grid_selection = selection
             self._last_backup_measurement = None
@@ -1286,6 +1333,7 @@ class InverterController:
             logger.info("Grid control source changed to %s", sys_data.get("_grid_source"))
             return False  # Recalculate on the next cycle, including before-write switches.
         if self._watchdog.is_triggered():
+            self._cancel_dump_loads()
             # Its two-check recovery must finish (including an accepted restore)
             self._reset_submeter_trim("watchdog")
             # before a fresh normal write can otherwise race with that restore.
@@ -1364,8 +1412,9 @@ class InverterController:
         broadcast_line(line)
         _stage("console_render")
 
-        # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL,
-        # not every cycle. It feeds the web UI / MQTT (fresh enough at 2 Hz);
+        # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL
+        # (4 s), not every cycle. It feeds the web UI / MQTT (0.25 Hz is fresh
+        # enough for display-only values);
         # the control decision already ran in calculate_setpoint above.
         if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
             self.update_state(sys_data, setpoint)
@@ -1406,6 +1455,7 @@ class InverterController:
                 self._control_history_generation = generation
             sys_data = self.victron.get_system_data()
             if self.get_setpoint_override()["value"] is not None:
+                self._cancel_dump_loads()
                 self._reset_submeter_trim("manual_control")
                 # Observe meter health for the later Stop transition, but the
                 # watchdog independently maintains the explicit manual value.

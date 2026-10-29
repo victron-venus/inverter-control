@@ -84,3 +84,42 @@ class TestWaterSystemReader:
         second = water_mod.get_water(lambda s, p: None)
 
         assert first is not second
+
+
+@pytest.mark.parametrize(
+    "raw", ["nan", "inf", "-inf", float("nan"), float("inf"), True, False, [], {}, 10**400]
+)
+def test_malformed_measurements_are_unknown_not_empty_or_running(raw):
+    state = WaterSystemReader(lambda _service, _path: raw).read(force=True)
+    assert state == {"water_level": None, "water_valve": None, "pump_switch": None}
+
+
+@pytest.mark.parametrize("level", ["-0.5", "100.01", "-100", "1e20"])
+def test_out_of_range_level_does_not_hide_valid_switches(level):
+    state = WaterSystemReader(lambda _service, path: level if path == "/Level" else "0").read()
+    assert state == {"water_level": None, "water_valve": False, "pump_switch": False}
+
+
+@pytest.mark.parametrize("state", ["-1", "2", "0.5", "1e20"])
+def test_invalid_switch_states_do_not_mean_running(state):
+    measured = WaterSystemReader(lambda _service, path: "0" if path == "/Level" else state).read()
+    assert measured == {"water_level": 0.0, "water_valve": None, "pump_switch": None}
+
+
+@pytest.mark.parametrize("level", ["0", "100"])
+def test_level_boundary_is_a_real_measurement(level):
+    state = WaterSystemReader(lambda _service, path: level if path == "/Level" else "1").read()
+    assert state == {"water_level": float(level), "water_valve": True, "pump_switch": True}
+
+
+def test_cache_expires_despite_wall_clock_rollback(monkeypatch):
+    clock = {"monotonic": 10.0, "wall": 1000.0}
+    monkeypatch.setattr(water_mod.time, "monotonic", lambda: clock["monotonic"])
+    monkeypatch.setattr(water_mod.time, "time", lambda: clock["wall"])
+    dbus_get = MagicMock(return_value="1")
+    reader = WaterSystemReader(dbus_get)
+    assert reader.read()["water_valve"] is True
+    dbus_get.return_value = "nan"
+    clock.update(monotonic=13.0, wall=1.0)
+    assert reader.read() == {"water_level": None, "water_valve": None, "pump_switch": None}
+    assert dbus_get.call_count == 6

@@ -73,6 +73,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
     # Circuit breaker settings
     CIRCUIT_OPEN_THRESHOLD = 5  # Open circuit after N consecutive failures
     CIRCUIT_RESET_TIMEOUT = 60  # Try again after N seconds
+    DUMP_LOAD_REQUEST_TTL = 5.0  # Never replay an old power decision after an outage.
 
     def __init__(self, *, vue_native_get: Callable[..., str | None] | None = None):
         # Use session for connection pooling (reuses TCP connections)
@@ -117,10 +118,22 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._start_time: float = 0
+        self._dump_load_entities = tuple(
+            entity for entity in HA_DUMP_LOADS if _entity_domain(entity)
+        )
+        self._dump_load_thread: threading.Thread | None = None
+        self._dump_load_lock = threading.Lock()
+        self._dump_load_wakeup = threading.Event()
+        self._dump_load_generation = 0
+        self._dump_load_intent: bool | None = None
+        self._dump_load_pending: tuple[bool, int, float] | None = None
 
     def start(self):
         """Start background polling thread"""
-        if self._running or (self._thread is not None and self._thread.is_alive()):
+        if self._running or any(
+            worker is not None and worker.is_alive()
+            for worker in (self._thread, self._dump_load_thread)
+        ):
             return
 
         self._stop_event.clear()
@@ -128,6 +141,11 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         self._start_time = time.time()
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
+        if self._dump_load_entities:
+            self._dump_load_thread = threading.Thread(
+                target=self._dump_load_loop, name="ha-dump-loads", daemon=True
+            )
+            self._dump_load_thread.start()
 
     @property
     def uptime(self) -> int:
@@ -139,15 +157,27 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
     def request_stop(self):
         self._running = False
         self._stop_event.set()
+        self.cancel_dump_loads()
+        self._dump_load_wakeup.set()
+
+    def cancel_dump_loads(self) -> None:
+        """Retire pending and remaining actions; an active HTTP call may finish."""
+        with self._dump_load_lock:
+            self._dump_load_generation += 1
+            self._dump_load_intent = None
+            self._dump_load_pending = None
 
     def stop(self, timeout: float = 2.0) -> bool:
-        """Wake idle polling; keep an active request's Session intact on timeout."""
+        """Wake both workers; keep an active request's Session intact on timeout."""
         self.request_stop()
-        if self._thread:
-            self._thread.join(timeout=max(0.0, timeout))
-            if self._thread.is_alive():
-                return False
-        # Close session only after its polling thread has returned.
+        deadline = time.monotonic() + max(0.0, timeout)
+        workers = (self._thread, self._dump_load_thread)
+        for worker in workers:
+            if worker is not None:
+                worker.join(timeout=max(0.0, deadline - time.monotonic()))
+        if any(worker is not None and worker.is_alive() for worker in workers):
+            return False
+        # Close session only after polling and dump-load requests have returned.
         try:
             self._session.close()
         except Exception as exc:
@@ -408,7 +438,7 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
         return self._call_entity_service("turn_off", entity_id)
 
     def control_dump_loads(self, turn_on: bool) -> int:
-        """Control all dump loads for minimize_charging. Returns count of changed."""
+        """Synchronous compatibility API; control cycles use request_dump_loads."""
         changed = 0
         for entity in HA_DUMP_LOADS:
             if turn_on:
@@ -418,6 +448,52 @@ class HomeAssistantClient:  # pylint: disable=too-many-public-methods
                 if self.turn_off(entity):
                     changed += 1
         return changed
+
+    def request_dump_loads(self, turn_on: bool) -> int:
+        """Queue only the newest intent; return accepted loads, not HTTP successes.
+
+        This path never starts a thread or calls HA. The existing HA lifecycle
+        owns one worker, and one pending intent bounds memory during outages.
+        """
+        if type(turn_on) is not bool or not self._dump_load_entities:
+            return 0
+        with self._dump_load_lock:
+            if not self._running or self._stop_event.is_set():
+                return 0
+            # Repeated observations must not interrupt the remaining loads of
+            # a still-current batch; a changed direction must supersede it.
+            if self._dump_load_intent is not turn_on:
+                self._dump_load_generation += 1
+                self._dump_load_intent = turn_on
+            self._dump_load_pending = (
+                turn_on,
+                self._dump_load_generation,
+                time.monotonic() + self.DUMP_LOAD_REQUEST_TTL,
+            )
+            self._dump_load_wakeup.set()
+        return len(self._dump_load_entities)
+
+    def _dump_load_loop(self) -> None:
+        while not self._stop_event.is_set():
+            self._dump_load_wakeup.wait()
+            with self._dump_load_lock:
+                pending = self._dump_load_pending
+                self._dump_load_pending = None
+                self._dump_load_wakeup.clear()
+            if pending is None:
+                continue
+            turn_on, generation, expires = pending
+            for entity in self._dump_load_entities:
+                # An in-flight HTTP request cannot be recalled; do not send
+                # remaining loads from an expired, superseded or stopped batch.
+                with self._dump_load_lock:
+                    if (
+                        self._stop_event.is_set()
+                        or generation != self._dump_load_generation
+                        or time.monotonic() >= expires
+                    ):
+                        break
+                self._call_entity_service("turn_on" if turn_on else "turn_off", entity)
 
 
 # Singleton instance

@@ -1,7 +1,0 @@
-Inverter Control v1.23.3 fixes a background telemetry polling exception when an optional D-Bus service disappears and its CLI fallback returns no result.
-
-The missing reply now uses the existing zero fallback instead of raising an AttributeError. Other PV yield reads and subsequent battery-energy polling complete, and values recover on a later successful poll. Existing service backoff still applies.
-
-The runtime change is a two-line guard. Device-local configuration, grid-loss handling, control policy and limits are preserved.
-
-Validation: regression tests cover missing and empty CLI replies with and without native D-Bus, service backoff, continued polling of another PV service and battery energy, and recovery on a later poll.

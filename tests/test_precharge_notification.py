@@ -156,7 +156,7 @@ def test_queued_intent_rechecks_expiry_and_tariff(expired, expensive, expected):
 
 
 @pytest.mark.parametrize("manual", [False, True])
-def test_manual_charge_is_an_explicit_tou_exception_even_with_queued_precharge(manual):
+def test_manual_charge_uses_tou_guard_even_with_queued_precharge(manual):
     from test_main import _make_controller
 
     import main
@@ -174,4 +174,5 @@ def test_manual_charge_is_an_explicit_tou_exception_even_with_queued_precharge(m
             {"_grid_valid": True, **dict.fromkeys(("g1", "g2", "gt", "t1", "t2", "tt"), 0)}
         )
     assert calc.calculate.call_args.args[0].charge_battery is manual
+    assert calc.calculate.call_args.args[0].charge_battery_blocked is manual
     assert controller._pre_charge_requested is False

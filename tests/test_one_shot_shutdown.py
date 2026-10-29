@@ -6,10 +6,55 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from test_main import _make_controller
 
 import main
 from inverter_control import config, mqtt_bridge
 from inverter_control.watchdog import HardwareWatchdog
+
+
+@pytest.mark.parametrize(
+    "requested,applied", [(100, 100), (0, 0), (-100, -100), (99999, 2250), (-99999, -2300)]
+)
+def test_positional_command_runs_one_bounded_manual_write(monkeypatch, requested, applied):
+    """Keep argument parsing, the real cycle and the actuator gate in one test."""
+    controller, victron, _, calculator = _make_controller()
+    controller.start_auxiliary_readers = Mock()
+    controller.update_state = Mock()
+    victron.get_system_data.return_value = {"_grid_valid": True, "gt": 0}
+    victron.get_grid_status.return_value = {"_grid_valid": True, "gt": 0}
+    victron.set_grid_setpoint.return_value = True
+    shutdown = Mock(return_value=True)
+    heartbeat = Mock()
+    loop = Mock()
+    monkeypatch.setattr(sys, "argv", ["main.py", str(requested)])
+    monkeypatch.setattr(main, "InverterController", Mock(return_value=controller))
+    monkeypatch.setattr(main, "_setup_mqtt_bridge", Mock(return_value=None))
+    monkeypatch.setattr(main, "_shutdown_main_loop", shutdown)
+    monkeypatch.setattr(main, "_write_heartbeats", heartbeat)
+    monkeypatch.setattr(main, "_run_main_loop", loop)
+    monkeypatch.setattr("inverter_control.controller.broadcast_line", Mock())
+
+    main._main_inner()
+
+    victron.set_grid_setpoint.assert_called_once_with(applied)
+    calculator.calculate.assert_not_called()
+    assert controller.previous_setpoint == applied
+    assert controller.manual_setpoint is None
+    shutdown.assert_called_once_with(controller, None, None, None)
+    heartbeat.assert_not_called()
+    loop.assert_not_called()
+
+
+@pytest.mark.parametrize("argument", ["1.5", "NaN", "--unknown"])
+def test_invalid_positional_command_exits_before_starting_integrations(monkeypatch, argument):
+    construct = Mock()
+    monkeypatch.setattr(sys, "argv", ["main.py", argument])
+    monkeypatch.setattr(main, "InverterController", construct)
+    with pytest.raises(SystemExit) as error:
+        main._main_inner()
+    assert error.value.code == 2
+    construct.assert_not_called()
 
 
 def one_shot_context(monkeypatch):

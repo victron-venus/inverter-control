@@ -127,3 +127,71 @@ def test_local_today_falls_back_on_bad_tz(v):
     v._tz_name = "Not/AZone"
     assert v._local_today() == time.localtime().tm_yday
     assert v._tz_name == ""  # cleared after failure
+
+
+def test_persist_writes_calendar_date(v):
+    v._cached_battery_daily_energy = (1.5, 0.5)
+    v._battery_energy_date = v._local_today()
+    v._persist_battery_daily_energy()
+
+    with open(v._battery_energy_file, encoding="utf-8") as f:
+        data = json.load(f)
+    assert data["date_iso"] == v._local_now().date().isoformat()
+
+
+def test_load_iso_today_restores_totals(v):
+    today_iso = v._local_now().date().isoformat()
+    with open(v._battery_energy_file, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "date": v._local_today(),
+                "date_iso": today_iso,
+                "charge": 3.0,
+                "discharge": 4.0,
+                "y_charge": 1.0,
+                "y_discharge": 2.0,
+            },
+            f,
+        )
+
+    inst = victron.VictronDBus(test_mode=True)
+    inst._battery_energy_file = v._battery_energy_file
+    inst._load_battery_daily_energy()
+    assert inst.get_battery_daily_energy() == (3.0, 4.0)
+    assert inst.get_battery_yesterday_energy() == (1.0, 2.0)
+
+
+def test_load_iso_yesterday_promoted(v):
+    from datetime import timedelta
+
+    yesterday_iso = (v._local_now().date() - timedelta(days=1)).isoformat()
+    with open(v._battery_energy_file, "w", encoding="utf-8") as f:
+        json.dump({"date": 0, "date_iso": yesterday_iso, "charge": 3.0, "discharge": 4.0}, f)
+
+    inst = victron.VictronDBus(test_mode=True)
+    inst._battery_energy_file = v._battery_energy_file
+    inst._load_battery_daily_energy()
+    assert inst.get_battery_yesterday_energy() == (3.0, 4.0)
+    assert inst.get_battery_daily_energy() == (0.0, 0.0)
+    # date must be today so the first poll doesn't roll yesterday back to zero
+    assert inst._battery_energy_date == v._local_today()
+
+
+def test_load_stale_iso_date_is_not_misread_as_yesterday(v):
+    """A year-old file can share yesterday's day-of-year; the calendar date wins."""
+    from datetime import timedelta
+
+    stale_iso = (v._local_now().date() - timedelta(days=365)).isoformat()
+    yesterday_doy = (v._local_now() - timedelta(days=1)).timetuple().tm_yday
+    with open(v._battery_energy_file, "w", encoding="utf-8") as f:
+        json.dump(
+            {"date": yesterday_doy, "date_iso": stale_iso, "charge": 7.0, "discharge": 8.0},
+            f,
+        )
+
+    inst = victron.VictronDBus(test_mode=True)
+    inst._battery_energy_file = v._battery_energy_file
+    inst._load_battery_daily_energy()
+    assert inst.get_battery_daily_energy() == (0.0, 0.0)
+    assert inst.get_battery_yesterday_energy() == (0.0, 0.0)
+    assert inst._battery_energy_date == 0
