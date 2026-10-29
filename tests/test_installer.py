@@ -353,6 +353,19 @@ exec(compile(sys.stdin.read(),"installer-preflight","exec"))
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
 
 
+SUPPORTED_FLOORS = {
+    "cryptography": "50.0.2",
+    "certifi": "2026.10.19",
+    "requests": "2.34.2",
+    "idna": "3.15",
+}
+
+
+def floor_versions(**overrides):
+    """Metadata stub at every supported floor, with one package under test."""
+    return {**SUPPORTED_FLOORS, **overrides}
+
+
 def installed_version_stub(tmp_path, versions):
     """Run the actual updater preflight in a child with controlled package metadata."""
     import sys
@@ -387,7 +400,7 @@ def installer_preflight(tmp_path, env):
 @pytest.mark.parametrize("installed", ["42.0.5", "50.0.1", "50.0.2rc1", "50.0", "broken", None])
 def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, installed):
     package, _, env = fake_device(tmp_path)
-    installed_version_stub(tmp_path, {"cryptography": installed, "certifi": "2026.10.19"})
+    installed_version_stub(tmp_path, floor_versions(cryptography=installed))
     # Execute the real installer using only the isolated fake-device command PATH.
     result = installer_preflight(tmp_path, env)
     assert result.returncode != 0
@@ -401,7 +414,7 @@ def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, instal
 )
 def test_old_or_unreadable_certifi_version_precedes_service_stop(tmp_path, installed):
     package, _, env = fake_device(tmp_path)
-    installed_version_stub(tmp_path, {"cryptography": "50.0.2", "certifi": installed})
+    installed_version_stub(tmp_path, floor_versions(certifi=installed))
     result = installer_preflight(tmp_path, env)
     assert result.returncode != 0
     assert (
@@ -415,7 +428,7 @@ def test_old_or_unreadable_certifi_version_precedes_service_stop(tmp_path, insta
 @pytest.mark.parametrize("installed", ["50.0.2", "50.0.10", "51.0.0"])
 def test_supported_crypto_release_passes_actual_installer_preflight(tmp_path, installed):
     package, _, env = fake_device(tmp_path)
-    installed_version_stub(tmp_path, {"cryptography": installed, "certifi": "2026.10.19"})
+    installed_version_stub(tmp_path, floor_versions(cryptography=installed))
     # Execute the real installer using only the isolated fake-device command PATH.
     result = installer_preflight(tmp_path, env)
     assert result.returncode == 0, result.stderr
@@ -427,7 +440,57 @@ def test_supported_crypto_release_passes_actual_installer_preflight(tmp_path, in
 @pytest.mark.parametrize("installed", ["2026.10.19", "2026.10.24", "2027.1.1"])
 def test_supported_certifi_release_passes_actual_installer_preflight(tmp_path, installed):
     package, _, env = fake_device(tmp_path)
-    installed_version_stub(tmp_path, {"cryptography": "50.0.2", "certifi": installed})
+    installed_version_stub(tmp_path, floor_versions(certifi=installed))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    assert "installed version" in result.stdout
+    assert "svc" in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["2.31.0", "2.34.1", "2.34.2rc1", "2342", "broken", None])
+def test_old_or_unreadable_requests_version_precedes_service_stop(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(requests=installed))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode != 0
+    assert (
+        "requests stable version >= 2.34.2 is required" in result.stderr
+        or "synthetic missing metadata" in result.stderr
+    )
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["2.34.2", "2.35.0", "3.0.0"])
+def test_supported_requests_release_passes_actual_installer_preflight(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(requests=installed))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    assert "installed version" in result.stdout
+    assert "svc" in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["3.7", "3.14", "3.15rc1", "315", "broken", None])
+def test_old_or_unreadable_idna_version_precedes_service_stop(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(idna=installed))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode != 0
+    assert (
+        "idna stable version >= 3.15 is required" in result.stderr
+        or "synthetic missing metadata" in result.stderr
+    )
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["3.15", "3.16", "4.0.0"])
+def test_supported_idna_release_passes_actual_installer_preflight(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(idna=installed))
     result = installer_preflight(tmp_path, env)
     assert result.returncode == 0, result.stderr
     assert "installed version" in result.stdout
