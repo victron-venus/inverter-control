@@ -44,9 +44,9 @@ with zero. The controller rechecks source/sample identity and validity before
 writing. See [grid telemetry safety](docs/grid-telemetry-safety.md) for source
 pinning, optional backup selection, expiry, and recovery behavior.
 
-Auxiliary inputs have their own limitations. An unavailable wallbox value is
-represented as zero for the calculator, so EV exclusion cannot be relied upon
-without a working measurement. HA/Vue caches do not provide a universal
+Auxiliary inputs have their own limitations. Unavailable or invalid wallbox
+power remains unknown, distinct from a measured zero. EV exclusion cannot be
+computed without a working measurement. HA/Vue caches do not provide a universal
 per-sensor freshness guarantee; a cached value alone is not evidence of health.
 
 ### Step 2: Get control switches
@@ -59,8 +59,10 @@ keys and labels live in `inverter_control/control_flags.py`.
 
 The calculator uses `only_charging`, `do_not_supply_charger`,
 `set_limit_to_ev_charger`, `no_feed`, `house_support`, and `charge_battery`.
-`minimize_charging` separately controls configured HA dump loads; toggling it
-does not itself establish that HA or its measurements are available. See the
+`minimize_charging` separately queues configured HA dump-load commands on a
+background worker. Pending commands expire after five seconds; superseded or
+cancelled commands are not replayed. Toggling the flag does not itself establish
+that HA or its measurements are available. See the
 [MQTT control contract](docs/mqtt-control-flags.md).
 
 ### Step 3: Calculate effective grid and filtering
@@ -118,16 +120,21 @@ physical guarantees.
    `min_setpoint = -max(0, int(mppt_total * 0.94) - 60)` with default efficiency
    and offset. If the current result is more negative, it is raised to that
    floor; the strategy does not otherwise force the result to the floor.
-2. **Do not supply charger** applies that same MPPT-based export floor when the
-   flag is enabled and measured EV power is greater than 100 W.
-3. **Limit to EV charger** (`set_limit_to_ev_charger`) replaces the result with
+2. **Limit to EV charger** (`set_limit_to_ev_charger`) replaces the result with
    `-max(0, int(mppt_total * 0.94) - 500)` when either garage or EV power exceeds
    1000 W. Garage power comes from the Vue cache and may be stale.
-4. **No feed** sets the raw result to `int(pv_inverter_total)`.
-5. **House support** sets it to `int(pv_inverter_total - 300)`.
-6. **Charge battery** sets it to `2200`. A valid queued pre-charge request can
-   select this strategy for a cycle, subject to its expiry and tariff-window
-   checks; an explicit manual charge flag is a separate operator choice.
+3. **No feed** sets the raw result to `int(pv_inverter_total)`.
+4. **House support** sets it to `int(pv_inverter_total - 300)`.
+5. **Charge battery** sets it to `2200` when the GUI-configured expensive-hours
+   window permits charging. This applies to both the manual `charge_battery`
+   flag and a valid queued forecast pre-charge request. An active manual flag
+   stays selected during suppression and can resume outside the window.
+
+**Do not supply charger** changes the effective grid error as described above;
+it does not impose an additional MPPT export floor. With unknown EV power,
+ordinary house regulation continues and reports `[NoEV:exclusion-unavailable]`.
+When `only_charging` or `no_feed` is also active, an unknown-EV guard instead
+floors the automatic setpoint at zero and reports `[NoEV:site-unknown]`.
 
 The names express policy intent. For example, `no_feed` is a setpoint rule
 based on measured PV, not a certified anti-export system.
@@ -144,6 +151,16 @@ Defaults are `POWER_LIMIT_MIN=-2300 W`, `POWER_LIMIT_MAX=2250 W`, and
 `SETPOINT_DELTA_LIMIT=2000 W`. The controller rechecks the current absolute bounds
 under the hardware-write lock before an automatic write. Its accepted baseline
 changes only after the write is acknowledged.
+
+The unknown-EV guard runs after those limits and again before the hardware write.
+Its zero floor takes precedence over an incompatible negative-only range,
+reported as `[NoEV:limits-conflict]`. The TOU policy is also rechecked before
+writing: an earlier forced-charge command cannot survive entry into the expensive
+window through a held backup-meter sample or convergence. Removing that command's
+positive baseline takes precedence over a positive minimum, reported as
+`[CHG:limits-conflict]`. TOU settings and the GX timezone are refreshed in the
+background; unknown or expired policy data blocks forced charging. See
+[operating details](docs/venus-os-operations.md).
 
 Optional [submeter trim](docs/submeter-trim.md) can add a small correction after
 automatic control settles; it is disabled by default and has additional
@@ -166,7 +183,8 @@ site overrides may change them.
 
 Console markers include `[~...]` for deadband/creep, `[EV:...]` for exclusion,
 `[OC:...]` or `[OC~]` for only-charging, `[NoEV:...]`, `[LimEV:...]`, `[NF]`,
-`[HS]`, `[CHG]`, `[B:...]` for burst, `[D:...]` for derivative correction,
+`[HS]`, `[CHG]`, `[CHG:TOU]` for suppressed forced charging, `[B:...]` for burst,
+`[D:...]` for derivative correction,
 `[!Δ...]` for slew limiting, and `[TRIM:...]` for optional trim. A marker reports
 calculator behavior, not proof of the resulting physical power flow.
 

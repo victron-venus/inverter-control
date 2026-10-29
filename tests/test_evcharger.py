@@ -297,7 +297,9 @@ def test_disconnected_wallbox_invalidates_previous_power_on_next_read(reader_fac
     assert reader.read(force=True)["ev_power"] is None
 
 
-@pytest.mark.parametrize("soc", ["nan", "inf", "unavailable"])
+@pytest.mark.parametrize(
+    "soc", ["nan", "inf", "unavailable", "-0.5", "100.1", "-100", "1e20", True, False]
+)
 def test_invalid_vehicle_soc_does_not_hide_site_power(reader_factory, soc):
     source = _site_and_vehicle(3200)
 
@@ -310,6 +312,41 @@ def test_invalid_vehicle_soc_does_not_hide_site_power(reader_factory, soc):
     state = reader.read(force=True)
     assert state["ev_power"] == 3200
     assert state["car_soc"] is None
+
+
+@pytest.mark.parametrize("soc", [0, 100])
+def test_vehicle_soc_boundaries_remain_real_measurements(reader_factory, soc):
+    reader, _ = reader_factory(_vehicle_responses(soc, None))
+    assert reader.read()["car_soc"] == soc
+
+
+@pytest.mark.parametrize("path", ["/Connected", "/Ac/Power", "/Current", "/Ac/L1/Voltage"])
+@pytest.mark.parametrize("boolean", [True, False])
+def test_booleans_are_not_site_power_measurements(reader_factory, path, boolean):
+    source = (
+        _wallbox_responses(3200)
+        if path in ("/Connected", "/Ac/Power")
+        else _wallbox_responses(None, current=16, voltage=230)
+    )
+
+    def read(service, requested_path):
+        if requested_path == path:
+            return boolean
+        return source(service, requested_path)
+
+    reader, _ = reader_factory(read)
+    assert reader.read()["ev_power"] is None
+
+
+def test_ev_cache_expires_despite_wall_clock_rollback(reader_factory, monkeypatch):
+    clock = {"monotonic": 10.0, "wall": 1000.0}
+    monkeypatch.setattr(ev_mod.time, "monotonic", lambda: clock["monotonic"])
+    monkeypatch.setattr(ev_mod.time, "time", lambda: clock["wall"])
+    reader, dbus_get = reader_factory(_site_and_vehicle(3200))
+    assert reader.read()["ev_power"] == 3200
+    dbus_get.side_effect = _site_and_vehicle(None)
+    clock.update(monotonic=13.0, wall=1.0)
+    assert reader.read()["ev_power"] is None
 
 
 @pytest.mark.parametrize("site_power,grid_power", [(0, 2400), (3200, 5600)])
