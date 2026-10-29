@@ -126,7 +126,7 @@ class EvChargerReader:
 
     def _read_numeric(self, service: str, path: str) -> float | None:
         raw = self._dbus_get(service, path)
-        if raw is None:
+        if raw is None or isinstance(raw, bool):
             return None
         try:
             value = float(raw)
@@ -134,9 +134,9 @@ class EvChargerReader:
         except (ValueError, TypeError, OverflowError):
             return None
 
-    def _read_int(self, service: str, path: str) -> int | None:
-        value = self._read_numeric(service, path)
-        return int(value) if value is not None else None
+    def _read_soc(self, service: str) -> int | None:
+        value = self._read_numeric(service, "/Soc")
+        return int(value) if value is not None and 0 <= value <= 100 else None
 
     def _read_site_power(self) -> float | None:
         """Read a connected wallbox; unavailable power must not become vehicle power.
@@ -160,7 +160,7 @@ class EvChargerReader:
 
     def read(self, force: bool = False) -> dict[str, Any]:
         """Return {"ev_power", "car_soc", "ev_charging_kw"}; values may be None."""
-        now = time.time()
+        now = time.monotonic()
         if not force and self._cache is not None and now - self._cache_time < CACHE_TTL:
             return self._cache
 
@@ -170,7 +170,7 @@ class EvChargerReader:
 
         # Vehicle SoC is independent of the charger connected to this site's grid.
         if self.vehicle_service:
-            soc = self._read_int(self.vehicle_service, "/Soc")
+            soc = self._read_soc(self.vehicle_service)
             if soc is not None:
                 state["car_soc"] = soc
 
@@ -181,7 +181,7 @@ class EvChargerReader:
 
         # If wallbox has /Soc (rare), use as car_soc fallback
         if state["car_soc"] is None and self.wallbox_service:
-            soc = self._read_int(self.wallbox_service, "/Soc")
+            soc = self._read_soc(self.wallbox_service)
             if soc is not None:
                 state["car_soc"] = soc
 

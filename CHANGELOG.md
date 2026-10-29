@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Apply the configured expensive-hours window to `charge_battery` from MQTT, desktop and local controls as well as forecast pre-charge. Keep the requested flag so charging can resume outside the window while ordinary regulation continues during it.
 - Recheck forced charging at the write boundary and when holding a backup-meter sample, so a previously calculated charging command cannot bypass a new expensive interval. Refresh tariff settings and timezone in the background; unavailable or expired policy data pauses forced charging.
 - Move Home Assistant dump-load commands used by `minimize_charging` off the control cycle. Bound pending work and discard superseded or expired requests so an unavailable Home Assistant does not stall grid regulation or replay an old command backlog.
+- Reject non-finite or out-of-range water/vehicle percentages and invalid pump/valve states as unknown readings. Preserve valid wallbox power when vehicle SoC is invalid, and use monotonic clocks for water/EV cache expiry.
+- Keep console rendering available with explicitly labelled UTC timestamps if the configured display timezone cannot be loaded; invalid water/vehicle percentages display as unknown. The display fallback does not change TOU policy.
+- Align device requirements with package metadata by including the required MQTT client and removing unused `msgpack`. Align pre-commit Ruff with the locked CI version, and correct outdated EV-control and release-evidence documentation.
 
 ### Changed
 

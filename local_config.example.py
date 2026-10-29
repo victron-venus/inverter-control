@@ -29,12 +29,12 @@ HA_TOKEN = ""  # nosec B105 - empty opt-in configuration, not a credential
 # =============================================================================
 # TIME-OF-USE EXPENSIVE GRID WINDOW (local hours)
 # =============================================================================
-# Solar-forecast pre-charge is suppressed while the wall-clock hour (from the
-# GX /Settings/System/TimeZone setting) is inside [START, END).
+# Solar-forecast pre-charge and the charge_battery switch are suppressed while
+# the wall-clock hour (from GX /Settings/System/TimeZone) is inside [START, END).
 # Set both to -1 to disable. Windows may wrap midnight (e.g. 22 -> 6).
 # NOTE: on Cerbo the GUI-editable Settings entries under /Settings/InverterControl
 # (created automatically at startup) take precedence over these values; these
-# serve as bootstrap defaults and for non-Cerbo environments.
+# serve as bootstrap defaults. Unreadable GUI settings block forced charging.
 
 TOU_EXPENSIVE_START_HOUR = 15  # 3 PM
 TOU_EXPENSIVE_END_HOUR = 24  # midnight

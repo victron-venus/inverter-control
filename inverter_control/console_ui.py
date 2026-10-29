@@ -3,13 +3,10 @@ Console UI for Inverter Control
 Handles formatting and terminal updates
 """
 
-from datetime import datetime
+import math
+from datetime import UTC, datetime
 from typing import Any
-
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from backports.zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import (
     ENABLE_ACLOADS,
@@ -30,6 +27,14 @@ class ConsoleUI:
         self.victron = victron_interface
         self.water = water_reader  # WaterSystemReader or None (test mode)
         self.evcharger = evcharger_reader  # EvChargerReader or None (test mode)
+        try:
+            self._timezone = ZoneInfo(TIMEZONE)
+            self._timezone_suffix = ""
+        except (ZoneInfoNotFoundError, ValueError, TypeError):
+            # Minimal runtimes may lack the IANA database. Resolve once, outside
+            # the control loop, and label the display fallback without changing TOU.
+            self._timezone = UTC
+            self._timezone_suffix = " UTC"
 
     def format_line(  # pylint: disable=too-many-arguments
         self,
@@ -40,7 +45,7 @@ class ConsoleUI:
         filtered_gt: float,
     ) -> str:
         """Format console output matching original style"""
-        now = datetime.now(ZoneInfo(TIMEZONE)).strftime("%H:%M:%S")
+        now = datetime.now(self._timezone).strftime("%H:%M:%S") + self._timezone_suffix
 
         g1, g2, gt = sys_data["g1"], sys_data["g2"], sys_data["gt"]
         t1, t2, tt = sys_data["t1"], sys_data["t2"], sys_data["tt"]
@@ -138,17 +143,26 @@ class ConsoleUI:
         return " ".join(loads_parts)
 
     @staticmethod
+    def _percentage(value: Any) -> int | None:
+        if type(value) not in (int, float):
+            return None
+        try:
+            return int(value) if math.isfinite(value) and 0 <= value <= 100 else None
+        except OverflowError:
+            return None
+
+    @staticmethod
     def _fmt_water_section(wstate: dict[str, Any]) -> str:
         """Format the water level and a valve state that also works without color."""
-        level = wstate["water_level"]
+        level = ConsoleUI._percentage(wstate.get("water_level"))
         valve = wstate.get("water_valve")
         valve_text = "unknown"
-        if valve is not None:
+        if type(valve) is bool:
             valve_text = "open" if valve else "closed"
         if level is None:
             level_text = f"{C.YELLOW}--%{C.RESET}"
         else:
-            color = C.RED if valve else C.YELLOW
+            color = C.RED if valve is True else C.YELLOW
             level_text = f"{color}{int(level)}%{C.RESET}"
         return f"{level_text} valve={valve_text}"
 
@@ -161,7 +175,7 @@ class ConsoleUI:
 
         # Car (D-Bus evcharger reader; not HA)
         if ENABLE_EV and self.evcharger is not None:
-            car_soc = self.evcharger.read().get("car_soc")
+            car_soc = self._percentage(self.evcharger.read().get("car_soc"))
             if car_soc is None:
                 parts.append(f"{C.YELLOW}--%{C.RESET}")
             else:

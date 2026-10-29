@@ -60,9 +60,9 @@ Venus service integration; `DESTDIR` relocates packaging, not the runtime prefix
 
 ## Repeatable builds and native flags
 
-`bash scripts/package-release.sh 1.23.5 rc --output /path/to/empty-output` builds
-from tracked, present inputs. Use the committed base version in place of the
-example. Published builds additionally require the frozen release plan supplied
+`bash scripts/package-release.sh "$(cat version)" rc --output /path/to/empty-output`
+builds from tracked, present inputs using the checkout's committed base version.
+Published builds additionally require the frozen release plan supplied
 by the release pipeline. Tar entries have normalized ownership and timestamps,
 gzip embeds no filename or current time, file order is sorted, and executable
 bits are retained. Tests rebuild after changing source mtimes and compare all

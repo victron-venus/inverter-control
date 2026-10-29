@@ -7,8 +7,8 @@ cryptography>=50.0.2
 # Prevent CVE-2026-45409 when resolving outside uv.lock or reusing system packages.
 idna>=3.15
 
-# MsgPack for efficient binary serialization
-msgpack>=1.2.3
+# MQTT dashboard transport; also checked by the device updater.
+paho-mqtt>=2.0.0
 
 # D-Bus (persistent dbus_fast connection for Get/Set; preinstalled on Venus OS)
 dbus-fast>=2.21.1
