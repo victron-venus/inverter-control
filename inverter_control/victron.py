@@ -1769,7 +1769,7 @@ class VictronDBus:
         """Now in the user's timezone (/Settings/System/TimeZone).
         Falls back to system localtime (UTC on Venus) if setting is missing."""
         if not self._tz_name:
-            self._tz_name = self._dbus_get(SETTINGS_SERVICE, "/Settings/System/TimeZone") or ""
+            self._tz_name = self._dbus_get(SETTINGS_SERVICE, TIME_ZONE_PATH) or ""
         if self._tz_name:
             try:
                 return datetime.now(ZoneInfo(self._tz_name))
@@ -1784,7 +1784,7 @@ class VictronDBus:
 
     def get_configured_timezone(self) -> ZoneInfo | None:
         """Refresh the GX timezone on a background caller; unknown blocks TOU charge."""
-        name = self._dbus_get(SETTINGS_SERVICE, "/Settings/System/TimeZone")
+        name = self._dbus_get(SETTINGS_SERVICE, TIME_ZONE_PATH)
         if not name:
             return None
         try:

@@ -783,15 +783,7 @@ class InverterController:
                 ):
                     flags = flags.replace(diagnostic + " ", "").replace(diagnostic, "")
                 flags += safety_flags
-                # Recheck the current wall clock and background settings at the
-                # write boundary. This also protects a held backup-meter sample.
-                if self._calculated_charge_battery and self._in_expensive_window():
-                    self._reset_submeter_trim("tou_changed_before_write")
-                    setpoint = min(0, setpoint)
-                    self._calculated_charge_battery = False
-                    flags = flags.replace("[CHG]", "") + "[CHG:TOU] "
-                    if self.power_limit_min > 0:
-                        flags += "[CHG:limits-conflict] "
+                setpoint, flags = self._guard_tou_charge(setpoint, flags)
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
                 write_ok = self._watchdog.write_control_setpoint(
@@ -804,6 +796,17 @@ class InverterController:
                 )
                 self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
         return setpoint, flags, write_ok
+
+    def _guard_tou_charge(self, setpoint: int, flags: str) -> tuple[int, str]:
+        """Recheck the wall clock and cached policy under the hardware-write lock."""
+        if not self._calculated_charge_battery or not self._in_expensive_window():
+            return setpoint, flags
+        self._reset_submeter_trim("tou_changed_before_write")
+        self._calculated_charge_battery = False
+        flags = flags.replace("[CHG]", "") + "[CHG:TOU] "
+        if self.power_limit_min > 0:
+            flags += "[CHG:limits-conflict] "
+        return min(0, setpoint), flags
 
     def _delay_no_feed(self) -> None:
         """Apply the optional no-feed delay without interrupting the next safety cycle."""
