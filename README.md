@@ -118,8 +118,10 @@ before use. Python configuration is executable trusted code, not an upload forma
 
 The time-of-use defaults in the template bootstrap settings under
 `/Settings/InverterControl` on Venus OS; existing GUI settings take precedence.
-The expensive window blocks automatic forecast pre-charge. Manual
-`charge_battery` is an explicit override. Review
+The expensive window blocks forecast pre-charge and the `charge_battery`
+switch, including MQTT and desktop commands. The switch stays selected and
+resumes outside the window; normal grid regulation and solar charging continue.
+Explicit numeric setpoint overrides remain operator-controlled. Review
 [solar delivery](docs/solar-delivery.md) before connecting a producer.
 
 For backup metering, configure a signed **whole-grid** source, not a branch-load

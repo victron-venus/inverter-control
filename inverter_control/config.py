@@ -197,7 +197,7 @@ WEBHOOK_SERVER_PORT = 8081
 
 # =============================================================================
 # TIME-OF-USE EXPENSIVE WINDOW (local hours)
-# Forecast pre-charge is suppressed while inside the window so the battery
+# Forecast pre-charge and charge_battery are suppressed inside the window so the battery
 # never force-charges from expensive grid power. Set both to -1 to disable.
 # Handles windows that wrap midnight (e.g. 22 -> 6).
 # Resolution order: local_config.py -> environment variable -> default.

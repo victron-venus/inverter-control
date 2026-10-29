@@ -44,10 +44,27 @@ are pruned on every check, including healthy checks. Legacy disable markers are
 cleared only after successfully requesting the service up. `WATCHDOG_ALERT_ONLY=1`
 does not issue supervisor commands.
 
-The GUI-configured TOU window suppresses automatic solar-forecast pre-charge,
-including requests queued before the window starts. A manual `charge_battery`
-selection through MQTT or the desktop is an explicit exception and remains
-effective during expensive hours until the operator turns it off.
+The GUI-configured TOU window suppresses solar-forecast pre-charge and the
+`charge_battery` switch from MQTT or the desktop, including requests queued
+before the window starts. The switch remains selected and resumes outside the
+window; `[CHG:TOU]` indicates suppressed charging. Ordinary grid regulation,
+solar charging, DVCC battery protections and explicit numeric setpoint overrides
+remain available. TOU settings and the GX timezone refresh on a background worker
+every 60 seconds. Forced charging waits for that worker's first valid snapshot
+and is blocked if the snapshot expires or the configured timezone is unknown.
+The hour boundary is checked on every charging cycle and again before writing,
+including while holding a repeated backup-meter sample.
+
+`minimize_charging` sends dump-load requests through a dedicated Home Assistant
+worker. The control loop only queues the latest intent; `[MC+queued:N]` and
+`[MC-queued:N]` report accepted requests, not confirmed device changes. Pending
+requests expire after five seconds, and a changed direction, disabled mode or
+loss of valid grid control cancels the remaining batch. An HTTP request already
+in flight cannot be recalled. Slow or unavailable Home Assistant does not delay
+the inverter setpoint write.
+When an accepted forced-charge setpoint crosses into the window, the controller
+removes its positive baseline before normal regulation resumes. This stop takes
+precedence over a positive configured minimum and reports `[CHG:limits-conflict]`.
 
 ```sh
 svstat /service/inverter-control /service/log-forwarder /service/watchdog

@@ -16,6 +16,7 @@ from inverter_control import homeassistant
 def test_failed_session_close_is_not_reported_as_success():
     client = object.__new__(homeassistant.HomeAssistantClient)
     client._thread = None
+    client._dump_load_thread = None
     client.request_stop = MagicMock()
     client._session = MagicMock()
     client._session.close.side_effect = OSError("close failed")
