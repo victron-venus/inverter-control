@@ -34,6 +34,7 @@ def test_precommit_ruff_uses_the_same_version_as_locked_ci():
 
 
 def test_installer_preflight_enforces_the_declared_dependency_floors():
+    """Keep the installer floors identical to the packaged runtime requirements."""
     project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
     floors = {}
     for requirement in project["dependencies"]:

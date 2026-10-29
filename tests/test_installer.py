@@ -399,6 +399,7 @@ def installer_preflight(tmp_path, env):
 
 @pytest.mark.parametrize("installed", ["42.0.5", "50.0.1", "50.0.2rc1", "50.0", "broken", None])
 def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, installed):
+    """Reject a stale or unreadable cryptography before any service stops."""
     package, _, env = fake_device(tmp_path)
     installed_version_stub(tmp_path, floor_versions(cryptography=installed))
     # Execute the real installer using only the isolated fake-device command PATH.
@@ -413,6 +414,7 @@ def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, instal
     "installed", ["2024.07.04", "2026.10.18", "2026.10.19rc1", "20261019", "broken", None]
 )
 def test_old_or_unreadable_certifi_version_precedes_service_stop(tmp_path, installed):
+    """Reject a stale or unreadable certifi before any service stops."""
     package, _, env = fake_device(tmp_path)
     installed_version_stub(tmp_path, floor_versions(certifi=installed))
     result = installer_preflight(tmp_path, env)
@@ -450,6 +452,7 @@ def test_supported_certifi_release_passes_actual_installer_preflight(tmp_path, i
 
 @pytest.mark.parametrize("installed", ["2.31.0", "2.34.1", "2.34.2rc1", "2342", "broken", None])
 def test_old_or_unreadable_requests_version_precedes_service_stop(tmp_path, installed):
+    """Reject a stale or unreadable requests before any service stops."""
     package, _, env = fake_device(tmp_path)
     installed_version_stub(tmp_path, floor_versions(requests=installed))
     result = installer_preflight(tmp_path, env)
@@ -475,6 +478,7 @@ def test_supported_requests_release_passes_actual_installer_preflight(tmp_path, 
 
 @pytest.mark.parametrize("installed", ["3.7", "3.14", "3.15rc1", "315", "broken", None])
 def test_old_or_unreadable_idna_version_precedes_service_stop(tmp_path, installed):
+    """Reject a stale or unreadable idna before any service stops."""
     package, _, env = fake_device(tmp_path)
     installed_version_stub(tmp_path, floor_versions(idna=installed))
     result = installer_preflight(tmp_path, env)
