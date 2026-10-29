@@ -60,6 +60,7 @@ def test_every_active_example_setting_is_loaded(monkeypatch):
         "GRID_BACKUP_MAX_AGE_SECONDS": 45.0,
         "GRID_BACKUP_RECOVERY_SECONDS": 7.0,
         "GRID_LOSS_HOLD_SECONDS": 3.0,
+        "TIMEZONE": "Europe/Berlin",
     }
     example = Path(config.__file__).parents[1] / "local_config.example.py"
     names = {

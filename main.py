@@ -208,8 +208,13 @@ def _mqtt_select_ess_mode(controller, bridge, payload):
 
 
 def _mqtt_safe_limits(controller, p):
+    from inverter_control.config import (  # pylint: disable=import-outside-toplevel
+        POWER_LIMIT_MAX,
+        POWER_LIMIT_MIN,
+    )
+
     try:
-        values = (p.get("min", -2300), p.get("max", 2250))
+        values = (p.get("min", POWER_LIMIT_MIN), p.get("max", POWER_LIMIT_MAX))
         if any(
             type(value) is bool or (type(value) is float and not value.is_integer())
             for value in values

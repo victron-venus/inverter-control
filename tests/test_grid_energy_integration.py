@@ -328,7 +328,6 @@ def test_timezone_repair_preserves_control_and_battery_cache(victron):
         victron._maintain_timezone_subscriptions()
         assert victron._tz_name == ZONE
         assert victron._local_now().tzinfo.key == ZONE
-        victron.get_local_hour()
         victron._on_name_owner_changed(SETTINGS_SERVICE, ":1.1", "")
         assert victron._tz_name == ZONE
         assert victron._local_now().tzinfo.key == ZONE

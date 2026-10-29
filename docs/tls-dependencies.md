@@ -75,10 +75,13 @@ system Python default; an invalid or broken selection is an error, not a request
 to fall back.
 
 Create a new environment directly at its final, versioned path; do not move or
-modify an environment used by running services. For example:
+modify an environment used by running services. Replace `<version>` below with
+the reviewed release version (for example, `"$(cat version)"` from that
+checkout); the path must match the selector written in the next step. For
+example:
 
 ```sh
-python3 -m venv --copies --system-site-packages /data/inverter-control-runtimes/control-1.23.9
+python3 -m venv --copies --system-site-packages "/data/inverter-control-runtimes/control-<version>"
 ```
 
 The system-site option deliberately retains the firmware's native D-Bus/GI
@@ -91,7 +94,7 @@ the TLS archive alone does not contain Requests, MQTT or the other application
 dependencies. Install that closure only into the new environment:
 
 ```sh
-/data/inverter-control-runtimes/control-1.23.9/bin/python3 -m pip install \
+"/data/inverter-control-runtimes/control-<version>/bin/python3" -m pip install \
   --no-index --no-deps --ignore-installed --only-binary=:all: --require-hashes \
   --find-links=/path/to/verified-wheels -r /path/to/verified-runtime-requirements.txt
 ```

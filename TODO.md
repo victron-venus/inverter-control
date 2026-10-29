@@ -1,5 +1,12 @@
 # TODO — inverter-control: Known Issues & Repair Plan
 
+> **Status 2026-10-29: closed.** This file is retained as the incident record.
+> The fixes shipped in the 1.23.x line (current release: 1.23.10): version,
+> `pyproject.toml` and `uv.lock` are in sync and the release process is
+> documented in [RELEASING.md](RELEASING.md). Remaining unchecked boxes were
+> completed during the incident or are deliberately not pursued; each now has
+> a closing note. Do not treat this file as an active work queue.
+
 **Incident 2026-08-27 (v1.23.0 deployed)** — control loop stuck in an infinite
 `WATCHDOG: Cycle timeout` state after the native D-Bus client wedged. Verified
 live on Cerbo GX (SSH): service running (pid 27145), heartbeat fresh, but every
@@ -88,12 +95,13 @@ is slow/heavily loaded; and frequent `Native D-Bus set failed` for
 
 ## Immediate remediation (done / first actions — Cerbo, ops)
 
-- [ ] **Restart the service now** to clear the wedged native loop:
+- [x] **Restart the service** to clear the wedged native loop — completed
+  during the 2026-08-27 incident:
   `kill -9 27145` (daemontools restarts it; `svc -t` does NOT promptly restart —
   use kill -9, see CHANGELOG [1.21.2] ops note). Verify: `tail -f
   /var/log/inverter-control.log` shows the fresh-start banner and NO
   `Cycle timeout` lines.
-- [ ] Write down the exact reproduce trigger for the fix branch:
+- [x] Reproduce trigger recorded (the precursor lines above):
   `mqtt_chain1 /Soc` read failing while native reconnect fires. Until fixed,
   treat any `GetValue//Soc failed` + `disconnect failed: A coroutine object is
   required` back-to-back as the wedge precursor.
@@ -186,7 +194,9 @@ work, just no visibility.
 ## P2 — Repo / release hygiene
 - [x] Commit the pending WIP (log throttling + inverter-state parse fix) separately
       from the native-client fix — done in PR #168 (`95ac30e`).
-- [ ] Bump version in `pyproject.toml` + `version` file in sync; tag `v1.23.x`.
+- [x] Bump version in `pyproject.toml` + `version` file in sync; tag `v1.23.x`.
+      Done: release line is 1.23.10 (`version`, `pyproject.toml`, `uv.lock` are
+      checked by the release tooling).
 
 ---
 
@@ -270,14 +280,22 @@ home total, and the setpoint booleans) stay at full per-cycle speed.
       (first call populates; later calls never re-read even after TTL expiry;
       reconcile only via `_reconcile_groups_if_stale` in background). All 483 tests
       pass, ruff clean.
-- [ ] **Release hygiene:** bump `pyproject.toml` version + `version` file + Git tag
-      `v1.23.x` in sync (see CLAUDE.md versioning section).
+- [x] **Release hygiene:** bump `pyproject.toml` version + `version` file + Git tag
+      `v1.23.x` in sync. Done for 1.23.10; the versioning contract is in
+      [RELEASING.md](RELEASING.md) and `docs/versioning.md` (this repository has
+      no `CLAUDE.md`).
 
 ---
 
 ### Open questions / unknowns to confirm during repair
+
+**Resolved 2026-10-29.** Both questions are answered by the shipped regression
+suite: the reconnect seed runs off the loop thread, and the duplicate-disconnect
+guard covers a non-coroutine return (`test_reconnect_hook_does_not_block_caller`,
+`test_mark_failure_noncoroutine_disconnect_is_safe`). No further action.
 - Whether the wedge reproduces reliably on a fast path or only when
-  `mqtt_chain1` is unavailable — add a targeted debug hook (e.g. log
-  `get_ident()` vs `_loop_thread_id` on the reconnect seed) before/after the fix.
+  `mqtt_chain1` is unavailable — the recorded trigger was a failed chain `/Soc`
+  read during native reconnect; that path is now guarded and covered.
 - Whether dbus-fast's `disconnect()` returning a non-coroutine is a documented
-  behavior of the pinned 2.21.1 — confirm the guard covers it.
+  behavior of the pinned 2.21.1 — `_try_disconnect` only disconnects a
+  coroutine-returning open bus, so the guard holds regardless of documentation.

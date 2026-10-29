@@ -353,7 +353,7 @@ exec(compile(sys.stdin.read(),"installer-preflight","exec"))
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
 
 
-def installed_crypto_version_stub(tmp_path, installed):
+def installed_version_stub(tmp_path, versions):
     """Run the actual updater preflight in a child with controlled package metadata."""
     import sys
 
@@ -361,23 +361,20 @@ def installed_crypto_version_stub(tmp_path, installed):
     python.write_text(f"""#!{sys.executable}
 import importlib.metadata as metadata
 import sys
-release = {installed!r}
+versions = {versions!r}
 def installed_version(name):
-    if release is None:
-        raise metadata.PackageNotFoundError("synthetic missing metadata")
-    return release
+    if name not in versions or versions[name] is None:
+        raise metadata.PackageNotFoundError("synthetic missing metadata for " + name)
+    return versions[name]
 metadata.version=installed_version
 sys.argv.pop(0)
 exec(compile(sys.stdin.read(),"installer-preflight","exec"))
 """)
 
 
-@pytest.mark.parametrize("installed", ["42.0.5", "50.0.1", "50.0.2rc1", "50.0", "broken", None])
-def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, installed):
-    package, _, env = fake_device(tmp_path)
-    installed_crypto_version_stub(tmp_path, installed)
-    # Execute the real installer using only the isolated fake-device command PATH.
-    result = subprocess.run(  # nosec B603, B607
+def installer_preflight(tmp_path, env):
+    package = tmp_path / "data/inverter-control"
+    return subprocess.run(  # nosec B603, B607
         ["sh", "update.sh", str(package)],
         cwd=package,
         env=env,
@@ -385,8 +382,32 @@ def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, instal
         text=True,
         check=False,
     )
+
+
+@pytest.mark.parametrize("installed", ["42.0.5", "50.0.1", "50.0.2rc1", "50.0", "broken", None])
+def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, {"cryptography": installed, "certifi": "2026.10.19"})
+    # Execute the real installer using only the isolated fake-device command PATH.
+    result = installer_preflight(tmp_path, env)
     assert result.returncode != 0
     assert "50.0.2 is required" in result.stderr or "synthetic missing metadata" in result.stderr
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize(
+    "installed", ["2024.07.04", "2026.10.18", "2026.10.19rc1", "20261019", "broken", None]
+)
+def test_old_or_unreadable_certifi_version_precedes_service_stop(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, {"cryptography": "50.0.2", "certifi": installed})
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode != 0
+    assert (
+        "certifi stable version >= 2026.10.19 is required" in result.stderr
+        or "synthetic missing metadata" in result.stderr
+    )
     assert not (tmp_path / "commands").exists()
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
 
@@ -394,16 +415,20 @@ def test_old_or_unreadable_crypto_version_precedes_service_stop(tmp_path, instal
 @pytest.mark.parametrize("installed", ["50.0.2", "50.0.10", "51.0.0"])
 def test_supported_crypto_release_passes_actual_installer_preflight(tmp_path, installed):
     package, _, env = fake_device(tmp_path)
-    installed_crypto_version_stub(tmp_path, installed)
+    installed_version_stub(tmp_path, {"cryptography": installed, "certifi": "2026.10.19"})
     # Execute the real installer using only the isolated fake-device command PATH.
-    result = subprocess.run(  # nosec B603, B607
-        ["sh", "update.sh", str(package)],
-        cwd=package,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    assert "installed version" in result.stdout
+    assert "svc" in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["2026.10.19", "2026.10.24", "2027.1.1"])
+def test_supported_certifi_release_passes_actual_installer_preflight(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, {"cryptography": "50.0.2", "certifi": installed})
+    result = installer_preflight(tmp_path, env)
     assert result.returncode == 0, result.stderr
     assert "installed version" in result.stdout
     assert "svc" in (tmp_path / "commands").read_text()

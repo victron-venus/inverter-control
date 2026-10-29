@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.23.10] - Candidate series, updated 2026-10-29
 
+### Added
+
+- Allow the display-only console timezone to be overridden with `TIMEZONE` in `local_config.py`. The TOU expensive-hours policy still follows the GX `/Settings/System/TimeZone` setting; an invalid or unavailable display zone prints labelled UTC timestamps.
+
 ### Fixed
 
-- Require `certifi>=2026.10.19` in both runtime installation manifests so an unlocked installation cannot retain the older certificate bundle. The reviewed lockfile already selects this version.
+- Require `certifi>=2026.10.19` in both runtime installation manifests and reject an older or unreadable certifi in the installer preflight before services stop, so an update cannot report success while the selected interpreter still uses the affected emSign roots. The reviewed lockfile already selects this version; an existing runtime still has to be rebuilt or updated as described under Upgrade.
 - Apply the configured expensive-hours window to `charge_battery` from MQTT, desktop and local controls as well as forecast pre-charge. Keep the requested flag so charging can resume outside the window while ordinary regulation continues during it.
 - Recheck forced charging at the write boundary and when holding a backup-meter sample, so a previously calculated charging command cannot bypass a new expensive interval. Refresh tariff settings and timezone in the background; unavailable or expired policy data pauses forced charging.
 - Move Home Assistant dump-load commands used by `minimize_charging` off the control cycle. Bound pending work and discard superseded or expired requests so an unavailable Home Assistant does not stall grid regulation or replay an old command backlog.
 - Reject non-finite or out-of-range water/vehicle percentages and invalid pump/valve states as unknown readings. Preserve valid wallbox power when vehicle SoC is invalid, and use monotonic clocks for water/EV cache expiry.
+- Persist the battery daily-energy accumulator with a calendar date as well as the legacy day-of-year. A file from a previous year that shares yesterday's day-of-year is no longer promoted to "yesterday" after a new-year restart; legacy files remain readable.
 - Keep console rendering available with explicitly labelled UTC timestamps if the configured display timezone cannot be loaded; invalid water/vehicle percentages display as unknown. The display fallback does not change TOU policy.
 - Align device requirements with package metadata by including the required MQTT client and removing unused `msgpack`. Align pre-commit Ruff with the locked CI version, and correct outdated EV-control and release-evidence documentation.
 

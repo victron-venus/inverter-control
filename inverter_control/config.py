@@ -276,7 +276,7 @@ def __getattr__(name: str):
 
 
 # Power limits for outlet protection (Watts)
-POWER_LIMIT_MAX = 2250  # Maximum feed-in (positive = charging battery)
+POWER_LIMIT_MAX = 2250  # Maximum import/charging (positive = charging battery)
 POWER_LIMIT_MIN = -2300  # Maximum export (negative = discharging to grid)
 
 # Control loop timing
@@ -393,8 +393,10 @@ INVERTER_EFFICIENCY = 0.94  # 94% efficiency (adjust based on your system)
 
 HA_TIMEOUT = 2.0  # seconds
 
-# Timezone for console output
-TIMEZONE = "America/Los_Angeles"
+# Display-only console timezone (IANA name). TOU policy always uses the GX
+# /Settings/System/TimeZone setting; an invalid or unavailable display zone
+# falls back to an explicitly labelled UTC timestamp.
+TIMEZONE = _import_local_config("TIMEZONE", "America/Los_Angeles")
 
 # =============================================================================
 # DVCC (Dynamic Voltage & Current Control) - Battery Protection
@@ -450,7 +452,6 @@ DVCC_DCL_CHANGE_RATE = 15.0  # Max DCL change per second (A/s)
 
 # DVCC Cell Max Voltage (for CVL calculation)
 DVCC_CELL_MAX_VOLTAGE = 3.65  # V - Max cell voltage for CVL
-DVCC_CELLS_PER_BMS = 4  # Cells per BMS module
 
 # =============================================================================
 # INVERTER STATES (VE.Bus)
@@ -578,6 +579,7 @@ def _validate_config():
         _check_type("HA_SENSORS", HA_SENSORS, dict),
         _check_type("VUE_SENSORS", VUE_SENSORS, dict),
         _check_type("HA_DUMP_LOADS", HA_DUMP_LOADS, (list, tuple)),
+        _check_type("TIMEZONE", TIMEZONE, str),
         _check_type("LOOP_INTERVAL", LOOP_INTERVAL, (int, float)),
         _check_type("POWER_LIMIT_MAX", POWER_LIMIT_MAX, (int, float)),
         _check_type("POWER_LIMIT_MIN", POWER_LIMIT_MIN, (int, float)),
