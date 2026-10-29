@@ -5,11 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.10] - 2026-10-24
+## [1.23.10] - Candidate series, updated 2026-10-29
 
 ### Fixed
 
 - Require `certifi>=2026.10.19` in both runtime installation manifests so an unlocked installation cannot retain the older certificate bundle. The reviewed lockfile already selects this version.
+- Apply the configured expensive-hours window to `charge_battery` from MQTT, desktop and local controls as well as forecast pre-charge. Keep the requested flag so charging can resume outside the window while ordinary regulation continues during it.
+- Recheck forced charging at the write boundary and when holding a backup-meter sample, so a previously calculated charging command cannot bypass a new expensive interval. Refresh tariff settings and timezone in the background; unavailable or expired policy data pauses forced charging.
+- Move Home Assistant dump-load commands used by `minimize_charging` off the control cycle. Bound pending work and discard superseded or expired requests so an unavailable Home Assistant does not stall grid regulation or replay an old command backlog.
 
 ### Changed
 
@@ -18,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrade
 
 Updating application files alone does not update a running Python environment. Prepare and validate the complete dependency set from this release's lockfile and authenticated TLS bundle in a new private runtime before the controlled service update. Do not replace the firmware's shared Python packages. Preserve the active configuration, site-meter binding, tariff, control modes, limits and override; retain the previous package and runtime selector for rollback. Verify the selected interpreter's certifi version, native D-Bus/GI imports and fresh telemetry after switching. There are no configuration or tariff format changes, and NoEV house-support behavior is unchanged from 1.23.9.
+
+Review the GUI expensive-hours settings before enabling `charge_battery`: it no longer bypasses that window. Explicit numeric setpoints and timed setpoint overrides retain their operator-controlled behavior; battery safety and ordinary solar/house regulation remain separate from this forced-charge policy. Verify the exact beta on the target device before relying on it for unattended control.
 
 ### Security
 

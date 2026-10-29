@@ -1782,6 +1782,16 @@ class VictronDBus:
         """Hour-of-day in the user's timezone (/Settings/System/TimeZone)."""
         return self._local_now().hour
 
+    def get_configured_timezone(self) -> ZoneInfo | None:
+        """Refresh the GX timezone on a background caller; unknown blocks TOU charge."""
+        name = self._dbus_get(SETTINGS_SERVICE, "/Settings/System/TimeZone")
+        if not name:
+            return None
+        try:
+            return ZoneInfo(name)
+        except (ValueError, KeyError):
+            return None
+
     @staticmethod
     def _tou_setting_int(raw: str | None) -> int | None:
         if raw is None:

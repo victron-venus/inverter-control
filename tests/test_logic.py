@@ -328,6 +328,24 @@ class TestLogic(unittest.TestCase):
         self.assertGreater(result.setpoint, 0)
         self.assertIn("[CHG]", result.flags)
 
+    def test_tou_blocks_force_charge_but_preserves_solar_and_discharge_protection(self):
+        state = self.get_base_state()
+        state.charge_battery = True
+        state.charge_battery_blocked = True
+        state.only_charging = True
+        state.gt = 1000
+
+        result = self.calculator.calculate(state)
+        self.assertEqual(result.setpoint, 0)  # only_charging still forbids battery discharge.
+        self.assertIn("[CHG:TOU]", result.flags)
+        self.assertNotIn("[CHG]", result.flags)
+
+        state.pv_inverter_total = 500
+        state.no_feed = True
+        result = self.calculator.calculate(state)
+        self.assertGreater(result.setpoint, 0)  # Absorbing solar is not forced grid charging.
+        self.assertLess(result.setpoint, 500)
+
     def test_software_fuse_delta_limit(self):
         """Verify that setpoint changes are clamped by SETPOINT_DELTA_LIMIT"""
         state = self.get_base_state()
