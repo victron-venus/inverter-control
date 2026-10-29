@@ -75,6 +75,11 @@ from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, r
 release = re.fullmatch(r"(\d{1,6})\.(\d{1,6})\.(\d{1,6})", version("cryptography"), re.ASCII)
 if release is None or tuple(map(int, release.groups())) < (50, 0, 2):
     raise RuntimeError("cryptography stable version >= 50.0.2 is required before updating")
+# The 1.23.10 security fix relies on current CA roots; a stale package would
+# silently keep the affected emSign roots while the update reports success.
+certifi_release = re.fullmatch(r"(\d{1,6})\.(\d{1,6})\.(\d{1,6})", version("certifi"), re.ASCII)
+if certifi_release is None or tuple(map(int, certifi_release.groups())) < (2026, 10, 19):
+    raise RuntimeError("certifi stable version >= 2026.10.19 is required before updating")
 root = pathlib.Path(sys.argv[1])
 for source in [root / "main.py", root / "runtime_python.py", *(root / "inverter_control").glob("*.py")]:
     compile(source.read_bytes(), str(source), "exec")

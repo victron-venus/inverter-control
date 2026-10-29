@@ -1778,10 +1778,6 @@ class VictronDBus:
                 self._tz_name = ""
         return datetime.fromtimestamp(time.time()).astimezone()
 
-    def get_local_hour(self) -> int:
-        """Hour-of-day in the user's timezone (/Settings/System/TimeZone)."""
-        return self._local_now().hour
-
     def get_configured_timezone(self) -> ZoneInfo | None:
         """Refresh the GX timezone on a background caller; unknown blocks TOU charge."""
         name = self._dbus_get(SETTINGS_SERVICE, TIME_ZONE_PATH)
@@ -1946,6 +1942,7 @@ class VictronDBus:
                 json.dump(
                     {
                         "date": self._battery_energy_date,
+                        "date_iso": self._local_now().date().isoformat(),
                         "charge": self._cached_battery_daily_energy[0],
                         "discharge": self._cached_battery_daily_energy[1],
                         "y_charge": self._battery_energy_yesterday[0],
@@ -1965,8 +1962,26 @@ class VictronDBus:
                 data = json.load(f)
             charge = float(data.get("charge", 0.0))
             discharge = float(data.get("discharge", 0.0))
-            date = int(data.get("date", 0))
             today = self._local_today()
+            today_date = self._local_now().date()
+            date_iso = data.get("date_iso")
+            if isinstance(date_iso, str):
+                # Calendar dates from this version; a day-of-year alone cannot
+                # distinguish 1 January from the same date in a prior year.
+                if date_iso == today_date.isoformat():
+                    self._cached_battery_daily_energy = (charge, discharge)
+                    self._battery_energy_date = today
+                    self._battery_energy_yesterday = (
+                        float(data.get("y_charge", 0.0)),
+                        float(data.get("y_discharge", 0.0)),
+                    )
+                elif date_iso == (today_date - timedelta(days=1)).isoformat():
+                    self._battery_energy_yesterday = (charge, discharge)
+                    self._battery_energy_date = today  # skip rollover (would zero yesterday)
+                # Older files are ignored rather than misread as yesterday.
+                return
+            # Legacy files store only the day-of-year; keep reading them.
+            date = int(data.get("date", 0))
             if date == today:
                 self._cached_battery_daily_energy = (charge, discharge)
                 self._battery_energy_date = date
@@ -1974,7 +1989,7 @@ class VictronDBus:
                     float(data.get("y_charge", 0.0)),
                     float(data.get("y_discharge", 0.0)),
                 )
-            elif date == (self._local_now() - timedelta(days=1)).timetuple().tm_yday:
+            elif date == (today_date - timedelta(days=1)).timetuple().tm_yday:
                 self._battery_energy_yesterday = (charge, discharge)
                 self._battery_energy_date = today  # skip rollover (would zero yesterday)
         except (OSError, ValueError, TypeError):

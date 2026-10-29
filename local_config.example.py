@@ -27,6 +27,15 @@ HA_TOKEN = ""  # nosec B105 - empty opt-in configuration, not a credential
 # (fallback: eth0 MAC address). No need to configure it here.
 
 # =============================================================================
+# CONSOLE DISPLAY TIMEZONE
+# =============================================================================
+# Display only. The TOU expensive-hours policy always follows the GX
+# /Settings/System/TimeZone setting, independent of this value. Use an IANA name
+# available to the runtime; an invalid or unavailable zone prints UTC timestamps
+# with an explicit label instead of failing control.
+TIMEZONE = "America/Los_Angeles"
+
+# =============================================================================
 # TIME-OF-USE EXPENSIVE GRID WINDOW (local hours)
 # =============================================================================
 # Solar-forecast pre-charge and the charge_battery switch are suppressed while

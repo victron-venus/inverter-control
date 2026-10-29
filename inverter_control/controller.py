@@ -1412,8 +1412,9 @@ class InverterController:
         broadcast_line(line)
         _stage("console_render")
 
-        # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL,
-        # not every cycle. It feeds the web UI / MQTT (fresh enough at 2 Hz);
+        # Rebuild the full telemetry dict at most every UPDATE_STATE_INTERVAL
+        # (4 s), not every cycle. It feeds the web UI / MQTT (0.25 Hz is fresh
+        # enough for display-only values);
         # the control decision already ran in calculate_setpoint above.
         if time.monotonic() - self._last_update_state_time >= UPDATE_STATE_INTERVAL:
             self.update_state(sys_data, setpoint)

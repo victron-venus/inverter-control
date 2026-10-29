@@ -1120,3 +1120,37 @@ def test_blocked_performance_diagnostics_do_not_delay_state_update(blocked_stage
         finally:
             release.set()
             controller.performance.stop()
+
+
+def test_toggle_ess_mode_writes_and_returns_observed_mode():
+    controller, victron, _, _ = _make_controller()
+    optimized = {"is_external": False, "mode_name": "Optimized"}
+    external = {"is_external": True, "mode_name": "External control"}
+    victron.get_ess_mode.side_effect = [optimized, external]
+    victron.set_ess_mode.return_value = True
+
+    assert controller.toggle_ess_mode() == external
+    victron.set_ess_mode.assert_called_once_with(external=True)
+
+
+def test_toggle_ess_mode_keeps_current_mode_when_write_fails():
+    controller, victron, _, _ = _make_controller()
+    current = {"is_external": False, "mode_name": "Optimized"}
+    victron.get_ess_mode.return_value = current
+    victron.set_ess_mode.return_value = False
+
+    assert controller.toggle_ess_mode() == current
+    assert victron.set_ess_mode.call_count == 1
+
+
+def test_run_cycle_records_error_without_stopping_the_loop():
+    controller, victron, _, _ = _make_controller()
+    victron.get_system_data.side_effect = RuntimeError("synthetic read failure")
+    controller.metrics.record_cycle = MagicMock()
+
+    with patch(f"{_MOD}.log_exception") as log_exception:
+        assert controller.run_cycle() is True
+
+    log_exception.assert_called_once()
+    controller.metrics.record_cycle.assert_called_once()
+    assert controller.submeter_trim.status()["reason"] == "cycle_error"
