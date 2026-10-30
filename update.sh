@@ -80,7 +80,7 @@ def require_stable(name, minimum):
     # dev releases do not match, so they stay rejected.
     pattern = (
         r"(\d{1,6}(?:\.\d{1,6})+)"
-        r"(?:\.post(\d{1,6}))?"
+        r"(?:(?:[._-]?(?:post|rev|r)[._-]?)(\d{0,6})|-(\d{1,6}))?"
         r"(?:\+([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*))?"
     )
     match = re.fullmatch(pattern, version(name), re.ASCII)

@@ -533,7 +533,15 @@ def test_supported_paho_release_passes_actual_installer_preflight(tmp_path, inst
 
 
 @pytest.mark.parametrize(
-    "installed", ["2.0.0.post1", "2.0.0+vendor", "2.0.0.post1+vendor", "2.0.0.1"]
+    "installed",
+    [
+        "2.0.0.post1",
+        "2.0.0.post",
+        "2.0.0-1",
+        "2.0.0+vendor",
+        "2.0.0.post1+vendor",
+        "2.0.0.1",
+    ],
 )
 def test_pep440_stable_paho_variants_pass_actual_installer_preflight(tmp_path, installed):
     """Post/local releases satisfy >=2.0.0 and must not block an update."""
