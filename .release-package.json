@@ -11,7 +11,13 @@
     "local_config.example.py",
     "uv.lock",
     "install.py",
-    "runtime_python.py"
+    "runtime_python.py",
+    "scripts",
+    "deploy.sh",
+    ".pre-commit-config.yaml",
+    ".release-package.json",
+    ".release-policy.json",
+    ".github"
   ],
   "include": [
     "main.py",
@@ -42,11 +48,16 @@
     "LICENSE",
     ".python-version",
     "LOGIC.md",
-    ".github/docs",
     ".bestpractices.json",
     "install.py",
     "runtime_python.py",
+    "deploy.sh",
+    "scripts",
     "Makefile",
-    "tests"
+    "tests",
+    ".pre-commit-config.yaml",
+    ".release-package.json",
+    ".release-policy.json",
+    ".github"
   ]
 }

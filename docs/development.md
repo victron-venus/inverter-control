@@ -140,6 +140,16 @@ building. Untracked files, including a private `local_config.py`, are not packag
 inputs. Do not force-add secrets to make them part of a package. The output
 directory must be empty; use a new directory for another build.
 
+The archive includes the test suite and its tracked fixtures: `scripts/`,
+`.github/workflows`, the release and workflow contract tests, the pre-commit
+configuration and `deploy.sh`. The suite can therefore run from an extracted
+archive without a separate source checkout:
+
+```bash
+uv sync --locked --all-extras
+uv run --locked pytest tests .github/release-tests .github/workflow-tests
+```
+
 This is a local build check. It does not allocate an official candidate version,
 publish a release, or deploy to a device. Published candidates and stable
 promotion must use the [release runbook](release-workflow.md), including its
