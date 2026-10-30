@@ -285,8 +285,8 @@ _power_limits = load_power_limits(
     _import_local_config("POWER_LIMIT_MIN", DEFAULT_MIN),
     _import_local_config("POWER_LIMIT_MAX", DEFAULT_MAX),
 )
-POWER_LIMIT_MIN = _power_limits["min"]  # Negative = export/discharge
-POWER_LIMIT_MAX = _power_limits["max"]  # Positive = import/charge
+POWER_LIMIT_MIN = _power_limits["min"]  # Export or discharge uses negative watts.
+POWER_LIMIT_MAX = _power_limits["max"]  # Import or charge uses positive watts.
 
 # Control loop timing
 LOOP_INTERVAL = 0.33  # seconds (3 times per second)

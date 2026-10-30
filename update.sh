@@ -158,25 +158,25 @@ fi
 # In particular, a release's example must not hide existing site limits and a
 # SetupHelper copy must not replace the running configuration before validation.
 if [ "$USE_SETUP_CONFIG" = "1" ] && [ -f "$SETUP_OPTIONS_DIR/local_config.py" ]; then
-    LIMIT_CONFIG="$SETUP_OPTIONS_DIR/local_config.py"
+    LIMIT_CONFIG_SOURCE=setup
 elif [ "$PUSH_LOCAL_CONFIG" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; then
-    LIMIT_CONFIG="$SRC_DIR/local_config.py"
+    LIMIT_CONFIG_SOURCE=source
 elif [ -f "$INSTALL_DIR/local_config.py" ]; then
-    LIMIT_CONFIG="$INSTALL_DIR/local_config.py"
+    LIMIT_CONFIG_SOURCE=installed
 elif [ -f "$INSTALL_DIR/secrets.py" ]; then
-    LIMIT_CONFIG="$INSTALL_DIR/secrets.py"
+    LIMIT_CONFIG_SOURCE=legacy
 else
-    LIMIT_CONFIG="$SRC_DIR/local_config.example.py"
+    LIMIT_CONFIG_SOURCE=example
 fi
 
 if [ -n "${POWER_LIMIT_MIN+x}" ]; then
-    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --local-config "$LIMIT_CONFIG" \
+    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --config-source "$LIMIT_CONFIG_SOURCE" \
         --min "$POWER_LIMIT_MIN" --max "$POWER_LIMIT_MAX" --install
 elif [ "$CONFIGURE_POWER_LIMITS" = "1" ]; then
-    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --local-config "$LIMIT_CONFIG" \
+    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --config-source "$LIMIT_CONFIG_SOURCE" \
         --interactive --install
 else
-    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --local-config "$LIMIT_CONFIG" --check
+    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --config-source "$LIMIT_CONFIG_SOURCE" --check
 fi
 
 # Record freshness before any downtime; an old heartbeat cannot prove recovery.

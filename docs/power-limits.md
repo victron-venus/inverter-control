@@ -95,14 +95,17 @@ values:
 
 ```sh
 cd /data/inverter-control
-python3 inverter_control/power_limits.py --local-config local_config.py --show
-python3 inverter_control/power_limits.py --local-config local_config.py --interactive --install
+python3 inverter_control/power_limits.py --config-source installed --show
+python3 inverter_control/power_limits.py --config-source installed --interactive --install
 # Or:
 python3 inverter_control/power_limits.py --min -1800 --max 2000 --install
 ```
 
-The standalone tool reads the two local settings as literal integers without
-executing the private Python configuration. Disk-only edits take effect at the
+The standalone tool accepts named configuration sources: `installed` (the
+default), `setup` (the persistent SetupHelper copy), `source` (beside the
+installation package), `legacy` (`secrets.py`), `example`, or `defaults` (no local
+file). It reads the two local settings as literal integers without executing
+the private Python configuration. Disk-only edits take effect at the
 next controller startup; the tool does not restart the service or change live
 hardware. Preserve and restore active operating-mode flags during a manual
 restart, as described in the installation and upgrade guidance.

@@ -80,7 +80,7 @@ if [[ -n "${POWER_LIMIT_MIN+x}${POWER_LIMIT_MAX+x}" ]]; then
         exit 1
     fi
     limit_json=$(python3 "$SCRIPT_DIR/inverter_control/power_limits.py" \
-        --local-config /dev/null --min "$POWER_LIMIT_MIN" --max "$POWER_LIMIT_MAX" --check)
+        --config-source defaults --min "$POWER_LIMIT_MIN" --max "$POWER_LIMIT_MAX" --check)
     canonical_limits=$(printf '%s\n' "$limit_json" | python3 -c \
         'import json,sys; limits=json.load(sys.stdin); print(int(limits["min"]), int(limits["max"]))')
     read -r deployment_min deployment_max <<< "$canonical_limits"

@@ -14,6 +14,10 @@ from inverter_control import power_limits as limits
 def setup_file(monkeypatch, tmp_path):
     path = tmp_path / "setupOptions" / "power-limits.json"
     monkeypatch.setattr(limits, "SETUP_FILE", path)
+    monkeypatch.setattr(limits, "LOCAL_CONFIG", tmp_path / "installed" / "local_config.py")
+    monkeypatch.setattr(limits, "SETUP_CONFIG", tmp_path / "setup" / "local_config.py")
+    monkeypatch.setattr(limits, "LEGACY_CONFIG", tmp_path / "installed" / "secrets.py")
+    monkeypatch.setattr(limits, "SOURCE_ROOT", tmp_path / "source")
     return path
 
 
@@ -121,10 +125,11 @@ def test_dynamic_assignments_rejected(setup_file, tmp_path, source):
         limits.configured_power_limits(config)
 
 
-def test_syntax_error_does_not_echo_secret_source(setup_file, tmp_path, capsys):
+def test_syntax_error_does_not_echo_secret_source(setup_file, tmp_path, capsys, monkeypatch):
     config = tmp_path / "local_config.py"
     config.write_text("PRIVATE_EXAMPLE = 'do-not-display\n")
-    assert limits.main(["--local-config", str(config), "--check"]) == 1
+    monkeypatch.setattr(limits, "LOCAL_CONFIG", config)
+    assert limits.main(["--check"]) == 1
     assert "do-not-display" not in capsys.readouterr().err
 
 
@@ -149,7 +154,8 @@ def test_blank_wizard_preserves_source(setup_file, tmp_path, monkeypatch):
     config = tmp_path / "local_config.py"
     config.write_text("POWER_LIMIT_MIN=-1500\nPOWER_LIMIT_MAX=1600\n")
     monkeypatch.setattr("builtins.input", lambda _: "")
-    assert limits.main(["--local-config", str(config), "--interactive", "--install"]) == 0
+    monkeypatch.setattr(limits, "LOCAL_CONFIG", config)
+    assert limits.main(["--interactive", "--install"]) == 0
     assert not setup_file.exists()
 
 
@@ -158,7 +164,8 @@ def test_wizard_edit_persists_pair(setup_file, tmp_path, monkeypatch):
     config.write_text("POWER_LIMIT_MIN=-1500\nPOWER_LIMIT_MAX=1600\n")
     values = iter(["", "1700"])
     monkeypatch.setattr("builtins.input", lambda _: next(values))
-    assert limits.main(["--local-config", str(config), "--interactive", "--install"]) == 0
+    monkeypatch.setattr(limits, "LOCAL_CONFIG", config)
+    assert limits.main(["--interactive", "--install"]) == 0
     assert limits.load_power_limits() == {"min": -1500, "max": 1700}
 
 
@@ -257,11 +264,12 @@ def test_slow_persistence_releases_actuator_lock_and_serializes_edits(setup_file
 
 
 @pytest.mark.parametrize("explicit", [False, True])
-def test_bad_local_syntax_rejected_even_with_override(setup_file, tmp_path, explicit):
+def test_bad_local_syntax_rejected_even_with_override(setup_file, tmp_path, explicit, monkeypatch):
     config = tmp_path / "local_config.py"
     config.write_text("return 1\n")
     limits.write_power_limits({"min": -900, "max": 900})
-    args = ["--local-config", str(config), "--check"]
+    monkeypatch.setattr(limits, "LOCAL_CONFIG", config)
+    args = ["--check"]
     if explicit:
         args.extend(["--min", "-800", "--max", "800"])
     assert limits.main(args) == 1
@@ -273,3 +281,45 @@ def test_valid_persistent_file_can_shadow_dynamic_local_limits(setup_file, tmp_p
     config.write_text('POWER_LIMIT_MIN = int("-800")\nPOWER_LIMIT_MAX = 3001\n')
     limits.write_power_limits({"min": -900, "max": 900})
     assert limits.configured_power_limits(config) == {"min": -900, "max": 900}
+
+
+@pytest.mark.parametrize("source", limits.CONFIG_SOURCES)
+def test_cli_reads_only_the_selected_supported_source(setup_file, source, capsys):
+    paths = {
+        "installed": limits.LOCAL_CONFIG,
+        "setup": limits.SETUP_CONFIG,
+        "source": limits.SOURCE_ROOT / "local_config.py",
+        "legacy": limits.LEGACY_CONFIG,
+        "example": limits.SOURCE_ROOT / "local_config.example.py",
+    }
+    pairs = {}
+    for index, (name, path) in enumerate(paths.items()):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pair = {"min": -1000 - index, "max": 1000 + index}
+        path.write_text(f"POWER_LIMIT_MIN={pair['min']}\nPOWER_LIMIT_MAX={pair['max']}\n")
+        pairs[name] = pair
+    pairs["defaults"] = {"min": -2300, "max": 2250}
+    assert limits.main(["--config-source", source, "--check"]) == 0
+    assert json.loads(capsys.readouterr().out) == pairs[source]
+    assert not setup_file.exists()
+
+
+def test_cli_rejects_arbitrary_file_paths_before_reading(setup_file):
+    with patch.object(limits.Path, "read_text", side_effect=AssertionError("unexpected read")):
+        with pytest.raises(SystemExit):
+            limits.main(["--config-source", "/arbitrary/local_config.py", "--check"])
+        with pytest.raises(SystemExit):
+            limits.main(["--local-config", "/arbitrary/local_config.py", "--check"])
+        with pytest.raises(ValueError, match="Unsupported"):
+            limits.config_source_path("/arbitrary/local_config.py")
+
+
+def test_explicit_defaults_source_does_not_read_local_files(setup_file, capsys):
+    with patch.object(limits.Path, "read_text", side_effect=AssertionError("unexpected read")):
+        assert (
+            limits.main(
+                ["--config-source", "defaults", "--min", "-900", "--max", "1000", "--check"]
+            )
+            == 0
+        )
+    assert json.loads(capsys.readouterr().out) == {"min": -900, "max": 1000}

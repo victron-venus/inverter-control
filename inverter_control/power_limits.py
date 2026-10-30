@@ -11,6 +11,7 @@ import os
 import stat
 import sys
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 DEFAULT_MIN = -2300
@@ -18,6 +19,10 @@ DEFAULT_MAX = 2250
 ABSOLUTE_LIMIT = 3000
 SETUP_FILE = Path("/data/setupOptions/inverter-control/power-limits.json")
 LOCAL_CONFIG = Path("/data/inverter-control/local_config.py")
+SETUP_CONFIG = Path("/data/setupOptions/inverter-control/local_config.py")
+LEGACY_CONFIG = Path("/data/inverter-control/secrets.py")
+SOURCE_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_SOURCES = ("installed", "setup", "source", "legacy", "example", "defaults")
 MAX_BYTES = 4096
 
 
@@ -53,7 +58,7 @@ def read_power_limits(path: Path | None = None) -> dict[str, int] | None:
         raise ValueError(f"Power limits file exceeds {MAX_BYTES} bytes: {path}")
     try:
         data = json.loads(content)
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise ValueError(f"Invalid power limits JSON: {path}") from exc
     try:
         return _limits_object(data)
@@ -71,12 +76,8 @@ def write_power_limits(limits: dict[str, int], *, path=None) -> dict[str, int]:
     limits = _limits_object(limits)
     path = SETUP_FILE if path is None else Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        pass
-    else:
-        if not stat.S_ISREG(mode):
+    with suppress(FileNotFoundError):
+        if not stat.S_ISREG(path.lstat().st_mode):
             raise ValueError(f"Power limits must be a regular file: {path}")
     fd, temporary = tempfile.mkstemp(prefix=".power-limits-", dir=path.parent)
     try:
@@ -86,14 +87,31 @@ def write_power_limits(limits: dict[str, int], *, path=None) -> dict[str, int]:
             os.fsync(target.fileno())
         os.replace(temporary, path)
     finally:
-        try:
+        with suppress(FileNotFoundError):
             os.unlink(temporary)
-        except FileNotFoundError:
-            pass
     return limits
 
 
-def _local_config_tree(path: Path) -> ast.Module:
+def config_source_path(source: str) -> Path | None:
+    """Select a supported location; CLI text is never used as a filesystem path."""
+    if source == "installed":
+        return LOCAL_CONFIG
+    if source == "setup":
+        return SETUP_CONFIG
+    if source == "source":
+        return SOURCE_ROOT / "local_config.py"
+    if source == "legacy":
+        return LEGACY_CONFIG
+    if source == "example":
+        return SOURCE_ROOT / "local_config.example.py"
+    if source == "defaults":
+        return None
+    raise ValueError("Unsupported configuration source")
+
+
+def _local_config_tree(path: Path | None) -> ast.Module:
+    if path is None:
+        return ast.Module(body=[], type_ignores=[])
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
@@ -108,22 +126,29 @@ def _local_config_tree(path: Path) -> ast.Module:
     return tree
 
 
-def _local_limits_from_tree(tree: ast.Module, path: Path) -> dict[str, int]:
+def _assignment_parts(node):
+    if isinstance(node, ast.Assign):
+        return node.targets, node.value
+    if isinstance(node, ast.AnnAssign):
+        return [node.target], node.value
+    return [], None
+
+
+def _literal_limit(value, name: str, path: Path | None):
+    try:
+        return ast.literal_eval(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"{name} must be a literal integer in {path}") from exc
+
+
+def _local_limits_from_tree(tree: ast.Module, path: Path | None) -> dict[str, int]:
     names = {"POWER_LIMIT_MIN": DEFAULT_MIN, "POWER_LIMIT_MAX": DEFAULT_MAX}
     handled = set()
     for node in tree.body:
-        if isinstance(node, ast.Assign):
-            targets, value = node.targets, node.value
-        elif isinstance(node, ast.AnnAssign):
-            targets, value = [node.target], node.value
-        else:
-            continue
+        targets, value = _assignment_parts(node)
         for target in targets:
             if isinstance(target, ast.Name) and target.id in names:
-                try:
-                    names[target.id] = ast.literal_eval(value)
-                except (ValueError, TypeError) as exc:
-                    raise ValueError(f"{target.id} must be a literal integer in {path}") from exc
+                names[target.id] = _literal_limit(value, target.id, path)
                 handled.add(id(target))
     for node in ast.walk(tree):
         if (
@@ -141,7 +166,7 @@ def local_config_limits(path: Path) -> dict[str, int]:
     return _local_limits_from_tree(_local_config_tree(path), path)
 
 
-def configured_power_limits(local_config: Path) -> dict[str, int]:
+def configured_power_limits(local_config: Path | None) -> dict[str, int]:
     tree = _local_config_tree(local_config)
     selected = read_power_limits()
     return selected if selected is not None else _local_limits_from_tree(tree, local_config)
@@ -149,7 +174,12 @@ def configured_power_limits(local_config: Path) -> dict[str, int]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--local-config", type=Path, default=LOCAL_CONFIG)
+    parser.add_argument(
+        "--config-source",
+        choices=CONFIG_SOURCES,
+        default="installed",
+        help="Configuration location; defaults skips local configuration files",
+    )
     parser.add_argument("--min", type=int, dest="minimum", help="Minimum normal setpoint, watts")
     parser.add_argument("--max", type=int, dest="maximum", help="Maximum normal setpoint, watts")
     parser.add_argument("--interactive", action="store_true", help="Prompt using current values")
@@ -165,11 +195,12 @@ def main(argv=None) -> int:
     if args.interactive and not args.install:
         parser.error("--interactive requires --install")
     try:
+        local_config = config_source_path(args.config_source)
         if args.minimum is not None:
-            _local_config_tree(args.local_config)
+            _local_config_tree(local_config)
             limits = validate_power_limits(args.minimum, args.maximum)
         else:
-            limits = configured_power_limits(args.local_config)
+            limits = configured_power_limits(local_config)
         save = args.install
         if args.interactive:
             print("Normal-control power limits in watts: negative = export, positive = import.")
