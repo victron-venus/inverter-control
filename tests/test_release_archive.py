@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts import package_release
+from scripts import package_release, version_plan
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -61,7 +61,19 @@ def test_release_archive_contains_complete_installer_payload(tmp_path):
     # Test harness intentionally uses its fixture-controlled PATH.
     subprocess.run(["git", "add", "--", "."], cwd=tmp_path, check=True)  # nosec B603, B607
     (tmp_path / "local_config.py").write_text("OPERATOR_SETTING = 'local fixture'\n")
-    version = (tmp_path / "version").read_text().strip().removeprefix("v")
+    declared = (tmp_path / "version").read_text().strip().removeprefix("v")
+    base = re.match(r"\d+\.\d+\.\d+", declared)
+    assert base is not None
+    version = base.group(0)
+    if declared != version:
+        # Candidate archives carry the frozen full version; local package checks
+        # need the committed base metadata, not a released prerelease version.
+        policy = json.loads((tmp_path / ".release-policy.json").read_text())
+        version_plan.sync_versions(
+            tmp_path,
+            policy,
+            version_plan.create_plan(version, "stable", None, "0" * 40, policy),
+        )
     # Test harness intentionally uses its fixture-controlled PATH.
     subprocess.run(  # nosec B603, B607
         ["bash", "scripts/package-release.sh", version, "rc"],
