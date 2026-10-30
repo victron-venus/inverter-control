@@ -46,6 +46,7 @@
     ".bestpractices.json",
     "install.py",
     "runtime_python.py",
-    "Makefile"
+    "Makefile",
+    "tests"
   ]
 }
