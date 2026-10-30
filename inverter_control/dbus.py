@@ -13,6 +13,8 @@ from typing import Any
 
 logger = logging.getLogger("inverter-control")
 DBUS_SEND = "/usr/bin/dbus-send"
+VUE_RETRY_INITIAL_SECONDS = 5.0
+VUE_RETRY_MAX_SECONDS = 60.0
 
 
 class VUESensorDBusClient:
@@ -34,6 +36,9 @@ class VUESensorDBusClient:
         # Borrow an already-connected read client; do not own/close its transport.
         self._native_get = native_get
         self._vue_services: dict[str, str] = {}  # sensor key -> dbus service name
+        # Failed services only: (next retry on the monotonic clock, previous delay).
+        # Updated by the polling thread after its worker results are collected.
+        self._retry_state: dict[str, tuple[float, float]] = {}
         self._available = False
         self._setup_dbus()
 
@@ -159,18 +164,52 @@ class VUESensorDBusClient:
         return key, self._cli_power(key, service, remaining, deadline), deadline
 
     def update_all(self, vue_sensors: dict[str, Any]) -> None:
-        """Update vue_sensors dictionary in-place from D-Bus."""
+        """Poll healthy channels normally and back off unavailable ones independently.
+
+        Failed or overdue reads retain the existing last-known cache value. They
+        never publish a new value or treat an unavailable measurement as zero.
+        """
         if not self._available:
             return
 
         if not self._vue_services:
             return
 
-        with ThreadPoolExecutor(max_workers=len(self._vue_services)) as pool:
-            futures = [
-                pool.submit(self._query_power, key, svc) for key, svc in self._vue_services.items()
-            ]
+        active_services = set(self._vue_services.values())
+        self._retry_state = {
+            service: retry
+            for service, retry in self._retry_state.items()
+            if service in active_services
+        }
+        now = time.monotonic()
+        due = {
+            key: service
+            for key, service in self._vue_services.items()
+            if service not in self._retry_state or now >= self._retry_state[service][0]
+        }
+        if not due:
+            return
+
+        with ThreadPoolExecutor(max_workers=len(due)) as pool:
+            futures = {
+                pool.submit(self._query_power, key, service): service
+                for key, service in due.items()
+            }
             for future in as_completed(futures):
                 key, value, deadline = future.result()
-                if value is not None and time.monotonic() < deadline:
+                service = futures[future]
+                completed_at = time.monotonic()
+                if value is not None and completed_at < deadline:
                     vue_sensors[key] = value
+                    if self._retry_state.pop(service, None) is not None:
+                        logger.info("VUE sensor %s recovered; resuming normal polling", key)
+                else:
+                    previous = self._retry_state.get(service)
+                    delay = (
+                        VUE_RETRY_INITIAL_SECONDS
+                        if previous is None
+                        else min(previous[1] * 2, VUE_RETRY_MAX_SECONDS)
+                    )
+                    self._retry_state[service] = (completed_at + delay, delay)
+                    if previous is None:
+                        logger.warning("VUE sensor %s unavailable; backing off retries", key)

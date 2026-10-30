@@ -35,6 +35,32 @@ Cycle telemetry now publishes `window_capacity` and per-series `samples`.
 Percentiles retain the existing rounded zero-based index algorithm. Do not merge
 overlapping snapshots or interpret cache age as physical command latency.
 
+## Unavailable Emporia channels
+
+Both auxiliary AC-load polling paths track failures separately for each D-Bus
+service. An unavailable or invalid power reading delays that channel's next
+attempt by 5, 10, 20, 40 and then 60 seconds on consecutive failures. Further
+failures keep the 60-second interval. Deadlines use monotonic time; a system-clock
+change cannot trigger a retry storm. A channel waiting for its next attempt
+does not generate name or power reads or a CLI fallback.
+
+Available channels keep their normal polling and signal updates. A successful
+power read, including a finite zero or negative power, clears the failure delay.
+A native-read failure followed by a successful CLI read also counts as success.
+The signal-aware Victron cache can resume immediately on a valid power signal;
+otherwise the next due retry detects recovery. Scheduling and D-Bus latency can
+add to these intervals. Existing cache behavior is retained: the Home Assistant
+auxiliary cache keeps its last-known value on failure, while the native AC-load
+display cache falls back to zero for a failed power read. Neither fallback is
+a new measurement or valid grid-control input.
+
+This policy does not change the independent `GRID_BACKUP_SERVICE` sampler. It
+continues its one-second polling schedule and validates connection status and
+measurement age before permitting grid control. An empty `VUE_SENSORS` mapping
+still means automatic discovery, not disabled polling. Recovery applies to
+already discovered service names; discovery of entirely new names keeps the
+existing lifecycle.
+
 ## Historical candidate boundaries
 
 The original acceptance workspace contained two separate changesets: one based

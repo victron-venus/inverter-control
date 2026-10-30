@@ -31,6 +31,7 @@ from .config import (
     USE_NATIVE_DBUS,
 )
 from .control_flags import CONTROL_FLAG_KEYS
+from .dbus import VUE_RETRY_INITIAL_SECONDS, VUE_RETRY_MAX_SECONDS
 from .dbus_native import SLOW_SET_TIMING_MS, NativeDbusClient
 from .grid_backup import GridBackup, parse_backup_snapshot
 from .grid_energy import STATE_FILE as GRID_ENERGY_STATE_FILE
@@ -237,6 +238,10 @@ class VictronDBus:
         self._acload_services: list = []
         self._acload_names: dict[str, str] = {}
         self._acload_powers_by_service: dict[str, float] = {}
+        self._acload_retry_state: dict[str, tuple[float, float]] = {}
+        self._acload_signal_generation: dict[str, int] = {}
+        # Only protects short cache/retry updates, never D-Bus I/O or control writes.
+        self._acload_lock = threading.Lock()
         self._last_acload_time: float = 0.0
         # Cache for discovered PV inverter services
         self._pv_inverter_services: list = []
@@ -819,8 +824,15 @@ class VictronDBus:
             self._cached_pv_powers = powers[: len(self._pv_inverter_services)]
             self._last_pv_time = now
         elif service in self._acload_services and path == AC_POWER_PATH:
-            self._acload_powers_by_service[service] = val
-            self._last_acload_time = now
+            if isinstance(raw, bool) or not math.isfinite(val):
+                return True
+            with self._acload_lock:
+                self._acload_signal_generation[service] = (
+                    self._acload_signal_generation.get(service, 0) + 1
+                )
+                self._acload_powers_by_service[service] = val
+                self._acload_retry_state.pop(service, None)
+                self._last_acload_time = now
         else:
             return False  # subscribed sender, but a path we don't track
         return True
@@ -1177,7 +1189,15 @@ class VictronDBus:
             self._reconcile_mppt_data()
         if self._pv_inverter_services and now - self._last_pv_time >= GROUP_CACHE_TTL:
             self._reconcile_pv_power()
-        if self._acload_services and now - self._last_acload_time >= GROUP_CACHE_TTL:
+        # A healthy sibling's signals must not postpone an offline channel's probe.
+        retry_now = time.monotonic()
+        with self._acload_lock:
+            acload_retry_due = any(
+                retry_now >= retry[0] for retry in self._acload_retry_state.values()
+            )
+        if self._acload_services and (
+            now - self._last_acload_time >= GROUP_CACHE_TTL or acload_retry_due
+        ):
             self._reconcile_acload_power()
         if self._ess_mode_cache and now - self._ess_mode_cache_time >= 5.0:
             self._reconcile_ess_mode()
@@ -1509,15 +1529,52 @@ class VictronDBus:
         self._last_pv_time = time.time()
 
     def _reconcile_acload_power(self):
-        """Refresh Emporia Vue channels (native-first; see _reconcile_mppt_data)."""
-        for service in self._acload_services:
+        """Refresh available Vue channels and probe failed channels less frequently.
+
+        This auxiliary display cache keeps its existing zero-on-failure behavior.
+        The independently timestamped grid-backup reader is not throttled here.
+        """
+        services = tuple(self._acload_services)
+        active_services = set(services)
+        with self._acload_lock:
+            for cache in (
+                self._acload_retry_state,
+                self._acload_signal_generation,
+                self._acload_powers_by_service,
+            ):
+                for service in tuple(cache):
+                    if service not in active_services:
+                        cache.pop(service, None)
+
+        for service in services:
+            with self._acload_lock:
+                previous = self._acload_retry_state.get(service)
+                if previous is not None and time.monotonic() < previous[0]:
+                    continue
+                generation = self._acload_signal_generation.get(service, 0)
             name = self._dbus_get(service, ACLOAD_NAME_PATH)
             if name:
                 self._acload_names[service] = name.strip()
-        self._acload_powers_by_service = {
-            service: self._get_float_nolock(service, AC_POWER_PATH)
-            for service in self._acload_services
-        }
+            raw = self._dbus_get(service, AC_POWER_PATH)
+            try:
+                value = float(raw) if not isinstance(raw, bool) else math.nan
+            except (TypeError, ValueError, OverflowError):
+                value = math.nan
+            with self._acload_lock:
+                # A newer valid signal wins over an in-flight poll's late reply.
+                if generation != self._acload_signal_generation.get(service, 0):
+                    continue
+                if math.isfinite(value):
+                    self._acload_powers_by_service[service] = value
+                    self._acload_retry_state.pop(service, None)
+                else:
+                    self._acload_powers_by_service[service] = 0.0
+                    delay = (
+                        VUE_RETRY_INITIAL_SECONDS
+                        if previous is None
+                        else min(previous[1] * 2, VUE_RETRY_MAX_SECONDS)
+                    )
+                    self._acload_retry_state[service] = (time.monotonic() + delay, delay)
         self._last_acload_time = time.time()
 
     def _query_battery_chain_socs(self) -> list[float | None]:
