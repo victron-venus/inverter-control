@@ -37,10 +37,15 @@ def test_installer_preflight_enforces_the_declared_dependency_floors():
     """Keep the installer floors identical to the packaged runtime requirements."""
     project = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]
     floors = {}
+    unparsed = []
     for requirement in project["dependencies"]:
         match = re.fullmatch(r"([A-Za-z0-9_.-]+)>=([0-9.]+)", requirement)
         if match:
             floors[match.group(1).lower()] = match.group(2)
+        else:
+            unparsed.append(requirement)
+    # A new requirement with a compound specifier must not be silently skipped.
+    assert not unparsed, f"Update the floor parser for: {unparsed}"
     installer = (REPO / "update.sh").read_text()
     checks = dict(re.findall(r'require_stable\("([a-z0-9-]+)", "([0-9.]+)"\)', installer))
     assert set(checks) <= set(floors)

@@ -73,12 +73,21 @@ import paho.mqtt.client
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
 def require_stable(name, minimum):
-    """Reject an installed release below the floor declared by both manifests."""
+    """Reject an installed stable release below the floor declared by both manifests."""
     parts = [int(part) for part in minimum.split(".")]
     floor = tuple((parts + [0, 0])[:3])
-    pattern = r"(\d{1,6})\.(\d{1,6})(?:\.(\d{1,6}))?"
+    # PEP 440 stable release with optional post/local suffix. Prereleases and
+    # dev releases do not match, so they stay rejected.
+    pattern = (
+        r"(\d{1,6}(?:\.\d{1,6})+)"
+        r"(?:\.post(\d{1,6}))?"
+        r"(?:\+([A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*))?"
+    )
     match = re.fullmatch(pattern, version(name), re.ASCII)
-    if match is None or tuple(int(part or 0) for part in match.groups()) < floor:
+    if match is None:
+        raise RuntimeError(f"{name} stable version >= {minimum} is required before updating")
+    release = tuple(int(part) for part in match.group(1).split("."))
+    if (release + (0, 0))[:3] < floor:
         raise RuntimeError(f"{name} stable version >= {minimum} is required before updating")
 
 

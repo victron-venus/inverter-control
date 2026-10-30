@@ -503,7 +503,10 @@ def test_supported_idna_release_passes_actual_installer_preflight(tmp_path, inst
     assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
 
 
-@pytest.mark.parametrize("installed", ["1.6.1", "2.0.0rc1", "200", "broken", None])
+@pytest.mark.parametrize(
+    "installed",
+    ["1.6.1", "2.0.0rc1", "2.0.0.dev1", "2.0.0a1", "2.0.0.post1.dev1", "200", "broken", None],
+)
 def test_old_or_unreadable_paho_version_precedes_service_stop(tmp_path, installed):
     """Reject a paho release without the 2.0 callback API before any service stops."""
     package, _, env = fake_device(tmp_path)
@@ -520,6 +523,20 @@ def test_old_or_unreadable_paho_version_precedes_service_stop(tmp_path, installe
 
 @pytest.mark.parametrize("installed", ["2.0.0", "2.1.0", "3.0.0"])
 def test_supported_paho_release_passes_actual_installer_preflight(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(**{"paho-mqtt": installed}))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    assert "installed version" in result.stdout
+    assert "svc" in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize(
+    "installed", ["2.0.0.post1", "2.0.0+vendor", "2.0.0.post1+vendor", "2.0.0.1"]
+)
+def test_pep440_stable_paho_variants_pass_actual_installer_preflight(tmp_path, installed):
+    """Post/local releases satisfy >=2.0.0 and must not block an update."""
     package, _, env = fake_device(tmp_path)
     installed_version_stub(tmp_path, floor_versions(**{"paho-mqtt": installed}))
     result = installer_preflight(tmp_path, env)
