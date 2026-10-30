@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.10] - Candidate series, updated 2026-10-29
+## [1.23.10] - Candidate series, updated 2026-10-30
 
 ### Added
 
@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Back off repeated reads of unavailable Emporia auxiliary channels independently: retry after 5, 10, 20, 40 and then at most once per 60 seconds. Available channels keep their normal cadence, a successful read restores it, and the independent grid-backup sampler keeps its existing freshness checks and polling interval.
 - Require `certifi>=2026.10.19` in both runtime installation manifests and reject an older or unreadable certifi in the installer preflight before services stop, so an update cannot report success while the selected interpreter still uses the affected emSign roots. The reviewed lockfile already selects this version; an existing runtime still has to be rebuilt or updated as described under Upgrade.
 - Extend that preflight to the other security floors declared by both manifests: an interpreter with `requests` below 2.34.2 or `idna` below 3.15 (CVE-2026-45409) is likewise rejected before services stop instead of leaving a stale package in place. A contract test keeps the installer floors equal to `pyproject.toml`.
 - Require `paho-mqtt>=2.0.0` in the installer preflight as well. Version 1.x imports but lacks the `CallbackAPIVersion` API used by the MQTT bridge, so an update could otherwise stop services and fail only during startup.

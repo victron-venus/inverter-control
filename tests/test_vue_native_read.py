@@ -115,8 +115,9 @@ def test_late_native_response_neither_updates_nor_starts_cli(clock, error):
 
 
 def test_expired_before_native_dispatch_does_not_start_io(monkeypatch):
-    times = iter([10.0, 12.0])
-    monkeypatch.setattr(dbus, "time", SimpleNamespace(monotonic=lambda: next(times)))
+    # Scheduler check, per-query deadline, then expiration before native I/O.
+    times = iter([10.0, 10.0, 12.0])
+    monkeypatch.setattr(dbus, "time", SimpleNamespace(monotonic=lambda: next(times, 12.0)))
     getter = Mock()
     with patch.object(dbus.subprocess, "run") as cli:
         client(getter).update_all({})
