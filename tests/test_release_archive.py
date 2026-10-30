@@ -34,6 +34,7 @@ def test_invalid_channel_fails_before_adapter_or_output(tmp_path, channel):
 
 def test_release_archive_contains_complete_installer_payload(tmp_path):
     config = json.loads((REPO / ".release-package.json").read_text())
+    assert "tests" in config["include"], "release archives must ship the test suite"
     inputs = config["include"] + [
         ".release-policy.json",
         ".release-package.json",
@@ -77,6 +78,8 @@ def test_release_archive_contains_complete_installer_payload(tmp_path):
         assert asset.read_bytes() == (tmp_path / "repeat" / asset.name).read_bytes()
     with tarfile.open(tmp_path / "release-dist" / f"inverter-control-{version}.tar.gz") as archive:
         members = set(archive.getnames())
+        assert "inverter-control/tests/test_installer.py" in members
+        assert "inverter-control/tests/test_tou_window.py" in members
         runtime_items = re.search(
             r'^RUNTIME_ITEMS="([^"]+)"', (REPO / "update.sh").read_text(), re.MULTILINE
         )
