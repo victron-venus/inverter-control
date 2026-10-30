@@ -1,10 +1,13 @@
 """Run the native updater in an isolated fake Venus filesystem."""
 
+import json
 import os
 import re
+import shlex
 
 # Subprocess calls below use argument vectors with shell=False.
 import subprocess  # nosec B404
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,6 +31,9 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
     (package / "local_config.example.py").write_text("USER_SETTING = 0\n")
     (package / "inverter_control").mkdir()
     (package / "inverter_control/__init__.py").write_text("")
+    (package / "inverter_control/power_limits.py").write_text(
+        (REPO / "inverter_control/power_limits.py").read_text().replace("/data/", f"{data}/")
+    )
     (package / "version").write_text("v1.0\n")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -41,6 +47,12 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
         path = bin_dir / command
         status = python_status if command == "python3" else 0
         path.write_text(f'#!/bin/sh\necho {command} >> "{tmp_path}/commands"\nexit {status}\n')
+        if command == "python3":
+            path.write_text(
+                '#!/bin/sh\ncase "$1" in\n'
+                f'  */power_limits.py) exec {shlex.quote(sys.executable)} "$@" ;;\n'
+                f'esac\necho python3 >> "{tmp_path}/commands"\nexit {status}\n'
+            )
         if command == "svstat":
             path.write_text(
                 '#!/bin/sh\necho "/service/inverter-control: up (pid 1234) 3 seconds"\n'
@@ -119,6 +131,129 @@ def test_failed_startup_is_not_reported_as_installed(tmp_path):
     assert "installed version" not in result.stdout
 
 
+def run_update(package, env):
+    """Run the real updater against fake service commands and a private filesystem."""
+    return subprocess.run(  # nosec B603, B607 -- isolated fake device command PATH
+        ["sh", "update.sh", str(package)],
+        cwd=package,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+def power_limits_path(package):
+    return package.parent / "setupOptions/inverter-control/power-limits.json"
+
+
+def test_default_limits_are_reported_without_creating_an_override(tmp_path):
+    package, _, env = fake_device(tmp_path)
+    result = run_update(package, env)
+    assert result.returncode == 0, result.stderr
+    assert '{"max": 2250, "min": -2300}' in result.stdout
+    assert not power_limits_path(package).exists()
+
+
+@pytest.mark.parametrize("source", ["installed", "legacy", "example"])
+def test_manual_install_uses_the_config_that_will_be_loaded(tmp_path, source):
+    package, _, env = fake_device(tmp_path)
+    config = package / "local_config.py"
+    if source != "installed":
+        config.unlink()
+        config = package / ("secrets.py" if source == "legacy" else "local_config.example.py")
+    content = "POWER_LIMIT_MIN = -1400\nPOWER_LIMIT_MAX = 1700\n"
+    config.write_text(content)
+    persistent = package.parent / "setupOptions/inverter-control/local_config.py"
+    persistent.parent.mkdir(parents=True)
+    persistent.write_text("POWER_LIMIT_MIN = -500\nPOWER_LIMIT_MAX = 500\n")
+    result = run_update(package, env)
+    assert result.returncode == 0, result.stderr
+    assert '{"max": 1700, "min": -1400}' in result.stdout
+    assert (package / "local_config.py").read_text() == content
+    assert not power_limits_path(package).exists()
+
+
+def test_manual_explicit_limits_persist_and_survive_an_ordinary_update(tmp_path):
+    package, _, env = fake_device(tmp_path)
+    configured = {**env, "POWER_LIMIT_MIN": "-1800", "POWER_LIMIT_MAX": "2000"}
+    result = run_update(package, configured)
+    assert result.returncode == 0, result.stderr
+    path = power_limits_path(package)
+    before = path.read_bytes()
+    assert json.loads(before) == {"min": -1800, "max": 2000}
+    assert path.stat().st_mode & 0o777 == 0o600
+    (package / "local_config.py").write_text("POWER_LIMIT_MIN = -500\nPOWER_LIMIT_MAX = 500\n")
+    result = run_update(package, env)
+    assert result.returncode == 0, result.stderr
+    assert '{"max": 2000, "min": -1800}' in result.stdout
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("bad_limits", ['{"min": -3001, "max": 2000}', "not json"])
+def test_invalid_saved_limits_do_not_stop_services_or_replace_config(tmp_path, bad_limits):
+    package, _, env = fake_device(tmp_path)
+    path = power_limits_path(package)
+    path.parent.mkdir(parents=True)
+    path.write_text(bad_limits)
+    before = (package / "local_config.py").read_bytes()
+    result = run_update(package, env)
+    assert result.returncode != 0
+    assert "Power limits:" in result.stderr
+    assert "svc" not in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_bytes() == before
+    assert path.read_text() == bad_limits
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"POWER_LIMIT_MIN": "-1000"},
+        {"POWER_LIMIT_MIN": "2000", "POWER_LIMIT_MAX": "1000"},
+        {"POWER_LIMIT_MIN": "-3001", "POWER_LIMIT_MAX": "2000"},
+        {"POWER_LIMIT_MIN": "", "POWER_LIMIT_MAX": "2000"},
+        {"CONFIGURE_POWER_LIMITS": "1"},
+    ],
+)
+def test_invalid_or_noninteractive_choices_fail_before_service_stop(tmp_path, changes):
+    package, _, env = fake_device(tmp_path)
+    result = run_update(package, {**env, **changes})
+    assert result.returncode != 0
+    actions = tmp_path / "commands"
+    assert not actions.exists() or "svc" not in actions.read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+    assert not power_limits_path(package).exists()
+
+
+@pytest.mark.parametrize("push", [False, True])
+def test_staged_limits_are_only_selected_for_explicit_config_push(tmp_path, push):
+    import shutil
+
+    package, _, env = fake_device(tmp_path)
+    (package / "local_config.py").write_text("POWER_LIMIT_MIN = -1200\nPOWER_LIMIT_MAX = 1300\n")
+    stage = tmp_path / "release"
+    shutil.copytree(package, stage)
+    (stage / "local_config.py").write_text("POWER_LIMIT_MIN = -3001\nPOWER_LIMIT_MAX = 2000\n")
+    result = subprocess.run(  # nosec B603, B607 -- isolated fake device
+        ["sh", str(stage / "update.sh"), str(package)],
+        cwd=stage,
+        env={**env, "PUSH_LOCAL_CONFIG": str(int(push))},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if push:
+        assert result.returncode != 0
+        assert "svc" not in (tmp_path / "commands").read_text()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert '{"max": 1300, "min": -1200}' in result.stdout
+    assert (
+        package / "local_config.py"
+    ).read_text() == "POWER_LIMIT_MIN = -1200\nPOWER_LIMIT_MAX = 1300\n"
+
+
 def tariff_python_stub(tmp_path, package):
     """Keep fake device dependency checks isolated but run the real tariff validator."""
     import shlex
@@ -130,7 +265,7 @@ def tariff_python_stub(tmp_path, package):
     stub = tmp_path / "bin/python3"
     stub.write_text(
         '#!/bin/sh\ncase "$1" in\n'
-        f'  */tariff.py) exec {shlex.quote(sys.executable)} "$@" ;;\n'
+        f'  */tariff.py|*/power_limits.py) exec {shlex.quote(sys.executable)} "$@" ;;\n'
         "  *) exit 0 ;;\nesac\n"
     )
 
@@ -374,7 +509,10 @@ def installed_version_stub(tmp_path, versions):
     python = tmp_path / "bin/python3"
     python.write_text(f"""#!{sys.executable}
 import importlib.metadata as metadata
+import os
 import sys
+if len(sys.argv) > 1 and sys.argv[1].endswith("/power_limits.py"):
+    os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
 versions = {versions!r}
 def installed_version(name):
     if name not in versions or versions[name] is None:

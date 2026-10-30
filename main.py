@@ -207,14 +207,17 @@ def _mqtt_select_ess_mode(controller, bridge, payload):
     bridge.publish_state(controller.get_state_for_mqtt())
 
 
-def _mqtt_safe_limits(controller, p):
-    from inverter_control.config import (  # pylint: disable=import-outside-toplevel
-        POWER_LIMIT_MAX,
-        POWER_LIMIT_MIN,
-    )
-
+def _mqtt_safe_limits(controller, p, bridge=None):
     try:
-        values = (p.get("min", POWER_LIMIT_MIN), p.get("max", POWER_LIMIT_MAX))
+        if not isinstance(p, dict):
+            raise TypeError("Power limits payload must be an object")
+        if "min" not in p and "max" not in p:
+            raise ValueError("Power limits payload must include min or max")
+        persist = p.get("persist", True)
+        if type(persist) is not bool:
+            raise ValueError("Power limits persist must be true or false")
+        current = controller.get_power_limits()
+        values = (p.get("min", current["min"]), p.get("max", current["max"]))
         if any(
             type(value) is bool or (type(value) is float and not value.is_integer())
             for value in values
@@ -223,10 +226,12 @@ def _mqtt_safe_limits(controller, p):
         # Preserve integer strings from older clients, without truncating
         # fractional values or silently interpreting booleans as watts.
         lo, hi = map(int, values)
-        controller.set_power_limits(lo, hi)
-    except (ValueError, TypeError, OverflowError) as e:
+        controller.set_power_limits(lo, hi, persist=persist)
+    except (OSError, ValueError, TypeError, OverflowError) as e:
         logger.warning("MQTT limits rejected: %s", e)
-        return
+    finally:
+        if bridge is not None:
+            bridge.publish_state(controller.get_state_for_mqtt())
 
 
 def _mqtt_dry_run(controller, bridge, payload):
@@ -307,7 +312,7 @@ def _setup_mqtt_bridge(controller):
 
     bridge.register_callback("dry_run", lambda payload: _mqtt_dry_run(controller, bridge, payload))
 
-    bridge.register_callback("limits", lambda p: _mqtt_safe_limits(controller, p))
+    bridge.register_callback("limits", lambda p: _mqtt_safe_limits(controller, p, bridge))
     bridge.register_callback("ess_mode", lambda p: controller.toggle_ess_mode())
 
     bridge.register_callback(

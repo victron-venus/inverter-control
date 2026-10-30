@@ -931,7 +931,10 @@ def test_limit_edit_before_write_constrains_a_calculated_command():
         ({"min": -1000.0, "max": 1000.0}, (-1000, 1000)),
     ],
 )
-def test_mqtt_limits_preserve_integer_client_compatibility(payload, expected):
+def test_mqtt_limits_preserve_integer_client_compatibility(
+    payload, expected, monkeypatch, tmp_path
+):
+    monkeypatch.setattr("inverter_control.power_limits.SETUP_FILE", tmp_path / "limits.json")
     controller, victron, _, _ = _make_controller()
     bridge = MagicMock()
     with (

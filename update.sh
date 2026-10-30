@@ -7,6 +7,7 @@
 # by the auto-deploy webhook (../inverter-monitoring) or manually:
 #
 #     sh update.sh [INSTALL_DIR]
+#     POWER_LIMIT_MIN=-2300 POWER_LIMIT_MAX=2250 sh update.sh
 #
 # This script owns all layout knowledge (runtime files, daemontools services,
 # /service symlinks, device-local file preservation, restart order) so that
@@ -21,6 +22,8 @@ if [ -n "${DESTDIR:-}" ]; then
 fi
 INSTALL_DIR="${1:-/data/inverter-control}"
 SETUP_OPTIONS_DIR="/data/setupOptions/inverter-control"
+USE_SETUP_CONFIG="${USE_SETUP_CONFIG:-0}"
+PUSH_LOCAL_CONFIG="${PUSH_LOCAL_CONFIG:-0}"
 
 # Device-local files that must never be overwritten by an update.
 
@@ -57,6 +60,33 @@ copy_private_config() (
 # The service launchers use the standard persistent package path.
 if [ "$INSTALL_DIR" != /data/inverter-control ]; then
     echo "Unsupported install directory: $INSTALL_DIR (expected /data/inverter-control)" >&2
+    exit 1
+fi
+
+case "$USE_SETUP_CONFIG:$PUSH_LOCAL_CONFIG" in
+    0:0|0:1|1:0) ;;
+    1:1)
+        echo "USE_SETUP_CONFIG and PUSH_LOCAL_CONFIG cannot both be enabled" >&2
+        exit 1
+        ;;
+    *) echo "USE_SETUP_CONFIG and PUSH_LOCAL_CONFIG must be 0 or 1" >&2; exit 1 ;;
+esac
+
+if [ -z "${CONFIGURE_POWER_LIMITS+x}" ]; then
+    CONFIGURE_POWER_LIMITS=0
+    [ ! -t 0 ] || CONFIGURE_POWER_LIMITS=1
+fi
+case "$CONFIGURE_POWER_LIMITS" in
+    0|1) ;;
+    *) echo "CONFIGURE_POWER_LIMITS must be 0 or 1" >&2; exit 1 ;;
+esac
+if [ -n "${POWER_LIMIT_MIN+x}${POWER_LIMIT_MAX+x}" ] && \
+    { [ -z "${POWER_LIMIT_MIN+x}" ] || [ -z "${POWER_LIMIT_MAX+x}" ]; }; then
+    echo "Set both POWER_LIMIT_MIN and POWER_LIMIT_MAX (integer watts)" >&2
+    exit 1
+fi
+if [ "$CONFIGURE_POWER_LIMITS" = "1" ] && [ -z "${POWER_LIMIT_MIN+x}" ] && ! [ -t 0 ]; then
+    echo "Interactive power-limit configuration requires a terminal" >&2
     exit 1
 fi
 
@@ -120,8 +150,33 @@ for private_config in "$INSTALL_DIR/local_config.py" "$INSTALL_DIR/secrets.py" \
     "$SETUP_OPTIONS_DIR/local_config.py"; do
     protect_private_config "$private_config"
 done
-if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ]; then
+if [ "$PUSH_LOCAL_CONFIG" = "1" ]; then
     protect_private_config "$SRC_DIR/local_config.py"
+fi
+
+# Validate the same private configuration that this installation will use.
+# In particular, a release's example must not hide existing site limits and a
+# SetupHelper copy must not replace the running configuration before validation.
+if [ "$USE_SETUP_CONFIG" = "1" ] && [ -f "$SETUP_OPTIONS_DIR/local_config.py" ]; then
+    LIMIT_CONFIG_SOURCE=setup
+elif [ "$PUSH_LOCAL_CONFIG" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; then
+    LIMIT_CONFIG_SOURCE=source
+elif [ -f "$INSTALL_DIR/local_config.py" ]; then
+    LIMIT_CONFIG_SOURCE=installed
+elif [ -f "$INSTALL_DIR/secrets.py" ]; then
+    LIMIT_CONFIG_SOURCE=legacy
+else
+    LIMIT_CONFIG_SOURCE=example
+fi
+
+if [ -n "${POWER_LIMIT_MIN+x}" ]; then
+    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --config-source "$LIMIT_CONFIG_SOURCE" \
+        --min "$POWER_LIMIT_MIN" --max "$POWER_LIMIT_MAX" --install
+elif [ "$CONFIGURE_POWER_LIMITS" = "1" ]; then
+    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --config-source "$LIMIT_CONFIG_SOURCE" \
+        --interactive --install
+else
+    "$PYTHON" "$SRC_DIR/inverter_control/power_limits.py" --config-source "$LIMIT_CONFIG_SOURCE" --check
 fi
 
 # Record freshness before any downtime; an old heartbeat cannot prove recovery.
@@ -187,6 +242,10 @@ done
 
 # 4. Preserve device-local configuration; bootstrap it only on first install.
 # Local configuration/certificates are absent from RUNTIME_ITEMS and never removed.
+if [ "$USE_SETUP_CONFIG" = "1" ] && [ -f "$SETUP_OPTIONS_DIR/local_config.py" ]; then
+    copy_private_config "$SETUP_OPTIONS_DIR/local_config.py" "$INSTALL_DIR/local_config.py"
+    sep "using local_config.py from setupOptions"
+fi
 if [ ! -f "$INSTALL_DIR/local_config.py" ]; then
     copy_private_config "$SRC_DIR/local_config.example.py" "$INSTALL_DIR/local_config.py"
     sep "created local_config.py from example; configure it before enabling control"
@@ -197,7 +256,7 @@ done
 
 # 5b. Optional: push the developer's local_config.py instead of keeping the
 #     device copy (used by deploy.sh, where the dev machine is authoritative).
-if [ "${PUSH_LOCAL_CONFIG:-0}" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; then
+if [ "$PUSH_LOCAL_CONFIG" = "1" ] && [ -f "$SRC_DIR/local_config.py" ]; then
     mkdir -p "$SETUP_OPTIONS_DIR"
     if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
         copy_private_config "$SRC_DIR/local_config.py" "$INSTALL_DIR/local_config.py"

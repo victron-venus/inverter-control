@@ -12,6 +12,7 @@
 #   - SSH key authentication configured
 #
 # Usage: [TARIFF_FILE=/path/to/tariff.json] ./deploy.sh [SSH_HOST]
+#        POWER_LIMIT_MIN=-2300 POWER_LIMIT_MAX=2250 ./deploy.sh [SSH_HOST]
 # Default tariff: deploy.local/tariff.json when present; TARIFF_FILE= disables it.
 #
 
@@ -70,6 +71,22 @@ case "$PUSH_LOCAL_CONFIG" in
     *) echo "ERROR: PUSH_LOCAL_CONFIG must be 0 or 1" >&2; exit 1 ;;
 esac
 
+# Validate explicit limits before SSH. Only canonical integers enter the remote
+# command; the updater validates the effective device configuration itself.
+REMOTE_POWER_LIMITS=""
+if [[ -n "${POWER_LIMIT_MIN+x}${POWER_LIMIT_MAX+x}" ]]; then
+    if [[ -z "${POWER_LIMIT_MIN+x}" || -z "${POWER_LIMIT_MAX+x}" ]]; then
+        echo "ERROR: set both POWER_LIMIT_MIN and POWER_LIMIT_MAX (integer watts)" >&2
+        exit 1
+    fi
+    limit_json=$(python3 "$SCRIPT_DIR/inverter_control/power_limits.py" \
+        --config-source defaults --min "$POWER_LIMIT_MIN" --max "$POWER_LIMIT_MAX" --check)
+    canonical_limits=$(printf '%s\n' "$limit_json" | python3 -c \
+        'import json,sys; limits=json.load(sys.stdin); print(int(limits["min"]), int(limits["max"]))')
+    read -r deployment_min deployment_max <<< "$canonical_limits"
+    REMOTE_POWER_LIMITS="POWER_LIMIT_MIN=$deployment_min POWER_LIMIT_MAX=$deployment_max "
+fi
+
 # Validate the selected tariff before SSH, then attach only its normalized content.
 DEPLOY_BUNDLE=$(mktemp -d)
 trap 'rm -rf "$DEPLOY_BUNDLE"' EXIT
@@ -104,7 +121,7 @@ if [[ -n "${TARIFF_FILE:-}" ]]; then
 fi
 gzip -c "$DEPLOY_BUNDLE/source.tar" | ssh_with_key_policy "$SSH_HOST" "set -e; rm -rf $DEPLOY_DIR; mkdir -p $DEPLOY_DIR; \
         tar -xz -C $DEPLOY_DIR --strip-components=1; \
-        PUSH_LOCAL_CONFIG='$PUSH_LOCAL_CONFIG' sh $DEPLOY_DIR/update.sh; \
+        ${REMOTE_POWER_LIMITS}PUSH_LOCAL_CONFIG='$PUSH_LOCAL_CONFIG' sh $DEPLOY_DIR/update.sh; \
         waited=0; while [ \$waited -lt 15 ] && ! [ -f /run/inverter-control/heartbeat ]; do sleep 1; waited=\$((waited + 1)); done; \
         rm -rf $DEPLOY_DIR"
 

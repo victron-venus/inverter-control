@@ -2,6 +2,7 @@
 
 import logging
 import math
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -74,6 +75,7 @@ from inverter_control.logic import (
     valid_ev_site_power,
 )
 from inverter_control.metrics import CycleMetrics
+from inverter_control.power_limits import ABSOLUTE_LIMIT, write_power_limits
 from inverter_control.precharge import PrechargeInbox
 from inverter_control.prom_metrics import publish as prom_metrics_publish
 from inverter_control.submeter_trim import SubmeterTrim
@@ -294,6 +296,7 @@ class InverterController:
         # Dynamic settings (overridable)
         self.power_limit_min = POWER_LIMIT_MIN
         self.power_limit_max = POWER_LIMIT_MAX
+        self._power_limits_update_lock = threading.Lock()
         self.loop_interval = LOOP_INTERVAL
         # Rolling latency metrics for hardware-run benchmarking (see metrics.py)
         self.metrics = CycleMetrics()
@@ -377,17 +380,30 @@ class InverterController:
         logger.info(f"Loop interval changed to {self.loop_interval}s")
         return self.loop_interval
 
-    def set_power_limits(self, min_val: int, max_val: int) -> dict[str, int]:
+    def get_power_limits(self) -> dict[str, int]:
+        with self._watchdog._lock:
+            return {"min": self.power_limit_min, "max": self.power_limit_max}
+
+    def set_power_limits(
+        self, min_val: int, max_val: int, *, persist: bool = False
+    ) -> dict[str, int]:
         if type(min_val) is not int or type(max_val) is not int or min_val > max_val:
             raise ValueError("Power limits must be ordered integers")
-        with self._watchdog._lock:
-            self.power_limit_min = max(-3000, min(3000, min_val))
-            self.power_limit_max = max(-3000, min(3000, max_val))
-            # Update calculator limits
-            self.calculator.power_limit_min = self.power_limit_min
-            self.calculator.power_limit_max = self.power_limit_max
-            self._trim_mode_generation += 1
-            applied = {"min": self.power_limit_min, "max": self.power_limit_max}
+        applied = {
+            "min": max(-ABSOLUTE_LIMIT, min(ABSOLUTE_LIMIT, min_val)),
+            "max": max(-ABSOLUTE_LIMIT, min(ABSOLUTE_LIMIT, max_val)),
+        }
+        # Serialize saves with updates, but never hold the actuator lock for I/O.
+        # A failed save leaves the active limits and calculator untouched.
+        with self._power_limits_update_lock:
+            if persist:
+                write_power_limits(applied)
+            with self._watchdog._lock:
+                self.power_limit_min = applied["min"]
+                self.power_limit_max = applied["max"]
+                self.calculator.power_limit_min = self.power_limit_min
+                self.calculator.power_limit_max = self.power_limit_max
+                self._trim_mode_generation += 1
         logger.info(f"Power limits changed to [{applied['min']}, {applied['max']}]")
         return applied
 
@@ -1267,9 +1283,11 @@ class InverterController:
         if MQTT_SLIM_STATE:
             for k in MQTT_SLIM_EXCLUDE_KEYS:
                 out.pop(k, None)
-        # Always publish current flags so MQTT/HA see set_control_flag immediately
-        out["booleans"] = dict(self._control_flags)
-        out["dry_run"] = self.dry_run
+        # Current control intent must not wait for a new telemetry cycle.
+        with self._watchdog._lock:
+            out["booleans"] = dict(self._control_flags)
+            out["dry_run"] = self.dry_run
+            out["limits"] = {"min": self.power_limit_min, "max": self.power_limit_max}
         out["ess_mode"] = self.ess_selection.observe(self.victron.get_ess_mode)
         # Daemon-owned control intent is never stripped by the slim payload.
         out["setpoint_override"] = self.get_setpoint_override()

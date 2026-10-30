@@ -30,13 +30,16 @@ def deployment(tmp_path):
     (bin_dir / "ssh").write_text(
         f'#!/bin/sh\nif [ "$1" = -G ]; then echo requiredrsasize 1024; exit; fi\n'
         'test "$1 $2 $3 $4" = "-S none -o RequiredRSASize=2048" || exit 92\n'
-        f'shift 4\ncase "$2" in\n  svstat*) exit 0 ;;\n  *) cat > "{archive}" ;;\nesac\n'
+        f'shift 4\nprintf "%s\\n" "$2" >> "{tmp_path}/ssh-commands"\n'
+        f'case "$2" in\n  svstat*) exit 0 ;;\n  *) cat > "{archive}" ;;\nesac\n'
     )
     (bin_dir / "sleep").write_text("#!/bin/sh\nexit 0\n")
     for file in bin_dir.iterdir():
         file.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "PUSH_LOCAL_CONFIG": "0"}
     env.pop("TARIFF_FILE", None)
+    env.pop("POWER_LIMIT_MIN", None)
+    env.pop("POWER_LIMIT_MAX", None)
     return root, archive, env
 
 
@@ -77,6 +80,7 @@ def test_deploy_without_selection_preserves_device_tariff(deployment):
     result = run_deploy(deployment)
     assert result.returncode == 0, result.stderr
     assert packaged_tariff(archive) is None
+    assert "POWER_LIMIT_MIN" not in (archive.parent / "ssh-commands").read_text()
 
 
 def test_deploy_saved_default_is_normalized_and_private_notes_are_excluded(deployment):
@@ -129,3 +133,31 @@ def test_bad_selected_tariff_fails_before_ssh_without_fallback(deployment, selec
     result = run_deploy(deployment)
     assert result.returncode != 0
     assert not archive.exists()
+
+
+def test_explicit_deployment_limits_forward_only_canonical_integers(deployment):
+    _, archive, env = deployment
+    env.update(POWER_LIMIT_MIN=" -001800 ", POWER_LIMIT_MAX="+002000")
+    result = run_deploy(deployment)
+    assert result.returncode == 0, result.stderr
+    commands = (archive.parent / "ssh-commands").read_text()
+    assert "POWER_LIMIT_MIN=-1800 POWER_LIMIT_MAX=2000 PUSH_LOCAL_CONFIG='0'" in commands
+    assert "-001800" not in commands and "+002000" not in commands
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"POWER_LIMIT_MIN": "-1800"},
+        {"POWER_LIMIT_MIN": "not-a-number", "POWER_LIMIT_MAX": "2000"},
+        {"POWER_LIMIT_MIN": "-3100", "POWER_LIMIT_MAX": "2000"},
+        {"POWER_LIMIT_MIN": "2000", "POWER_LIMIT_MAX": "1000"},
+    ],
+)
+def test_invalid_deployment_limits_fail_before_ssh(deployment, values):
+    _, archive, env = deployment
+    env.update(values)
+    result = run_deploy(deployment)
+    assert result.returncode != 0
+    assert not archive.exists()
+    assert not (archive.parent / "ssh-commands").exists()

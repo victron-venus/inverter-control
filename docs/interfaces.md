@@ -87,8 +87,12 @@ Supported command suffixes:
   `request_id`. Do not infer a successful physical write from the requested value.
 - `limits`: `{"min":-2300,"max":2250}` sets ordered integer limits in watts.
   The controller clamps each endpoint to the supported range `[-3000,3000]`.
-  Invalid ordering, booleans and fractional values are rejected. The state
-  publication exposes effective limits. The controller's returned result and
+  Invalid ordering, booleans and fractional values are rejected. The effective
+  pair is saved for subsequent restarts; a save failure leaves the running
+  limits unchanged. See [power limits](power-limits.md) for file precedence.
+  Add `"persist":false` for a temporary change only. A missing endpoint keeps
+  its current value. The state publication exposes effective limits.
+  The controller's returned result and
   diagnostic log describe the range applied by that call; a later concurrent
   update can already be reflected in the state publication.
 - `loop_interval`: `{"interval":0.33}` sets a runtime interval in seconds,
