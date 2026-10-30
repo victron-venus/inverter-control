@@ -35,9 +35,13 @@ def test_invalid_channel_fails_before_adapter_or_output(tmp_path, channel):
 def test_release_archive_contains_complete_installer_payload(tmp_path):
     config = json.loads((REPO / ".release-package.json").read_text())
     assert "tests" in config["include"], "release archives must ship the test suite"
+    assert "scripts" in config["include"], "archives must ship test and release helpers"
+    assert ".github" in config["include"], "archives must ship workflow fixtures"
     inputs = config["include"] + [
         ".release-policy.json",
         ".release-package.json",
+        ".pre-commit-config.yaml",
+        "deploy.sh",
         "scripts/package-release.sh",
         "scripts/package_release.py",
         "scripts/release_version_adapter.py",
@@ -80,6 +84,19 @@ def test_release_archive_contains_complete_installer_payload(tmp_path):
         members = set(archive.getnames())
         assert "inverter-control/tests/test_installer.py" in members
         assert "inverter-control/tests/test_tou_window.py" in members
+        for name in (
+            "scripts/package_release.py",
+            "scripts/version_plan.py",
+            ".github/workflows/release-pipeline.yml",
+            ".github/workflows/release-build.yml",
+            ".github/release-tests/test_versioned_release.py",
+            ".github/workflow-tests/test_action_pins.py",
+            ".pre-commit-config.yaml",
+            ".release-package.json",
+            ".release-policy.json",
+            "deploy.sh",
+        ):
+            assert f"inverter-control/{name}" in members, name
         runtime_items = re.search(
             r'^RUNTIME_ITEMS="([^"]+)"', (REPO / "update.sh").read_text(), re.MULTILINE
         )
