@@ -60,7 +60,7 @@ uv run --locked pytest tests/test_console_server.py --no-cov
 ```
 
 Tests live in `tests/`, including public interface checks in `tests/contract/`.
-`tests/conftest.py` and `tests/stubs.py` provide isolated state and device test
+`tests/conftest.py` and `tests/stubs/` provide isolated state and device test
 doubles. Prefer deterministic inputs and fake clocks/transports; use bounded
 waits for asynchronous tests. A new test must not operate a real inverter,
 require private credentials, or depend on a contributor's site configuration.

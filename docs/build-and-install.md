@@ -26,9 +26,9 @@ update `pyproject.toml`, `uv.lock`, and the ARMv7 input locks where applicable.
 On the supported device use the existing SetupHelper/PackageManager install and
 uninstall actions; `make install` and `make uninstall` delegate to the same
 `setup install auto` / `setup uninstall auto` entry points. Live installation
-validates required runtime imports before interrupting services. Uninstall stops
-the services and removes their activation hooks while retaining operator settings
-and data for deliberate cleanup.
+validates required runtime imports and declared dependency floors before
+interrupting services. Uninstall stops the services and removes their activation
+hooks while retaining operator settings and data for deliberate cleanup.
 
 On devices sharing firmware Python with other services, prepare the optional
 [private runtime](tls-dependencies.md#operator-controlled-installation) before

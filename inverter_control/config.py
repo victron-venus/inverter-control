@@ -592,6 +592,11 @@ def _validate_config():
         _check_range("EMA_ALPHA", EMA_ALPHA, 0.0, 1.0),
         _check_range("CREEP_RATE", CREEP_RATE, 0.0, 100.0),
         _check_range("CREEP_MAX", CREEP_MAX, 0.0, 100.0),
+        # The GX settings contract allows -1 (disabled) or an hour of the day;
+        # an out-of-range bootstrap value would otherwise fail AddSetting and
+        # silently block forced charging instead of rejecting the config.
+        _check_range("TOU_EXPENSIVE_START_HOUR", TOU_EXPENSIVE_START_HOUR, -1, 24),
+        _check_range("TOU_EXPENSIVE_END_HOUR", TOU_EXPENSIVE_END_HOUR, -1, 24),
         _check_type("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, (int, float)),
         _check_range("GRID_SMOOTHING_HOME_WEIGHT", GRID_SMOOTHING_HOME_WEIGHT, 0.0, 1.0),
         _check_type("GRID_SMOOTHING_DERIVED_ALPHA", GRID_SMOOTHING_DERIVED_ALPHA, (int, float)),

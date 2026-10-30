@@ -155,6 +155,13 @@ class TestCreepLocalConfig:
         with pytest.raises(ValueError, match=rf"{name} must be 0\.0-100\.0"):
             self.load_config(monkeypatch, **{name: value})
 
+    @pytest.mark.parametrize("name", ["TOU_EXPENSIVE_START_HOUR", "TOU_EXPENSIVE_END_HOUR"])
+    @pytest.mark.parametrize("value", [-2, 25, 100])
+    def test_out_of_range_tou_hour_fails_at_startup(self, monkeypatch, name, value):
+        """An invalid bootstrap hour cannot leave AddSetting and force charging blocked."""
+        with pytest.raises(ValueError, match=rf"{name} must be -1-24"):
+            self.load_config(monkeypatch, **{name: value})
+
 
 class TestGridLossLocalConfig:
     """The optional hold is loaded and validated before any hardware control."""

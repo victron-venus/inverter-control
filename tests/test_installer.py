@@ -358,6 +358,7 @@ SUPPORTED_FLOORS = {
     "certifi": "2026.10.19",
     "requests": "2.34.2",
     "idna": "3.15",
+    "paho-mqtt": "2.0.0",
 }
 
 
@@ -495,6 +496,32 @@ def test_old_or_unreadable_idna_version_precedes_service_stop(tmp_path, installe
 def test_supported_idna_release_passes_actual_installer_preflight(tmp_path, installed):
     package, _, env = fake_device(tmp_path)
     installed_version_stub(tmp_path, floor_versions(idna=installed))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    assert "installed version" in result.stdout
+    assert "svc" in (tmp_path / "commands").read_text()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["1.6.1", "2.0.0rc1", "200", "broken", None])
+def test_old_or_unreadable_paho_version_precedes_service_stop(tmp_path, installed):
+    """Reject a paho release without the 2.0 callback API before any service stops."""
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(**{"paho-mqtt": installed}))
+    result = installer_preflight(tmp_path, env)
+    assert result.returncode != 0
+    assert (
+        "paho-mqtt stable version >= 2.0.0 is required" in result.stderr
+        or "synthetic missing metadata" in result.stderr
+    )
+    assert not (tmp_path / "commands").exists()
+    assert (package / "local_config.py").read_text() == "USER_SETTING = 42\n"
+
+
+@pytest.mark.parametrize("installed", ["2.0.0", "2.1.0", "3.0.0"])
+def test_supported_paho_release_passes_actual_installer_preflight(tmp_path, installed):
+    package, _, env = fake_device(tmp_path)
+    installed_version_stub(tmp_path, floor_versions(**{"paho-mqtt": installed}))
     result = installer_preflight(tmp_path, env)
     assert result.returncode == 0, result.stderr
     assert "installed version" in result.stdout

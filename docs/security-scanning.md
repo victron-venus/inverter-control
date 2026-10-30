@@ -38,7 +38,9 @@ them. The explicit certifi floor therefore protects environments that are
 resolved again. Changing a manifest does not update a running controller: the
 device updater's preflight rejects a selected interpreter with an older or
 unreadable `cryptography`, `certifi`, `requests` or `idna` before stopping
-services, but it does not install packages.
+services, but it does not install packages. The same preflight also enforces
+the `paho-mqtt>=2.0.0` compatibility floor because the bridge uses the 2.0
+callback API; that check is not a security-advisory claim.
 Rebuild or update the isolated environment and follow the
 [runtime validation procedure](tls-dependencies.md#operator-controlled-installation)
 before switching services.
