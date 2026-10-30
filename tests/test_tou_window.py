@@ -164,6 +164,16 @@ def test_accepted_charge_does_not_survive_boundary_via_hold_or_slew(rig, backup)
     assert rig.controller.previous_setpoint == 0
 
 
+def test_tou_guard_reports_a_single_suppression_marker(rig):
+    """A charge already marked [CHG:TOU] must not get a duplicate at write time."""
+    rig.controller._control_flags["charge_battery"] = True
+    assert rig.controller.run_cycle()
+    rig.clock.now.return_value = datetime(2026, 10, 29, 15, tzinfo=UTC)
+    assert rig.controller.run_cycle()
+    flags = rig.controller._render_cycle_telemetry.call_args.args[3]
+    assert flags.count("[CHG:TOU]") == 1
+
+
 def test_charge_stop_wins_over_conflicting_positive_minimum(rig):
     rig.controller._control_flags["charge_battery"] = True
     rig.controller.set_power_limits(100, 2250)

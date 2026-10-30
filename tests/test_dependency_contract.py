@@ -44,5 +44,7 @@ def test_installer_preflight_enforces_the_declared_dependency_floors():
     installer = (REPO / "update.sh").read_text()
     checks = dict(re.findall(r'require_stable\("([a-z0-9-]+)", "([0-9.]+)"\)', installer))
     assert set(checks) <= set(floors)
-    for name in ("cryptography", "certifi", "requests", "idna"):
-        assert checks.get(name) == floors[name], name
+    # Every packaged runtime floor must be enforced, not just the current five:
+    # adding a new core dependency without extending preflight should fail here.
+    for name, floor in floors.items():
+        assert checks.get(name) == floor, name

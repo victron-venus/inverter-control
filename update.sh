@@ -82,13 +82,15 @@ def require_stable(name, minimum):
         raise RuntimeError(f"{name} stable version >= {minimum} is required before updating")
 
 
-# Security floors from pyproject.toml and requirements.txt. A stale package would
-# silently keep the affected CA roots or vulnerable parsing while the update
-# reports success, so the selected interpreter is checked before services stop.
+# Dependency floors from pyproject.toml and requirements.txt. A stale package
+# would silently keep the affected CA roots or vulnerable parsing, and paho 1.x
+# lacks the CallbackAPIVersion API used by the MQTT bridge, while an update could
+# otherwise report success. Check the selected interpreter before services stop.
 require_stable("cryptography", "50.0.2")
 require_stable("certifi", "2026.10.19")
 require_stable("requests", "2.34.2")
 require_stable("idna", "3.15")
+require_stable("paho-mqtt", "2.0.0")
 root = pathlib.Path(sys.argv[1])
 for source in [root / "main.py", root / "runtime_python.py", *(root / "inverter_control").glob("*.py")]:
     compile(source.read_bytes(), str(source), "exec")

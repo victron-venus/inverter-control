@@ -580,9 +580,12 @@ class InverterController:
         # Handle pre-charge request from solar forecast webhook
         charge_battery = self.get_control_flag("charge_battery")
         charge_battery = self._consume_precharge_request(charge_battery)
-        charge_battery_blocked = charge_battery and self._in_expensive_window()
-        self._calculated_charge_battery = (charge_battery and not charge_battery_blocked) or (
-            self._last_setpoint_was_charge and self._in_expensive_window()
+        # One snapshot per cycle: a window boundary between two reads would
+        # otherwise make the strategy flag and the write guard disagree.
+        in_expensive_window = self._in_expensive_window()
+        charge_battery_blocked = charge_battery and in_expensive_window
+        self._calculated_charge_battery = (charge_battery and not in_expensive_window) or (
+            self._last_setpoint_was_charge and in_expensive_window
         )
 
         # HA-heavy SystemState snapshot
@@ -803,7 +806,11 @@ class InverterController:
             return setpoint, flags
         self._reset_submeter_trim("tou_changed_before_write")
         self._calculated_charge_battery = False
-        flags = flags.replace("[CHG]", "") + "[CHG:TOU] "
+        # Replace any existing forced-charge marker, including one already
+        # upgraded to [CHG:TOU] by the strategy, so the console shows it once.
+        for marker in ("[CHG:TOU] ", "[CHG:TOU]", "[CHG] ", "[CHG]"):
+            flags = flags.replace(marker, "")
+        flags += "[CHG:TOU] "
         if self.power_limit_min > 0:
             flags += "[CHG:limits-conflict] "
         return min(0, setpoint), flags
