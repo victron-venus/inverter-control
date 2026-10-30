@@ -412,6 +412,16 @@ passed with the same fixed issuer, workflow, repository, branch and source
 binding; a wrong source SHA was rejected. This additional preview verification
 does not change the **Unmet** assessment for a signed stable release.
 
+A further beta,
+[v1.23.10-beta.20](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.10-beta.20),
+was published on 2026-10-30 at 13:20 UTC from merged source
+`a3bce2884044d1abfd7d103bf88b7394e21a5743`. Its
+[signing job](https://github.com/victron-venus/inverter-control/actions/runs/41061389224/job/124084384592)
+and [independent recipient verification](evidence/signed-preview-validation-2026-10-30-beta20.json)
+passed with the same fixed issuer, workflow, repository, branch and source
+binding; a wrong source SHA was rejected. This second preview verification also
+does not change the **Unmet** assessment for a signed stable release.
+
 At the 2026-10-09 assessment, the stable release
 [v1.23.4](https://github.com/victron-venus/inverter-control/releases/tag/v1.23.4)
 was unsigned. The assessment conservatively retained **Unmet** until a signed stable
