@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Make the default automatic setpoint limits (−2300/+2250 W) explicit in the example configuration and configurable through local settings, interactive SetupHelper, or unattended installation options. Validate the effective pair before service interruption and preserve explicit choices through upgrades. Desktop/MQTT limit changes are saved across restarts; a persistence failure retains the previous running limits.
 - Allow the display-only console timezone to be overridden with `TIMEZONE` in `local_config.py`. The TOU expensive-hours policy still follows the GX `/Settings/System/TimeZone` setting; an invalid or unavailable display zone prints labelled UTC timestamps.
 
 ### Fixed
@@ -33,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade
 
-Updating application files alone does not update a running Python environment. Prepare and validate the complete dependency set from this release's lockfile and authenticated TLS bundle in a new private runtime before the controlled service update. Do not replace the firmware's shared Python packages. Preserve the active configuration, site-meter binding, tariff, control modes, limits and override; retain the previous package and runtime selector for rollback. Verify the selected interpreter's certifi version, native D-Bus/GI imports and fresh telemetry after switching. There are no configuration or tariff format changes, and NoEV house-support behavior is unchanged from 1.23.9.
+Updating application files alone does not update a running Python environment. Prepare and validate the complete dependency set from this release's lockfile and authenticated TLS bundle in a new private runtime before the controlled service update. Do not replace the firmware's shared Python packages. Preserve the active configuration, site-meter binding, tariff, control modes, limits and override; retain the previous package and runtime selector for rollback. Verify the selected interpreter's certifi version, native D-Bus/GI imports and fresh telemetry after switching. Existing local configuration and tariff formats remain compatible. The optional `power-limits.json` stores explicitly saved limits and takes precedence over `POWER_LIMIT_MIN`/`POWER_LIMIT_MAX` in local configuration; ordinary upgrades do not create this override. Desktop/MQTT limit changes now persist by default (`persist: false` keeps a change temporary). NoEV house-support behavior is unchanged from 1.23.9.
 
 Review the GUI expensive-hours settings before enabling `charge_battery`: it no longer bypasses that window. Explicit numeric setpoints and timed setpoint overrides retain their operator-controlled behavior; battery safety and ordinary solar/house regulation remain separate from this forced-charge policy. Verify the exact beta on the target device before relying on it for unattended control.
 

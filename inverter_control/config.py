@@ -14,6 +14,7 @@ from pathlib import Path
 
 from inverter_control.control_flags import get_control_toggle_config
 from inverter_control.credentials import read_bearer_token
+from inverter_control.power_limits import DEFAULT_MAX, DEFAULT_MIN, load_power_limits
 from inverter_control.tariff import DEFAULT_FILE, load_tariff
 
 logger = logging.getLogger("inverter-control")
@@ -280,8 +281,12 @@ def __getattr__(name: str):
 
 
 # Power limits for outlet protection (Watts)
-POWER_LIMIT_MAX = 2250  # Maximum import/charging (positive = charging battery)
-POWER_LIMIT_MIN = -2300  # Maximum export (negative = discharging to grid)
+_power_limits = load_power_limits(
+    _import_local_config("POWER_LIMIT_MIN", DEFAULT_MIN),
+    _import_local_config("POWER_LIMIT_MAX", DEFAULT_MAX),
+)
+POWER_LIMIT_MIN = _power_limits["min"]  # Negative = export/discharge
+POWER_LIMIT_MAX = _power_limits["max"]  # Positive = import/charge
 
 # Control loop timing
 LOOP_INTERVAL = 0.33  # seconds (3 times per second)

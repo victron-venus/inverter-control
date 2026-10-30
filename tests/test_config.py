@@ -45,6 +45,8 @@ def test_every_active_example_setting_is_loaded(monkeypatch):
         "HA_SENSORS": {"net_usage": "sensor.override_usage"},
         "VUE_SENSORS": {"garage": "Override"},
         "HA_DUMP_LOADS": ["switch.override_load"],
+        "POWER_LIMIT_MIN": -1700,
+        "POWER_LIMIT_MAX": 1800,
         "TOU_EXPENSIVE_START_HOUR": 20,
         "TOU_EXPENSIVE_END_HOUR": 6,
         "WATER_TANK_INSTANCE": 31,

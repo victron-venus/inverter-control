@@ -379,7 +379,7 @@ def test_setup_tariff_validation_uses_private_runtime(tmp_path):
     (data / "setupOptions/inverter-control/electricity-tariff.json").write_text(
         json.dumps(schedule())
     )
-    (package / "inverter_control").mkdir()
+    (package / "inverter_control").mkdir(exist_ok=True)
     shutil.copy2(REPO / "inverter_control/tariff.py", package / "inverter_control/tariff.py")
     result = subprocess.run(  # nosec B603
         ["/bin/bash", str(script)],

@@ -26,6 +26,14 @@ HA_TOKEN = ""  # nosec B105 - empty opt-in configuration, not a credential
 # PORTAL_ID (VRM Portal ID) is auto-detected at runtime from /sbin/get-unique-id
 # (fallback: eth0 MAC address). No need to configure it here.
 
+# Automatic grid setpoint limits, in watts. Negative = export/discharge;
+# positive = import/charge. Choose limits appropriate for this installation.
+# Use ordered integers within the supported -3000..3000 W range.
+# A saved /data/setupOptions/inverter-control/power-limits.json takes precedence;
+# installation options and later dashboard limit changes can save that file.
+POWER_LIMIT_MIN = -2300
+POWER_LIMIT_MAX = 2250
+
 # =============================================================================
 # CONSOLE DISPLAY TIMEZONE
 # =============================================================================

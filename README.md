@@ -118,6 +118,13 @@ exists; make lasting edits there as well. An explicit development
 deployment with `PUSH_LOCAL_CONFIG=1` replaces it; inspect deployment options
 before use. Python configuration is executable trusted code, not an upload format.
 
+Automatic inverter setpoint limits default to **−2300/+2250 W**, declared as
+`POWER_LIMIT_MIN` and `POWER_LIMIT_MAX` in the example configuration. SetupHelper
+can prompt for them; manual and noninteractive installations accept the same
+two environment variables. Later desktop/MQTT changes are saved across restarts.
+See [power limits](docs/power-limits.md) for the supported range, saved-setting
+precedence and examples for changing them before or after installation.
+
 The time-of-use defaults in the template bootstrap settings under
 `/Settings/InverterControl` on Venus OS; existing GUI settings take precedence.
 The expensive window blocks forecast pre-charge and the `charge_battery`

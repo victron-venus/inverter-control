@@ -17,16 +17,6 @@ source "/data/SetupHelper/HelperResources/IncludeHelpers"
 
 installDir="/data/inverter-control"
 
-protect_private_config() {
-    if [ -L "$1" ] || { [ -e "$1" ] && [ ! -f "$1" ]; }; then
-        echo "Private configuration must be a regular file, not a link: $1" >&2
-        return 1
-    fi
-    if [ -f "$1" ]; then
-        chmod 600 "$1" || return $?
-    fi
-}
-
 #### running manually - prompt for input (interactive terminals only).
 # Headless callers (MCP tools, CI, PackageManager without env) must never
 # land in standardActionPrompt: it reads stdin and blocks forever on a
@@ -84,18 +74,15 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         "$PYTHON" "$scriptDir/inverter_control/tariff.py" --stdin --check < "$tariffOption" || exit $?
     fi
 
-    # Use one installer for PackageManager, local updates and webhook releases.
-    # The package directory may be the source; update.sh handles that safely.
-    mkdir -p "$installDir" || exit $?
-    privateConfig="/data/setupOptions/$packageName/local_config.py"
-    protect_private_config "$privateConfig" || exit $?
-    protect_private_config "$installDir/local_config.py" || exit $?
-    if [ -f "$privateConfig" ]; then
-        (umask 077; cp "$privateConfig" "$installDir/local_config.py") || exit $?
-        protect_private_config "$installDir/local_config.py" || exit $?
-        logMessage "Using local_config.py from setupOptions"
+    # The shared updater validates the effective configuration and prompts for
+    # power limits before replacing local_config.py or stopping the controller.
+    # Automatic PackageManager runs never prompt, even when launched in a TTY.
+    configurePowerLimits=0
+    if [ -t 0 ] && [ "$userInteraction" = true ]; then
+        configurePowerLimits=1
     fi
-    sh "$scriptDir/update.sh" "$installDir" || exit $?
+    USE_SETUP_CONFIG=1 CONFIGURE_POWER_LIMITS="$configurePowerLimits" \
+        sh "$scriptDir/update.sh" "$installDir" || exit $?
 
 fi
 

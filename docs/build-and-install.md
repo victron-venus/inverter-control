@@ -30,6 +30,13 @@ validates required runtime imports and declared dependency floors before
 interrupting services. Uninstall stops the services and removes their activation
 hooks while retaining operator settings and data for deliberate cleanup.
 
+The default automatic setpoint limits are **−2300/+2250 W**. Interactive setup
+offers a choice; both setup and direct `update.sh` accept `POWER_LIMIT_MIN` and
+`POWER_LIMIT_MAX` together for unattended installation. The effective limits
+are validated and displayed before services stop. Ordinary updates retain the
+operator's values. See [power limits](power-limits.md) for configuration
+precedence, examples and persistent changes after installation.
+
 On devices sharing firmware Python with other services, prepare the optional
 [private runtime](tls-dependencies.md#operator-controlled-installation) before
 selecting it. Both service launchers and live installer checks use that selection.
