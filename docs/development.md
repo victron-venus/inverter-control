@@ -151,7 +151,7 @@ uv run --locked pytest tests .github/release-tests .github/workflow-tests
 ```
 
 CI runs the same full suite from a beta archive built from the pull-request
-commit (`archive-suite` in `.github/workflows/ci.yml`). The archive is built in
+merge commit (`archive-suite` in `.github/workflows/ci.yml`). The archive is built in
 a temporary worktree by `scripts/ci-build-archive.sh`, so it cannot read files
 from the source checkout.
 
