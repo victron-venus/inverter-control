@@ -162,6 +162,20 @@ class TestCreepLocalConfig:
         with pytest.raises(ValueError, match=rf"{name} must be -1-24"):
             self.load_config(monkeypatch, **{name: value})
 
+    @pytest.mark.parametrize("name", ["TOU_EXPENSIVE_START_HOUR", "TOU_EXPENSIVE_END_HOUR"])
+    @pytest.mark.parametrize("value", [-1.5, 15.5, 24.5])
+    def test_fractional_tou_hour_keeps_the_safe_default(self, monkeypatch, name, value):
+        """int(-1.5) would become -1 and silently disable the TOU guard."""
+        loaded = self.load_config(monkeypatch, **{name: value})
+        assert getattr(loaded, name) == (15 if name.endswith("START_HOUR") else 24)
+
+    @pytest.mark.parametrize("name", ["TOU_EXPENSIVE_START_HOUR", "TOU_EXPENSIVE_END_HOUR"])
+    @pytest.mark.parametrize("value", [0.0, 15.0, 24.0])
+    def test_integral_float_tou_hour_is_accepted(self, monkeypatch, name, value):
+        """An integral float is a valid hour and must not be rejected."""
+        loaded = self.load_config(monkeypatch, **{name: value})
+        assert getattr(loaded, name) == int(value)
+
 
 class TestGridLossLocalConfig:
     """The optional hold is loaded and validated before any hardware control."""

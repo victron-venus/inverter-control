@@ -209,9 +209,13 @@ def _tou_hour(name: str, default: int) -> int:
     raw = _import_local_config(name, None)
     if raw is None or str(raw).strip() == "":
         raw = os.environ.get(name, "")
+    # int(-1.5) would truncate to -1 and silently disable the window; a
+    # fractional hour is not a valid GX setting, so keep the safe default.
+    if isinstance(raw, float) and not raw.is_integer():
+        return default
     try:
         return int(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
