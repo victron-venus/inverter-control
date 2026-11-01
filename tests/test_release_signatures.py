@@ -199,6 +199,38 @@ def build_documents(assets, monkeypatch):
     return plan_path, policy_path
 
 
+def test_custom_preflight_preserves_receipt_for_strict_publication(assets, build_documents):
+    """Custom preflight preserves evidence; the publisher enforces attempt identity."""
+    import version_receipt
+
+    plan_path, policy_path = build_documents
+    plan = json.loads(plan_path.read_text())
+    policy = json.loads(policy_path.read_text())
+    receipt_path = assets / "release-inputs-package.json"
+    receipt = json.loads(receipt_path.read_text())
+    expected = version_receipt.producer_identity(signatures.REPOSITORY, 123, 2, plan["source_sha"])
+    for attempt in (1, 2):
+        receipt["producer"] = version_receipt.producer_identity(
+            signatures.REPOSITORY, 123, attempt, plan["source_sha"]
+        )
+        receipt_path.write_text(json.dumps(receipt))
+        before = {path.name: path.read_bytes() for path in assets.iterdir()}
+        with patch.object(signatures.subprocess, "run") as process:
+            signatures.verify_build(assets, plan_path, policy_path)
+        process.assert_not_called()
+        assert {path.name: path.read_bytes() for path in assets.iterdir()} == before
+        payloads = [
+            {"name": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+            for name, data in before.items()
+        ]
+        if attempt == 1:
+            with pytest.raises(ValueError, match="different package producer attempt"):
+                version_receipt.verify_receipts(assets, plan, payloads, policy, expected)
+        else:
+            verified = version_receipt.verify_receipts(assets, plan, payloads, policy, expected)
+            assert verified[0]["inputs"]["producer"] == expected
+
+
 @pytest.mark.parametrize("mode", ["default", "absolute", "relative-parent", "symlink"])
 def test_build_cli_accepts_explicit_control_files_outside_checkout(
     assets, build_documents, mode, tmp_path
