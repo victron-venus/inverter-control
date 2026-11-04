@@ -2,7 +2,7 @@
 
 This project carries two focused fixes from the shared release toolkit:
 
-- [Bounded GET recovery](https://github.com/victron-venus/venus-os-ci-toolkit/commit/f6b7d4dfbe44158663d6d3da8c3092932d59253a): retry recognized transport failures and HTTP 500, 502, 503 or 504 responses at most three times. Metadata attempts have a 30-second limit; whole-asset and Actions ZIP attempts have a 120-second limit. Failed response bytes are discarded. Authentication, certificate, missing-resource and rate-limit errors are not retried; writes remain single attempts.
+- [Bounded GET recovery](https://github.com/victron-venus/venus-os-ci-toolkit/commit/f6b7d4dfbe44158663d6d3da8c3092932d59253a): make at most three total attempts (the initial request and up to two retries) for recognized transport failures and HTTP 500, 502, 503 or 504 responses. Metadata attempts have a 30-second limit; whole-asset and Actions ZIP attempts have a 120-second limit. Failed response bytes are discarded. Authentication, certificate, missing-resource and rate-limit errors are not retried; writes remain single attempts.
 - [Current-attempt validation](https://github.com/victron-venus/venus-os-ci-toolkit/commit/ae0b6f54b19256c1495c821fb70145eaab6be04e): on a rerun, require successful validation jobs to start at or after the exact attempt start, with ordered job times and executed steps contained within their job. A new job ID or attempt number cannot make a copied earlier success current.
 
 These changes are a partial backport, not a full toolkit upgrade. The existing

@@ -469,8 +469,21 @@ class GitHub:
         )
 
     @classmethod
-    def _denied_partial_read(cls, stdout: bytes, stderr: bytes) -> bool:
+    def _denied_partial_read(cls, stdout: bytes, stderr: bytes,
+                             paginated: bool = False) -> bool:
         """A partial denial blocks retries without proving an optional absence."""
+        if not paginated:
+            # Binary and ordinary metadata bodies may contain status-shaped lines.
+            # Paginated --jq tojson bodies escape newlines; later page headers count.
+            separator = re.search(rb"\r?\n\r?\n", stdout)
+            if separator is not None:
+                header = stdout[:separator.end()]
+                try:
+                    _github_http_head(header)
+                except GitHubError:
+                    pass  # Unknown framing retains the conservative veto.
+                else:
+                    stdout = header
         return cls._denied_read_diagnostic(stderr) or bool(re.search(
             rb"(?:^|\n)HTTP/(?:1\.[01]|2(?:\.0)?) (?:401|403|404|429)(?:\s|$)", stdout))
 
@@ -485,7 +498,7 @@ class GitHub:
         try:
             http = github_http_response(result.stdout or b"", paginated)
         except GitHubError:
-            if (not transport or self._denied_partial_read(result.stdout or b"", result.stderr or b"")
+            if (not transport or self._denied_partial_read(result.stdout or b"", result.stderr or b"", paginated)
                     or final_attempt):
                 raise
             return None
@@ -511,7 +524,7 @@ class GitHub:
                     command, input=None, capture_output=True, check=False, timeout=timeout,
                 )
             except subprocess.TimeoutExpired as error:
-                if (self._denied_partial_read(error.stdout or b"", error.stderr or b"")
+                if (self._denied_partial_read(error.stdout or b"", error.stderr or b"", paginated)
                         or final_attempt):
                     raise GitHubError(
                         f"GET {endpoint}: read timed out after {attempt + 1} attempts"
