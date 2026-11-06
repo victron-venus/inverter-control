@@ -1,1 +1,2 @@
+# Regenerate with uv pip compile .github/requirements-fuzz.in --generate-hashes --universal --python-version=3.12 --output-file=.github/requirements-fuzz.txt
 atheris==3.1.0

@@ -1,6 +1,57 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "local>victron-venus/venus-os-ci-toolkit:renovate-ci"
-  ]
+    "local>victron-venus/venus-os-ci-toolkit:renovate-fleet"
+  ],
+  "enabledManagers": [
+    "custom.jsonata",
+    "custom.regex",
+    "github-actions",
+    "pep621",
+    "pip-compile",
+    "pip_requirements"
+  ],
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/node_modules/**",
+    "**/fixtures/**",
+    "**/tools/browser-compatibility/**",
+    "security/provider/**",
+    "build-support/tls-armv7/**"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "pep621",
+        "pip_requirements"
+      ],
+      "matchFileNames": [
+        "/^[^/]+$/"
+      ],
+      "schedule": [
+        "* * * * 1"
+      ]
+    }
+  ],
+  "pip_requirements": {
+    "managerFilePatterns": [
+      "/(^|/)requirements[^/]*\\.(txt|pip)$/"
+    ],
+    "ignorePaths": [
+      "**/vendor/**",
+      "**/node_modules/**",
+      "**/fixtures/**",
+      "**/tools/browser-compatibility/**",
+      "security/provider/**",
+      "build-support/tls-armv7/**",
+      ".github/requirements-bandit.txt",
+      ".github/requirements-fuzz.txt"
+    ]
+  },
+  "pip-compile": {
+    "managerFilePatterns": [
+      "/^\\.github/requirements\\-bandit\\.txt$/",
+      "/^\\.github/requirements\\-fuzz\\.txt$/"
+    ]
+  }
 }
