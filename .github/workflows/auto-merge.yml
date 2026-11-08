@@ -14,8 +14,8 @@ name: Auto Merge PRs
 permissions:
   contents: read
 concurrency:
-  group: automerge-${{ github.event.pull_request.number }}-${{ (github.event.action != 'edited' || github.event.changes.base) && 'state' || github.run_id }}
-  cancel-in-progress: true
+  group: automerge-${{ github.event.pull_request.number }}-${{ (github.event.action != 'edited' || github.event.changes.base) && 'state' || github.run_id }}${{ ((github.event.action == 'unlabeled' && github.event.label.name == 'automerge') || github.event.action == 'converted_to_draft' || (github.event.action == 'edited' && github.event.changes.base && github.event.pull_request.base.ref != github.event.repository.default_branch)) && format('-withdrawal-{0}', github.run_id) || '' }}
+  cancel-in-progress: false
 jobs:
   auto-merge:
     permissions:
@@ -24,7 +24,7 @@ jobs:
     if: >-
       (github.event.action != 'edited' || github.event.changes.base) &&
       contains(fromJSON('["4alvit","californiantiramisu","dependabot[bot]","renovate[bot]"]'), github.event.pull_request.user.login)
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-merge.yml@35ea6ef05730806bd85e27fdbbeed326ac5c3deb # main
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/auto-merge.yml@0047a13b5eb79dfa770e31070a83e9696ddd36d1 # main
     with:
       native-auto-merge: true
       required-status-checks: CodeQL,SonarCloud Code Analysis
