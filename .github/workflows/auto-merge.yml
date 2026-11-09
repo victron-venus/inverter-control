@@ -14,7 +14,7 @@ name: Auto Merge PRs
 permissions:
   contents: read
 concurrency:
-  group: automerge-${{ github.event.pull_request.number }}-${{ (github.event.action != 'edited' || github.event.changes.base) && 'state' || github.run_id }}${{ ((github.event.action == 'unlabeled' && github.event.label.name == 'automerge') || github.event.action == 'converted_to_draft' || (github.event.action == 'edited' && github.event.changes.base && github.event.pull_request.base.ref != github.event.repository.default_branch)) && format('-withdrawal-{0}', github.run_id) || '' }}
+  group: automerge-${{ github.event.pull_request.number }}-${{ (github.event.action != 'edited' || github.event.changes.base) && 'state' || github.run_id }}${{ ((github.event.action == 'unlabeled' && github.event.label.name == 'automerge') || github.event.action == 'converted_to_draft' || (github.event.action == 'edited' && github.event.changes.base)) && format('-withdrawal-{0}', github.run_id) || '' }}
   cancel-in-progress: false
 jobs:
   auto-merge:
