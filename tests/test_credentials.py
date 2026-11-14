@@ -6,9 +6,10 @@ annotations identify fixture comparisons and configuration inputs, never secrets
 
 import importlib.util
 import os
+import stat
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import pytest
 
@@ -42,8 +43,9 @@ def test_other_owner_rejected(token_file, monkeypatch):
     original = os.fstat
 
     def other_owner(descriptor):
-        metadata = original(descriptor)
-        return SimpleNamespace(st_mode=metadata.st_mode, st_uid=os.geteuid() + 1)
+        metadata = list(original(descriptor))
+        metadata[stat.ST_UID] = os.geteuid() + 1
+        return os.stat_result(metadata)
 
     monkeypatch.setattr(credentials.os, "fstat", other_owner)
     with pytest.raises(ValueError, match="belong to the service user"):
