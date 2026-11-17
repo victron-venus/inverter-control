@@ -38,7 +38,7 @@ with the reconcile moved to the 5 Hz background poll thread via
 **Post-deploy StageDiagnostic: `state`/`calc`/`acload`/`batteries`/`ess_mode`/
 `daily`/`ha_state` all now ≈**0ms**.** Remaining known cost: `perf` snapshot
 (~55ms, 5s cadence) and startup-only spikes. Full plan + remaining steps in
-[P2 — Telemetry decoupling](#p2--telemetry-decoupling) below.
+[P2 — Telemetry decoupling](#p2--telemetry-decoupling-keep-non-setpoint-reads-off-the-per-cycle-hot-path) below.
 
 ---
 
