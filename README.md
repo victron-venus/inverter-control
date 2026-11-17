@@ -33,6 +33,7 @@ software test does not certify electrical safety or suitability for a site.
 - Build and verify: [installation and build conventions](docs/build-and-install.md), [release signature verification](docs/release-signatures.md).
 - Contribute: [contribution policy](CONTRIBUTING.md), [development/test guide](docs/development.md), [governance](GOVERNANCE.md), and [one-year roadmap](ROADMAP.md).
 - Security: [private reporting and support policy](SECURITY.md), [security design](docs/security-design.md), [scanner policy](docs/security-scanning.md), [OpenSSF evidence](docs/openssf-evidence.md).
+- Docs index: [docs/README.md](docs/README.md).
 
 Use [GitHub Issues](https://github.com/victron-venus/inverter-control/issues) for
 bugs, feature requests and usage questions, and pull requests for proposed
