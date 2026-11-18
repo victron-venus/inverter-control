@@ -2599,9 +2599,18 @@ class VictronDBus:
             or self._optional_float(self._dbus_get(service, CONNECTED_PATH)) != 1
         ):
             return status
-        complete_raw = self._dbus_get_native_only(service, "/Info/DataComplete")
-        sampled_raw = self._dbus_get_native_only(service, "/Info/LastMeasurementMonotonic")
-        timeout_raw = self._dbus_get_native_only(service, "/Info/DataTimeout")
+        metadata = (
+            self._native.get_values(service, path="/Info") if self._native is not None else None
+        )
+        fields = ("/DataComplete", "/LastMeasurementMonotonic", "/DataTimeout")
+        if metadata is None:
+            # Older producers may expose individual items without an Info tree.
+            complete_raw, sampled_raw, timeout_raw = (
+                self._dbus_get_native_only(service, "/Info" + field) for field in fields
+            )
+        else:
+            # A working tree reports absent optional items without repeated errors.
+            complete_raw, sampled_raw, timeout_raw = (metadata.get(field) for field in fields)
         if complete_raw is not None:
             self._complete_battery_sources.add(service)
         if sampled_raw is not None or timeout_raw is not None:

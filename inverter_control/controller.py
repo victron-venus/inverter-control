@@ -226,8 +226,10 @@ class InverterController:
         self._grid_inputs_invalid = False
         self._control_grid_selection = 0
         self._last_backup_measurement = None
+        self._last_backup_charge_source: str | None = None
 
         self.loop_count = 0
+        self.last_cycle_failed = False
         self.state: dict[str, Any] = {}
         self.last_console_line = None
         self._solar_forecast: dict[str, Any] | None = None
@@ -256,8 +258,8 @@ class InverterController:
             interval=TOU_SETTING_TTL_SECONDS,
             max_age=3 * TOU_SETTING_TTL_SECONDS,
         )
-        self._calculated_charge_battery = False
-        self._last_setpoint_was_charge = False
+        self._calculated_charge_source: str | None = None
+        self._last_setpoint_charge_source: str | None = None
         if not getattr(self.victron, "_test_mode", False):
             self.victron.ensure_tou_settings(
                 _config.TOU_EXPENSIVE_START_HOUR, _config.TOU_EXPENSIVE_END_HOUR
@@ -432,13 +434,18 @@ class InverterController:
         self.ess_selection.apply(payload, write)
 
     def toggle_ess_mode(self) -> dict[str, Any]:
-        current = self.victron.get_ess_mode()
-        new_external = not current["is_external"]
-        if self.victron.set_ess_mode(external=new_external):
+        with self._watchdog._lock:
+            current = self.victron.get_ess_mode()
+            if self.dry_run:
+                logger.warning("ESS changes are unavailable in DRY mode")
+                return current
+            # The legacy transition can partially apply before returning failure.
+            self._trim_mode_generation += 1
+            if not self.victron.set_ess_mode(external=not current["is_external"]):
+                return current
             new_mode = self.victron.get_ess_mode()
-            logger.info(f"ESS Mode changed to {new_mode['mode_name']}")
-            return new_mode
-        return current
+        logger.info(f"ESS Mode changed to {new_mode['mode_name']}")
+        return new_mode
 
     def _in_expensive_window(self) -> bool:
         """True while inside the TOU expensive window (if configured).
@@ -564,7 +571,7 @@ class InverterController:
         """Orchestrate state collection and delegate calculation to logic.py"""
         self._trim_decision = None
         self._trim_context = None
-        self._calculated_charge_battery = False
+        self._calculated_charge_source = None
         if (
             sys_data.get("_grid_backup")
             and sys_data.get("_grid_measurement_time") == self._last_backup_measurement
@@ -572,8 +579,8 @@ class InverterController:
             self._reset_submeter_trim("backup_source")
             # HA can report more slowly than the control loop. Refresh the
             # accepted output, but apply feedback only once per source sample.
-            self._calculated_charge_battery = self._last_setpoint_was_charge
-            if self._calculated_charge_battery and self._in_expensive_window():
+            self._calculated_charge_source = self._last_backup_charge_source
+            if self._calculated_charge_source is not None and self._in_expensive_window():
                 return min(0, self.previous_setpoint), "[SUBMETER HOLD] [CHG:TOU] "
             return self.previous_setpoint, "[SUBMETER HOLD] "
         # Prepare SystemState snapshot
@@ -594,15 +601,16 @@ class InverterController:
         )
 
         # Handle pre-charge request from solar forecast webhook
-        charge_battery = self.get_control_flag("charge_battery")
-        charge_battery = self._consume_precharge_request(charge_battery)
+        charge_mode = self.get_control_flag("charge_battery")
+        charge_battery = self._consume_precharge_request(charge_mode)
         # One snapshot per cycle: a window boundary between two reads would
         # otherwise make the strategy flag and the write guard disagree.
         in_expensive_window = self._in_expensive_window()
         charge_battery_blocked = charge_battery and in_expensive_window
-        self._calculated_charge_battery = (charge_battery and not in_expensive_window) or (
-            self._last_setpoint_was_charge and in_expensive_window
-        )
+        if charge_battery and not in_expensive_window:
+            self._calculated_charge_source = "mode" if charge_mode else "forecast"
+        elif in_expensive_window:
+            self._calculated_charge_source = self._last_setpoint_charge_source
 
         # HA-heavy SystemState snapshot
         state = SystemState(
@@ -754,6 +762,7 @@ class InverterController:
         self, setpoint, generation, sys_data, flags, current_grid, cycle_started, *, automatic=True
     ):
         """Revalidate and write while preserving the watchdog lock and accepted baseline."""
+        charge_source = self._calculated_charge_source if automatic else None
 
         def accept_control_setpoint():
             # Commit the applied baseline while the hardware-write lock
@@ -763,9 +772,17 @@ class InverterController:
                     self._trim_decision, now=time.monotonic(), wall_time=time.time()
                 )
             self.previous_setpoint = setpoint
-            self._last_setpoint_was_charge = automatic and self._calculated_charge_battery
+            self._last_setpoint_charge_source = (
+                self._calculated_charge_source if automatic else None
+            )
             self._last_backup_measurement = (
                 sys_data.get("_grid_measurement_time") if sys_data.get("_grid_backup") else None
+            )
+            # Reapply charge suppression when holding this report, including
+            # with a positive configured minimum. A fresh report uses the
+            # accepted setpoint's provenance instead.
+            self._last_backup_charge_source = (
+                charge_source if self._last_backup_measurement is not None else None
             )
 
         with self._watchdog._lock:
@@ -802,7 +819,7 @@ class InverterController:
                 ):
                     flags = flags.replace(diagnostic + " ", "").replace(diagnostic, "")
                 flags += safety_flags
-                setpoint, flags = self._guard_tou_charge(setpoint, flags)
+                setpoint, flags = self._guard_forced_charge(setpoint, flags)
             if self.dry_run:
                 flags = f"{C.MAGENTA}[DRY]{C.RESET}" + flags
                 write_ok = self._watchdog.write_control_setpoint(
@@ -816,17 +833,25 @@ class InverterController:
                 self.metrics.record_write((time.perf_counter() - write_started) * 1000.0, write_ok)
         return setpoint, flags, write_ok
 
-    def _guard_tou_charge(self, setpoint: int, flags: str) -> tuple[int, str]:
-        """Recheck the wall clock and cached policy under the hardware-write lock."""
-        if not self._calculated_charge_battery or not self._in_expensive_window():
+    def _guard_forced_charge(self, setpoint: int, flags: str) -> tuple[int, str]:
+        """Check the current mode and tariff under the hardware-write lock."""
+        charge_source = self._calculated_charge_source
+        if charge_source is None:
             return setpoint, flags
-        self._reset_submeter_trim("tou_changed_before_write")
-        self._calculated_charge_battery = False
+        if self._in_expensive_window():
+            self._reset_submeter_trim("tou_changed_before_write")
+            marker = "[CHG:TOU] "
+        elif charge_source == "mode" and not self.get_control_flag("charge_battery"):
+            self._reset_submeter_trim("charge_mode_disabled")
+            marker = "[CHG:OFF] "
+        else:
+            return setpoint, flags
+        self._calculated_charge_source = None
         # Replace any existing forced-charge marker, including one already
         # upgraded to [CHG:TOU] by the strategy, so the console shows it once.
-        for marker in ("[CHG:TOU] ", "[CHG:TOU]", "[CHG] ", "[CHG]"):
-            flags = flags.replace(marker, "")
-        flags += "[CHG:TOU] "
+        for old_marker in ("[CHG:TOU] ", "[CHG:TOU]", "[CHG] ", "[CHG]"):
+            flags = flags.replace(old_marker, "")
+        flags += marker
         if self.power_limit_min > 0:
             flags += "[CHG:limits-conflict] "
         return min(0, setpoint), flags
@@ -1461,6 +1486,7 @@ class InverterController:
         return False
 
     def run_cycle(self) -> bool:
+        self.last_cycle_failed = False
         cycle_started = time.monotonic()
         stage_started = time.perf_counter()
 
@@ -1558,6 +1584,7 @@ class InverterController:
         except KeyboardInterrupt:
             return False
         except Exception as e:
+            self.last_cycle_failed = True
             try:
                 self._reset_submeter_trim("cycle_error")
                 log_exception(f"Error in control cycle: {e}")

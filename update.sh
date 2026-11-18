@@ -315,12 +315,12 @@ for svc in /service/inverter-control/log /service/inverter-control /service/log-
     [ -e "$svc" ] && svc -u "$svc" 2>/dev/null || true
 done
 
-# A successful svc command is not proof that the new process started. Wait
-# for a fresh heartbeat before stopping the bounded keepalive helper.
+# Wait for the control loop, not the independent watchdog heartbeat, before
+# stopping the bounded keepalive helper.
 ready=0
 attempt=0
 while [ "$attempt" -lt 30 ]; do
-    heartbeat=$(cat /run/inverter-control/inverter-control.heartbeat 2>/dev/null || true)
+    heartbeat=$(cat /run/inverter-control/heartbeat 2>/dev/null || true)
     case "$heartbeat" in
         ''|*[!0-9]*) ;;
         *)
@@ -335,7 +335,7 @@ while [ "$attempt" -lt 30 ]; do
     sleep 1
 done
 if [ "$ready" != 1 ]; then
-    echo "Controller did not produce a fresh heartbeat; inspect /var/log/inverter-control/current" >&2
+    echo "Controller did not produce a fresh control heartbeat; inspect /var/log/inverter-control/current" >&2
     # The helper has its own bounded timeout; do not stop it on failed startup.
     exit 1
 fi
