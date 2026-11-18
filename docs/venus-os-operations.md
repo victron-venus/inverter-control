@@ -30,10 +30,12 @@ ordinary command interface and verify fresh readback. Do not replay an old manua
 power request automatically. A retained status message does not prove that the new
 process restored the previous state.
 
-Heartbeat files are primed after creating their runtime directory and refreshed
-every five seconds. Deployment keepalive accepts an age below 15 seconds to allow
-for missed ticks. It removes the old controller heartbeat at startup, so only a
-new write can end the maintenance hold.
+The external watchdog's process heartbeat (`inverter-control.heartbeat`) starts
+before the first control cycle. The updater and keepalive use `heartbeat`, which
+starts after the first completed control cycle without an internal error. This
+can include a deliberate grid-loss fallback. Both timestamps refresh every five
+seconds off the control loop. Keepalive removes the previous control heartbeat
+when it starts and accepts an age below 15 seconds to allow for missed ticks.
 
 After three forced restarts within 300 seconds, the external watchdog pauses
 forced restarts for 600 seconds while leaving the service enabled under its
@@ -54,6 +56,9 @@ every 60 seconds. Forced charging waits for that worker's first valid snapshot
 and is blocked if the snapshot expires or the configured timezone is unknown.
 The hour boundary is checked on every charging cycle and again before writing,
 including while holding a repeated backup-meter sample.
+Switching off `charge_battery` also drops a held or in-flight forced-charge
+command from that mode before it can be written again. `[CHG:OFF]` identifies
+this transition. A held sample still contributes feedback only once.
 
 `minimize_charging` sends dump-load requests through a dedicated Home Assistant
 worker. The control loop only queues the latest intent; `[MC+queued:N]` and
@@ -73,6 +78,13 @@ cat /run/inverter-control/inverter-control.heartbeat
 ```
 
 Never read `supervise/ok` using `cat`: it is a FIFO. `svc -s` suspends the process and is not a status command.
+
+If MQTT state and heartbeats are fresh while `svstat` reports that supervision
+is unavailable, check the application supervisors before upgrading. An existing
+supervisor can hold an open FIFO that has been removed from its service directory.
+Deleting or recreating `supervise` while its process is running will not reconnect
+it. Restore the affected application supervisors during a planned maintenance
+window, then verify `svstat` for the services and their `log` directories.
 
 Normal logs go through bounded multilog. `/var/log` points to `/data/log` on the audited Venus OS v3.75 device, so a duplicate unbounded DEBUG file writes flash twice. `INVERTER_CONTROL_LOG_FILE` is now opt-in; when set it retains a current 512 KiB file and two backups. Existing legacy log files are not deleted automatically. Watchdog stdout is also captured by multilog; an optional `WATCHDOG_LOG` duplicate is bounded. The log-forwarder's frequently updated position file defaults to `/run/inverter-control/log-forwarder-state.json`; it resets on reboot and may replay currently retained log lines.
 

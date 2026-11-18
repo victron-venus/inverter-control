@@ -1131,9 +1131,11 @@ def test_toggle_ess_mode_writes_and_returns_observed_mode():
     external = {"is_external": True, "mode_name": "External control"}
     victron.get_ess_mode.side_effect = [optimized, external]
     victron.set_ess_mode.return_value = True
+    generation = controller._trim_mode_generation
 
     assert controller.toggle_ess_mode() == external
     victron.set_ess_mode.assert_called_once_with(external=True)
+    assert controller._trim_mode_generation == generation + 1
 
 
 def test_toggle_ess_mode_keeps_current_mode_when_write_fails():
@@ -1144,6 +1146,17 @@ def test_toggle_ess_mode_keeps_current_mode_when_write_fails():
 
     assert controller.toggle_ess_mode() == current
     assert victron.set_ess_mode.call_count == 1
+
+
+def test_toggle_ess_mode_dry_run_returns_observed_mode_without_writing():
+    controller, victron, _, _ = _make_controller(dry_run=True)
+    current = {"is_external": False, "mode_name": "Optimized"}
+    victron.get_ess_mode.return_value = current
+    generation = controller._trim_mode_generation
+
+    assert controller.toggle_ess_mode() == current
+    victron.set_ess_mode.assert_not_called()
+    assert controller._trim_mode_generation == generation
 
 
 def test_run_cycle_records_error_without_stopping_the_loop():

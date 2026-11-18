@@ -242,6 +242,48 @@ def test_legacy_source_without_metadata_remains_supported(device, monkeypatch):
     assert device._battery_source_status(BATTERY_CHAIN_1)["available"]
 
 
+def test_info_snapshot_avoids_probing_unexported_virtual_battery_items(device):
+    service = "com.victronenergy.battery.virtual_chain"
+    device._native = Mock()
+    device._native.get_value.return_value = "1"
+    device._native.get_values.return_value = {"/DataComplete": "1"}
+
+    status = device._battery_source_status(service)
+
+    assert status["available"]
+    assert status["sample_age_seconds"] is None
+    device._native.get_value.assert_called_once_with(service, "/Connected")
+    device._native.get_values.assert_called_once_with(service, path="/Info")
+
+
+def test_info_snapshot_preserves_observed_timing_contract(device, monkeypatch):
+    monkeypatch.setattr("inverter_control.victron.time.monotonic", lambda: 100.0)
+    device._native = Mock()
+    device._native.get_value.return_value = "1"
+    device._native.get_values.return_value = {
+        "/DataComplete": "1",
+        "/LastMeasurementMonotonic": "91",
+        "/DataTimeout": "10",
+    }
+    assert device._battery_source_status(BATTERY_CHAIN_1)["sample_age_seconds"] == 9
+    device._native.get_values.return_value = {"/DataComplete": "1"}
+    assert device._battery_source_status(BATTERY_CHAIN_1)["reason"] == "incomplete"
+
+
+def test_unsupported_info_snapshot_falls_back_to_individual_items(device, monkeypatch):
+    monkeypatch.setattr("inverter_control.victron.time.monotonic", lambda: 100.0)
+    device._native = Mock()
+    device._native.get_values.return_value = None
+    fields = {
+        "/Connected": "1",
+        "/Info/DataComplete": "1",
+        "/Info/LastMeasurementMonotonic": "88",
+        "/Info/DataTimeout": "10",
+    }
+    device._native.get_value.side_effect = lambda _, path: fields[path]
+    assert device._battery_source_status(BATTERY_CHAIN_1)["reason"] == "stale_sample"
+
+
 @pytest.mark.parametrize("raw", [None, "bad", "nan", "inf"])
 def test_invalid_time_to_go_remains_unknown(device, monkeypatch, raw):
     monkeypatch.setattr(device, "_dbus_get", lambda *_: "1")

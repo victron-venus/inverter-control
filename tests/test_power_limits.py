@@ -101,6 +101,16 @@ def test_failed_replace_preserves_file_and_cleans_temporary(setup_file):
     assert list(setup_file.parent.iterdir()) == [setup_file]
 
 
+def test_repeated_save_skips_writing_but_repairs_permissions(setup_file):
+    pair = {"min": -1000, "max": 1000}
+    limits.write_power_limits(pair)
+    with patch.object(limits.os, "fsync", side_effect=AssertionError("redundant flash write")):
+        assert limits.write_power_limits(pair) == pair
+    setup_file.chmod(0o644)
+    assert limits.write_power_limits(pair) == pair
+    assert setup_file.stat().st_mode & 0o777 == 0o600
+
+
 def test_local_config_not_executed(setup_file, tmp_path):
     config = tmp_path / "local_config.py"
     config.write_text(

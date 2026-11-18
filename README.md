@@ -202,9 +202,9 @@ fallback behavior. See [operations](docs/venus-os-operations.md).
 
 For an isolated, prepared test installation, `python3 main.py --dry-run` suppresses
 automatic grid-regulation writes but still starts integrations and network activity.
-It is not a hardware lockout: explicit sustained overrides, legacy ESS commands
-and Home Assistant actuators can still operate; an authorized MQTT command can
-switch back to live mode. Isolate command publishers and HA actuators for an
+It is not a hardware lockout. Explicit sustained overrides and Home Assistant
+actuators can still operate, and an authorized MQTT command can switch back to
+live mode. Isolate command publishers and HA actuators for an
 observation-only test. See the exact [dry-run scope](docs/interfaces.md#process-and-configuration).
 Do not run
 a second controller alongside the supervised service. Without `--dry-run`, the

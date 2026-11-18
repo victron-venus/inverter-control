@@ -328,12 +328,10 @@ def _setup_mqtt_bridge(controller):
     return bridge
 
 
-def _write_heartbeats(heartbeat_file: str, watchdog_heartbeat_file: str) -> None:
-    """Write heartbeat files for the internal and external watchdogs."""
+def _write_heartbeat(path: str) -> None:
+    """Refresh one heartbeat without making file errors fatal."""
     try:
-        with open(heartbeat_file, "w", encoding="utf-8") as f:
-            f.write(str(int(time.time())))
-        with open(watchdog_heartbeat_file, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(str(int(time.time())))
     except OSError:
         pass  # Ignore if heartbeat fails
@@ -342,17 +340,25 @@ def _write_heartbeats(heartbeat_file: str, watchdog_heartbeat_file: str) -> None
 HEARTBEAT_INTERVAL = 5.0
 
 
-def _heartbeat_loop(stop_event, heartbeat_file: str, watchdog_heartbeat_file: str) -> None:
-    """Keep the external watchdog's heartbeat fresh from its own thread.
+def _heartbeat_loop(
+    stop_event: threading.Event,
+    control_ready: threading.Event,
+    heartbeat_file: str,
+    watchdog_heartbeat_file: str,
+) -> None:
+    """Keep process liveness independent of control cycles.
 
     The external watchdog measures "process is alive". Writing from a
     dedicated ticker (instead of the control cycle) prevents a slow-but-alive
     loop - or CPU starvation during D-Bus storms - from being misread as a
     dead service and triggering the restart kill-loop. True stalls are still
     caught by the in-process HardwareWatchdog, which forces a safe setpoint.
+    Deployment keepalive uses a separate heartbeat after the control loop starts.
     """
     while not stop_event.wait(HEARTBEAT_INTERVAL):
-        _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
+        _write_heartbeat(watchdog_heartbeat_file)
+        if control_ready.is_set():
+            _write_heartbeat(heartbeat_file)
 
 
 def _next_slot(next_deadline: float, interval: float) -> tuple[float, float]:
@@ -497,8 +503,7 @@ def _run_main_loop(controller, mqtt_bridge):
     # Also mirror in the same directory for the external watchdog service
     # (services/watchdog/run) which checks {heartbeat_dir}/inverter-control.heartbeat
     watchdog_heartbeat_file = f"{heartbeat_dir}/inverter-control.heartbeat"
-    # /run is empty after reboot. Create it before starting workers or priming
-    # the heartbeat so keepalive can observe the first successful startup.
+    # /run is empty after reboot. Create it before starting heartbeat writers.
     os.makedirs(heartbeat_dir, mode=0o755, exist_ok=True)
 
     # Start the hardware watchdog just before entering the loop, so slow
@@ -511,15 +516,16 @@ def _run_main_loop(controller, mqtt_bridge):
         controller.derived_grid_filter.start()
 
     hb_stop = threading.Event()
+    control_ready = threading.Event()
     hb_thread = threading.Thread(
         target=_heartbeat_loop,
-        args=(hb_stop, heartbeat_file, watchdog_heartbeat_file),
+        args=(hb_stop, control_ready, heartbeat_file, watchdog_heartbeat_file),
         name="heartbeat-writer",
         daemon=True,
     )
-    # Prime the heartbeat immediately so a freshly started service isn't
-    # seen as stale by the external watchdog during first-loop warmup.
-    _write_heartbeats(heartbeat_file, watchdog_heartbeat_file)
+    # The watchdog sees the process immediately. Keepalive waits for the loop
+    # to complete an iteration, including a deliberate grid-loss fallback.
+    _write_heartbeat(watchdog_heartbeat_file)
     hb_thread.start()
 
     try:
@@ -528,6 +534,9 @@ def _run_main_loop(controller, mqtt_bridge):
             if not controller.run_cycle():
                 logger.info("run_cycle returned False - exiting main loop")
                 break
+            if not control_ready.is_set() and not controller.last_cycle_failed:
+                _write_heartbeat(heartbeat_file)
+                control_ready.set()
             _publish_state(controller, mqtt_bridge)
             last_gc_time = _maybe_run_gc(last_gc_time, gc_interval)
             delay, next_deadline = _next_slot(next_deadline, controller.loop_interval)

@@ -160,6 +160,17 @@ class TestGetValue:
         assert client.get_value("com.victronenergy.test", "/x") is None
 
 
+def test_get_values_reads_requested_info_subtree(client):
+    client._bus = FakeBus(_return([Variant("a{sv}", {"DataComplete": Variant("u", 1)})]))
+
+    assert client.get_values("com.victronenergy.battery.virtual_chain", path="/Info") == {
+        "/DataComplete": "1"
+    }
+    assert len(client._bus.messages) == 1
+    assert client._bus.messages[0].path == "/Info"
+    assert client._bus.messages[0].member == "GetValue"
+
+
 class TestFailureHandling:
     """Transport failures enter a reconnect cooldown instead of hammering the bus."""
 

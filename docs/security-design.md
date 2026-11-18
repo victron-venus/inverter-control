@@ -188,10 +188,10 @@ environment are administrator-controlled settings.
 
 DRY suppresses ordinary automatic inverter setpoint writes and their automatic
 watchdog fallback. It does not disable every actuator or command interface.
-An explicit persistent setpoint override still writes hardware, the legacy
-ESS-mode toggle can change the inverter mode, HA toggle/press commands can
-operate remote devices, and configured `minimize_charging` logic can call HA
-switch services. An authorized MQTT client can also change the dry-run flag.
+An explicit persistent setpoint override still writes hardware. HA toggle/press
+commands can operate remote devices, and configured `minimize_charging` logic can
+call HA switch services. An authorized MQTT client can change the dry-run flag.
+Both ESS mode commands suppress ESS writes in DRY mode.
 
 Use mocked D-Bus/HA services and an isolated test broker for bench/software
 tests. If connecting to real equipment, isolate command publishers and auxiliary

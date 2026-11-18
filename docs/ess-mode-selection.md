@@ -17,7 +17,8 @@ digits, dots, underscores, colons or hyphens. Supported modes:
 Profile choices leave the power switch unchanged. Power changes require a
 known VE.Bus service advertising `/ModeIsAdjustable = 1`. Failed writes stop the
 sequence and invalidate the observation cache; no rollback or automatic retry
-is attempted. DRY mode rejects all explicit selections without hardware writes.
+is attempted. DRY mode suppresses hardware writes from explicit selections and
+the legacy toggle.
 
 `ess_mode` in the normal state publication adds `selection_supported`,
 `selected`, `vebus_mode`, `request_id`, and `error`. Selection is derived from

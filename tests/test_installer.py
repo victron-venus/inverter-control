@@ -39,10 +39,12 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
     bin_dir.mkdir()
     heartbeat_dir = tmp_path / "run/inverter-control"
     heartbeat_dir.mkdir(parents=True)
-    if fresh_heartbeat:
-        import time
-
-        (heartbeat_dir / "inverter-control.heartbeat").write_text(str(int(time.time()) + 10))
+    # Start with the previous controller's heartbeat. Emit the new values
+    # when the fake supervisor receives the actual start request.
+    (heartbeat_dir / "heartbeat").write_text("999")
+    clock = bin_dir / "date"
+    clock.write_text("#!/bin/sh\necho 1000\n")
+    clock.chmod(0o755)
     for command in ("sleep", "svc", "python3", "svstat"):
         path = bin_dir / command
         status = python_status if command == "python3" else 0
@@ -57,6 +59,19 @@ def fake_device(tmp_path: Path, *, python_status: int = 0, fresh_heartbeat: bool
             path.write_text(
                 '#!/bin/sh\necho "/service/inverter-control: up (pid 1234) 3 seconds"\n'
             )
+        if command == "svc":
+            watchdog_heartbeat = shlex.quote(str(heartbeat_dir / "inverter-control.heartbeat"))
+            heartbeat = shlex.quote(str(heartbeat_dir / "heartbeat"))
+            controller_service = shlex.quote(str(services / "inverter-control"))
+            lines = [
+                "#!/bin/sh",
+                f'echo svc >> "{tmp_path}/commands"',
+                f'if [ "$1" = -u ] && [ "$2" = {controller_service} ]; then',
+                f"    echo 1001 > {watchdog_heartbeat}",
+            ]
+            if fresh_heartbeat:
+                lines.append(f"    echo 1001 > {heartbeat}")
+            path.write_text("\n".join([*lines, "fi", "exit 0", ""]))
         path.chmod(0o755)
     for name in ("inverter-control", "log-forwarder", "watchdog"):
         service = package / "service" / name
@@ -120,14 +135,14 @@ def test_staged_update_refreshes_code_without_replacing_supervisors(tmp_path):
     assert (package / "service/inverter-control/supervise").stat().st_ino == inode
 
 
-def test_failed_startup_is_not_reported_as_installed(tmp_path):
+def test_watchdog_heartbeat_alone_does_not_report_successful_install(tmp_path):
     package, _, env = fake_device(tmp_path, fresh_heartbeat=False)
     # Test harness intentionally uses its fixture-controlled PATH.
     result = subprocess.run(  # nosec B603, B607
         ["sh", "update.sh", str(package)], cwd=package, env=env, capture_output=True, text=True
     )
     assert result.returncode == 1
-    assert "fresh heartbeat" in result.stderr
+    assert "fresh control heartbeat" in result.stderr
     assert "installed version" not in result.stdout
 
 
