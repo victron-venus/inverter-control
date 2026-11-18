@@ -10,13 +10,15 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from test_main import _make_controller
 
 import main
 
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_cold_start_primes_both_heartbeats_before_ticker_and_first_cycle(tmp_path, monkeypatch):
+@pytest.fixture
+def startup(tmp_path, monkeypatch):
     runtime = tmp_path / "run/inverter-control"
     real_makedirs = os.makedirs
 
@@ -28,26 +30,103 @@ def test_cold_start_primes_both_heartbeats_before_ticker_and_first_cycle(tmp_pat
         assert str(path).startswith("/run/inverter-control/")
         return builtins.open(runtime / Path(path).name, *args, **kwargs)
 
-    def check_primed():
-        assert int((runtime / "heartbeat").read_text()) > 0
-        assert int((runtime / "inverter-control.heartbeat").read_text()) > 0
-        return False
-
     ticker = Mock()
-    ticker.start.side_effect = check_primed
     controller = Mock(loop_interval=0.33, grid_filter=None, derived_grid_filter=None)
-    controller.run_cycle.side_effect = check_primed
     shutdown = Mock(return_value=True)
     monkeypatch.setattr(main, "os", SimpleNamespace(makedirs=mkdir))
     monkeypatch.setattr(main, "open", open_heartbeat, raising=False)
     monkeypatch.setattr(main.threading, "Thread", Mock(return_value=ticker))
     monkeypatch.setattr(main, "_shutdown_main_loop", shutdown)
+    monkeypatch.setattr(main, "_publish_state", Mock())
+    monkeypatch.setattr(main.time, "sleep", Mock())
+    return runtime, ticker, controller, shutdown
+
+
+def assert_not_ready(runtime):
+    assert int((runtime / "inverter-control.heartbeat").read_text()) > 0
+    assert not (runtime / "heartbeat").exists()
+
+
+def test_cold_start_publishes_control_heartbeat_after_first_completed_cycle(startup):
+    runtime, ticker, controller, shutdown = startup
+
+    def check_primed():
+        assert_not_ready(runtime)
+
+    def first_cycle():
+        check_primed()
+        # A deliberate grid-unavailable fallback still completes a cycle.
+        controller.state = {"grid_control_valid": False}
+        controller.last_cycle_failed = False
+        return True
+
+    def completed_cycle():
+        assert int((runtime / "heartbeat").read_text()) > 0
+        return False
+
+    ticker.start.side_effect = check_primed
+    cycles = iter([first_cycle, completed_cycle])
+    controller.run_cycle.side_effect = lambda: next(cycles)()
 
     main._run_main_loop(controller, None)
 
-    controller.run_cycle.assert_called_once()
+    assert controller.run_cycle.call_count == 2
     ticker.start.assert_called_once()
     shutdown.assert_called_once()
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_no_control_heartbeat_when_first_cycle_exits_or_raises(startup, raises):
+    runtime, _, controller, shutdown = startup
+    if raises:
+        controller.run_cycle.side_effect = RuntimeError("cycle failed")
+        with pytest.raises(RuntimeError, match="cycle failed"):
+            main._run_main_loop(controller, None)
+    else:
+        controller.run_cycle.return_value = False
+        main._run_main_loop(controller, None)
+
+    assert_not_ready(runtime)
+    shutdown.assert_called_once()
+
+
+def test_caught_cycle_failure_does_not_mark_control_ready(startup):
+    runtime, _, mock_controller, _ = startup
+    controller, victron, _, _ = _make_controller()
+
+    def failed_cycle():
+        victron.get_system_data.side_effect = RuntimeError("synthetic read failure")
+        result = controller.run_cycle()
+        mock_controller.last_cycle_failed = controller.last_cycle_failed
+        return result
+
+    def exit_cycle():
+        assert_not_ready(runtime)
+        return False
+
+    cycles = iter([failed_cycle, exit_cycle])
+    mock_controller.run_cycle.side_effect = lambda: next(cycles)()
+
+    main._run_main_loop(mock_controller, None)
+
+    assert_not_ready(runtime)
+
+
+def test_background_ticker_refreshes_keepalive_only_after_readiness(monkeypatch):
+    writes = Mock()
+    stop = Mock()
+    stop.wait.side_effect = [False, False, True]
+    ready = Mock()
+    ready.is_set.side_effect = [False, True]
+    monkeypatch.setattr(main, "_write_heartbeat", writes)
+
+    main._heartbeat_loop(stop, ready, "control", "watchdog")
+
+    assert [call.args for call in writes.call_args_list] == [
+        ("watchdog",),
+        ("watchdog",),
+        ("control",),
+    ]
 
 
 def test_runtime_directory_failure_does_not_start_workers(monkeypatch):

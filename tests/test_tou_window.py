@@ -1,6 +1,7 @@
 """TOU guards forced charging across all transports without control-thread I/O."""
 
 import threading
+import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -162,6 +163,65 @@ def test_accepted_charge_does_not_survive_boundary_via_hold_or_slew(rig, backup)
     if backup:
         assert "[SUBMETER HOLD]" in flags
     assert rig.controller.previous_setpoint == 0
+
+
+def test_disabling_charge_on_held_backup_sample_releases_the_output(rig):
+    rig.data.update(_grid_backup=True, _grid_measurement_time=123)
+    rig.controller.set_control_flag("charge_battery", True)
+    assert rig.controller.run_cycle()
+    assert rig.victron.set_grid_setpoint.call_args.args[0] > 0
+    rig.controller.set_control_flag("charge_battery", False)
+    with patch.object(rig.controller.calculator, "calculate") as calculate:
+        assert rig.controller.run_cycle()
+        flags = rig.controller._render_cycle_telemetry.call_args.args[3]
+        assert "[SUBMETER HOLD]" in flags
+        assert "[CHG:OFF]" in flags
+        assert rig.controller.run_cycle()
+    calculate.assert_not_called()
+    assert [c.args for c in rig.victron.set_grid_setpoint.call_args_list[-2:]] == [(0,), (0,)]
+    assert rig.controller.previous_setpoint == 0
+
+
+def test_disabling_charge_during_calculation_blocks_the_stale_write(rig):
+    rig.controller.set_control_flag("charge_battery", True)
+
+    def before_write():
+        rig.controller.set_control_flag("charge_battery", False)
+        return rig.data
+
+    rig.victron.get_grid_status.side_effect = before_write
+    assert rig.controller.run_cycle()
+    rig.victron.set_grid_setpoint.assert_called_once_with(0)
+    assert "[CHG:OFF]" in rig.controller._render_cycle_telemetry.call_args.args[3]
+
+
+@pytest.mark.parametrize("cutoff", ["OFF", "TOU"])
+def test_suppressed_charge_ignores_positive_minimum_until_next_backup_sample(rig, cutoff):
+    rig.data.update(_grid_backup=True, _grid_measurement_time=123)
+    rig.controller.set_power_limits(100, 2250)
+    rig.controller.set_control_flag("charge_battery", True)
+    assert rig.controller.run_cycle()
+    assert rig.victron.set_grid_setpoint.call_args.args[0] > 100
+    if cutoff == "OFF":
+        rig.controller.set_control_flag("charge_battery", False)
+    else:
+        rig.clock.now.return_value = datetime(2026, 10, 29, 15, tzinfo=UTC)
+    for _ in range(3):
+        assert rig.controller.run_cycle()
+        rig.victron.set_grid_setpoint.assert_called_with(0)
+        assert f"[CHG:{cutoff}]" in rig.controller._render_cycle_telemetry.call_args.args[3]
+    rig.data["_grid_measurement_time"] = 124
+    assert rig.controller.run_cycle()
+    rig.victron.set_grid_setpoint.assert_called_with(100)
+
+
+def test_forecast_can_charge_with_manual_charge_mode_off(rig):
+    rig.controller._pre_charge_requested = True
+    rig.controller._pre_charge_expires_at = time.time() + 60
+    assert not rig.controller.get_control_flag("charge_battery")
+    assert rig.controller.run_cycle()
+    assert rig.victron.set_grid_setpoint.call_args.args[0] > 0
+    assert "[CHG]" in rig.controller._render_cycle_telemetry.call_args.args[3]
 
 
 def test_tou_guard_reports_a_single_suppression_marker(rig):

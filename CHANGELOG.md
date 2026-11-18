@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.11] - Candidate series
+
+### Fixed
+
+- Keep the deployment hold active until the controller completes a control cycle. The external watchdog still receives its separate startup heartbeat during warm-up.
+- Reject legacy MQTT ESS toggles in dry-run mode, consistent with the explicit ESS selector. Successful legacy toggles invalidate pending submeter trim calculations.
+- Stop refreshing a forced-charge command when the operator disables it, even while the backup meter is repeating the last sample. A held command also stays suppressed throughout an expensive interval until a fresh calculation can run.
+- Skip redundant flash writes when saving an unchanged, already private power-limit pair.
+- Read optional battery freshness metadata in one D-Bus snapshot. Virtual batteries without timing paths no longer trigger repeated reads of those missing paths, and sources with known timing metadata still require fresh samples.
+
+### Upgrade
+
+Retain the existing local configuration, runtime selector, limits and operating modes. Check `svstat` before upgrading. If daemontools reports `supervise not running` for a controller that is still publishing fresh telemetry, restore service supervision in a controlled maintenance window before installing.
+
+### Security
+
+The legacy ESS command now respects dry-run. The release does not change MQTT authentication or permissions.
+
 ## [1.23.10] - Candidate series, updated 2026-10-30
 
 ### Added

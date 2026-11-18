@@ -18,10 +18,10 @@ The entry point is `python3 main.py [setpoint] [--dry-run]`:
 - `--help` prints argparse usage. Invalid command-line syntax exits nonzero.
 
 **Dry-run is not a hardware lockout.** A persistent `setpoint_override` deliberately
-operates even in DRY mode. Legacy `ess_mode`, forwarded HA `toggle`/`press`, and
-HA dump-load automation can also actuate devices; `cmd/dry_run` can re-enable live
+operates even in DRY mode. Forwarded HA `toggle`/`press` and HA dump-load
+automation can also actuate devices. `cmd/dry_run` can re-enable live
 regulation. Isolate command publishers and disable HA actuators for an
-observation-only test. The explicit `set_ess_mode` command does reject DRY mode.
+observation-only test. Both `ess_mode` and `set_ess_mode` suppress ESS writes in DRY mode.
 
 The default configuration is live operation. In continuous mode the default
 cycle interval is 0.33 seconds; this is a scheduling target, not a real-time

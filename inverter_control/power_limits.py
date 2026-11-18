@@ -77,8 +77,14 @@ def write_power_limits(limits: dict[str, int], *, path=None) -> dict[str, int]:
     path = SETUP_FILE if path is None else Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with suppress(FileNotFoundError):
-        if not stat.S_ISREG(path.lstat().st_mode):
+        mode = path.lstat().st_mode
+        if not stat.S_ISREG(mode):
             raise ValueError(f"Power limits must be a regular file: {path}")
+        # Repeated saves of a private, valid pair do not need a flash write.
+        if stat.S_IMODE(mode) == 0o600:
+            with suppress(OSError, ValueError):
+                if read_power_limits(path) == limits:
+                    return limits
     fd, temporary = tempfile.mkstemp(prefix=".power-limits-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as target:

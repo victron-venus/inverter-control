@@ -31,7 +31,7 @@ def test_positional_command_runs_one_bounded_manual_write(monkeypatch, requested
     monkeypatch.setattr(main, "InverterController", Mock(return_value=controller))
     monkeypatch.setattr(main, "_setup_mqtt_bridge", Mock(return_value=None))
     monkeypatch.setattr(main, "_shutdown_main_loop", shutdown)
-    monkeypatch.setattr(main, "_write_heartbeats", heartbeat)
+    monkeypatch.setattr(main, "_write_heartbeat", heartbeat)
     monkeypatch.setattr(main, "_run_main_loop", loop)
     monkeypatch.setattr("inverter_control.controller.broadcast_line", Mock())
 

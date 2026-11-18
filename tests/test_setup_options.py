@@ -13,6 +13,8 @@ from runtime_fixtures import real_selector_bootstrap
 from test_installer import fake_device
 
 REPO = Path(__file__).resolve().parents[1]
+# Bound accidental prompts while allowing the fake installer to spawn children on a busy host.
+SETUP_TIMEOUT = 15
 
 
 @pytest.mark.parametrize("option", [None, "true\n", "false\n"])
@@ -26,7 +28,7 @@ def test_automatic_setup_does_not_prompt_and_keeps_private_config(tmp_path, opti
             stdin=slave,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=SETUP_TIMEOUT,
         )
     finally:
         os.close(master)
@@ -47,7 +49,9 @@ def test_automatic_setup_does_not_prompt_and_keeps_private_config(tmp_path, opti
 def test_invalid_option_stops_before_replacing_config_or_starting_update(tmp_path):
     data, package, script = prepare_setup(tmp_path, "enable")
     # Test harness intentionally uses its fixture-controlled PATH.
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
+    result = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, timeout=SETUP_TIMEOUT
+    )  # nosec B603, B607
     assert result.returncode == 1 and "must contain true or false" in result.stderr
     assert not (data / "updated").exists()
     assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"
@@ -97,7 +101,11 @@ def test_automatic_setup_validates_tariff_without_prompting(tmp_path, cleared):
     path.write_text(content)
     # Test harness intentionally uses its fixture-controlled PATH.
     result = subprocess.run(  # nosec B603, B607
-        ["bash", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5
+        ["bash", str(script)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=SETUP_TIMEOUT,
     )
     assert result.returncode == 0, result.stderr
     assert "Configure electricity" not in result.stdout
@@ -114,7 +122,9 @@ def test_invalid_setup_tariff_stops_before_replacing_private_config(tmp_path):
     path = data / "setupOptions/inverter-control/electricity-tariff.json"
     path.write_text("{}")
     # Test harness intentionally uses its fixture-controlled PATH.
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
+    result = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, timeout=SETUP_TIMEOUT
+    )  # nosec B603, B607
     assert result.returncode == 1
     assert not (data / "updated").exists()
     assert (package / "local_config.py").read_text() == "EXISTING_PRIVATE = 9\n"
@@ -126,7 +136,9 @@ def test_setup_copy_creates_private_file_when_live_config_is_absent(tmp_path):
     config = package / "local_config.py"
     config.unlink()
     # Test harness intentionally uses its fixture-controlled PATH.
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
+    result = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, timeout=SETUP_TIMEOUT
+    )  # nosec B603, B607
     assert result.returncode == 0, result.stderr
     assert config.read_text() == "SITE_PRIVATE = 42\n"
     assert config.stat().st_mode & 0o777 == 0o600
@@ -162,7 +174,9 @@ def test_setup_rejects_private_config_symlinks(tmp_path, kind):
     config.unlink()
     config.symlink_to(target)
     # Test harness intentionally uses its fixture-controlled PATH.
-    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=5)  # nosec B603, B607
+    result = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, timeout=SETUP_TIMEOUT
+    )  # nosec B603, B607
     assert result.returncode == 1
     assert "regular file" in result.stderr
     assert target.read_text() == "UNRELATED = 19\n"
@@ -175,7 +189,11 @@ def test_setup_validates_persistent_config_limits_before_replacing_live_config(t
     persistent = data / "setupOptions/inverter-control/local_config.py"
     persistent.write_text("POWER_LIMIT_MIN = -3100\nPOWER_LIMIT_MAX = 2000\n")
     result = subprocess.run(  # nosec B603, B607 -- fake device updater
-        ["bash", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5
+        ["bash", str(script)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=SETUP_TIMEOUT,
     )
     assert result.returncode != 0
     assert "Power limits:" in result.stderr
@@ -191,7 +209,11 @@ def test_setup_selects_persistent_limits_instead_of_installed_limits(tmp_path):
     persistent.write_text(content)
     (package / "local_config.py").write_text("POWER_LIMIT_MIN = -500\nPOWER_LIMIT_MAX = 500\n")
     result = subprocess.run(  # nosec B603, B607 -- fake device updater
-        ["bash", str(script)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5
+        ["bash", str(script)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=SETUP_TIMEOUT,
     )
     assert result.returncode == 0, result.stderr
     assert '{"max": 1900, "min": -1700}' in result.stdout
@@ -207,7 +229,7 @@ def test_setup_rejects_conflicting_private_config_authorities(tmp_path):
         env={**os.environ, "PUSH_LOCAL_CONFIG": "1"},
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=SETUP_TIMEOUT,
     )
     assert result.returncode != 0
     assert "cannot both be enabled" in result.stderr

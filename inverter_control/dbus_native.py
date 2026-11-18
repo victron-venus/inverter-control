@@ -1050,9 +1050,11 @@ class NativeDbusClient:
         value = getattr(reply.body[0], "value", None)
         return _format_value(value)
 
-    def get_values(self, service: str, timeout: float = 0.5) -> dict[str, str | None] | None:
-        """Read one root BusItem snapshot so related fields share a reply."""
-        reply = self.call_busitem(service, "/", "GetValue", timeout=timeout)
+    def get_values(
+        self, service: str, timeout: float = 0.5, *, path: str = "/"
+    ) -> dict[str, str | None] | None:
+        """Read a BusItem tree as one snapshot with keys relative to its path."""
+        reply = self.call_busitem(service, path, "GetValue", timeout=timeout)
         return self._format_tree_reply(reply)
 
     def _read_connected(self, service: str, path: str, timeout: float):
