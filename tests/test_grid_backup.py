@@ -50,6 +50,7 @@ def test_disabled_fallback_still_exposes_detected_submeter(meter_clock):
     assert selected["_grid_backup_status"] == {
         "enabled": False,
         "available": True,
+        "controllable": True,
         "service": SERVICE,
         "generation": backup.generation,
         "device_instance": 78,
@@ -122,6 +123,28 @@ def test_disconnect_retains_identity_but_rejects_inflight_old_reply(meter_clock)
     assert status["power"] is None and not status["available"]
     backup.replace(snapshot(**{"/CustomName": ""}), backup.generation)
     assert backup.select(LOST)["_grid_backup_status"]["name"] == "Meter"
+
+
+def test_stale_cloud_sample_stays_visible_but_cannot_control(meter_clock):
+    backup = GridBackup(SERVICE, 30, 5, enabled=True, control_max_age=3)
+    backup.replace(snapshot(**{"/LastUpdate": 1085}), backup.generation)
+    selected = backup.select(LOST)
+    assert selected["_grid_backup_status"]["available"]
+    assert not selected["_grid_backup_status"]["controllable"]
+    assert not selected["_grid_backup"]
+    assert not selected["_grid_valid"]
+
+
+def test_backup_measurement_ramps_instead_of_steering(meter_clock, monkeypatch):
+    controller, _, _, _ = _make_controller()
+    monkeypatch.setattr("inverter_control.controller.GRID_BACKUP_MAX_STEP", 100)
+    clock = iter([10.0, 11.0])
+    monkeypatch.setattr("inverter_control.controller.time.monotonic", lambda: next(clock))
+    data = {"_grid_backup": True, "gt": -200}
+    assert controller._ramp_backup_grid(data)["gt"] == -200
+    ramped = controller._ramp_backup_grid({"_grid_backup": True, "gt": -1200})
+    assert ramped["gt"] == -300
+    assert ramped is not data and data["gt"] == -200
 
 
 def test_undiscovered_service_has_no_identity(meter_clock):
@@ -229,6 +252,7 @@ def test_state_rebuild_publishes_current_submeter_selection(meter_clock, monkeyp
         expected_backup = {
             "enabled": True,
             "available": connected,
+            "controllable": connected,
             "service": SERVICE,
             "generation": backup.generation,
             "device_instance": 78,

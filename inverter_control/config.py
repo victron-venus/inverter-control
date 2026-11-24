@@ -318,6 +318,14 @@ USE_GRID_SUBMETER_AS_BACKUP = _setup_boolean(
 GRID_BACKUP_SERVICE = _import_local_config("GRID_BACKUP_SERVICE", "")
 GRID_BACKUP_MAX_AGE_SECONDS = _import_local_config("GRID_BACKUP_MAX_AGE_SECONDS", 30.0)
 GRID_BACKUP_RECOVERY_SECONDS = _import_local_config("GRID_BACKUP_RECOVERY_SECONDS", 5.0)
+# A cloud-fed aggregate may stay visible for GRID_BACKUP_MAX_AGE_SECONDS but
+# may only drive the fast loop while its measurement is essentially current.
+GRID_BACKUP_CONTROL_MAX_AGE_SECONDS = _import_local_config(
+    "GRID_BACKUP_CONTROL_MAX_AGE_SECONDS", 3.0
+)
+# The fallback measurement fed to the control loop moves at most this many
+# watts per second; the slow source nudges the loop instead of steering it.
+GRID_BACKUP_MAX_STEP = _import_local_config("GRID_BACKUP_MAX_STEP", 100)
 
 # Optional meter-loss policy. Hold the last accepted command for this many
 # seconds, then maintain -10 W until valid grid telemetry recovers. Refreshes
@@ -554,9 +562,25 @@ def _validate_grid_timing(checks):
     for name, value, low, high in (
         ("GRID_BACKUP_MAX_AGE_SECONDS", GRID_BACKUP_MAX_AGE_SECONDS, 10, 300),
         ("GRID_BACKUP_RECOVERY_SECONDS", GRID_BACKUP_RECOVERY_SECONDS, 0, 60),
+        (
+            "GRID_BACKUP_CONTROL_MAX_AGE_SECONDS",
+            GRID_BACKUP_CONTROL_MAX_AGE_SECONDS,
+            1,
+            30,
+        ),
     ):
         if type(value) not in (int, float) or not low <= value <= high:
             checks.append(f"{name} must be a finite number from {low} to {high}")
+    if (
+        type(GRID_BACKUP_CONTROL_MAX_AGE_SECONDS) in (int, float)
+        and type(GRID_BACKUP_MAX_AGE_SECONDS) in (int, float)
+        and GRID_BACKUP_CONTROL_MAX_AGE_SECONDS > GRID_BACKUP_MAX_AGE_SECONDS
+    ):
+        checks.append(
+            "GRID_BACKUP_CONTROL_MAX_AGE_SECONDS must not exceed GRID_BACKUP_MAX_AGE_SECONDS"
+        )
+    if type(GRID_BACKUP_MAX_STEP) is not int or not 10 <= GRID_BACKUP_MAX_STEP <= 1000:
+        checks.append("GRID_BACKUP_MAX_STEP must be an integer from 10 to 1000")
     if GRID_LOSS_HOLD_SECONDS is not None and (
         type(GRID_LOSS_HOLD_SECONDS) not in (int, float) or not 0 <= GRID_LOSS_HOLD_SECONDS <= 30
     ):

@@ -68,17 +68,30 @@ class GridBackup:
     """
 
     def __init__(
-        self, service: str, max_age: float, recovery_seconds: float, *, enabled: bool = False
+        self,
+        service: str,
+        max_age: float,
+        recovery_seconds: float,
+        *,
+        enabled: bool = False,
+        control_max_age: float | None = None,
     ):
         self.service = service
         self.max_age = max_age
         self.recovery_seconds = recovery_seconds
         self.enabled = enabled
+        # Display may tolerate a slow cloud sample; control may not. A source
+        # that reports seconds-old values stays visible but cannot steer the
+        # fast loop unless every sample is essentially current.
+        self.control_max_age = (
+            max_age if control_max_age is None else min(float(control_max_age), max_age)
+        )
         self._lock = threading.RLock()
         self._generation = 0
         self._fields: dict[str, Any] = {}
         self._read_time = 0.0
         self._deadline = 0.0
+        self._control_deadline = 0.0
         self._using_backup = False
         self._primary_since: float | None = None
         self._selection_generation = 0
@@ -95,6 +108,7 @@ class GridBackup:
             self._generation += 1
             self._fields.clear()
             self._deadline = 0.0
+            self._control_deadline = 0.0
 
     def replace(self, fields: dict[str, Any] | None, generation: int) -> None:
         with self._lock:
@@ -124,6 +138,11 @@ class GridBackup:
             age = time.time() - timestamp if timestamp is not None else float("inf")
             self._deadline = (
                 self._read_time + self.max_age - max(0.0, age) if -5 <= age <= self.max_age else 0.0
+            )
+            self._control_deadline = (
+                self._read_time + self.control_max_age - max(0.0, age)
+                if -5 <= age <= self.control_max_age
+                else 0.0
             )
 
     def _select_backup(self, primary_valid, ready, now):
@@ -179,8 +198,9 @@ class GridBackup:
                 and now < self._deadline
                 and now - self._read_time <= 3.0
             )
+            controllable = ready and now < self._control_deadline
             primary_valid = primary.get("_grid_valid") is True
-            use_backup = self._select_backup(primary_valid, ready, now)
+            use_backup = self._select_backup(primary_valid, controllable, now)
             if use_backup != self._using_backup:
                 self._record_transition(primary, primary_valid, use_backup, now)
             status = dict(primary)
@@ -191,6 +211,7 @@ class GridBackup:
                 _grid_backup_status={
                     "enabled": self.enabled,
                     "available": ready,
+                    "controllable": controllable,
                     "service": self.service,
                     "generation": self._generation,
                     **self._identity,

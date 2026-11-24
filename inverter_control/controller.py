@@ -44,6 +44,7 @@ from inverter_control.config import (
     ENABLE_HA,
     ENABLE_WATER,
     ESS_EXTERNAL_WARN_MINUTES,
+    GRID_BACKUP_MAX_STEP,
     GRID_FILTER_TAU,
     GRID_SMOOTHING_DERIVED_TAU,
     LOOP_INTERVAL,
@@ -227,6 +228,8 @@ class InverterController:
         self._control_grid_selection = 0
         self._last_backup_measurement = None
         self._last_backup_charge_source: str | None = None
+        # (value, monotonic time) of the ramped fallback sample fed to the loop.
+        self._backup_ramp: tuple[float, float] | None = None
 
         self.loop_count = 0
         self.last_cycle_failed = False
@@ -583,6 +586,8 @@ class InverterController:
             if self._calculated_charge_source is not None and self._in_expensive_window():
                 return min(0, self.previous_setpoint), "[SUBMETER HOLD] [CHG:TOU] "
             return self.previous_setpoint, "[SUBMETER HOLD] "
+        if sys_data.get("_grid_backup"):
+            sys_data = self._ramp_backup_grid(sys_data)
         # Prepare SystemState snapshot
         mppt_data = self.victron.get_mppt_data()
         mppt_total = sum(m["w"] for m in mppt_data.values())
@@ -648,6 +653,32 @@ class InverterController:
         self.filtered_gt = result.filtered_gt
 
         return self._apply_submeter_trim(sys_data, charge_battery, result)
+
+    def _ramp_backup_grid(self, sys_data: dict[str, Any]) -> dict[str, Any]:
+        """Feed the loop a slowly moving fallback sample, never the raw cloud value.
+
+        The displayed grid power keeps the measurement; only the control input
+        ramps, so a source that updates in multi-second steps cannot steer the
+        fast loop back and forth.
+        """
+        gt = sys_data.get("gt")
+        limit = GRID_BACKUP_MAX_STEP
+        if type(gt) not in (int, float) or type(limit) not in (int, float) or limit <= 0:
+            return sys_data
+        now = time.monotonic()
+        last = self._backup_ramp
+        if last is None:
+            self._backup_ramp = (gt, now)
+            return sys_data
+        previous, at = last
+        # A long gap on the primary meter widens the step, so returning to the
+        # backup starts from its current reading instead of an old one.
+        step = limit * max(0.0, now - at)
+        clamped = abs(gt - previous) > step
+        if clamped:
+            gt = previous + (step if gt > previous else -step)
+        self._backup_ramp = (gt, now)
+        return {**sys_data, "gt": gt} if clamped else sys_data
 
     def _grid_smoothing_inputs(self, sys_data, mppt_total, pv_inverter_total):
         """Read the optional house total and its coherent derived-grid snapshot."""

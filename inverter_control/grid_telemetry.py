@@ -240,6 +240,11 @@ class GridTelemetry:
         if phases not in (1, 2):
             return f"Unsupported or unavailable grid phase count: {phases}", None
         if self._expected_phases and phases != self._expected_phases:
+            # A reduced count is the reconnect transient Venus reports while it
+            # re-reads the missing phase; only an increased count is a
+            # different physical layout. Both stay invalid for control.
+            if phases < self._expected_phases:
+                return "Grid phase count decreased; waiting for established topology", None
             return "Grid phase count differs from configured topology", None
         if phases < self._required_phases:
             return "Grid phase count decreased; waiting for established topology", None

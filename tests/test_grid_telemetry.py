@@ -1,6 +1,7 @@
 """Grid loss, source identity and deterministic control/failsafe regressions."""
 
 import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -144,6 +145,26 @@ def test_explicit_startup_contract_rejects_native_fallback_before_meter_seen():
     assert not grid.snapshot()["_grid_valid"]
     seed(grid)
     assert grid.snapshot()["_grid_valid"]
+
+
+def test_pinned_two_phase_contract_reports_a_dropped_phase_as_decreased():
+    grid = GridTelemetry(40, expected_service=METER, expected_phases=2)
+    seed(grid)
+    assert grid.snapshot()["_grid_valid"]
+    seed(grid, fields(phases=1, l2=None), declared=2)
+    assert not grid.snapshot()["_grid_valid"]
+    assert "decreased" in grid.snapshot()["_grid_invalid_reason"]
+
+
+def test_control_services_retry_quickly_after_failures():
+    v = make_victron()
+    for _ in range(8):
+        v._record_service_failure(METER)
+    assert v._service_backoff_until[METER] - time.time() <= v.CONTROL_CRITICAL_BACKOFF_MAX + 0.1
+    for _ in range(4):
+        v._record_service_failure("com.victronenergy.tank.tank21")
+    assert not v._service_healthy("com.victronenergy.tank.tank21")
+    assert v._service_backoff_until["com.victronenergy.tank.tank21"] - time.time() >= 9.0
 
 
 def test_meter_disconnect_invalidates_even_when_system_power_is_numeric():

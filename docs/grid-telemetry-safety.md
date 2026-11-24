@@ -14,6 +14,21 @@ Venus calculates the system phase count from the highest phase with an available
 
 Battery, solar and other D-Bus signals do not refresh grid validity. Unchanged grid values remain usable when successful periodic reads revalidate them. Reconciliation uses monotonic time and normally runs every 30 seconds. Required values expire after 40 seconds without revalidation, using the existing 30-second interval plus the 10-second signal-silence budget. Wall-clock corrections do not extend or prematurely expire that budget.
 
+## Control-critical read failures
+
+A read failure is not a source change. The system aggregate and any `com.victronenergy.grid.*` service gate every control cycle, so repeated read failures there back off for at most **2 seconds** instead of growing to the general 10 s–5 min schedule used for display-only services. A meter that answered again is therefore observed by the next control cycles rather than after a multi-minute quarantine. The value still has to pass every validity rule below; this only bounds how long the controller can stay blind to a recovered meter.
+
+A reduced phase count is reported as `Grid phase count decreased; waiting for established topology` and an increased one as `Grid phase count differs from configured topology`. Both remain invalid for control; the distinction keeps a reconnect transient out of topology diagnostics.
+
+## Fallback submeter as a control input
+
+The optional `com.victronenergy.acload.*` fallback (for example Emporia Vue "Home") is a slow, cloud-fed estimate, not a meter. It may be displayed when fresh, but it cannot steer the fast loop:
+
+- `GRID_BACKUP_CONTROL_MAX_AGE_SECONDS` (default **3 s**, range 1–30, never above `GRID_BACKUP_MAX_AGE_SECONDS`) bounds both the sample's own timestamp and its read age. A sample older than that stays visible as `available` but is not `controllable`, and backup selection is refused.
+- `GRID_BACKUP_MAX_STEP` (default **100 W**, range 10–1000) is the per-second ramp applied to the fallback's grid value before it enters the calculation. Displayed grid power keeps the raw measurement; only the control input ramps. A step change in the cloud value therefore nudges the loop instead of commanding a full correction.
+
+The published `grid_backup` status carries `controllable` alongside `available`, so consumers can distinguish "fresh enough to show" from "fresh enough to control".
+
 ## Cold-start expectations
 
 By default, the first complete valid observation establishes the measurement contract. This preserves installations that use native inverter grid measurements. **These defaults cannot identify a missing external meter before it has been observed in the current process.** Restarting during a meter outage can therefore establish the native fallback as the initial source.
@@ -73,7 +88,7 @@ Cancellation cannot recall a message already handed to dbus-fast's writer or sen
 
 ## Diagnostics and verification
 
-The published state reports `grid_control_valid`, `grid_control_reason`, `grid_loss_state`, `grid_loss_hold_seconds`, `grid_loss_elapsed`, and `grid_loss_remaining`. Outage states distinguish `holding`, `fallback_pending`, `fallback`, and `recovering`; `disabled` means the short-hold option is off, `normal` means the optional outage policy is inactive with valid input, and `overridden` means an explicit persistent setpoint override owns the output.
+The published state reports `grid_control_valid`, `grid_control_reason`, `grid_control_source`, `grid_primary_reason`, `grid_loss_state`, `grid_loss_hold_seconds`, `grid_loss_elapsed`, and `grid_loss_remaining`. Outage states distinguish `holding`, `fallback_pending`, `fallback`, and `recovering`; `disabled` means the short-hold option is off, `normal` means the optional outage policy is inactive with valid input, and `overridden` means an explicit persistent setpoint override owns the output.
 
 `grid_loss_fallback_applied` records an accepted outage fallback until a normal accepted command or override transition clears it. `grid_loss_fallback_setpoint` reports -10; `grid_loss_refresh_pending` distinguishes a failed/unconfirmed refresh from an accepted one, and `grid_loss_fallback_write_age` gives the age in seconds of the most recent accepted fallback write. The compatibility field `grid_loss_zero_applied` remains **false**: consumers must not present -10 W as an accepted zero command. These fields refresh even while normal control is paused. Logs report transitions into unavailable measurement state and back to normal control. Diagnostic power values may retain the last reading during an outage; validity determines whether they can be used for normal control.
 

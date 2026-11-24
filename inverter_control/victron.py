@@ -21,6 +21,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .config import (
+    GRID_BACKUP_CONTROL_MAX_AGE_SECONDS,
     GRID_BACKUP_MAX_AGE_SECONDS,
     GRID_BACKUP_RECOVERY_SECONDS,
     GRID_BACKUP_SERVICE,
@@ -179,6 +180,9 @@ class VictronDBus:
     SERVICE_FAIL_THRESHOLD = 3  # Consecutive failures before backing off
     SERVICE_BACKOFF_BASE = 10.0  # Initial backoff: 10s
     SERVICE_BACKOFF_MAX = 300.0  # Max backoff: 5 minutes
+    # The system aggregate and the grid meter gate every control cycle; a long
+    # exponential backoff there keeps the controller blind after recovery.
+    CONTROL_CRITICAL_BACKOFF_MAX = 2.0
     SERVICE_PROBE_INTERVAL = 30.0  # How often to probe backed-off services
 
     def __init__(self, test_mode: bool = False):
@@ -298,6 +302,7 @@ class VictronDBus:
                 GRID_BACKUP_MAX_AGE_SECONDS,
                 GRID_BACKUP_RECOVERY_SECONDS,
                 enabled=USE_GRID_SUBMETER_AS_BACKUP,
+                control_max_age=GRID_BACKUP_CONTROL_MAX_AGE_SECONDS,
             )
             if GRID_BACKUP_SERVICE
             else None
@@ -2111,13 +2116,25 @@ class VictronDBus:
                 self.SERVICE_BACKOFF_BASE * (2 ** (fails - self.SERVICE_FAIL_THRESHOLD)),
                 self.SERVICE_BACKOFF_MAX,
             )
-            self._service_backoff_until[service] = time.time() + backoff
-            logger.warning(
-                "D-Bus service %s unresponsive (%d failures), backing off %.0fs",
-                service,
-                fails,
-                backoff,
+            control_critical = service == SYSTEM_SERVICE or service.startswith(
+                "com.victronenergy.grid."
             )
+            if control_critical:
+                backoff = self.CONTROL_CRITICAL_BACKOFF_MAX
+                logger.debug(
+                    "D-Bus control service %s unresponsive (%d failures); retrying in %.0fs",
+                    service,
+                    fails,
+                    backoff,
+                )
+            else:
+                logger.warning(
+                    "D-Bus service %s unresponsive (%d failures), backing off %.0fs",
+                    service,
+                    fails,
+                    backoff,
+                )
+            self._service_backoff_until[service] = time.time() + backoff
 
     def _safe_subprocess_tracked(self, cmd: list, service: str, timeout: float = 0.5) -> str | None:
         """Run subprocess with service health tracking (for background poll).
