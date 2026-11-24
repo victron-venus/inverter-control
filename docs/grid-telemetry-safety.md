@@ -24,7 +24,7 @@ A reduced phase count is reported as `Grid phase count decreased; waiting for es
 
 The optional `com.victronenergy.acload.*` fallback (for example Emporia Vue "Home") is a slow, cloud-fed estimate, not a meter. It may be displayed when fresh, but it cannot steer the fast loop:
 
-- `GRID_BACKUP_CONTROL_MAX_AGE_SECONDS` (default **3 s**, range 1–30, never above `GRID_BACKUP_MAX_AGE_SECONDS`) bounds both the sample's own timestamp and its read age. A sample older than that stays visible as `available` but is not `controllable`, and backup selection is refused.
+- `GRID_BACKUP_CONTROL_MAX_AGE_SECONDS` (default **8 s**, range 1–30, never above `GRID_BACKUP_MAX_AGE_SECONDS`) bounds both the sample's own timestamp and its read age. A sample older than that stays visible as `available` but is not `controllable`, and backup selection is refused. The budget must outlast the source's publish period plus its timestamp granularity: the Emporia bridge refreshes every ~2–3 s and writes whole-second `/LastUpdate` values, so a 3 s budget expired 0.2–1 s before every new sample and `controllable` flapped between polls. Lower it only for a source that republishes faster than the chosen budget.
 - `GRID_BACKUP_MAX_STEP` (default **100 W**, range 10–1000) is the per-second ramp applied to the fallback's grid value before it enters the calculation. Displayed grid power keeps the raw measurement; only the control input ramps. A step change in the cloud value therefore nudges the loop instead of commanding a full correction.
 
 The published `grid_backup` status carries `controllable` alongside `available`, so consumers can distinguish "fresh enough to show" from "fresh enough to control".

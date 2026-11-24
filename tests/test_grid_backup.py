@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from test_main import _make_controller
 
+from inverter_control.config import GRID_BACKUP_CONTROL_MAX_AGE_SECONDS
 from inverter_control.dbus_native import NativeDbusClient
 from inverter_control.grid_backup import GridBackup, parse_backup_snapshot
 
@@ -133,6 +134,34 @@ def test_stale_cloud_sample_stays_visible_but_cannot_control(meter_clock):
     assert not selected["_grid_backup_status"]["controllable"]
     assert not selected["_grid_backup"]
     assert not selected["_grid_valid"]
+
+
+def test_default_control_budget_survives_a_three_second_cloud_source(meter_clock):
+    """A slow, lagging source must not flip controllable between samples."""
+    backup = GridBackup(
+        SERVICE,
+        30,
+        5,
+        enabled=True,
+        control_max_age=GRID_BACKUP_CONTROL_MAX_AGE_SECONDS,
+    )
+    last_update = 1100
+    backup.replace(snapshot(**{"/LastUpdate": last_update}), backup.generation)
+    next_publish = next_poll = 103.0
+    for tick in range(1, 161):
+        now = 100.0 + tick * 0.25
+        meter_clock[0] = now
+        if now >= next_publish:
+            next_publish = now + 3.0
+            # The bridge publishes whole-second timestamps that already trail
+            # wall time by ~0.9 s when the read sees them (observed on Cerbo).
+            last_update = int(1000 + now - 0.9)
+            backup.replace(snapshot(**{"/LastUpdate": last_update}), backup.generation)
+        elif now >= next_poll:
+            backup.replace(snapshot(**{"/LastUpdate": last_update}), backup.generation)
+        if now >= next_poll:
+            next_poll = now + 1.0
+        assert backup.select(LOST)["_grid_backup_status"]["controllable"], now
 
 
 def test_backup_measurement_ramps_instead_of_steering(meter_clock, monkeypatch):

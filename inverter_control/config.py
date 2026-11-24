@@ -320,8 +320,13 @@ GRID_BACKUP_MAX_AGE_SECONDS = _import_local_config("GRID_BACKUP_MAX_AGE_SECONDS"
 GRID_BACKUP_RECOVERY_SECONDS = _import_local_config("GRID_BACKUP_RECOVERY_SECONDS", 5.0)
 # A cloud-fed aggregate may stay visible for GRID_BACKUP_MAX_AGE_SECONDS but
 # may only drive the fast loop while its measurement is essentially current.
+# The budget must outlast its publish period plus timestamp granularity, or it
+# expires before the next sample. The Emporia bridge publishes every ~2-3 s
+# with whole-second /LastUpdate timestamps, so 3 s flipped `controllable` off
+# for most of every gap; 8 s covers a missed sample without reaching display
+# tolerances.
 GRID_BACKUP_CONTROL_MAX_AGE_SECONDS = _import_local_config(
-    "GRID_BACKUP_CONTROL_MAX_AGE_SECONDS", 3.0
+    "GRID_BACKUP_CONTROL_MAX_AGE_SECONDS", 8.0
 )
 # The fallback measurement fed to the control loop moves at most this many
 # watts per second; the slow source nudges the loop instead of steering it.
