@@ -70,7 +70,7 @@
   "single_entry_ci": true,
   "release_notes": "CHANGELOG.md",
   "fuzzing": {
-    "toolkit_ref": "4b041db3d7ce951732c102e2195c7d0178c401bb"
+    "toolkit_ref": "0ef5d19a724a3910985fae1a6ec86cd7a5c92cf7"
   },
   "toolkit_revision": "5e413f80a4353d328b4529eae57992ac3987e2dd",
   "change_scope": {
